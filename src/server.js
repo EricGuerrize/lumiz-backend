@@ -3,11 +3,24 @@ const cors = require('cors');
 require('dotenv').config();
 
 const webhookRoutes = require('./routes/webhook');
+const dashboardRoutes = require('./routes/dashboard.routes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
+// Configuração CORS para permitir o Lovable
+app.use(cors({
+  origin: [
+    'https://preview--lumiz-financeiro.lovable.app',
+    'https://lumiz-financeiro.lovable.app',
+    'http://localhost:3000',
+    'http://localhost:5173' // Vite dev server
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'x-user-phone']
+}));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -17,6 +30,7 @@ app.use((req, res, next) => {
 });
 
 app.use('/api', webhookRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 
 app.get('/health', (req, res) => {
   res.json({
@@ -34,7 +48,16 @@ app.get('/', (req, res) => {
     endpoints: {
       webhook: '/api/webhook',
       test: '/api/test',
-      health: '/health'
+      health: '/health',
+      dashboard: {
+        summary: '/api/dashboard/summary',
+        transactions: '/api/dashboard/transactions',
+        monthlyReport: '/api/dashboard/monthly-report',
+        categories: '/api/dashboard/categories',
+        statsByCategory: '/api/dashboard/stats/by-category',
+        timeline: '/api/dashboard/stats/timeline',
+        user: '/api/dashboard/user'
+      }
     }
   });
 });
@@ -62,6 +85,7 @@ Endpoints:
   - Webhook: http://localhost:${PORT}/api/webhook
   - Test: http://localhost:${PORT}/api/test
   - Health: http://localhost:${PORT}/health
+  - Dashboard: http://localhost:${PORT}/api/dashboard/*
   `);
 });
 

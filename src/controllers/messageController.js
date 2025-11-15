@@ -44,19 +44,33 @@ class MessageController {
           break;
 
         case 'saudacao':
-          response = `Oi! Sou a Lumiz 💜\nSua assistente financeira para clínicas de estética.\n\nEm poucos minutos, você vai conseguir:\n✨ Registrar vendas e custos pelo WhatsApp\n📊 Ver resumos financeiros sempre atualizados\n💰 Saber quanto lucrou no mês – sem planilhas\n\nVocê pode:\n• Registrar venda: "Paciente Ana, preenchimento labial, R$ 1.500 no PIX"\n• Registrar custo: "Paguei R$ 3.200 de insumos Allergan"\n• Ver resumo: "Me mostra o resumo do mês"\n• Ver histórico: "Mostra minhas últimas vendas"\n\nDigite "ajuda" para ver mais exemplos!`;
+          const greetingMessage = `Oi! Sou a Lumiz 💜\nSua assistente financeira para clínicas de estética.\n\nEm poucos minutos, você vai conseguir:\n✨ Registrar vendas e custos pelo WhatsApp\n📊 Ver resumos financeiros sempre atualizados\n💰 Saber quanto lucrou no mês – sem planilhas\n\nO que você quer fazer?`;
+
+          await evolutionService.sendButtons(phone, greetingMessage, [
+            '💰 Ver meu saldo',
+            '📋 Ver histórico',
+            '❓ Ver ajuda'
+          ]);
+          response = null;
           break;
 
         case 'ajuda':
-          response = `*Como usar a Lumiz* 📋\n\n*Registrar venda (receita):*\n"Paciente Júlia, botox facial, R$ 2.800, cartão 4x"\n"Registra: preenchimento labial, R$ 1.500, PIX"\n\n*Registrar custo (despesa):*\n"Paguei o boleto de R$ 3.200 dos insumos"\n"Custo de R$ 800 com marketing"\n\n*Consultas:*\n"Qual meu lucro do mês?"\n"Mostra minhas últimas vendas"\n"Resumo financeiro de novembro"\n\nPrecisa de ajuda? Só chamar! 😊`;
+          const helpMessage = `*Como usar a Lumiz* 📋\n\n*Registrar venda (receita):*\n"Paciente Júlia, botox facial, R$ 2.800, cartão 4x"\n"Registra: preenchimento labial, R$ 1.500, PIX"\n\n*Registrar custo (despesa):*\n"Paguei o boleto de R$ 3.200 dos insumos"\n"Custo de R$ 800 com marketing"\n\n*Consultas:*\n"Qual meu lucro do mês?"\n"Mostra minhas últimas vendas"\n"Resumo financeiro de novembro"\n\nO que você quer fazer agora?`;
+
+          await evolutionService.sendButtons(phone, helpMessage, [
+            '💰 Ver saldo',
+            '📋 Histórico',
+            '📊 Relatório mensal'
+          ]);
+          response = null;
           break;
 
         case 'apenas_valor':
-          response = await this.handleOnlyValue(intent);
+          response = await this.handleOnlyValue(intent, phone);
           break;
 
         case 'apenas_procedimento':
-          response = await this.handleOnlyProcedure(intent);
+          response = await this.handleOnlyProcedure(intent, phone);
           break;
 
         case 'mensagem_ambigua':
@@ -67,7 +81,10 @@ class MessageController {
           response = 'Não entendi muito bem 🤔\n\nPode reformular? Ou digite "ajuda" para ver exemplos do que posso fazer.';
       }
 
-      await evolutionService.sendMessage(phone, response);
+      // Envia resposta somente se não for null (botões já foram enviados)
+      if (response !== null) {
+        await evolutionService.sendMessage(phone, response);
+      }
 
       return { success: true, intent };
     } catch (error) {
@@ -103,33 +120,35 @@ class MessageController {
       year: 'numeric'
     });
 
-    let response = `Confere se está certo 👇\n\n`;
-    response += `${emoji} *Tipo:* ${tipoTexto}\n`;
-    response += `💵 *Valor:* R$ ${valor.toFixed(2)}\n`;
-    response += `📂 *Categoria:* ${categoria || 'Sem categoria'}\n`;
+    let message = `Confere se está certo 👇\n\n`;
+    message += `${emoji} *Tipo:* ${tipoTexto}\n`;
+    message += `💵 *Valor:* R$ ${valor.toFixed(2)}\n`;
+    message += `📂 *Categoria:* ${categoria || 'Sem categoria'}\n`;
     if (descricao) {
-      response += `📝 *Descrição:* ${descricao}\n`;
+      message += `📝 *Descrição:* ${descricao}\n`;
     }
-    response += `📅 *Data:* ${dataFormatada}\n\n`;
-    response += `Está tudo certo?\n`;
-    response += `Responda "sim" para confirmar ou "não" para cancelar.`;
+    message += `📅 *Data:* ${dataFormatada}\n\n`;
+    message += `Está tudo certo?`;
 
-    return response;
+    // Envia com botões interativos
+    await evolutionService.sendButtons(phone, message, ['✅ Confirmar', '❌ Cancelar']);
+
+    // Retorna null para não enviar mensagem duplicada
+    return null;
   }
 
-  async handleOnlyValue(intent) {
+  async handleOnlyValue(intent, phone) {
     const valor = intent.dados.valor;
 
-    let response = `Vi que você mandou *R$ ${valor.toFixed(2)}* 💰\n\n`;
-    response += `Isso é uma receita (venda) ou um custo (despesa)?\n\n`;
-    response += `Me responde assim:\n`;
-    response += `• Para venda: "Venda de botox"\n`;
-    response += `• Para custo: "Custo de insumos"`;
+    const message = `Vi que você mandou *R$ ${valor.toFixed(2)}* 💰\n\nIsso é uma receita (venda) ou um custo (despesa)?`;
 
-    return response;
+    // Envia com botões interativos
+    await evolutionService.sendButtons(phone, message, ['💰 Receita', '💸 Custo']);
+
+    return null;
   }
 
-  async handleOnlyProcedure(intent) {
+  async handleOnlyProcedure(intent, phone) {
     const categoria = intent.dados.categoria;
 
     let response = `Vi que você mencionou *${categoria}* 💉\n\n`;
@@ -151,7 +170,7 @@ class MessageController {
 
     const messageLower = message.toLowerCase().trim();
 
-    // Confirmação positiva
+    // Confirmação positiva (inclui resposta dos botões)
     if (
       messageLower === 'sim' ||
       messageLower === 's' ||
@@ -159,7 +178,9 @@ class MessageController {
       messageLower === 'ok' ||
       messageLower === 'confirma' ||
       messageLower === 'isso' ||
-      messageLower === 'correto'
+      messageLower === 'correto' ||
+      messageLower === '✅ confirmar' ||
+      messageLower.includes('confirmar')
     ) {
       // Salva a transação
       const { tipo, valor, categoria, descricao, data } = pending.dados;
@@ -181,13 +202,15 @@ class MessageController {
       return `${emoji} *${tipoTexto} registrada com sucesso!*\n\nTudo anotadinho! ✅`;
     }
 
-    // Confirmação negativa
+    // Confirmação negativa (inclui resposta dos botões)
     if (
       messageLower === 'não' ||
       messageLower === 'nao' ||
       messageLower === 'n' ||
       messageLower === 'cancelar' ||
-      messageLower === 'corrigir'
+      messageLower === 'corrigir' ||
+      messageLower === '❌ cancelar' ||
+      messageLower.includes('cancelar')
     ) {
       this.pendingTransactions.delete(phone);
       return 'Registro cancelado ❌\n\nSe quiser registrar, é só me enviar novamente com os dados corretos!';

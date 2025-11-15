@@ -70,6 +70,14 @@ EXEMPLOS PARA CLÍNICAS DE ESTÉTICA:
 
 "Oi" → {"intencao":"saudacao","dados":{}}
 
+RESPOSTAS DE BOTÕES INTERATIVOS:
+"💰 Ver meu saldo" → {"intencao":"consultar_saldo","dados":{}}
+"💰 Ver saldo" → {"intencao":"consultar_saldo","dados":{}}
+"📋 Ver histórico" → {"intencao":"consultar_historico","dados":{}}
+"📋 Histórico" → {"intencao":"consultar_historico","dados":{}}
+"📊 Relatório mensal" → {"intencao":"relatorio_mensal","dados":{}}
+"❓ Ver ajuda" → {"intencao":"ajuda","dados":{}}
+
 CASOS DE ERRO/AMBIGUIDADE:
 "1500" → {"intencao":"apenas_valor","dados":{"valor":1500.00}}
 

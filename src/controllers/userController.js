@@ -77,6 +77,22 @@ class UserController {
       throw error;
     }
   }
+
+  async getUserCategories(userId) {
+    try {
+      const { data, error } = await supabase
+        .from('categories')
+        .select('*')
+        .eq('user_id', userId)
+        .order('name', { ascending: true });
+
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      console.error('Erro ao buscar categorias:', error);
+      throw error;
+    }
+  }
 }
 
 module.exports = new UserController();
