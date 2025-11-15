@@ -21,7 +21,9 @@ router.post('/webhook', async (req, res) => {
       }
 
       const phone = message.key.remoteJid?.split('@')[0];
-      const messageText = message.message?.conversation ||
+      const messageText = message.conversation ||
+                          message.extendedTextMessage?.text ||
+                          message.message?.conversation ||
                           message.message?.extendedTextMessage?.text ||
                           '';
 
