@@ -34,16 +34,24 @@ class UserController {
 
   async createDefaultCategories(userId) {
     const defaultCategories = [
-      { user_id: userId, name: 'Salário', type: 'entrada' },
-      { user_id: userId, name: 'Freelance', type: 'entrada' },
-      { user_id: userId, name: 'Investimento', type: 'entrada' },
-      { user_id: userId, name: 'Alimentação', type: 'saida' },
-      { user_id: userId, name: 'Transporte', type: 'saida' },
-      { user_id: userId, name: 'Moradia', type: 'saida' },
-      { user_id: userId, name: 'Lazer', type: 'saida' },
-      { user_id: userId, name: 'Saúde', type: 'saida' },
-      { user_id: userId, name: 'Educação', type: 'saida' },
-      { user_id: userId, name: 'Outros', type: 'saida' }
+      // Receitas (Procedimentos Estéticos)
+      { user_id: userId, name: 'Botox / Toxina Botulínica', type: 'entrada' },
+      { user_id: userId, name: 'Preenchimento Labial', type: 'entrada' },
+      { user_id: userId, name: 'Preenchimento Facial', type: 'entrada' },
+      { user_id: userId, name: 'Harmonização Facial', type: 'entrada' },
+      { user_id: userId, name: 'Bioestimuladores', type: 'entrada' },
+      { user_id: userId, name: 'Procedimentos Corporais', type: 'entrada' },
+      { user_id: userId, name: 'Outros Procedimentos', type: 'entrada' },
+
+      // Custos (Despesas da Clínica)
+      { user_id: userId, name: 'Insumos / Produtos', type: 'saida' },
+      { user_id: userId, name: 'Aluguel', type: 'saida' },
+      { user_id: userId, name: 'Marketing / Publicidade', type: 'saida' },
+      { user_id: userId, name: 'Equipe / Salários', type: 'saida' },
+      { user_id: userId, name: 'Energia / Água', type: 'saida' },
+      { user_id: userId, name: 'Internet / Telefone', type: 'saida' },
+      { user_id: userId, name: 'Manutenção / Equipamentos', type: 'saida' },
+      { user_id: userId, name: 'Outros Custos', type: 'saida' }
     ];
 
     try {

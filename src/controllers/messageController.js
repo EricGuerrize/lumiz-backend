@@ -4,11 +4,21 @@ const userController = require('./userController');
 const transactionController = require('./transactionController');
 
 class MessageController {
+  constructor() {
+    // Armazena transações pendentes de confirmação temporariamente
+    this.pendingTransactions = new Map();
+  }
+
   async handleIncomingMessage(phone, message) {
     try {
       console.log(`Mensagem recebida de ${phone}: ${message}`);
 
       const user = await userController.findOrCreateUser(phone);
+
+      // Verifica se existe uma transação pendente de confirmação
+      if (this.pendingTransactions.has(phone)) {
+        return await this.handleConfirmation(phone, message, user);
+      }
 
       const intent = await geminiService.processMessage(message);
       console.log('Intenção identificada:', intent);
@@ -18,7 +28,7 @@ class MessageController {
       switch (intent.intencao) {
         case 'registrar_entrada':
         case 'registrar_saida':
-          response = await this.handleTransaction(user, intent);
+          response = await this.handleTransactionRequest(user, intent, phone);
           break;
 
         case 'consultar_saldo':
@@ -34,15 +44,27 @@ class MessageController {
           break;
 
         case 'saudacao':
-          response = `Olá!\n\nSou seu assistente financeiro.\n\nVocê pode:\n- Registrar gastos: "gastei 50 no mercado"\n- Registrar ganhos: "recebi 1500 de salário"\n- Ver saldo: "qual meu saldo?"\n- Ver histórico: "mostra minhas últimas transações"\n- Relatório mensal: "resumo do mês"`;
+          response = `Oi! Sou a Lumiz 💜\nSua assistente financeira para clínicas de estética.\n\nEm poucos minutos, você vai conseguir:\n✨ Registrar vendas e custos pelo WhatsApp\n📊 Ver resumos financeiros sempre atualizados\n💰 Saber quanto lucrou no mês – sem planilhas\n\nVocê pode:\n• Registrar venda: "Paciente Ana, preenchimento labial, R$ 1.500 no PIX"\n• Registrar custo: "Paguei R$ 3.200 de insumos Allergan"\n• Ver resumo: "Me mostra o resumo do mês"\n• Ver histórico: "Mostra minhas últimas vendas"\n\nDigite "ajuda" para ver mais exemplos!`;
           break;
 
         case 'ajuda':
-          response = `Como usar\n\nRegistrar despesa:\n"gastei 50 no mercado"\n"paguei 30 de uber"\n\nRegistrar receita:\n"recebi 1500 de salário"\n"ganhei 200 de freelance"\n\nConsultas:\n"qual meu saldo?"\n"mostra meu histórico"\n"relatório do mês"`;
+          response = `*Como usar a Lumiz* 📋\n\n*Registrar venda (receita):*\n"Paciente Júlia, botox facial, R$ 2.800, cartão 4x"\n"Registra: preenchimento labial, R$ 1.500, PIX"\n\n*Registrar custo (despesa):*\n"Paguei o boleto de R$ 3.200 dos insumos"\n"Custo de R$ 800 com marketing"\n\n*Consultas:*\n"Qual meu lucro do mês?"\n"Mostra minhas últimas vendas"\n"Resumo financeiro de novembro"\n\nPrecisa de ajuda? Só chamar! 😊`;
+          break;
+
+        case 'apenas_valor':
+          response = await this.handleOnlyValue(intent);
+          break;
+
+        case 'apenas_procedimento':
+          response = await this.handleOnlyProcedure(intent);
+          break;
+
+        case 'mensagem_ambigua':
+          response = 'Não consegui entender muito bem 🤔\n\nPode me dar mais detalhes? Por exemplo:\n"Paciente Ana, preenchimento labial, R$ 1.500 no PIX"';
           break;
 
         default:
-          response = 'Desculpe, não entendi. Digite "ajuda" para ver o que posso fazer.';
+          response = 'Não entendi muito bem 🤔\n\nPode reformular? Ou digite "ajuda" para ver exemplos do que posso fazer.';
       }
 
       await evolutionService.sendMessage(phone, response);
@@ -58,52 +80,168 @@ class MessageController {
     }
   }
 
-  async handleTransaction(user, intent) {
+  async handleTransactionRequest(user, intent, phone) {
     const { tipo, valor, categoria, descricao, data } = intent.dados;
 
     if (!valor || valor <= 0) {
-      return 'Por favor, informe um valor válido.';
+      return 'Preciso de um valor válido para registrar 😊\n\nPode me passar o valor?';
     }
 
-    const transaction = await transactionController.createTransaction(user.id, {
-      tipo,
-      valor,
-      categoria,
-      descricao,
-      data
+    // Armazena a transação pendente
+    this.pendingTransactions.set(phone, {
+      user,
+      dados: { tipo, valor, categoria, descricao, data },
+      timestamp: Date.now()
     });
 
-    const tipoTexto = tipo === 'entrada' ? 'Receita' : 'Despesa';
+    // Monta a mensagem de confirmação visual
+    const tipoTexto = tipo === 'entrada' ? 'Receita (venda)' : 'Custo (despesa)';
+    const emoji = tipo === 'entrada' ? '💰' : '💸';
+    const dataFormatada = new Date(data).toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
 
-    return `${tipoTexto} registrada!\n\nValor: R$ ${valor.toFixed(2)}\nCategoria: ${categoria || 'Sem categoria'}\nData: ${new Date(data).toLocaleDateString('pt-BR')}`;
+    let response = `Confere se está certo 👇\n\n`;
+    response += `${emoji} *Tipo:* ${tipoTexto}\n`;
+    response += `💵 *Valor:* R$ ${valor.toFixed(2)}\n`;
+    response += `📂 *Categoria:* ${categoria || 'Sem categoria'}\n`;
+    if (descricao) {
+      response += `📝 *Descrição:* ${descricao}\n`;
+    }
+    response += `📅 *Data:* ${dataFormatada}\n\n`;
+    response += `Está tudo certo?\n`;
+    response += `Responda "sim" para confirmar ou "não" para cancelar.`;
+
+    return response;
+  }
+
+  async handleOnlyValue(intent) {
+    const valor = intent.dados.valor;
+
+    let response = `Vi que você mandou *R$ ${valor.toFixed(2)}* 💰\n\n`;
+    response += `Isso é uma receita (venda) ou um custo (despesa)?\n\n`;
+    response += `Me responde assim:\n`;
+    response += `• Para venda: "Venda de botox"\n`;
+    response += `• Para custo: "Custo de insumos"`;
+
+    return response;
+  }
+
+  async handleOnlyProcedure(intent) {
+    const categoria = intent.dados.categoria;
+
+    let response = `Vi que você mencionou *${categoria}* 💉\n\n`;
+    response += `Qual foi o valor?\n\n`;
+    response += `Pode me mandar o valor completo, por exemplo:\n`;
+    response += `"R$ 1.500" ou "1500"`;
+
+    return response;
+  }
+
+  async handleConfirmation(phone, message, user) {
+    const pending = this.pendingTransactions.get(phone);
+
+    // Verifica se a confirmação expirou (5 minutos)
+    if (Date.now() - pending.timestamp > 5 * 60 * 1000) {
+      this.pendingTransactions.delete(phone);
+      return 'O tempo para confirmar expirou 😅\n\nPode me enviar a movimentação novamente?';
+    }
+
+    const messageLower = message.toLowerCase().trim();
+
+    // Confirmação positiva
+    if (
+      messageLower === 'sim' ||
+      messageLower === 's' ||
+      messageLower === 'confirmar' ||
+      messageLower === 'ok' ||
+      messageLower === 'confirma' ||
+      messageLower === 'isso' ||
+      messageLower === 'correto'
+    ) {
+      // Salva a transação
+      const { tipo, valor, categoria, descricao, data } = pending.dados;
+
+      await transactionController.createTransaction(user.id, {
+        tipo,
+        valor,
+        categoria,
+        descricao,
+        data
+      });
+
+      // Remove da lista de pendentes
+      this.pendingTransactions.delete(phone);
+
+      const tipoTexto = tipo === 'entrada' ? 'Receita' : 'Custo';
+      const emoji = tipo === 'entrada' ? '💰' : '💸';
+
+      return `${emoji} *${tipoTexto} registrada com sucesso!*\n\nTudo anotadinho! ✅`;
+    }
+
+    // Confirmação negativa
+    if (
+      messageLower === 'não' ||
+      messageLower === 'nao' ||
+      messageLower === 'n' ||
+      messageLower === 'cancelar' ||
+      messageLower === 'corrigir'
+    ) {
+      this.pendingTransactions.delete(phone);
+      return 'Registro cancelado ❌\n\nSe quiser registrar, é só me enviar novamente com os dados corretos!';
+    }
+
+    // Resposta inválida
+    return 'Não entendi 🤔\n\nResponde "sim" para confirmar ou "não" para cancelar.';
   }
 
   async handleBalance(user) {
     const balance = await transactionController.getBalance(user.id);
 
-    return `Seu saldo atual\n\nSaldo: R$ ${balance.saldo.toFixed(2)}\nEntradas: R$ ${balance.entradas.toFixed(2)}\nSaídas: R$ ${balance.saidas.toFixed(2)}`;
+    const lucro = balance.entradas - balance.saidas;
+    const margemPercentual = balance.entradas > 0
+      ? ((lucro / balance.entradas) * 100).toFixed(1)
+      : 0;
+
+    let response = `📊 *Resumo Financeiro*\n\n`;
+    response += `• Receitas: R$ ${balance.entradas.toFixed(2)}\n`;
+    response += `• Custos: R$ ${balance.saidas.toFixed(2)}\n`;
+    response += `• Lucro: R$ ${lucro.toFixed(2)} (${margemPercentual}%)\n\n`;
+    response += `Quer ver o relatório detalhado? Digite "relatório do mês"`;
+
+    return response;
   }
 
   async handleHistory(user) {
     const transactions = await transactionController.getRecentTransactions(user.id, 5);
 
     if (transactions.length === 0) {
-      return 'Você ainda não possui transações registradas.';
+      return 'Você ainda não tem movimentações registradas 📋\n\nQue tal registrar sua primeira venda? 😊';
     }
 
-    let response = 'Últimas transações\n\n';
+    let response = `📜 *Últimas movimentações*\n\n`;
 
-    transactions.forEach(t => {
+    transactions.forEach((t, index) => {
+      const emoji = t.type === 'entrada' ? '💰' : '💸';
       const sinal = t.type === 'entrada' ? '+' : '-';
       const categoria = t.categories?.name || 'Sem categoria';
-      const data = new Date(t.date).toLocaleDateString('pt-BR');
+      const data = new Date(t.date).toLocaleDateString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit'
+      });
 
-      response += `${sinal}R$ ${parseFloat(t.amount).toFixed(2)}\n`;
-      response += `${categoria} - ${data}\n`;
+      response += `${emoji} ${sinal}R$ ${parseFloat(t.amount).toFixed(2)}\n`;
+      response += `   ${categoria}`;
       if (t.description) {
-        response += `${t.description}\n`;
+        response += ` • ${t.description}`;
       }
-      response += '\n';
+      response += `\n   ${data}\n`;
+
+      if (index < transactions.length - 1) {
+        response += '\n';
+      }
     });
 
     return response.trim();
@@ -117,18 +255,25 @@ class MessageController {
       now.getMonth() + 1
     );
 
-    let response = `Relatório de ${report.periodo}\n\n`;
-    response += `Entradas: R$ ${report.entradas.toFixed(2)}\n`;
-    response += `Saídas: R$ ${report.saidas.toFixed(2)}\n`;
-    response += `Saldo: R$ ${report.saldo.toFixed(2)}\n`;
-    response += `Total de transações: ${report.totalTransacoes}\n\n`;
+    const lucro = report.entradas - report.saidas;
+    const margemPercentual = report.entradas > 0
+      ? ((lucro / report.entradas) * 100).toFixed(1)
+      : 0;
+
+    let response = `📊 *Relatório de ${report.periodo}*\n\n`;
+    response += `✨ *Resumo Geral*\n`;
+    response += `• Receitas: R$ ${report.entradas.toFixed(2)}\n`;
+    response += `• Custos: R$ ${report.saidas.toFixed(2)}\n`;
+    response += `• Lucro: R$ ${lucro.toFixed(2)} (${margemPercentual}%)\n`;
+    response += `• Total de movimentações: ${report.totalTransacoes}\n\n`;
 
     if (Object.keys(report.porCategoria).length > 0) {
-      response += 'Por categoria:\n';
+      response += `💼 *Por categoria:*\n`;
       Object.entries(report.porCategoria)
         .sort((a, b) => b[1].total - a[1].total)
+        .slice(0, 5) // Mostra apenas top 5
         .forEach(([cat, data]) => {
-          response += `${cat}: R$ ${data.total.toFixed(2)}\n`;
+          response += `• ${cat}: R$ ${data.total.toFixed(2)}\n`;
         });
     }
 
