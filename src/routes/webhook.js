@@ -9,25 +9,25 @@ router.post('/webhook', async (req, res) => {
     const { event, data } = req.body;
 
     if (event === 'messages.upsert') {
+      const key = data?.key;
       const message = data?.message;
 
-      if (!message || !message.key) {
+      if (!key || !message) {
         console.log('Mensagem sem estrutura válida');
         return res.status(200).json({ status: 'ignored', reason: 'invalid structure' });
       }
 
-      if (message.key.fromMe) {
+      if (key.fromMe) {
         return res.status(200).json({ status: 'ignored', reason: 'own message' });
       }
 
-      const phone = message.key.remoteJid?.split('@')[0];
+      const phone = key.remoteJid?.split('@')[0];
       const messageText = message.conversation ||
                           message.extendedTextMessage?.text ||
-                          message.message?.conversation ||
-                          message.message?.extendedTextMessage?.text ||
                           '';
 
       if (phone && messageText) {
+        console.log(`Processando mensagem de ${phone}: ${messageText}`);
         messageController.handleIncomingMessage(phone, messageText)
           .catch(error => console.error('Erro ao processar mensagem:', error));
       }
