@@ -43,7 +43,7 @@ app.get('/health', (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     name: 'Lumiz Backend',
-    version: '1.0.0',
+    version: '1.1.0',
     status: 'running',
     endpoints: {
       webhook: '/api/webhook',
@@ -56,6 +56,9 @@ app.get('/', (req, res) => {
         categories: '/api/dashboard/categories',
         statsByCategory: '/api/dashboard/stats/by-category',
         timeline: '/api/dashboard/stats/timeline',
+        comparison: '/api/dashboard/stats/comparison',
+        averages: '/api/dashboard/stats/averages',
+        kpis: '/api/dashboard/stats/kpis',
         user: '/api/dashboard/user'
       }
     }
