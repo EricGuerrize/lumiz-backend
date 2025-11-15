@@ -44,25 +44,11 @@ class MessageController {
           break;
 
         case 'saudacao':
-          const greetingMessage = `Oi! Sou a Lumiz 💜\nSua assistente financeira para clínicas de estética.\n\nEm poucos minutos, você vai conseguir:\n✨ Registrar vendas e custos pelo WhatsApp\n📊 Ver resumos financeiros sempre atualizados\n💰 Saber quanto lucrou no mês – sem planilhas\n\nO que você quer fazer?`;
-
-          await evolutionService.sendButtons(phone, greetingMessage, [
-            '💰 Ver meu saldo',
-            '📋 Ver histórico',
-            '❓ Ver ajuda'
-          ]);
-          response = null;
+          response = `Oi! Sou a *Lumiz* 💜\nAssistente financeira para clínicas de estética.\n\n*Me manda assim:*\n\n📝 *Para registrar venda:*\n"Botox, 2800, paciente Maria"\n"Preenchimento labial 1500 pix"\n\n📝 *Para registrar custo:*\n"Insumos 3200"\n"Marketing 800"\n\n📊 *Para consultar:*\n"Saldo" ou "Resumo"\n"Histórico"\n"Relatório"\n\nMe manda sua primeira movimentação! 😊`;
           break;
 
         case 'ajuda':
-          const helpMessage = `*Como usar a Lumiz* 📋\n\n*Registrar venda (receita):*\n"Paciente Júlia, botox facial, R$ 2.800, cartão 4x"\n"Registra: preenchimento labial, R$ 1.500, PIX"\n\n*Registrar custo (despesa):*\n"Paguei o boleto de R$ 3.200 dos insumos"\n"Custo de R$ 800 com marketing"\n\n*Consultas:*\n"Qual meu lucro do mês?"\n"Mostra minhas últimas vendas"\n"Resumo financeiro de novembro"\n\nO que você quer fazer agora?`;
-
-          await evolutionService.sendButtons(phone, helpMessage, [
-            '💰 Ver saldo',
-            '📋 Histórico',
-            '📊 Relatório mensal'
-          ]);
-          response = null;
+          response = `*Exemplos de uso:* 📋\n\n💰 *REGISTRAR VENDA:*\n"Botox 2800 paciente Ana"\n"Preenchimento 1500 pix"\n"Harmonização facial 4500"\n\n💸 *REGISTRAR CUSTO:*\n"Insumos 3200"\n"Marketing 800"\n"Aluguel 5000"\n\n📊 *CONSULTAR:*\n"Saldo" - ver resumo\n"Histórico" - últimas movimentações\n"Relatório" - relatório do mês\n\n*Dica:* Quanto mais info, melhor! Ex:\n"Botox glabela, 2800, Dra. Maria, cartão 3x"`;
           break;
 
         case 'apenas_valor':
@@ -74,11 +60,11 @@ class MessageController {
           break;
 
         case 'mensagem_ambigua':
-          response = 'Não consegui entender muito bem 🤔\n\nPode me dar mais detalhes? Por exemplo:\n"Paciente Ana, preenchimento labial, R$ 1.500 no PIX"';
+          response = 'Não entendi 🤔\n\nMe manda assim:\n"Botox 2800" (venda)\n"Insumos 3200" (custo)\n\nOu digite "ajuda"';
           break;
 
         default:
-          response = 'Não entendi muito bem 🤔\n\nPode reformular? Ou digite "ajuda" para ver exemplos do que posso fazer.';
+          response = 'Não entendi 🤔\n\nTenta assim:\n"Botox 2800"\n"Insumos 3200"\n"Saldo"\n\nOu manda "ajuda"';
       }
 
       // Envia resposta somente se não for null (botões já foram enviados)
@@ -101,7 +87,7 @@ class MessageController {
     const { tipo, valor, categoria, descricao, data } = intent.dados;
 
     if (!valor || valor <= 0) {
-      return 'Preciso de um valor válido para registrar 😊\n\nPode me passar o valor?';
+      return 'Não consegui identificar o valor 🤔\n\nMe manda assim: "Botox 2800" ou "Insumos 3200"';
     }
 
     // Armazena a transação pendente
@@ -112,51 +98,35 @@ class MessageController {
     });
 
     // Monta a mensagem de confirmação visual
-    const tipoTexto = tipo === 'entrada' ? 'Receita (venda)' : 'Custo (despesa)';
+    const tipoTexto = tipo === 'entrada' ? 'VENDA' : 'CUSTO';
     const emoji = tipo === 'entrada' ? '💰' : '💸';
     const dataFormatada = new Date(data).toLocaleDateString('pt-BR', {
       day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
+      month: '2-digit'
     });
 
-    let message = `Confere se está certo 👇\n\n`;
-    message += `${emoji} *Tipo:* ${tipoTexto}\n`;
-    message += `💵 *Valor:* R$ ${valor.toFixed(2)}\n`;
-    message += `📂 *Categoria:* ${categoria || 'Sem categoria'}\n`;
+    let message = `${emoji} *${tipoTexto}*\n\n`;
+    message += `💵 *R$ ${valor.toFixed(2)}*\n`;
+    message += `📂 ${categoria || 'Sem categoria'}\n`;
     if (descricao) {
-      message += `📝 *Descrição:* ${descricao}\n`;
+      message += `📝 ${descricao}\n`;
     }
-    message += `📅 *Data:* ${dataFormatada}\n\n`;
-    message += `Está tudo certo?`;
+    message += `📅 ${dataFormatada}\n\n`;
+    message += `Responde *SIM* pra confirmar ou *NÃO* pra cancelar`;
 
-    // Envia com botões interativos
-    await evolutionService.sendButtons(phone, message, ['✅ Confirmar', '❌ Cancelar']);
-
-    // Retorna null para não enviar mensagem duplicada
-    return null;
+    return message;
   }
 
   async handleOnlyValue(intent, phone) {
     const valor = intent.dados.valor;
 
-    const message = `Vi que você mandou *R$ ${valor.toFixed(2)}* 💰\n\nIsso é uma receita (venda) ou um custo (despesa)?`;
-
-    // Envia com botões interativos
-    await evolutionService.sendButtons(phone, message, ['💰 Receita', '💸 Custo']);
-
-    return null;
+    return `Vi *R$ ${valor.toFixed(2)}* 💰\n\nIsso é venda ou custo?\n\nMe manda assim:\n"Botox ${valor}" (se for venda)\n"Insumos ${valor}" (se for custo)`;
   }
 
   async handleOnlyProcedure(intent, phone) {
     const categoria = intent.dados.categoria;
 
-    let response = `Vi que você mencionou *${categoria}* 💉\n\n`;
-    response += `Qual foi o valor?\n\n`;
-    response += `Pode me mandar o valor completo, por exemplo:\n`;
-    response += `"R$ 1.500" ou "1500"`;
-
-    return response;
+    return `Vi *${categoria}* 💉\n\nQual o valor?\n\nMe manda assim:\n"${categoria} 2800"`;
   }
 
   async handleConfirmation(phone, message, user) {
@@ -228,11 +198,16 @@ class MessageController {
       ? ((lucro / balance.entradas) * 100).toFixed(1)
       : 0;
 
-    let response = `📊 *Resumo Financeiro*\n\n`;
-    response += `• Receitas: R$ ${balance.entradas.toFixed(2)}\n`;
-    response += `• Custos: R$ ${balance.saidas.toFixed(2)}\n`;
-    response += `• Lucro: R$ ${lucro.toFixed(2)} (${margemPercentual}%)\n\n`;
-    response += `Quer ver o relatório detalhado? Digite "relatório do mês"`;
+    let response = `📊 *RESUMO*\n\n`;
+    response += `💰 Vendas: *R$ ${balance.entradas.toFixed(2)}*\n`;
+    response += `💸 Custos: *R$ ${balance.saidas.toFixed(2)}*\n`;
+    response += `✨ Lucro: *R$ ${lucro.toFixed(2)}* (${margemPercentual}%)\n\n`;
+
+    if (balance.entradas === 0 && balance.saidas === 0) {
+      response += `Ainda não tem movimentações.\n\nMe manda sua primeira venda:\n"Botox 2800"`;
+    } else {
+      response += `Manda "relatório" pra ver detalhado`;
+    }
 
     return response;
   }
@@ -241,12 +216,12 @@ class MessageController {
     const transactions = await transactionController.getRecentTransactions(user.id, 5);
 
     if (transactions.length === 0) {
-      return 'Você ainda não tem movimentações registradas 📋\n\nQue tal registrar sua primeira venda? 😊';
+      return 'Sem movimentações ainda 📋\n\nMe manda sua primeira:\n"Botox 2800"';
     }
 
-    let response = `📜 *Últimas movimentações*\n\n`;
+    let response = `📜 *ÚLTIMAS 5*\n\n`;
 
-    transactions.forEach((t, index) => {
+    transactions.forEach((t) => {
       const emoji = t.type === 'entrada' ? '💰' : '💸';
       const sinal = t.type === 'entrada' ? '+' : '-';
       const categoria = t.categories?.name || 'Sem categoria';
@@ -255,16 +230,7 @@ class MessageController {
         month: '2-digit'
       });
 
-      response += `${emoji} ${sinal}R$ ${parseFloat(t.amount).toFixed(2)}\n`;
-      response += `   ${categoria}`;
-      if (t.description) {
-        response += ` • ${t.description}`;
-      }
-      response += `\n   ${data}\n`;
-
-      if (index < transactions.length - 1) {
-        response += '\n';
-      }
+      response += `${emoji} ${sinal}R$ ${parseFloat(t.amount).toFixed(2)} • ${categoria} • ${data}\n`;
     });
 
     return response.trim();
@@ -283,20 +249,22 @@ class MessageController {
       ? ((lucro / report.entradas) * 100).toFixed(1)
       : 0;
 
-    let response = `📊 *Relatório de ${report.periodo}*\n\n`;
-    response += `✨ *Resumo Geral*\n`;
-    response += `• Receitas: R$ ${report.entradas.toFixed(2)}\n`;
-    response += `• Custos: R$ ${report.saidas.toFixed(2)}\n`;
-    response += `• Lucro: R$ ${lucro.toFixed(2)} (${margemPercentual}%)\n`;
-    response += `• Total de movimentações: ${report.totalTransacoes}\n\n`;
+    const mesNome = now.toLocaleDateString('pt-BR', { month: 'long' }).toUpperCase();
+
+    let response = `📊 *RELATÓRIO ${mesNome}*\n\n`;
+    response += `💰 Vendas: *R$ ${report.entradas.toFixed(2)}*\n`;
+    response += `💸 Custos: *R$ ${report.saidas.toFixed(2)}*\n`;
+    response += `✨ Lucro: *R$ ${lucro.toFixed(2)}* (${margemPercentual}%)\n`;
+    response += `📝 ${report.totalTransacoes} movimentações\n`;
 
     if (Object.keys(report.porCategoria).length > 0) {
-      response += `💼 *Por categoria:*\n`;
+      response += `\n*TOP CATEGORIAS:*\n`;
       Object.entries(report.porCategoria)
         .sort((a, b) => b[1].total - a[1].total)
-        .slice(0, 5) // Mostra apenas top 5
+        .slice(0, 5)
         .forEach(([cat, data]) => {
-          response += `• ${cat}: R$ ${data.total.toFixed(2)}\n`;
+          const emoji = data.tipo === 'entrada' ? '💰' : '💸';
+          response += `${emoji} ${cat}: R$ ${data.total.toFixed(2)}\n`;
         });
     }
 

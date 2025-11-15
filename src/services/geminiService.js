@@ -12,80 +12,62 @@ class GeminiService {
     const dataHoje = new Date().toISOString().split('T')[0];
 
     const prompt = `
-Você é a Lumiz, assistente financeira inteligente para clínicas de estética.
-Analise a mensagem do usuário e identifique a INTENÇÃO e extraia os DADOS com precisão.
+TAREFA: Analisar mensagem e retornar JSON com intenção e dados extraídos.
 
-CONTEXTO: Clínicas de estética trabalham com:
-- Receitas (vendas): procedimentos estéticos (botox, preenchimento, harmonização, etc)
-- Custos (despesas): insumos, produtos, boletos, marketing, aluguel, etc
+CONTEXTO: Clínica de estética.
 
-INTENÇÕES POSSÍVEIS:
-- registrar_entrada: registrar uma venda/receita de procedimento
-- registrar_saida: registrar um custo/despesa
-- consultar_saldo: ver resumo financeiro, lucro, margem
-- consultar_historico: ver vendas/movimentações recentes
-- relatorio_mensal: resumo detalhado do mês
-- ajuda: dúvidas sobre como usar
-- saudacao: cumprimento inicial (oi, olá, bom dia)
-- apenas_valor: usuário mandou só um número sem contexto
-- apenas_procedimento: usuário mandou só nome de procedimento/produto sem valor
-- mensagem_ambigua: não conseguiu identificar claramente a intenção
+REGRA PRINCIPAL DE CLASSIFICAÇÃO:
+- Palavras que indicam VENDA (registrar_entrada): botox, preenchimento, harmonização, bioestimulador, fios, peeling, laser, paciente, cliente, procedimento
+- Palavras que indicam CUSTO (registrar_saida): insumos, marketing, aluguel, energia, internet, material, produto, fornecedor, boleto, conta, paguei, gastei
 
-MENSAGEM DO USUÁRIO:
-"${message}"
+MENSAGEM: "${message}"
 
-REGRAS DE EXTRAÇÃO:
-1. VALOR: extraia números como valor (ex: "1500", "R$ 2.800", "3mil200")
-2. CATEGORIA: identifique procedimentos (botox, preenchimento, lipo, etc) ou custos (insumos, marketing, etc)
-3. DESCRIÇÃO: paciente, marca de produto, ou contexto adicional
-4. DATA: use "${dataHoje}" se não especificado. Se "ontem", calcule corretamente.
-5. TIPO: "entrada" para vendas/receitas, "saida" para custos/despesas
+INTENÇÕES:
+- registrar_entrada: tem VALOR + palavra de VENDA
+- registrar_saida: tem VALOR + palavra de CUSTO
+- consultar_saldo: saldo, resumo, lucro, quanto tenho
+- consultar_historico: histórico, últimas, movimentações
+- relatorio_mensal: relatório, mês, mensal
+- ajuda: ajuda, como usar, exemplos
+- saudacao: oi, olá, bom dia, boa tarde, boa noite
+- apenas_valor: SÓ número, nada mais
+- apenas_procedimento: SÓ nome de procedimento/produto, sem valor
+- mensagem_ambigua: não conseguiu identificar
 
-RESPONDA SEMPRE EM JSON VÁLIDO:
-{
-  "intencao": "nome_da_intencao",
-  "dados": {
-    "tipo": "entrada ou saida",
-    "valor": 0.00,
-    "categoria": "nome da categoria",
-    "descricao": "descrição opcional",
-    "data": "YYYY-MM-DD"
-  }
-}
+EXTRAÇÃO:
+- VALOR: números (1500, 2.800, 3mil = 3000)
+- CATEGORIA: nome do procedimento ou tipo de custo
+- DESCRICAO: paciente, marca, forma de pagamento
+- DATA: "${dataHoje}" (se "ontem": calcular)
+- TIPO: "entrada" (venda) ou "saida" (custo)
 
-EXEMPLOS PARA CLÍNICAS DE ESTÉTICA:
-"Paciente Ana, preenchimento labial, R$ 1.500 no PIX" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":1500.00,"categoria":"Preenchimento labial","descricao":"Paciente Ana - PIX","data":"${dataHoje}"}}
+EXEMPLOS:
 
-"Registra venda de botox facial, R$ 2.800, cartão 4x" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":2800.00,"categoria":"Botox facial","descricao":"Cartão 4x","data":"${dataHoje}"}}
+"Botox 2800" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":2800.00,"categoria":"Botox","data":"${dataHoje}"}}
 
-"Paguei o boleto de R$ 3.200 dos insumos Allergan" → {"intencao":"registrar_saida","dados":{"tipo":"saida","valor":3200.00,"categoria":"Insumos","descricao":"Allergan - Boleto","data":"${dataHoje}"}}
+"Botox 2800 paciente Maria" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":2800.00,"categoria":"Botox","descricao":"Paciente Maria","data":"${dataHoje}"}}
 
-"Custo de marketing, R$ 800" → {"intencao":"registrar_saida","dados":{"tipo":"saida","valor":800.00,"categoria":"Marketing","data":"${dataHoje}"}}
+"Preenchimento labial 1500 pix" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":1500.00,"categoria":"Preenchimento labial","descricao":"PIX","data":"${dataHoje}"}}
 
-"Qual meu lucro do mês?" → {"intencao":"consultar_saldo","dados":{}}
+"Harmonização facial 4500" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":4500.00,"categoria":"Harmonização facial","data":"${dataHoje}"}}
 
-"Me mostra o resumo financeiro" → {"intencao":"relatorio_mensal","dados":{}}
+"Insumos 3200" → {"intencao":"registrar_saida","dados":{"tipo":"saida","valor":3200.00,"categoria":"Insumos","data":"${dataHoje}"}}
 
-"Últimas vendas" → {"intencao":"consultar_historico","dados":{}}
+"Marketing 800" → {"intencao":"registrar_saida","dados":{"tipo":"saida","valor":800.00,"categoria":"Marketing","data":"${dataHoje}"}}
 
+"Aluguel 5000" → {"intencao":"registrar_saida","dados":{"tipo":"saida","valor":5000.00,"categoria":"Aluguel","data":"${dataHoje}"}}
+
+"Saldo" → {"intencao":"consultar_saldo","dados":{}}
+"Resumo" → {"intencao":"consultar_saldo","dados":{}}
+"Histórico" → {"intencao":"consultar_historico","dados":{}}
+"Relatório" → {"intencao":"relatorio_mensal","dados":{}}
+"Ajuda" → {"intencao":"ajuda","dados":{}}
 "Oi" → {"intencao":"saudacao","dados":{}}
 
-RESPOSTAS DE BOTÕES INTERATIVOS:
-"💰 Ver meu saldo" → {"intencao":"consultar_saldo","dados":{}}
-"💰 Ver saldo" → {"intencao":"consultar_saldo","dados":{}}
-"📋 Ver histórico" → {"intencao":"consultar_historico","dados":{}}
-"📋 Histórico" → {"intencao":"consultar_historico","dados":{}}
-"📊 Relatório mensal" → {"intencao":"relatorio_mensal","dados":{}}
-"❓ Ver ajuda" → {"intencao":"ajuda","dados":{}}
-
-CASOS DE ERRO/AMBIGUIDADE:
-"1500" → {"intencao":"apenas_valor","dados":{"valor":1500.00}}
-
+"2800" → {"intencao":"apenas_valor","dados":{"valor":2800.00}}
 "Botox" → {"intencao":"apenas_procedimento","dados":{"categoria":"Botox"}}
 
-"preenchimento" → {"intencao":"apenas_procedimento","dados":{"categoria":"Preenchimento"}}
-
-"xyz abc" → {"intencao":"mensagem_ambigua","dados":{}}
+RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
 `;
 
     try {
