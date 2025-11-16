@@ -5,18 +5,54 @@ class TransactionController {
     try {
       const { tipo, valor, categoria, descricao, data } = transactionData;
 
-      // Insere na tabela whatsapp_transactions do Lovable Cloud
+      // Primeiro, busca ou cria a categoria
+      let categoryId = null;
+      if (categoria) {
+        // Tenta encontrar categoria existente
+        const { data: existingCat } = await supabase
+          .from('categories')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('name', categoria)
+          .single();
+
+        if (existingCat) {
+          categoryId = existingCat.id;
+        } else {
+          // Cria nova categoria
+          const { data: newCat } = await supabase
+            .from('categories')
+            .insert([{
+              user_id: userId,
+              name: categoria,
+              type: tipo
+            }])
+            .select()
+            .single();
+
+          if (newCat) categoryId = newCat.id;
+        }
+      }
+
+      // Insere na tabela transactions
       const { data: transaction, error } = await supabase
-        .from('whatsapp_transactions')
+        .from('transactions')
         .insert([{
           user_id: userId,
+          category_id: categoryId,
           type: tipo,
           amount: valor,
-          category: categoria || 'Sem categoria',
           description: descricao || null,
           date: data || new Date().toISOString().split('T')[0]
         }])
-        .select()
+        .select(`
+          *,
+          categories (
+            id,
+            name,
+            type
+          )
+        `)
         .single();
 
       if (error) throw error;
@@ -30,7 +66,7 @@ class TransactionController {
   async getBalance(userId) {
     try {
       const { data: transactions, error } = await supabase
-        .from('whatsapp_transactions')
+        .from('transactions')
         .select('type, amount')
         .eq('user_id', userId);
 
@@ -60,20 +96,22 @@ class TransactionController {
   async getRecentTransactions(userId, limit = 10) {
     try {
       const { data, error } = await supabase
-        .from('whatsapp_transactions')
-        .select('*')
+        .from('transactions')
+        .select(`
+          *,
+          categories (
+            id,
+            name,
+            type
+          )
+        `)
         .eq('user_id', userId)
         .order('date', { ascending: false })
         .order('created_at', { ascending: false })
         .limit(limit);
 
       if (error) throw error;
-
-      // Formata para compatibilidade com o código existente
-      return (data || []).map(t => ({
-        ...t,
-        categories: { name: t.category }
-      }));
+      return data || [];
     } catch (error) {
       console.error('Erro ao buscar transações recentes:', error);
       throw error;
@@ -86,8 +124,15 @@ class TransactionController {
       const endDate = new Date(year, month, 0).toISOString().split('T')[0];
 
       const { data: transactions, error } = await supabase
-        .from('whatsapp_transactions')
-        .select('*')
+        .from('transactions')
+        .select(`
+          *,
+          categories (
+            id,
+            name,
+            type
+          )
+        `)
         .eq('user_id', userId)
         .gte('date', startDate)
         .lte('date', endDate)
@@ -108,19 +153,13 @@ class TransactionController {
       const saldo = entradas - saidas;
 
       const porCategoria = transactionList.reduce((acc, t) => {
-        const catName = t.category || 'Sem categoria';
+        const catName = t.categories?.name || 'Sem categoria';
         if (!acc[catName]) {
           acc[catName] = { total: 0, tipo: t.type };
         }
         acc[catName].total += parseFloat(t.amount);
         return acc;
       }, {});
-
-      // Formata transações para compatibilidade
-      const transacoesFormatadas = transactionList.map(t => ({
-        ...t,
-        categories: { name: t.category }
-      }));
 
       return {
         periodo: `${month}/${year}`,
@@ -129,7 +168,7 @@ class TransactionController {
         saldo,
         totalTransacoes: transactionList.length,
         porCategoria,
-        transacoes: transacoesFormatadas
+        transacoes: transactionList
       };
     } catch (error) {
       console.error('Erro ao gerar relatório mensal:', error);

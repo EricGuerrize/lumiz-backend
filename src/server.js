@@ -8,9 +8,10 @@ const dashboardRoutes = require('./routes/dashboard.routes');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Configuração CORS para permitir o Lovable
+// Configuração CORS para permitir o frontend
 app.use(cors({
   origin: [
+    'https://lumiz-financeiro.vercel.app',
     'https://preview--lumiz-financeiro.lovable.app',
     'https://lumiz-financeiro.lovable.app',
     'http://localhost:3000',
