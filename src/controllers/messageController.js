@@ -13,7 +13,19 @@ class MessageController {
     try {
       console.log(`Mensagem recebida de ${phone}: ${message}`);
 
-      const user = await userController.findOrCreateUser(phone);
+      // Verifica se está em processo de onboarding
+      if (userController.isOnboarding(phone)) {
+        return await userController.processOnboarding(phone, message);
+      }
+
+      // Busca usuário pelo telefone
+      const user = await userController.findUserByPhone(phone);
+
+      // Se não encontrou usuário, inicia onboarding
+      if (!user) {
+        userController.startOnboarding(phone);
+        return `Olá! Sou a *Lumiz* 💜\n\nSua assistente para gestão de clínica estética!\n\nParece que você ainda não tem cadastro.\nVou te ajudar a configurar!\n\n*Qual o seu nome completo?*`;
+      }
 
       // Verifica se existe uma transação pendente de confirmação
       if (this.pendingTransactions.has(phone)) {
@@ -67,19 +79,10 @@ class MessageController {
           response = 'Não entendi 🤔\n\nTenta assim:\n"Botox 2800"\n"Insumos 3200"\n"Saldo"\n\nOu manda "ajuda"';
       }
 
-      // Envia resposta somente se não for null (botões já foram enviados)
-      if (response !== null) {
-        await evolutionService.sendMessage(phone, response);
-      }
-
-      return { success: true, intent };
+      return response;
     } catch (error) {
       console.error('Erro ao processar mensagem:', error);
-      await evolutionService.sendMessage(
-        phone,
-        'Desculpe, ocorreu um erro ao processar sua mensagem. Tente novamente.'
-      );
-      return { success: false, error: error.message };
+      return 'Desculpe, ocorreu um erro ao processar sua mensagem. Tente novamente.';
     }
   }
 
