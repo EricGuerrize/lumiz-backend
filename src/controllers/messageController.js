@@ -65,12 +65,20 @@ class MessageController {
           response = await this.handlePendingInstallments(user);
           break;
 
+        case 'enviar_documento':
+          response = `📄 *DOCUMENTOS*\n\nPode me enviar:\n\n📸 *Foto* de boleto, extrato ou nota fiscal\n📝 *Screenshot* de comprovante\n🔢 *Código de barras* do boleto (47-48 dígitos)\n\nVou analisar e extrair as informações automaticamente! ✨`;
+          break;
+
+        case 'codigo_boleto':
+          response = await this.handleBarcodeMessage(user, intent, phone);
+          break;
+
         case 'saudacao':
           response = `Oi! Sou a *Lumiz* 💜\nAssistente financeira para clínicas de estética.\n\n*Me manda assim:*\n\n📝 *Para registrar venda:*\n"Botox, 2800, paciente Maria"\n"Preenchimento labial 1500 pix"\n\n📝 *Para registrar custo:*\n"Insumos 3200"\n"Marketing 800"\n\n📊 *Para consultar:*\n"Saldo" ou "Resumo"\n"Histórico"\n"Relatório"\n\nMe manda sua primeira movimentação! 😊`;
           break;
 
         case 'ajuda':
-          response = `*Exemplos de uso:* 📋\n\n💰 *REGISTRAR VENDA:*\n"Botox 2800 paciente Ana"\n"Preenchimento 1500 pix"\n"Harmonização facial 4500"\n\n💸 *REGISTRAR CUSTO:*\n"Insumos 3200"\n"Marketing 800"\n"Aluguel 5000"\n\n📊 *CONSULTAR:*\n"Saldo" - ver resumo\n"Histórico" - últimas movimentações\n"Relatório" - relatório do mês\n\n*Dica:* Quanto mais info, melhor! Ex:\n"Botox glabela, 2800, Dra. Maria, cartão 3x"`;
+          response = `*Exemplos de uso:* 📋\n\n💰 *REGISTRAR VENDA:*\n"Botox 2800 paciente Ana"\n"Preenchimento 1500 pix"\n"Harmonização facial 4500"\n\n💸 *REGISTRAR CUSTO:*\n"Insumos 3200"\n"Marketing 800"\n"Aluguel 5000"\n\n📄 *DOCUMENTOS:*\nEnvie foto de boleto/extrato\nOu cole o código de barras (47-48 dígitos)\n\n📊 *CONSULTAR:*\n"Saldo" - ver resumo\n"Histórico" - últimas movimentações\n"Relatório" - relatório do mês\n"Parcelas" - ver a receber\n\n*Dica:* Quanto mais info, melhor! Ex:\n"Botox glabela, 2800, Dra. Maria, cartão 3x"`;
           break;
 
         case 'apenas_valor':
@@ -438,6 +446,20 @@ class MessageController {
       console.error('Erro ao processar documento:', error);
       return 'Erro ao analisar documento 😢\n\nTente enviar uma foto ou registre manualmente.';
     }
+  }
+
+  async handleBarcodeMessage(user, intent, phone) {
+    const codigo = intent.dados.codigo;
+
+    // Por enquanto, apenas informa que recebeu o código
+    // Futuramente pode integrar com API de consulta de boleto
+    let response = `🔢 *CÓDIGO DE BARRAS*\n\n`;
+    response += `Recebi o código:\n${codigo}\n\n`;
+    response += `Para registrar este boleto como custo, me informe:\n\n`;
+    response += `📝 *Exemplo:*\n"Fornecedor 1500" ou "Insumos 2300"\n\n`;
+    response += `Ou envie uma *foto do boleto* que eu extraio automaticamente! 📸`;
+
+    return response;
   }
 
   async handleDocumentConfirmation(phone, message, user) {

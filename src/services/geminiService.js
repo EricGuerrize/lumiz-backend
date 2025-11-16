@@ -31,6 +31,8 @@ INTENÇÕES:
 - consultar_parcelas: parcelas, parcelado, cartão, receber, a receber
 - ajuda: ajuda, como usar, exemplos
 - saudacao: oi, olá, bom dia, boa tarde, boa noite
+- enviar_documento: boleto, extrato, nota fiscal, comprovante, documento, pdf
+- codigo_boleto: sequência de 47-48 dígitos (código de barras de boleto)
 - apenas_valor: SÓ número, nada mais
 - apenas_procedimento: SÓ nome de procedimento/produto, sem valor
 - mensagem_ambigua: não conseguiu identificar
@@ -79,6 +81,13 @@ EXEMPLOS:
 
 "2800" → {"intencao":"apenas_valor","dados":{"valor":2800.00}}
 "Botox" → {"intencao":"apenas_procedimento","dados":{"categoria":"Botox"}}
+
+"boleto" → {"intencao":"enviar_documento","dados":{}}
+"documento" → {"intencao":"enviar_documento","dados":{}}
+"extrato" → {"intencao":"enviar_documento","dados":{}}
+"nota fiscal" → {"intencao":"enviar_documento","dados":{}}
+
+"23793.38128 60000.000003 00000.000408 1 84340000012345" → {"intencao":"codigo_boleto","dados":{"codigo":"23793381286000000000300000004081843400001234"}}
 
 RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
 `;
