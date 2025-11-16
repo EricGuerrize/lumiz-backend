@@ -11,8 +11,6 @@ class MessageController {
 
   async handleIncomingMessage(phone, message) {
     try {
-      console.log(`Mensagem recebida de ${phone}: ${message}`);
-
       // Verifica se está em processo de onboarding
       if (userController.isOnboarding(phone)) {
         return await userController.processOnboarding(phone, message);
@@ -33,7 +31,6 @@ class MessageController {
       }
 
       const intent = await geminiService.processMessage(message);
-      console.log('Intenção identificada:', intent);
 
       let response = '';
 
@@ -133,7 +130,6 @@ class MessageController {
   }
 
   async handleConfirmation(phone, message, user) {
-    console.log(`Processando confirmação para ${phone}: "${message}"`);
     const pending = this.pendingTransactions.get(phone);
 
     // Verifica se a confirmação expirou (5 minutos)
@@ -143,7 +139,6 @@ class MessageController {
     }
 
     const messageLower = message.toLowerCase().trim();
-    console.log(`Mensagem normalizada: "${messageLower}"`);
 
     // Confirmação positiva (inclui resposta dos botões)
     if (
@@ -157,20 +152,17 @@ class MessageController {
       messageLower === '✅ confirmar' ||
       messageLower.includes('confirmar')
     ) {
-      console.log('Confirmação positiva detectada, salvando transação...');
       // Salva a transação
       const { tipo, valor, categoria, descricao, data } = pending.dados;
-      console.log('Dados da transação:', { tipo, valor, categoria, descricao, data });
 
       try {
-        const result = await transactionController.createTransaction(user.id, {
+        await transactionController.createTransaction(user.id, {
           tipo,
           valor,
           categoria,
           descricao,
           data
         });
-        console.log('Transação salva com sucesso:', result);
 
         // Remove da lista de pendentes
         this.pendingTransactions.delete(phone);

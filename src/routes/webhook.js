@@ -5,8 +5,7 @@ const evolutionService = require('../services/evolutionService');
 
 router.post('/webhook', async (req, res) => {
   try {
-    console.log('Webhook recebido:', JSON.stringify(req.body, null, 2));
-
+    // Reduzido para evitar rate limit do Railway
     const { event, data } = req.body;
 
     if (event === 'messages.upsert') {
@@ -28,19 +27,17 @@ router.post('/webhook', async (req, res) => {
                           '';
 
       if (phone && messageText) {
-        console.log(`Processando mensagem de ${phone}: ${messageText}`);
+        console.log(`[MSG] ${phone}: ${messageText.substring(0, 50)}`);
 
         // Processa e envia resposta
         try {
           const response = await messageController.handleIncomingMessage(phone, messageText);
-          console.log(`Resposta gerada: ${response}`);
 
           if (response) {
             await evolutionService.sendMessage(phone, response);
-            console.log('Resposta enviada com sucesso');
           }
         } catch (error) {
-          console.error('Erro ao processar mensagem:', error);
+          console.error('Erro webhook:', error.message);
         }
       }
     }
