@@ -3,11 +3,14 @@ const evolutionService = require('../services/evolutionService');
 const userController = require('./userController');
 const transactionController = require('./transactionController');
 const reminderService = require('../services/reminderService');
+const documentService = require('../services/documentService');
 
 class MessageController {
   constructor() {
     // Armazena transações pendentes de confirmação temporariamente
     this.pendingTransactions = new Map();
+    // Armazena transações de documentos pendentes
+    this.pendingDocumentTransactions = new Map();
   }
 
   async handleIncomingMessage(phone, message) {
@@ -29,6 +32,11 @@ class MessageController {
       // Verifica se existe uma transação pendente de confirmação
       if (this.pendingTransactions.has(phone)) {
         return await this.handleConfirmation(phone, message, user);
+      }
+
+      // Verifica se existe transações de documento pendentes
+      if (this.pendingDocumentTransactions.has(phone)) {
+        return await this.handleDocumentConfirmation(phone, message, user);
       }
 
       const intent = await geminiService.processMessage(message);
@@ -361,6 +369,148 @@ class MessageController {
       console.error('Erro ao buscar parcelas:', error);
       return 'Erro ao buscar parcelas 😢\n\nTente novamente.';
     }
+  }
+
+  async handleImageMessage(phone, mediaUrl, caption) {
+    try {
+      // Verifica se usuário está cadastrado
+      if (userController.isOnboarding(phone)) {
+        return 'Complete seu cadastro primeiro! 😊\n\nQual o seu nome completo?';
+      }
+
+      const user = await userController.findUserByPhone(phone);
+      if (!user) {
+        userController.startOnboarding(phone);
+        return `Olá! Sou a *Lumiz* 💜\n\nParece que você ainda não tem cadastro.\nVou te ajudar a configurar!\n\n*Qual o seu nome completo?*`;
+      }
+
+      // Processa a imagem com Gemini Vision
+      const result = await documentService.processImage(mediaUrl);
+
+      if (result.tipo_documento === 'erro' || result.tipo_documento === 'nao_identificado') {
+        return documentService.formatDocumentSummary(result);
+      }
+
+      if (result.transacoes.length === 0) {
+        return documentService.formatDocumentSummary(result);
+      }
+
+      // Armazena transações pendentes de confirmação
+      this.pendingDocumentTransactions.set(phone, {
+        user,
+        transacoes: result.transacoes,
+        timestamp: Date.now()
+      });
+
+      return documentService.formatDocumentSummary(result);
+    } catch (error) {
+      console.error('Erro ao processar imagem:', error);
+      return 'Erro ao analisar imagem 😢\n\nTente enviar novamente ou registre manualmente.';
+    }
+  }
+
+  async handleDocumentMessage(phone, mediaUrl, fileName) {
+    try {
+      // Verifica se usuário está cadastrado
+      if (userController.isOnboarding(phone)) {
+        return 'Complete seu cadastro primeiro! 😊\n\nQual o seu nome completo?';
+      }
+
+      const user = await userController.findUserByPhone(phone);
+      if (!user) {
+        userController.startOnboarding(phone);
+        return `Olá! Sou a *Lumiz* 💜\n\nParece que você ainda não tem cadastro.\nVou te ajudar a configurar!\n\n*Qual o seu nome completo?*`;
+      }
+
+      // Por enquanto, só processamos imagens
+      // PDFs podem ser convertidos em imagens ou processados de outra forma
+      if (fileName.toLowerCase().endsWith('.pdf')) {
+        return `📄 *PDF RECEBIDO*\n\n` +
+               `Recebi o arquivo: ${fileName}\n\n` +
+               `Por enquanto, prefiro *fotos* ou *screenshots* dos documentos.\n\n` +
+               `📸 Tira uma foto do boleto/extrato e me envia!\n\n` +
+               `Ou registre manualmente:\n"Insumos 3200"`;
+      }
+
+      // Tenta processar como imagem
+      return await this.handleImageMessage(phone, mediaUrl, '');
+    } catch (error) {
+      console.error('Erro ao processar documento:', error);
+      return 'Erro ao analisar documento 😢\n\nTente enviar uma foto ou registre manualmente.';
+    }
+  }
+
+  async handleDocumentConfirmation(phone, message, user) {
+    const pending = this.pendingDocumentTransactions.get(phone);
+
+    // Verifica se expirou (10 minutos para documentos)
+    if (Date.now() - pending.timestamp > 10 * 60 * 1000) {
+      this.pendingDocumentTransactions.delete(phone);
+      return 'O tempo para confirmar expirou 😅\n\nEnvie o documento novamente.';
+    }
+
+    const messageLower = message.toLowerCase().trim();
+
+    // Confirmação positiva
+    if (
+      messageLower === 'sim' ||
+      messageLower === 's' ||
+      messageLower === 'confirmar' ||
+      messageLower === 'ok' ||
+      messageLower === 'confirma' ||
+      messageLower.includes('confirmar')
+    ) {
+      try {
+        const transacoes = pending.transacoes;
+        let registradas = 0;
+        let erros = 0;
+
+        for (const t of transacoes) {
+          try {
+            await transactionController.createTransaction(user.id, {
+              tipo: t.tipo,
+              valor: t.valor,
+              categoria: t.categoria,
+              descricao: t.descricao,
+              data: t.data,
+              forma_pagamento: 'avista',
+              parcelas: null,
+              bandeira_cartao: null
+            });
+            registradas++;
+          } catch (err) {
+            console.error('Erro ao registrar transação do documento:', err);
+            erros++;
+          }
+        }
+
+        this.pendingDocumentTransactions.delete(phone);
+
+        if (erros > 0) {
+          return `✅ *${registradas} transação(ões) registrada(s)*\n❌ ${erros} erro(s)\n\nTudo anotadinho!`;
+        }
+
+        const emoji = registradas > 1 ? '📄' : (transacoes[0].tipo === 'entrada' ? '💰' : '💸');
+        return `${emoji} *${registradas} transação(ões) registrada(s) com sucesso!*\n\nTudo anotadinho! ✅`;
+      } catch (error) {
+        console.error('Erro ao salvar transações do documento:', error);
+        return 'Erro ao salvar transações 😢\n\nTente novamente.';
+      }
+    }
+
+    // Confirmação negativa
+    if (
+      messageLower === 'não' ||
+      messageLower === 'nao' ||
+      messageLower === 'n' ||
+      messageLower === 'cancelar' ||
+      messageLower.includes('cancelar')
+    ) {
+      this.pendingDocumentTransactions.delete(phone);
+      return 'Registro cancelado ❌\n\nSe quiser, envie o documento novamente ou registre manualmente.';
+    }
+
+    return 'Não entendi 🤔\n\nResponde "sim" para registrar ou "não" para cancelar.';
   }
 }
 

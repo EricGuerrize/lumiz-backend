@@ -22,16 +22,40 @@ router.post('/webhook', async (req, res) => {
       }
 
       const phone = key.remoteJid?.split('@')[0];
+
+      // Extrai texto da mensagem
       const messageText = message.conversation ||
                           message.extendedTextMessage?.text ||
                           '';
 
-      if (phone && messageText) {
-        console.log(`[MSG] ${phone}: ${messageText.substring(0, 50)}`);
+      // Verifica se é imagem ou documento
+      const imageMessage = message.imageMessage;
+      const documentMessage = message.documentMessage;
 
+      if (phone) {
         // Processa e envia resposta
         try {
-          const response = await messageController.handleIncomingMessage(phone, messageText);
+          let response = '';
+
+          if (imageMessage) {
+            // Mensagem com imagem
+            console.log(`[IMG] ${phone}: Imagem recebida`);
+            const mediaUrl = imageMessage.url || imageMessage.directPath;
+            const caption = imageMessage.caption || '';
+
+            response = await messageController.handleImageMessage(phone, mediaUrl, caption);
+          } else if (documentMessage) {
+            // Mensagem com documento (PDF, etc)
+            console.log(`[DOC] ${phone}: Documento recebido - ${documentMessage.fileName}`);
+            const mediaUrl = documentMessage.url || documentMessage.directPath;
+            const fileName = documentMessage.fileName || 'documento';
+
+            response = await messageController.handleDocumentMessage(phone, mediaUrl, fileName);
+          } else if (messageText) {
+            // Mensagem de texto normal
+            console.log(`[MSG] ${phone}: ${messageText.substring(0, 50)}`);
+            response = await messageController.handleIncomingMessage(phone, messageText);
+          }
 
           if (response) {
             await evolutionService.sendMessage(phone, response);
