@@ -72,7 +72,7 @@ app.get('/api/cron/reminders', async (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     name: 'Lumiz Backend',
-    version: '1.2.0',
+    version: '1.3.0',
     status: 'running',
     endpoints: {
       webhook: '/api/webhook',
@@ -84,6 +84,9 @@ app.get('/', (req, res) => {
       dashboard: {
         summary: '/api/dashboard/summary',
         transactions: '/api/dashboard/transactions',
+        transactionsSearch: '/api/dashboard/transactions/search',
+        transactionUpdate: 'PUT /api/dashboard/transactions/:id',
+        transactionDelete: 'DELETE /api/dashboard/transactions/:id',
         monthlyReport: '/api/dashboard/monthly-report',
         categories: '/api/dashboard/categories',
         statsByCategory: '/api/dashboard/stats/by-category',
@@ -92,6 +95,9 @@ app.get('/', (req, res) => {
         averages: '/api/dashboard/stats/averages',
         kpis: '/api/dashboard/stats/kpis',
         user: '/api/dashboard/user'
+      },
+      auth: {
+        note: 'Use Authorization: Bearer <supabase_token> or x-user-phone header'
       }
     }
   });

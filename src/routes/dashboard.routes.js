@@ -2,27 +2,10 @@ const express = require('express');
 const router = express.Router();
 const transactionController = require('../controllers/transactionController');
 const userController = require('../controllers/userController');
+const { authenticateFlexible } = require('../middleware/authMiddleware');
 
-// Middleware simples de autenticação por telefone
-const authenticateByPhone = async (req, res, next) => {
-  try {
-    const phone = req.headers['x-user-phone'];
-
-    if (!phone) {
-      return res.status(401).json({ error: 'Phone number required in x-user-phone header' });
-    }
-
-    const user = await userController.findOrCreateUser(phone);
-    req.user = user;
-    next();
-  } catch (error) {
-    console.error('Auth error:', error);
-    res.status(500).json({ error: 'Authentication failed' });
-  }
-};
-
-// Aplica autenticação em todas as rotas
-router.use(authenticateByPhone);
+// Aplica autenticação em todas as rotas (aceita JWT ou telefone)
+router.use(authenticateFlexible);
 
 // GET /api/dashboard/summary - Resumo geral (cards principais)
 router.get('/summary', async (req, res) => {
@@ -210,12 +193,98 @@ router.get('/user', async (req, res) => {
   try {
     res.json({
       id: req.user.id,
-      phone: req.user.phone,
+      nome: req.user.nome_completo,
+      clinica: req.user.nome_clinica,
+      phone: req.user.telefone,
       createdAt: req.user.created_at
     });
   } catch (error) {
     console.error('Error getting user info:', error);
     res.status(500).json({ error: 'Failed to get user info' });
+  }
+});
+
+// GET /api/dashboard/transactions/search - Busca transações com filtros
+router.get('/transactions/search', async (req, res) => {
+  try {
+    const {
+      startDate,
+      endDate,
+      tipo,
+      categoria,
+      minValue,
+      maxValue,
+      limit = 50,
+      offset = 0
+    } = req.query;
+
+    const filters = {
+      startDate,
+      endDate,
+      tipo,
+      categoria,
+      minValue: minValue ? parseFloat(minValue) : null,
+      maxValue: maxValue ? parseFloat(maxValue) : null,
+      limit: parseInt(limit),
+      offset: parseInt(offset)
+    };
+
+    const result = await transactionController.searchTransactions(req.user.id, filters);
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error searching transactions:', error);
+    res.status(500).json({ error: 'Failed to search transactions' });
+  }
+});
+
+// PUT /api/dashboard/transactions/:id - Atualizar transação
+router.put('/transactions/:id', async (req, res) => {
+  try {
+    const transactionId = req.params.id;
+    const updateData = req.body;
+
+    const updated = await transactionController.updateTransaction(
+      req.user.id,
+      transactionId,
+      updateData
+    );
+
+    if (!updated) {
+      return res.status(404).json({ error: 'Transação não encontrada' });
+    }
+
+    res.json({
+      message: 'Transação atualizada com sucesso',
+      transaction: updated
+    });
+  } catch (error) {
+    console.error('Error updating transaction:', error);
+    res.status(500).json({ error: 'Failed to update transaction' });
+  }
+});
+
+// DELETE /api/dashboard/transactions/:id - Excluir transação
+router.delete('/transactions/:id', async (req, res) => {
+  try {
+    const transactionId = req.params.id;
+
+    const deleted = await transactionController.deleteTransaction(
+      req.user.id,
+      transactionId
+    );
+
+    if (!deleted) {
+      return res.status(404).json({ error: 'Transação não encontrada' });
+    }
+
+    res.json({
+      message: 'Transação excluída com sucesso',
+      transactionId: transactionId
+    });
+  } catch (error) {
+    console.error('Error deleting transaction:', error);
+    res.status(500).json({ error: 'Failed to delete transaction' });
   }
 });
 

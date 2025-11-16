@@ -290,6 +290,248 @@ class TransactionController {
       throw error;
     }
   }
+
+  async searchTransactions(userId, filters) {
+    try {
+      const { startDate, endDate, tipo, categoria, minValue, maxValue, limit = 50, offset = 0 } = filters;
+
+      let transactions = [];
+
+      // Busca atendimentos (entradas)
+      if (!tipo || tipo === 'entrada') {
+        let atendQuery = supabase
+          .from('atendimentos')
+          .select(`
+            id,
+            data,
+            valor_total,
+            custo_total,
+            observacoes,
+            forma_pagamento,
+            parcelas,
+            bandeira_cartao,
+            atendimento_procedimentos (
+              procedimentos (
+                nome
+              )
+            )
+          `)
+          .eq('user_id', userId);
+
+        if (startDate) atendQuery = atendQuery.gte('data', startDate);
+        if (endDate) atendQuery = atendQuery.lte('data', endDate);
+        if (minValue) atendQuery = atendQuery.gte('valor_total', minValue);
+        if (maxValue) atendQuery = atendQuery.lte('valor_total', maxValue);
+
+        const { data: atendimentos, error: atendError } = await atendQuery
+          .order('data', { ascending: false });
+
+        if (atendError) throw atendError;
+
+        (atendimentos || []).forEach(a => {
+          const catName = a.atendimento_procedimentos?.[0]?.procedimentos?.nome || 'Procedimento';
+
+          // Filtra por categoria se especificado
+          if (categoria && !catName.toLowerCase().includes(categoria.toLowerCase())) {
+            return;
+          }
+
+          transactions.push({
+            id: a.id,
+            type: 'entrada',
+            amount: parseFloat(a.valor_total),
+            date: a.data,
+            category: catName,
+            description: a.observacoes,
+            forma_pagamento: a.forma_pagamento,
+            parcelas: a.parcelas,
+            bandeira_cartao: a.bandeira_cartao,
+            source: 'atendimentos'
+          });
+        });
+      }
+
+      // Busca contas (saídas)
+      if (!tipo || tipo === 'saida') {
+        let contasQuery = supabase
+          .from('contas_pagar')
+          .select('*')
+          .eq('user_id', userId);
+
+        if (startDate) contasQuery = contasQuery.gte('data', startDate);
+        if (endDate) contasQuery = contasQuery.lte('data', endDate);
+        if (minValue) contasQuery = contasQuery.gte('valor', minValue);
+        if (maxValue) contasQuery = contasQuery.lte('valor', maxValue);
+
+        const { data: contas, error: contasError } = await contasQuery
+          .order('data', { ascending: false });
+
+        if (contasError) throw contasError;
+
+        (contas || []).forEach(c => {
+          const catName = c.categoria || c.descricao || 'Despesa';
+
+          // Filtra por categoria se especificado
+          if (categoria && !catName.toLowerCase().includes(categoria.toLowerCase())) {
+            return;
+          }
+
+          transactions.push({
+            id: c.id,
+            type: 'saida',
+            amount: parseFloat(c.valor),
+            date: c.data,
+            category: catName,
+            description: c.observacoes,
+            source: 'contas_pagar'
+          });
+        });
+      }
+
+      // Ordena por data
+      transactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+      // Aplica paginação
+      const total = transactions.length;
+      const paginated = transactions.slice(offset, offset + limit);
+
+      return {
+        transactions: paginated,
+        total,
+        limit,
+        offset,
+        hasMore: offset + limit < total
+      };
+    } catch (error) {
+      console.error('Erro ao buscar transações:', error);
+      throw error;
+    }
+  }
+
+  async updateTransaction(userId, transactionId, updateData) {
+    try {
+      const { tipo, valor, categoria, descricao, data } = updateData;
+
+      // Tenta atualizar atendimento primeiro
+      const { data: atendimento, error: atendError } = await supabase
+        .from('atendimentos')
+        .select('id')
+        .eq('id', transactionId)
+        .eq('user_id', userId)
+        .single();
+
+      if (atendimento && !atendError) {
+        // É um atendimento (entrada)
+        const updates = {};
+        if (valor !== undefined) {
+          updates.valor_total = valor;
+          updates.custo_total = valor * 0.1; // Recalcula custo
+        }
+        if (data !== undefined) updates.data = data;
+        if (descricao !== undefined) updates.observacoes = descricao;
+
+        const { data: updated, error: updateError } = await supabase
+          .from('atendimentos')
+          .update(updates)
+          .eq('id', transactionId)
+          .eq('user_id', userId)
+          .select()
+          .single();
+
+        if (updateError) throw updateError;
+        return { ...updated, type: 'entrada' };
+      }
+
+      // Se não for atendimento, tenta conta a pagar
+      const { data: conta, error: contaError } = await supabase
+        .from('contas_pagar')
+        .select('id')
+        .eq('id', transactionId)
+        .eq('user_id', userId)
+        .single();
+
+      if (conta && !contaError) {
+        // É uma conta (saída)
+        const updates = {};
+        if (valor !== undefined) updates.valor = valor;
+        if (data !== undefined) updates.data = data;
+        if (descricao !== undefined) updates.observacoes = descricao;
+        if (categoria !== undefined) {
+          updates.categoria = categoria;
+          updates.descricao = categoria;
+        }
+
+        const { data: updated, error: updateError } = await supabase
+          .from('contas_pagar')
+          .update(updates)
+          .eq('id', transactionId)
+          .eq('user_id', userId)
+          .select()
+          .single();
+
+        if (updateError) throw updateError;
+        return { ...updated, type: 'saida' };
+      }
+
+      return null; // Não encontrado
+    } catch (error) {
+      console.error('Erro ao atualizar transação:', error);
+      throw error;
+    }
+  }
+
+  async deleteTransaction(userId, transactionId) {
+    try {
+      // Tenta deletar atendimento primeiro
+      const { data: atendimento, error: atendCheckError } = await supabase
+        .from('atendimentos')
+        .select('id')
+        .eq('id', transactionId)
+        .eq('user_id', userId)
+        .single();
+
+      if (atendimento && !atendCheckError) {
+        // É um atendimento - deleta procedimentos relacionados primeiro
+        await supabase
+          .from('atendimento_procedimentos')
+          .delete()
+          .eq('atendimento_id', transactionId);
+
+        const { error: deleteError } = await supabase
+          .from('atendimentos')
+          .delete()
+          .eq('id', transactionId)
+          .eq('user_id', userId);
+
+        if (deleteError) throw deleteError;
+        return { id: transactionId, type: 'entrada' };
+      }
+
+      // Se não for atendimento, tenta conta a pagar
+      const { data: conta, error: contaCheckError } = await supabase
+        .from('contas_pagar')
+        .select('id')
+        .eq('id', transactionId)
+        .eq('user_id', userId)
+        .single();
+
+      if (conta && !contaCheckError) {
+        const { error: deleteError } = await supabase
+          .from('contas_pagar')
+          .delete()
+          .eq('id', transactionId)
+          .eq('user_id', userId);
+
+        if (deleteError) throw deleteError;
+        return { id: transactionId, type: 'saida' };
+      }
+
+      return null; // Não encontrado
+    } catch (error) {
+      console.error('Erro ao deletar transação:', error);
+      throw error;
+    }
+  }
 }
 
 module.exports = new TransactionController();
