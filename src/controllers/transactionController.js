@@ -4,12 +4,12 @@ const userController = require('./userController');
 class TransactionController {
   async createTransaction(userId, transactionData) {
     try {
-      const { tipo, valor, categoria, descricao, data } = transactionData;
+      const { tipo, valor, categoria, descricao, data, forma_pagamento, parcelas, bandeira_cartao } = transactionData;
       console.log('Criando transação para usuário:', userId);
 
       if (tipo === 'entrada') {
         // RECEITA = Criar atendimento
-        return await this.createAtendimento(userId, { valor, categoria, descricao, data });
+        return await this.createAtendimento(userId, { valor, categoria, descricao, data, forma_pagamento, parcelas, bandeira_cartao });
       } else {
         // CUSTO = Criar conta a pagar
         return await this.createContaPagar(userId, { valor, categoria, descricao, data });
@@ -20,7 +20,7 @@ class TransactionController {
     }
   }
 
-  async createAtendimento(userId, { valor, categoria, descricao, data }) {
+  async createAtendimento(userId, { valor, categoria, descricao, data, forma_pagamento, parcelas, bandeira_cartao }) {
     try {
       // Extrai nome do cliente da descrição se houver
       let nomeCliente = 'Cliente WhatsApp';
@@ -46,6 +46,10 @@ class TransactionController {
       // Calcula custo estimado (10% do valor cobrado como exemplo)
       const custoEstimado = valor * 0.1;
 
+      // Define forma de pagamento e status
+      const formaPagto = forma_pagamento === 'parcelado' ? 'parcelado' : 'avista';
+      const statusPagto = forma_pagamento === 'parcelado' ? 'agendado' : 'pago';
+
       // Cria atendimento
       const { data: atendimento, error: atendError } = await supabase
         .from('atendimentos')
@@ -55,15 +59,17 @@ class TransactionController {
           data: data || new Date().toISOString().split('T')[0],
           valor_total: valor,
           custo_total: custoEstimado,
-          forma_pagamento: 'avista',
-          status_pagamento: 'pago',
+          forma_pagamento: formaPagto,
+          status_pagamento: statusPagto,
+          parcelas: parcelas || null,
+          bandeira_cartao: bandeira_cartao || null,
           observacoes: descricao || null
         }])
         .select()
         .single();
 
       if (atendError) throw atendError;
-      console.log('Atendimento criado:', atendimento.id);
+      console.log('Atendimento criado:', atendimento.id, 'Parcelas:', parcelas || 'À vista');
 
       // Cria registro de procedimento no atendimento
       const { error: procError } = await supabase

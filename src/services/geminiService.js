@@ -40,16 +40,25 @@ EXTRAÇÃO:
 - DESCRICAO: paciente, marca, forma de pagamento
 - DATA: "${dataHoje}" (se "ontem": calcular)
 - TIPO: "entrada" (venda) ou "saida" (custo)
+- FORMA_PAGAMENTO: "avista" (padrão), "parcelado" (se mencionar parcelas/cartão)
+- PARCELAS: número de parcelas (se parcelado)
+- BANDEIRA_CARTAO: visa, mastercard, elo, etc (se mencionado)
 
 EXEMPLOS:
 
-"Botox 2800" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":2800.00,"categoria":"Botox","data":"${dataHoje}"}}
+"Botox 2800" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":2800.00,"categoria":"Botox","forma_pagamento":"avista","data":"${dataHoje}"}}
 
-"Botox 2800 paciente Maria" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":2800.00,"categoria":"Botox","descricao":"Paciente Maria","data":"${dataHoje}"}}
+"Botox 2800 paciente Maria" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":2800.00,"categoria":"Botox","descricao":"Paciente Maria","forma_pagamento":"avista","data":"${dataHoje}"}}
 
-"Preenchimento labial 1500 pix" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":1500.00,"categoria":"Preenchimento labial","descricao":"PIX","data":"${dataHoje}"}}
+"Botox 2800 3x cartão paciente Maria" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":2800.00,"categoria":"Botox","descricao":"Paciente Maria","forma_pagamento":"parcelado","parcelas":3,"data":"${dataHoje}"}}
 
-"Harmonização facial 4500" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":4500.00,"categoria":"Harmonização facial","data":"${dataHoje}"}}
+"Preenchimento 4500 6x visa" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":4500.00,"categoria":"Preenchimento","forma_pagamento":"parcelado","parcelas":6,"bandeira_cartao":"visa","data":"${dataHoje}"}}
+
+"Harmonização 8000 10x mastercard cliente João" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":8000.00,"categoria":"Harmonização","descricao":"Cliente João","forma_pagamento":"parcelado","parcelas":10,"bandeira_cartao":"mastercard","data":"${dataHoje}"}}
+
+"Preenchimento labial 1500 pix" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":1500.00,"categoria":"Preenchimento labial","descricao":"PIX","forma_pagamento":"avista","data":"${dataHoje}"}}
+
+"Harmonização facial 4500" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":4500.00,"categoria":"Harmonização facial","forma_pagamento":"avista","data":"${dataHoje}"}}
 
 "Insumos 3200" → {"intencao":"registrar_saida","dados":{"tipo":"saida","valor":3200.00,"categoria":"Insumos","data":"${dataHoje}"}}
 

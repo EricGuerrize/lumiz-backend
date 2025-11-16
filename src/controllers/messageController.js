@@ -84,7 +84,7 @@ class MessageController {
   }
 
   async handleTransactionRequest(user, intent, phone) {
-    const { tipo, valor, categoria, descricao, data } = intent.dados;
+    const { tipo, valor, categoria, descricao, data, forma_pagamento, parcelas, bandeira_cartao } = intent.dados;
 
     if (!valor || valor <= 0) {
       return 'Não consegui identificar o valor 🤔\n\nMe manda assim: "Botox 2800" ou "Insumos 3200"';
@@ -93,7 +93,7 @@ class MessageController {
     // Armazena a transação pendente
     this.pendingTransactions.set(phone, {
       user,
-      dados: { tipo, valor, categoria, descricao, data },
+      dados: { tipo, valor, categoria, descricao, data, forma_pagamento, parcelas, bandeira_cartao },
       timestamp: Date.now()
     });
 
@@ -111,6 +111,18 @@ class MessageController {
     if (descricao) {
       message += `📝 ${descricao}\n`;
     }
+
+    // Adiciona informações de parcelamento
+    if (forma_pagamento === 'parcelado' && parcelas) {
+      const valorParcela = valor / parcelas;
+      message += `💳 *${parcelas}x de R$ ${valorParcela.toFixed(2)}*\n`;
+      if (bandeira_cartao) {
+        message += `🏷️ ${bandeira_cartao.toUpperCase()}\n`;
+      }
+    } else {
+      message += `💳 À vista\n`;
+    }
+
     message += `📅 ${dataFormatada}\n\n`;
     message += `Responde *SIM* pra confirmar ou *NÃO* pra cancelar`;
 
@@ -153,7 +165,7 @@ class MessageController {
       messageLower.includes('confirmar')
     ) {
       // Salva a transação
-      const { tipo, valor, categoria, descricao, data } = pending.dados;
+      const { tipo, valor, categoria, descricao, data, forma_pagamento, parcelas, bandeira_cartao } = pending.dados;
 
       try {
         await transactionController.createTransaction(user.id, {
@@ -161,7 +173,10 @@ class MessageController {
           valor,
           categoria,
           descricao,
-          data
+          data,
+          forma_pagamento,
+          parcelas,
+          bandeira_cartao
         });
 
         // Remove da lista de pendentes
@@ -170,7 +185,17 @@ class MessageController {
         const tipoTexto = tipo === 'entrada' ? 'Receita' : 'Custo';
         const emoji = tipo === 'entrada' ? '💰' : '💸';
 
-        return `${emoji} *${tipoTexto} registrada com sucesso!*\n\nTudo anotadinho! ✅`;
+        let successMsg = `${emoji} *${tipoTexto} registrada com sucesso!*\n\n`;
+
+        if (forma_pagamento === 'parcelado' && parcelas) {
+          const valorParcela = valor / parcelas;
+          successMsg += `💳 ${parcelas}x de R$ ${valorParcela.toFixed(2)}\n`;
+          successMsg += `📅 Você receberá lembretes mensais!\n\n`;
+        }
+
+        successMsg += `Tudo anotadinho! ✅`;
+
+        return successMsg;
       } catch (error) {
         console.error('Erro ao salvar transação:', error);
         return `Erro ao salvar transação 😢\n\nTente novamente.`;
