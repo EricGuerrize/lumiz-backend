@@ -28,6 +28,7 @@ INTENÇÕES:
 - consultar_saldo: saldo, resumo, lucro, quanto tenho
 - consultar_historico: histórico, últimas, movimentações
 - relatorio_mensal: relatório, mês, mensal
+- consultar_parcelas: parcelas, parcelado, cartão, receber, a receber
 - ajuda: ajuda, como usar, exemplos
 - saudacao: oi, olá, bom dia, boa tarde, boa noite
 - apenas_valor: SÓ número, nada mais
@@ -70,6 +71,9 @@ EXEMPLOS:
 "Resumo" → {"intencao":"consultar_saldo","dados":{}}
 "Histórico" → {"intencao":"consultar_historico","dados":{}}
 "Relatório" → {"intencao":"relatorio_mensal","dados":{}}
+"Parcelas" → {"intencao":"consultar_parcelas","dados":{}}
+"A receber" → {"intencao":"consultar_parcelas","dados":{}}
+"Cartão" → {"intencao":"consultar_parcelas","dados":{}}
 "Ajuda" → {"intencao":"ajuda","dados":{}}
 "Oi" → {"intencao":"saudacao","dados":{}}
 

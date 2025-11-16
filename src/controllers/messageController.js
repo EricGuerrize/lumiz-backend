@@ -2,6 +2,7 @@ const geminiService = require('../services/geminiService');
 const evolutionService = require('../services/evolutionService');
 const userController = require('./userController');
 const transactionController = require('./transactionController');
+const reminderService = require('../services/reminderService');
 
 class MessageController {
   constructor() {
@@ -50,6 +51,10 @@ class MessageController {
 
         case 'relatorio_mensal':
           response = await this.handleMonthlyReport(user);
+          break;
+
+        case 'consultar_parcelas':
+          response = await this.handlePendingInstallments(user);
           break;
 
         case 'saudacao':
@@ -299,6 +304,63 @@ class MessageController {
     }
 
     return response;
+  }
+
+  async handlePendingInstallments(user) {
+    try {
+      const installments = await reminderService.getPendingInstallments(user.id);
+
+      if (installments.length === 0) {
+        return `💳 *PARCELAS A RECEBER*\n\nNenhuma parcela pendente! ✅\n\nPara registrar venda parcelada:\n"Botox 2800 3x cartão paciente Maria"`;
+      }
+
+      let response = `💳 *PARCELAS A RECEBER*\n\n`;
+
+      // Total a receber
+      const totalReceber = installments.reduce((sum, i) => sum + i.valor_parcela, 0);
+      response += `💵 Total: *R$ ${totalReceber.toFixed(2)}*\n`;
+      response += `📋 ${installments.length} parcela${installments.length > 1 ? 's' : ''}\n\n`;
+
+      // Agrupa por mês
+      const porMes = {};
+      installments.forEach(inst => {
+        const mesAno = inst.data_vencimento.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' });
+        if (!porMes[mesAno]) {
+          porMes[mesAno] = [];
+        }
+        porMes[mesAno].push(inst);
+      });
+
+      // Mostra próximas 10 parcelas
+      let count = 0;
+      for (const [mesAno, parcelas] of Object.entries(porMes)) {
+        if (count >= 10) break;
+
+        response += `📅 *${mesAno.toUpperCase()}*\n`;
+
+        for (const p of parcelas) {
+          if (count >= 10) break;
+
+          const dataFormatada = p.data_vencimento.toLocaleDateString('pt-BR', {
+            day: '2-digit',
+            month: '2-digit'
+          });
+
+          response += `  ${p.parcela_atual}/${p.total_parcelas} • R$ ${p.valor_parcela.toFixed(2)} • ${p.cliente}\n`;
+          count++;
+        }
+        response += `\n`;
+      }
+
+      if (installments.length > 10) {
+        response += `... e mais ${installments.length - 10} parcela${installments.length - 10 > 1 ? 's' : ''}`;
+      }
+
+      return response.trim();
+    } catch (error) {
+      console.error('Erro ao buscar parcelas:', error);
+      return 'Erro ao buscar parcelas 😢\n\nTente novamente.';
+    }
   }
 }
 

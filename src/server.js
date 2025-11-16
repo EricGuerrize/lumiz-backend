@@ -4,6 +4,7 @@ require('dotenv').config();
 
 const webhookRoutes = require('./routes/webhook');
 const dashboardRoutes = require('./routes/dashboard.routes');
+const reminderService = require('./services/reminderService');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -41,15 +42,45 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Endpoint para cron job de lembretes
+app.get('/api/cron/reminders', async (req, res) => {
+  try {
+    // Verifica secret key para segurança (opcional, mas recomendado)
+    const cronSecret = req.headers['x-cron-secret'] || req.query.secret;
+    if (process.env.CRON_SECRET && cronSecret !== process.env.CRON_SECRET) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    console.log('[CRON] Iniciando verificação de lembretes...');
+    const reminders = await reminderService.checkAndSendReminders();
+
+    res.json({
+      status: 'success',
+      timestamp: new Date().toISOString(),
+      reminders_sent: reminders.length,
+      details: reminders
+    });
+  } catch (error) {
+    console.error('[CRON] Erro:', error);
+    res.status(500).json({
+      status: 'error',
+      message: error.message
+    });
+  }
+});
+
 app.get('/', (req, res) => {
   res.json({
     name: 'Lumiz Backend',
-    version: '1.1.0',
+    version: '1.2.0',
     status: 'running',
     endpoints: {
       webhook: '/api/webhook',
       test: '/api/test',
       health: '/health',
+      cron: {
+        reminders: '/api/cron/reminders'
+      },
       dashboard: {
         summary: '/api/dashboard/summary',
         transactions: '/api/dashboard/transactions',
