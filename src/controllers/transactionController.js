@@ -5,19 +5,15 @@ class TransactionController {
     try {
       const { tipo, valor, categoria, descricao, data } = transactionData;
 
-      let categoryId = null;
-      if (categoria) {
-        categoryId = await this.findOrCreateCategory(userId, categoria, tipo);
-      }
-
+      // Insere na tabela whatsapp_transactions do Lovable Cloud
       const { data: transaction, error } = await supabase
-        .from('transactions')
+        .from('whatsapp_transactions')
         .insert([{
           user_id: userId,
-          category_id: categoryId,
           type: tipo,
           amount: valor,
-          description: descricao,
+          category: categoria || 'Sem categoria',
+          description: descricao || null,
           date: data || new Date().toISOString().split('T')[0]
         }])
         .select()
@@ -31,61 +27,24 @@ class TransactionController {
     }
   }
 
-  async findOrCreateCategory(userId, categoryName, type) {
-    try {
-      const { data: existing } = await supabase
-        .from('categories')
-        .select('id')
-        .eq('user_id', userId)
-        .ilike('name', categoryName)
-        .single();
-
-      if (existing) {
-        return existing.id;
-      }
-
-      const { data: newCategory, error } = await supabase
-        .from('categories')
-        .insert([{
-          user_id: userId,
-          name: categoryName,
-          type: type
-        }])
-        .select('id')
-        .single();
-
-      if (error) throw error;
-      return newCategory.id;
-    } catch (error) {
-      console.error('Erro ao buscar/criar categoria:', error);
-      return null;
-    }
-  }
-
   async getBalance(userId) {
     try {
       const { data: transactions, error } = await supabase
-        .from('transactions')
+        .from('whatsapp_transactions')
         .select('type, amount')
         .eq('user_id', userId);
 
       if (error) throw error;
 
-      const balance = transactions.reduce((acc, t) => {
-        if (t.type === 'entrada') {
-          return acc + parseFloat(t.amount);
-        } else {
-          return acc - parseFloat(t.amount);
-        }
-      }, 0);
-
-      const entradas = transactions
+      const entradas = (transactions || [])
         .filter(t => t.type === 'entrada')
         .reduce((acc, t) => acc + parseFloat(t.amount), 0);
 
-      const saidas = transactions
+      const saidas = (transactions || [])
         .filter(t => t.type === 'saida')
         .reduce((acc, t) => acc + parseFloat(t.amount), 0);
+
+      const balance = entradas - saidas;
 
       return {
         saldo: balance,
@@ -101,17 +60,20 @@ class TransactionController {
   async getRecentTransactions(userId, limit = 10) {
     try {
       const { data, error } = await supabase
-        .from('transactions')
-        .select(`
-          *,
-          categories (name)
-        `)
+        .from('whatsapp_transactions')
+        .select('*')
         .eq('user_id', userId)
         .order('date', { ascending: false })
+        .order('created_at', { ascending: false })
         .limit(limit);
 
       if (error) throw error;
-      return data;
+
+      // Formata para compatibilidade com o código existente
+      return (data || []).map(t => ({
+        ...t,
+        categories: { name: t.category }
+      }));
     } catch (error) {
       console.error('Erro ao buscar transações recentes:', error);
       throw error;
@@ -124,11 +86,8 @@ class TransactionController {
       const endDate = new Date(year, month, 0).toISOString().split('T')[0];
 
       const { data: transactions, error } = await supabase
-        .from('transactions')
-        .select(`
-          *,
-          categories (name)
-        `)
+        .from('whatsapp_transactions')
+        .select('*')
         .eq('user_id', userId)
         .gte('date', startDate)
         .lte('date', endDate)
@@ -136,18 +95,20 @@ class TransactionController {
 
       if (error) throw error;
 
-      const entradas = transactions
+      const transactionList = transactions || [];
+
+      const entradas = transactionList
         .filter(t => t.type === 'entrada')
         .reduce((acc, t) => acc + parseFloat(t.amount), 0);
 
-      const saidas = transactions
+      const saidas = transactionList
         .filter(t => t.type === 'saida')
         .reduce((acc, t) => acc + parseFloat(t.amount), 0);
 
       const saldo = entradas - saidas;
 
-      const porCategoria = transactions.reduce((acc, t) => {
-        const catName = t.categories?.name || 'Sem categoria';
+      const porCategoria = transactionList.reduce((acc, t) => {
+        const catName = t.category || 'Sem categoria';
         if (!acc[catName]) {
           acc[catName] = { total: 0, tipo: t.type };
         }
@@ -155,14 +116,20 @@ class TransactionController {
         return acc;
       }, {});
 
+      // Formata transações para compatibilidade
+      const transacoesFormatadas = transactionList.map(t => ({
+        ...t,
+        categories: { name: t.category }
+      }));
+
       return {
         periodo: `${month}/${year}`,
         entradas,
         saidas,
         saldo,
-        totalTransacoes: transactions.length,
+        totalTransacoes: transactionList.length,
         porCategoria,
-        transacoes: transactions
+        transacoes: transacoesFormatadas
       };
     } catch (error) {
       console.error('Erro ao gerar relatório mensal:', error);

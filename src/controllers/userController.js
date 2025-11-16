@@ -3,8 +3,9 @@ const supabase = require('../db/supabase');
 class UserController {
   async findOrCreateUser(phone) {
     try {
+      // Busca na tabela whatsapp_users do Lovable Cloud
       const { data: existingUser, error: fetchError } = await supabase
-        .from('users')
+        .from('whatsapp_users')
         .select('*')
         .eq('phone', phone)
         .single();
@@ -13,8 +14,9 @@ class UserController {
         return existingUser;
       }
 
+      // Cria novo usuário na tabela whatsapp_users
       const { data: newUser, error: createError } = await supabase
-        .from('users')
+        .from('whatsapp_users')
         .insert([{ phone }])
         .select()
         .single();
@@ -55,7 +57,8 @@ class UserController {
     ];
 
     try {
-      await supabase.from('categories').insert(defaultCategories);
+      // Usa tabela whatsapp_categories do Lovable Cloud
+      await supabase.from('whatsapp_categories').insert(defaultCategories);
     } catch (error) {
       console.error('Erro ao criar categorias padrão:', error);
     }
@@ -81,7 +84,7 @@ class UserController {
   async getUserCategories(userId) {
     try {
       const { data, error } = await supabase
-        .from('categories')
+        .from('whatsapp_categories')
         .select('*')
         .eq('user_id', userId)
         .order('name', { ascending: true });
