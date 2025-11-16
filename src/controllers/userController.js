@@ -89,10 +89,13 @@ class UserController {
                  `✅ Email: ${onboarding.data.email}\n` +
                  `✅ WhatsApp: ${phone}\n\n`;
 
+          response += `🔐 *ACESSO AO DASHBOARD:*\n` +
+                     `Email: ${onboarding.data.email}\n` +
+                     `Senha: ${result.tempPassword}\n\n` +
+                     `Acesse: https://lumiz-financeiro.vercel.app\n\n`;
+
           if (result.resetLink) {
-            response += `🔐 *ACESSO AO DASHBOARD:*\n` +
-                       `Clique no link abaixo para definir sua senha:\n` +
-                       `${result.resetLink}\n\n`;
+            response += `_Recomendamos trocar a senha depois._\n\n`;
           }
 
           response += `Agora você pode:\n` +
@@ -197,7 +200,8 @@ class UserController {
 
       return {
         user: newUser,
-        resetLink
+        resetLink,
+        tempPassword // Envia senha temporária para login imediato
       };
     } catch (error) {
       console.error('Erro ao criar usuário no onboarding:', error);
