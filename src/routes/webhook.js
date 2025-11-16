@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const messageController = require('../controllers/messageController');
+const evolutionService = require('../services/evolutionService');
 
 router.post('/webhook', async (req, res) => {
   try {
@@ -28,8 +29,19 @@ router.post('/webhook', async (req, res) => {
 
       if (phone && messageText) {
         console.log(`Processando mensagem de ${phone}: ${messageText}`);
-        messageController.handleIncomingMessage(phone, messageText)
-          .catch(error => console.error('Erro ao processar mensagem:', error));
+
+        // Processa e envia resposta
+        try {
+          const response = await messageController.handleIncomingMessage(phone, messageText);
+          console.log(`Resposta gerada: ${response}`);
+
+          if (response) {
+            await evolutionService.sendMessage(phone, response);
+            console.log('Resposta enviada com sucesso');
+          }
+        } catch (error) {
+          console.error('Erro ao processar mensagem:', error);
+        }
       }
     }
 
