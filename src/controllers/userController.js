@@ -77,18 +77,25 @@ class UserController {
 
         // Finaliza o cadastro
         try {
-          const user = await this.createUserFromOnboarding(onboarding.data);
+          const result = await this.createUserFromOnboarding(onboarding.data);
           this.onboardingData.delete(phone);
 
           // Cria procedimentos padrão
-          await this.createDefaultProcedimentos(user.id);
+          await this.createDefaultProcedimentos(result.user.id);
 
-          return `🎉 *CADASTRO CONCLUÍDO!*\n\n` +
-                 `✅ Nome: ${user.nome_completo}\n` +
-                 `✅ Clínica: ${user.nome_clinica}\n` +
+          let response = `🎉 *CADASTRO CONCLUÍDO!*\n\n` +
+                 `✅ Nome: ${result.user.nome_completo}\n` +
+                 `✅ Clínica: ${result.user.nome_clinica}\n` +
                  `✅ Email: ${onboarding.data.email}\n` +
-                 `✅ WhatsApp: ${phone}\n\n` +
-                 `Agora você pode:\n` +
+                 `✅ WhatsApp: ${phone}\n\n`;
+
+          if (result.resetLink) {
+            response += `🔐 *ACESSO AO DASHBOARD:*\n` +
+                       `Clique no link abaixo para definir sua senha:\n` +
+                       `${result.resetLink}\n\n`;
+          }
+
+          response += `Agora você pode:\n` +
                  `📝 Registrar atendimentos\n` +
                  `📊 Ver relatórios\n` +
                  `💰 Controlar finanças\n\n` +
@@ -96,6 +103,8 @@ class UserController {
                  `"Botox 2800 paciente Maria"\n` +
                  `"Preenchimento 1500 João"\n\n` +
                  `Ou digite "ajuda" para ver mais opções! 😊`;
+
+          return response;
         } catch (error) {
           console.error('Erro ao criar usuário:', error);
           this.onboardingData.delete(phone);
@@ -112,18 +121,37 @@ class UserController {
     try {
       const { nome_completo, nome_clinica, telefone, email } = data;
 
-      // Verifica se email já existe no Auth
-      // Como não temos acesso direto ao Auth, vamos criar apenas no profiles
-      // e o usuário pode depois criar senha pelo site
+      // Gera uma senha temporária aleatória
+      const tempPassword = Math.random().toString(36).slice(-12) + 'A1!';
 
-      // Gera um UUID para o novo usuário
-      const { v4: uuidv4 } = require('uuid');
-      const newId = uuidv4();
+      // Cria usuário no Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+        email: email,
+        password: tempPassword,
+        email_confirm: true, // Confirma email automaticamente
+        user_metadata: {
+          nome_completo,
+          nome_clinica,
+          telefone
+        }
+      });
 
-      const { data: newUser, error } = await supabase
+      if (authError) {
+        if (authError.message.includes('already been registered')) {
+          throw new Error('Este email já está cadastrado. Use outro email.');
+        }
+        console.error('Erro Auth:', authError);
+        throw new Error('Erro ao criar conta. Tente novamente.');
+      }
+
+      const userId = authData.user.id;
+      console.log('Usuário Auth criado:', userId);
+
+      // Cria profile com o mesmo ID do Auth
+      const { data: newUser, error: profileError } = await supabase
         .from('profiles')
         .insert([{
-          id: newId,
+          id: userId,
           nome_completo,
           nome_clinica,
           telefone,
@@ -132,22 +160,45 @@ class UserController {
         .select()
         .single();
 
-      if (error) {
-        if (error.code === '23505') {
+      if (profileError) {
+        // Se der erro no profile, deleta o usuário do Auth
+        await supabase.auth.admin.deleteUser(userId);
+        if (profileError.code === '23505') {
           throw new Error('Este telefone já está cadastrado.');
         }
-        throw error;
+        throw profileError;
       }
 
       // Cria role de admin para o usuário
       await supabase
         .from('user_roles')
         .insert([{
-          user_id: newId,
+          user_id: userId,
           role: 'admin'
         }]);
 
-      return newUser;
+      // Gera link de reset de senha para o usuário definir sua senha
+      let resetLink = null;
+      try {
+        const { data: resetData, error: resetError } = await supabase.auth.admin.generateLink({
+          type: 'recovery',
+          email: email,
+          options: {
+            redirectTo: process.env.DASHBOARD_URL || 'https://lumiz-financeiro.vercel.app'
+          }
+        });
+
+        if (!resetError && resetData) {
+          resetLink = resetData.properties?.action_link;
+        }
+      } catch (linkError) {
+        console.error('Erro ao gerar link de reset:', linkError);
+      }
+
+      return {
+        user: newUser,
+        resetLink
+      };
     } catch (error) {
       console.error('Erro ao criar usuário no onboarding:', error);
       throw error;
