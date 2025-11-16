@@ -130,6 +130,7 @@ class MessageController {
   }
 
   async handleConfirmation(phone, message, user) {
+    console.log(`Processando confirmação para ${phone}: "${message}"`);
     const pending = this.pendingTransactions.get(phone);
 
     // Verifica se a confirmação expirou (5 minutos)
@@ -139,6 +140,7 @@ class MessageController {
     }
 
     const messageLower = message.toLowerCase().trim();
+    console.log(`Mensagem normalizada: "${messageLower}"`);
 
     // Confirmação positiva (inclui resposta dos botões)
     if (
@@ -152,24 +154,32 @@ class MessageController {
       messageLower === '✅ confirmar' ||
       messageLower.includes('confirmar')
     ) {
+      console.log('Confirmação positiva detectada, salvando transação...');
       // Salva a transação
       const { tipo, valor, categoria, descricao, data } = pending.dados;
+      console.log('Dados da transação:', { tipo, valor, categoria, descricao, data });
 
-      await transactionController.createTransaction(user.id, {
-        tipo,
-        valor,
-        categoria,
-        descricao,
-        data
-      });
+      try {
+        const result = await transactionController.createTransaction(user.id, {
+          tipo,
+          valor,
+          categoria,
+          descricao,
+          data
+        });
+        console.log('Transação salva com sucesso:', result);
 
-      // Remove da lista de pendentes
-      this.pendingTransactions.delete(phone);
+        // Remove da lista de pendentes
+        this.pendingTransactions.delete(phone);
 
-      const tipoTexto = tipo === 'entrada' ? 'Receita' : 'Custo';
-      const emoji = tipo === 'entrada' ? '💰' : '💸';
+        const tipoTexto = tipo === 'entrada' ? 'Receita' : 'Custo';
+        const emoji = tipo === 'entrada' ? '💰' : '💸';
 
-      return `${emoji} *${tipoTexto} registrada com sucesso!*\n\nTudo anotadinho! ✅`;
+        return `${emoji} *${tipoTexto} registrada com sucesso!*\n\nTudo anotadinho! ✅`;
+      } catch (error) {
+        console.error('Erro ao salvar transação:', error);
+        return `Erro ao salvar transação 😢\n\nTente novamente.`;
+      }
     }
 
     // Confirmação negativa (inclui resposta dos botões)
