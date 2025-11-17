@@ -532,6 +532,145 @@ class TransactionController {
       throw error;
     }
   }
+
+  async getTodayStats(userId) {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+
+      // Busca atendimentos de hoje
+      const { data: atendimentos, error: atendError } = await supabase
+        .from('atendimentos')
+        .select(`
+          valor_total,
+          custo_total,
+          atendimento_procedimentos (
+            procedimentos (
+              nome
+            )
+          )
+        `)
+        .eq('user_id', userId)
+        .eq('data', today);
+
+      if (atendError) throw atendError;
+
+      // Busca contas de hoje
+      const { data: contas, error: contasError } = await supabase
+        .from('contas_pagar')
+        .select('valor, categoria')
+        .eq('user_id', userId)
+        .eq('data', today);
+
+      if (contasError) throw contasError;
+
+      const faturamento = (atendimentos || []).reduce((acc, a) => acc + parseFloat(a.valor_total || 0), 0);
+      const custosAtend = (atendimentos || []).reduce((acc, a) => acc + parseFloat(a.custo_total || 0), 0);
+      const custosContas = (contas || []).reduce((acc, c) => acc + parseFloat(c.valor || 0), 0);
+      const totalCustos = custosAtend + custosContas;
+      const lucro = faturamento - totalCustos;
+
+      // Agrupa vendas por procedimento
+      const porProcedimento = {};
+      (atendimentos || []).forEach(a => {
+        const procName = a.atendimento_procedimentos?.[0]?.procedimentos?.nome || 'Procedimento';
+        if (!porProcedimento[procName]) {
+          porProcedimento[procName] = { quantidade: 0, valor: 0 };
+        }
+        porProcedimento[procName].quantidade++;
+        porProcedimento[procName].valor += parseFloat(a.valor_total || 0);
+      });
+
+      return {
+        faturamento,
+        custos: totalCustos,
+        lucro,
+        qtdVendas: (atendimentos || []).length,
+        qtdCustos: (contas || []).length,
+        porProcedimento
+      };
+    } catch (error) {
+      console.error('Erro ao buscar stats de hoje:', error);
+      throw error;
+    }
+  }
+
+  async getProcedureRanking(userId) {
+    try {
+      // Busca todos os atendimentos com procedimentos
+      const { data: atendimentos, error: atendError } = await supabase
+        .from('atendimentos')
+        .select(`
+          valor_total,
+          data,
+          atendimento_procedimentos (
+            procedimentos (
+              nome
+            )
+          )
+        `)
+        .eq('user_id', userId);
+
+      if (atendError) throw atendError;
+
+      if (!atendimentos || atendimentos.length === 0) {
+        return { ranking: [], totalGeral: 0, qtdTotal: 0 };
+      }
+
+      // Agrupa por procedimento
+      const porProcedimento = {};
+      (atendimentos || []).forEach(a => {
+        const procName = a.atendimento_procedimentos?.[0]?.procedimentos?.nome || 'Procedimento';
+        if (!porProcedimento[procName]) {
+          porProcedimento[procName] = { quantidade: 0, valor: 0, ticketMedio: 0 };
+        }
+        porProcedimento[procName].quantidade++;
+        porProcedimento[procName].valor += parseFloat(a.valor_total || 0);
+      });
+
+      // Calcula ticket médio
+      Object.keys(porProcedimento).forEach(proc => {
+        porProcedimento[proc].ticketMedio = porProcedimento[proc].valor / porProcedimento[proc].quantidade;
+      });
+
+      // Converte para array e ordena por valor total
+      const ranking = Object.entries(porProcedimento)
+        .map(([nome, data]) => ({ nome, ...data }))
+        .sort((a, b) => b.valor - a.valor);
+
+      const totalGeral = ranking.reduce((acc, p) => acc + p.valor, 0);
+      const qtdTotal = ranking.reduce((acc, p) => acc + p.quantidade, 0);
+
+      return { ranking, totalGeral, qtdTotal };
+    } catch (error) {
+      console.error('Erro ao buscar ranking de procedimentos:', error);
+      throw error;
+    }
+  }
+
+  async getUpcomingSchedules(userId) {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+
+      const { data: agendamentos, error } = await supabase
+        .from('agendamentos')
+        .select(`
+          *,
+          clientes (nome),
+          procedimentos (nome)
+        `)
+        .eq('user_id', userId)
+        .gte('data_agendamento', today)
+        .order('data_agendamento', { ascending: true })
+        .limit(10);
+
+      if (error) throw error;
+
+      return agendamentos || [];
+    } catch (error) {
+      console.error('Erro ao buscar agendamentos:', error);
+      throw error;
+    }
+  }
 }
 
 module.exports = new TransactionController();

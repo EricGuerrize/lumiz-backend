@@ -71,6 +71,30 @@ class MessageController {
           response = await this.handlePendingInstallments(user);
           break;
 
+        case 'stats_hoje':
+          response = await this.handleTodayStats(user);
+          break;
+
+        case 'ranking_procedimentos':
+          response = await this.handleProcedureRanking(user);
+          break;
+
+        case 'marcar_parcela_paga':
+          response = await this.handleMarkInstallmentPaid(user, phone);
+          break;
+
+        case 'exportar_dados':
+          response = await this.handleExportData(user);
+          break;
+
+        case 'consultar_agenda':
+          response = await this.handleSchedule(user);
+          break;
+
+        case 'consultar_meta':
+          response = await this.handleGoalProgress(user);
+          break;
+
         case 'enviar_documento':
           response = `Claro! Manda a foto do documento que eu analiso pra você 📸\n\nPode ser:\n• Boleto\n• Nota fiscal\n• Extrato bancário\n• Comprovante de pagamento\n\nEu vou ler e te mostrar as informações certinho!\n\nSe preferir, pode colar o código de barras do boleto também (aquele número grande) que eu reconheço 😉`;
           break;
@@ -88,7 +112,7 @@ class MessageController {
           break;
 
         case 'ajuda':
-          response = `Posso te ajudar com várias coisas! 😊\n\n*💰 Registrar vendas:*\nMe conta o procedimento e valor, tipo:\n_"Harmonização 4500 da cliente Maria"_\n_"Preenchimento labial 2200"_\n\n*💸 Registrar custos:*\n_"Paguei 3200 de insumos"_\n_"Marketing 800 reais"_\n\n*📊 Ver como tá o financeiro:*\n_"Qual meu saldo?"_\n_"Me mostra o relatório do mês"_\n_"Quero ver minhas últimas vendas"_\n\n*📄 Documentos:*\nManda foto de boleto ou nota fiscal que eu leio pra você!\n\n*💳 Parcelas:*\n_"Quais parcelas tenho pra receber?"_\n\nÉ só me mandar que eu entendo! 🤗`;
+          response = await this.handleHelp();
           break;
 
         case 'apenas_valor':
@@ -548,6 +572,400 @@ class MessageController {
     } catch (error) {
       console.error('Erro ao buscar parcelas:', error);
       return 'Erro ao buscar parcelas 😢\n\nTente novamente.';
+    }
+  }
+
+  async handleTodayStats(user) {
+    try {
+      const stats = await transactionController.getTodayStats(user.id);
+
+      const hoje = new Date().toLocaleDateString('pt-BR', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long'
+      });
+
+      if (stats.qtdVendas === 0 && stats.qtdCustos === 0) {
+        return `📊 *RESULTADO DE HOJE*\n_(${hoje})_\n\nAinda não registrou nada hoje! 📋\n\nBora começar? Me manda sua primeira venda do dia!\n_"Botox 2800 paciente Maria"_`;
+      }
+
+      let response = `📊 *RESULTADO DE HOJE*\n_(${hoje})_\n\n`;
+
+      response += `💰 *Faturamento:* R$ ${stats.faturamento.toFixed(2)}\n`;
+      response += `💸 *Custos:* R$ ${stats.custos.toFixed(2)}\n`;
+      response += `📈 *Lucro:* R$ ${stats.lucro.toFixed(2)}\n\n`;
+
+      response += `📋 ${stats.qtdVendas} venda${stats.qtdVendas !== 1 ? 's' : ''}`;
+      if (stats.qtdCustos > 0) {
+        response += ` • ${stats.qtdCustos} custo${stats.qtdCustos !== 1 ? 's' : ''}`;
+      }
+      response += `\n`;
+
+      // Mostra procedimentos do dia
+      if (Object.keys(stats.porProcedimento).length > 0) {
+        response += `\n*Procedimentos:*\n`;
+        Object.entries(stats.porProcedimento)
+          .sort((a, b) => b[1].valor - a[1].valor)
+          .forEach(([proc, data]) => {
+            response += `• ${proc}: ${data.quantidade}x = R$ ${data.valor.toFixed(2)}\n`;
+          });
+      }
+
+      // Análise rápida
+      if (stats.lucro > 0) {
+        const margemPercentual = ((stats.lucro / stats.faturamento) * 100).toFixed(1);
+        response += `\nDia positivo! 🎉 Margem de ${margemPercentual}%`;
+      } else if (stats.lucro < 0) {
+        response += `\nDia no vermelho 😬 Foca nas vendas!`;
+      }
+
+      return response;
+    } catch (error) {
+      console.error('Erro ao buscar stats de hoje:', error);
+      return 'Erro ao buscar dados de hoje 😢\n\nTente novamente.';
+    }
+  }
+
+  async handleHelp() {
+    let response = `📚 *GUIA COMPLETO DA LUMIZ*\n\n`;
+
+    // Vendas
+    response += `💰 *REGISTRAR VENDAS*\n`;
+    response += `_"Botox 2800"_\n`;
+    response += `_"Fiz um preenchimento 3500"_\n`;
+    response += `_"Atendi Maria harmonização 4500 pix"_\n`;
+    response += `_"Vendi bioestimulador 6000 3x cartão"_\n\n`;
+
+    // Custos
+    response += `💸 *REGISTRAR CUSTOS*\n`;
+    response += `_"Insumos 3200"_\n`;
+    response += `_"Paguei aluguel 5000"_\n`;
+    response += `_"Marketing 800"_\n`;
+    response += `_"Comprei material 1500"_\n\n`;
+
+    // Relatórios
+    response += `📊 *RELATÓRIOS*\n`;
+    response += `_"Vendas hoje"_ - resultado do dia\n`;
+    response += `_"Saldo"_ - resumo geral\n`;
+    response += `_"Relatório"_ - detalhes do mês\n`;
+    response += `_"Comparar"_ - vs mês anterior\n`;
+    response += `_"Histórico"_ - últimas movimentações\n`;
+    response += `_"Ranking"_ - procedimentos mais vendidos\n`;
+    response += `_"Meta"_ - progresso da meta mensal\n`;
+    response += `_"Exportar"_ - gerar relatório para copiar\n\n`;
+
+    // Parcelas
+    response += `💳 *PARCELAS*\n`;
+    response += `_"Parcelas"_ - ver a receber\n`;
+    response += `_"Recebi parcela"_ - ver próximas parcelas\n`;
+    response += `_"Botox 2800 3x visa"_ - registrar parcelado\n\n`;
+
+    // Agenda
+    response += `📅 *AGENDA*\n`;
+    response += `_"Agenda"_ - ver próximos agendamentos\n\n`;
+
+    // Documentos
+    response += `📄 *DOCUMENTOS*\n`;
+    response += `Envia foto de boleto/nota que eu leio!\n`;
+    response += `Ou cola o código de barras\n\n`;
+
+    // Outros
+    response += `🔧 *OUTROS*\n`;
+    response += `_"Desfazer"_ - cancela última (10min)\n`;
+    response += `_"Ontem"_ ou _"semana passada"_ - datas relativas\n\n`;
+
+    response += `É só escrever naturalmente! 🤗`;
+
+    return response;
+  }
+
+  async handleProcedureRanking(user) {
+    try {
+      const ranking = await transactionController.getProcedureRanking(user.id);
+
+      if (ranking.ranking.length === 0) {
+        return `📊 *RANKING DE PROCEDIMENTOS*\n\nAinda não tem vendas registradas! 📋\n\nRegistre sua primeira venda:\n_"Botox 2800 cliente Maria"_`;
+      }
+
+      let response = `🏆 *RANKING DE PROCEDIMENTOS*\n\n`;
+      response += `💰 Total faturado: *R$ ${ranking.totalGeral.toFixed(2)}*\n`;
+      response += `📋 ${ranking.qtdTotal} atendimento${ranking.qtdTotal !== 1 ? 's' : ''}\n\n`;
+
+      // Mostra top 10
+      const top = ranking.ranking.slice(0, 10);
+      top.forEach((proc, index) => {
+        const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`;
+        const percentual = ((proc.valor / ranking.totalGeral) * 100).toFixed(1);
+
+        response += `${medal} *${proc.nome}*\n`;
+        response += `   ${proc.quantidade}x • R$ ${proc.valor.toFixed(2)} _(${percentual}%)_\n`;
+        response += `   Ticket médio: R$ ${proc.ticketMedio.toFixed(2)}\n\n`;
+      });
+
+      if (ranking.ranking.length > 10) {
+        response += `_... e mais ${ranking.ranking.length - 10} procedimento${ranking.ranking.length - 10 > 1 ? 's' : ''}_\n`;
+      }
+
+      // Insight
+      if (top.length > 0) {
+        response += `\n💡 *${top[0].nome}* é seu campeão de vendas!`;
+      }
+
+      return response;
+    } catch (error) {
+      console.error('Erro ao buscar ranking:', error);
+      return 'Erro ao buscar ranking 😢\n\nTente novamente.';
+    }
+  }
+
+  async handleMarkInstallmentPaid(user, phone) {
+    try {
+      const installments = await reminderService.getPendingInstallments(user.id);
+
+      if (installments.length === 0) {
+        return `✅ *Não tem parcelas pendentes!*\n\nTodas as parcelas foram recebidas ou você não tem vendas parceladas.\n\nPra registrar venda parcelada:\n_"Botox 2800 3x cartão paciente Maria"_`;
+      }
+
+      // Mostra próximas 5 parcelas para o usuário escolher
+      const proximas = installments.slice(0, 5);
+
+      let response = `💳 *MARCAR PARCELA COMO RECEBIDA*\n\n`;
+      response += `Próximas parcelas a vencer:\n\n`;
+
+      proximas.forEach((p, index) => {
+        const dataFormatada = p.data_vencimento.toLocaleDateString('pt-BR', {
+          day: '2-digit',
+          month: '2-digit',
+          year: '2-digit'
+        });
+
+        response += `*${index + 1}.* ${p.cliente} - ${p.procedimento}\n`;
+        response += `   ${p.parcela_atual}/${p.total_parcelas} • R$ ${p.valor_parcela.toFixed(2)}\n`;
+        response += `   📅 Vence: ${dataFormatada}\n\n`;
+      });
+
+      response += `💡 *Dica:* O sistema calcula automaticamente as parcelas pendentes baseado na data de cada venda.\n\n`;
+      response += `Para ver todas as parcelas, manda _"parcelas"_\n`;
+      response += `Para registrar nova venda parcelada:\n_"Botox 2800 6x visa cliente Ana"_`;
+
+      return response;
+    } catch (error) {
+      console.error('Erro ao buscar parcelas para marcar:', error);
+      return 'Erro ao buscar parcelas 😢\n\nTente novamente.';
+    }
+  }
+
+  async handleExportData(user) {
+    try {
+      const now = new Date();
+      const report = await transactionController.getMonthlyReport(
+        user.id,
+        now.getFullYear(),
+        now.getMonth() + 1
+      );
+
+      const mesNome = now.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+      const lucro = report.entradas - report.saidas;
+      const margemPercentual = report.entradas > 0
+        ? ((lucro / report.entradas) * 100).toFixed(1)
+        : 0;
+
+      if (report.totalTransacoes === 0) {
+        return `📊 *EXPORTAR RELATÓRIO*\n\nAinda não tem movimentações esse mês! 📋\n\nRegistre suas vendas e custos, depois volte aqui pra exportar.`;
+      }
+
+      // Gera relatório em formato texto para copiar
+      let response = `📋 *RELATÓRIO PARA EXPORTAÇÃO*\n`;
+      response += `_${mesNome}_\n\n`;
+      response += `━━━━━━━━━━━━━━━━━━━━\n`;
+      response += `*RESUMO FINANCEIRO*\n`;
+      response += `━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+      response += `Faturamento: R$ ${report.entradas.toFixed(2)}\n`;
+      response += `Custos: R$ ${report.saidas.toFixed(2)}\n`;
+      response += `Lucro: R$ ${lucro.toFixed(2)}\n`;
+      response += `Margem: ${margemPercentual}%\n`;
+      response += `Movimentações: ${report.totalTransacoes}\n\n`;
+
+      if (Object.keys(report.porCategoria).length > 0) {
+        response += `━━━━━━━━━━━━━━━━━━━━\n`;
+        response += `*POR CATEGORIA*\n`;
+        response += `━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+        // Separa entradas e saídas
+        const entradas = [];
+        const saidas = [];
+
+        Object.entries(report.porCategoria).forEach(([cat, data]) => {
+          if (data.tipo === 'entrada') {
+            entradas.push({ cat, total: data.total });
+          } else {
+            saidas.push({ cat, total: data.total });
+          }
+        });
+
+        if (entradas.length > 0) {
+          response += `*Receitas:*\n`;
+          entradas.sort((a, b) => b.total - a.total).forEach(e => {
+            response += `• ${e.cat}: R$ ${e.total.toFixed(2)}\n`;
+          });
+          response += `\n`;
+        }
+
+        if (saidas.length > 0) {
+          response += `*Custos:*\n`;
+          saidas.sort((a, b) => b.total - a.total).forEach(s => {
+            response += `• ${s.cat}: R$ ${s.total.toFixed(2)}\n`;
+          });
+          response += `\n`;
+        }
+      }
+
+      response += `━━━━━━━━━━━━━━━━━━━━\n\n`;
+      response += `📱 *Copie este relatório* e cole onde precisar!\n\n`;
+      response += `💡 Para relatório completo em PDF/Excel, acesse o dashboard web.`;
+
+      return response;
+    } catch (error) {
+      console.error('Erro ao exportar dados:', error);
+      return 'Erro ao gerar relatório 😢\n\nTente novamente.';
+    }
+  }
+
+  async handleSchedule(user) {
+    try {
+      const agendamentos = await transactionController.getUpcomingSchedules(user.id);
+
+      if (agendamentos.length === 0) {
+        return `📅 *SUA AGENDA*\n\nNenhum agendamento encontrado! 📋\n\nVocê pode agendar consultas pelo dashboard web ou aguarde a próxima versão com agendamento via WhatsApp! 😊`;
+      }
+
+      let response = `📅 *PRÓXIMOS AGENDAMENTOS*\n\n`;
+
+      // Agrupa por data
+      const porData = {};
+      agendamentos.forEach(ag => {
+        const dataStr = new Date(ag.data_agendamento).toLocaleDateString('pt-BR', {
+          weekday: 'short',
+          day: '2-digit',
+          month: '2-digit'
+        });
+        if (!porData[dataStr]) {
+          porData[dataStr] = [];
+        }
+        porData[dataStr].push(ag);
+      });
+
+      Object.entries(porData).forEach(([data, ags]) => {
+        response += `*${data.toUpperCase()}*\n`;
+        ags.forEach(ag => {
+          const hora = new Date(ag.data_agendamento).toLocaleTimeString('pt-BR', {
+            hour: '2-digit',
+            minute: '2-digit'
+          });
+          const cliente = ag.clientes?.nome || 'Cliente';
+          const procedimento = ag.procedimentos?.nome || 'Procedimento';
+          const status = ag.status === 'confirmado' ? '✅' : ag.status === 'pendente' ? '⏳' : '❓';
+
+          response += `${status} ${hora} - ${cliente}\n`;
+          response += `   📋 ${procedimento}\n`;
+          if (ag.observacoes) {
+            response += `   📝 ${ag.observacoes}\n`;
+          }
+          response += `\n`;
+        });
+      });
+
+      response += `💡 Para gerenciar agendamentos completos, acesse o dashboard web.`;
+
+      return response;
+    } catch (error) {
+      console.error('Erro ao buscar agenda:', error);
+      return 'Erro ao buscar agendamentos 😢\n\nTente novamente.';
+    }
+  }
+
+  async handleGoalProgress(user) {
+    try {
+      const now = new Date();
+      const currentMonth = now.getMonth() + 1;
+      const currentYear = now.getFullYear();
+
+      // Calcula mês anterior
+      let previousMonth = currentMonth - 1;
+      let previousYear = currentYear;
+      if (previousMonth === 0) {
+        previousMonth = 12;
+        previousYear = currentYear - 1;
+      }
+
+      const reportCurrent = await transactionController.getMonthlyReport(
+        user.id,
+        currentYear,
+        currentMonth
+      );
+
+      const reportPrevious = await transactionController.getMonthlyReport(
+        user.id,
+        previousYear,
+        previousMonth
+      );
+
+      const currentMonthName = now.toLocaleDateString('pt-BR', { month: 'long' });
+      const faturamentoAtual = reportCurrent.entradas;
+      const faturamentoAnterior = reportPrevious.entradas;
+
+      // Meta: 10% acima do mês anterior (ou R$ 10.000 se não houver histórico)
+      const meta = faturamentoAnterior > 0 ? faturamentoAnterior * 1.1 : 10000;
+      const percentualAtingido = meta > 0 ? ((faturamentoAtual / meta) * 100).toFixed(1) : 0;
+      const faltando = Math.max(0, meta - faturamentoAtual);
+
+      // Calcula dias restantes no mês
+      const ultimoDia = new Date(currentYear, currentMonth, 0).getDate();
+      const diasRestantes = ultimoDia - now.getDate();
+
+      let response = `🎯 *PROGRESSO DA META*\n`;
+      response += `_${currentMonthName}_\n\n`;
+
+      // Barra de progresso visual
+      const barraCheia = Math.min(10, Math.floor(percentualAtingido / 10));
+      const barraVazia = 10 - barraCheia;
+      const barra = '▓'.repeat(barraCheia) + '░'.repeat(barraVazia);
+
+      response += `${barra} *${percentualAtingido}%*\n\n`;
+
+      response += `💰 *Faturamento:* R$ ${faturamentoAtual.toFixed(2)}\n`;
+      response += `🎯 *Meta:* R$ ${meta.toFixed(2)}\n`;
+
+      if (faltando > 0) {
+        response += `📉 *Falta:* R$ ${faltando.toFixed(2)}\n\n`;
+      } else {
+        response += `✅ *Meta atingida!*\n\n`;
+      }
+
+      response += `📅 ${diasRestantes} dia${diasRestantes !== 1 ? 's' : ''} restante${diasRestantes !== 1 ? 's' : ''} no mês\n\n`;
+
+      // Análise e dicas
+      if (percentualAtingido >= 100) {
+        response += `🎉 *Parabéns!* Você já bateu a meta!\n`;
+        response += `Continue assim e supere ainda mais! 🚀`;
+      } else if (percentualAtingido >= 75) {
+        response += `💪 *Quase lá!* Falta pouco pra bater a meta!\n`;
+        response += `Média diária necessária: R$ ${(faltando / Math.max(1, diasRestantes)).toFixed(2)}`;
+      } else if (percentualAtingido >= 50) {
+        response += `📈 *Bom progresso!* Mas precisa acelerar.\n`;
+        response += `Média diária necessária: R$ ${(faltando / Math.max(1, diasRestantes)).toFixed(2)}`;
+      } else {
+        response += `⚠️ *Atenção!* Meta ainda distante.\n`;
+        response += `Média diária necessária: R$ ${(faltando / Math.max(1, diasRestantes)).toFixed(2)}`;
+      }
+
+      response += `\n\n💡 _Meta baseada em +10% do mês anterior_`;
+
+      return response;
+    } catch (error) {
+      console.error('Erro ao calcular progresso da meta:', error);
+      return 'Erro ao calcular meta 😢\n\nTente novamente.';
     }
   }
 

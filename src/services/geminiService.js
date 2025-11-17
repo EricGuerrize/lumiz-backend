@@ -35,8 +35,8 @@ CONTEXTO: Clínica de estética.
 DATA DE HOJE: ${dataHoje} (${nomeDiaHoje}-feira)
 
 REGRA PRINCIPAL DE CLASSIFICAÇÃO:
-- Palavras que indicam VENDA (registrar_entrada): botox, preenchimento, harmonização, bioestimulador, fios, peeling, laser, paciente, cliente, procedimento
-- Palavras que indicam CUSTO (registrar_saida): insumos, marketing, aluguel, energia, internet, material, produto, fornecedor, boleto, conta, paguei, gastei
+- Palavras que indicam VENDA (registrar_entrada): botox, preenchimento, harmonização, bioestimulador, fios, peeling, laser, paciente, cliente, procedimento, fiz um, realizei, atendi, vendi, fechei, fiz, atendimento
+- Palavras que indicam CUSTO (registrar_saida): insumos, marketing, aluguel, energia, internet, material, produto, fornecedor, boleto, conta, paguei, gastei, comprei, pagar
 
 MENSAGEM: "${message}"
 
@@ -48,6 +48,12 @@ INTENÇÕES:
 - relatorio_mensal: relatório, mês, mensal
 - comparar_meses: comparar, comparação, versus, vs, mês passado, mês anterior
 - consultar_parcelas: parcelas, parcelado, cartão, receber, a receber
+- stats_hoje: vendas hoje, faturamento hoje, quanto fiz hoje, faturamento do dia, resultado de hoje, como foi hoje, balanço de hoje
+- ranking_procedimentos: qual mais vendido, procedimento mais vendido, ranking, top procedimentos, melhores procedimentos, mais atendido
+- marcar_parcela_paga: recebi parcela, paguei parcela, parcela paga, recebeu parcela, baixar parcela, quitar parcela
+- exportar_dados: exportar, baixar relatório, me manda pdf, excel, planilha, download, gerar relatório
+- consultar_agenda: agenda, agendamentos, compromissos, consultas marcadas, ver agenda
+- consultar_meta: meta, minha meta, progresso, objetivo, quanto falta, atingir meta
 - ajuda: ajuda, como usar, exemplos, o que você faz, como funciona
 - saudacao: oi, olá, bom dia, boa tarde, boa noite
 - desfazer: cancelar, desfazer, apagar última, errei, deletar última
@@ -97,6 +103,18 @@ EXEMPLOS:
 
 "Harmonização facial 4500" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":4500.00,"categoria":"Harmonização facial","forma_pagamento":"avista","data":"${dataHoje}"}}
 
+"Fiz um botox 2800" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":2800.00,"categoria":"Botox","forma_pagamento":"avista","data":"${dataHoje}"}}
+
+"Realizei preenchimento 3500 cliente Ana" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":3500.00,"categoria":"Preenchimento","descricao":"Cliente Ana","forma_pagamento":"avista","nome_cliente":"Ana","data":"${dataHoje}"}}
+
+"Atendi Maria botox 2200 pix" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":2200.00,"categoria":"Botox","descricao":"PIX - Maria","forma_pagamento":"pix","nome_cliente":"Maria","data":"${dataHoje}"}}
+
+"Vendi harmonização 5000 3x" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":5000.00,"categoria":"Harmonização","forma_pagamento":"parcelado","parcelas":3,"data":"${dataHoje}"}}
+
+"Fechei bioestimulador 4500 com Paula" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":4500.00,"categoria":"Bioestimulador","descricao":"Paula","forma_pagamento":"avista","nome_cliente":"Paula","data":"${dataHoje}"}}
+
+"Atendimento preenchimento 1800" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":1800.00,"categoria":"Preenchimento","forma_pagamento":"avista","data":"${dataHoje}"}}
+
 "Insumos 3200" → {"intencao":"registrar_saida","dados":{"tipo":"saida","valor":3200.00,"categoria":"Insumos","data":"${dataHoje}"}}
 
 "Marketing 800" → {"intencao":"registrar_saida","dados":{"tipo":"saida","valor":800.00,"categoria":"Marketing","data":"${dataHoje}"}}
@@ -122,6 +140,39 @@ EXEMPLOS:
 "Parcelas" → {"intencao":"consultar_parcelas","dados":{}}
 "A receber" → {"intencao":"consultar_parcelas","dados":{}}
 "Cartão" → {"intencao":"consultar_parcelas","dados":{}}
+"Vendas hoje" → {"intencao":"stats_hoje","dados":{}}
+"Faturamento do dia" → {"intencao":"stats_hoje","dados":{}}
+"Quanto fiz hoje" → {"intencao":"stats_hoje","dados":{}}
+"Como foi hoje" → {"intencao":"stats_hoje","dados":{}}
+"Resultado de hoje" → {"intencao":"stats_hoje","dados":{}}
+"Balanço de hoje" → {"intencao":"stats_hoje","dados":{}}
+"Qual mais vendido" → {"intencao":"ranking_procedimentos","dados":{}}
+"Procedimento mais vendido" → {"intencao":"ranking_procedimentos","dados":{}}
+"Ranking" → {"intencao":"ranking_procedimentos","dados":{}}
+"Top procedimentos" → {"intencao":"ranking_procedimentos","dados":{}}
+"Melhores procedimentos" → {"intencao":"ranking_procedimentos","dados":{}}
+"Recebi parcela" → {"intencao":"marcar_parcela_paga","dados":{}}
+"Paguei parcela" → {"intencao":"marcar_parcela_paga","dados":{}}
+"Parcela paga" → {"intencao":"marcar_parcela_paga","dados":{}}
+"Baixar parcela" → {"intencao":"marcar_parcela_paga","dados":{}}
+"Quitar parcela" → {"intencao":"marcar_parcela_paga","dados":{}}
+"Exportar" → {"intencao":"exportar_dados","dados":{}}
+"Baixar relatório" → {"intencao":"exportar_dados","dados":{}}
+"Me manda pdf" → {"intencao":"exportar_dados","dados":{}}
+"Gerar planilha" → {"intencao":"exportar_dados","dados":{}}
+"Excel" → {"intencao":"exportar_dados","dados":{}}
+"Download relatório" → {"intencao":"exportar_dados","dados":{}}
+"Agenda" → {"intencao":"consultar_agenda","dados":{}}
+"Agendamentos" → {"intencao":"consultar_agenda","dados":{}}
+"Compromissos" → {"intencao":"consultar_agenda","dados":{}}
+"Consultas marcadas" → {"intencao":"consultar_agenda","dados":{}}
+"Ver agenda" → {"intencao":"consultar_agenda","dados":{}}
+"Meta" → {"intencao":"consultar_meta","dados":{}}
+"Minha meta" → {"intencao":"consultar_meta","dados":{}}
+"Progresso" → {"intencao":"consultar_meta","dados":{}}
+"Objetivo" → {"intencao":"consultar_meta","dados":{}}
+"Quanto falta" → {"intencao":"consultar_meta","dados":{}}
+"Atingir meta" → {"intencao":"consultar_meta","dados":{}}
 "Ajuda" → {"intencao":"ajuda","dados":{}}
 "Oi" → {"intencao":"saudacao","dados":{}}
 
