@@ -1,4 +1,4 @@
-const { Queue, Worker, QueueScheduler } = require('bullmq');
+const { Queue, Worker } = require('bullmq');
 const IORedis = require('ioredis');
 
 const supabase = require('../db/supabase');
@@ -11,26 +11,38 @@ class MdrService {
     console.log('[MDR_QUEUE] Inicializando MdrService...');
     this.queue = null;
     this.worker = null;
-    this.queueScheduler = null;
     this.queueEnabled = false;
 
     console.log('[MDR_QUEUE] REDIS_URL:', process.env.REDIS_URL ? 'configurada' : 'não configurada');
 
     if (process.env.REDIS_URL) {
       try {
+        console.log('[MDR_QUEUE] Conectando ao Redis...');
         this.connection = new IORedis(process.env.REDIS_URL);
+        console.log('[MDR_QUEUE] Redis conectado, criando Queue...');
         this.queue = new Queue('mdr-ocr', { connection: this.connection });
-        this.queueScheduler = new QueueScheduler('mdr-ocr', { connection: this.connection });
+        console.log('[MDR_QUEUE] Queue criada, criando Worker...');
         this.worker = new Worker('mdr-ocr', this.processQueueJob.bind(this), {
           connection: this.connection
         });
+        console.log('[MDR_QUEUE] Worker criado, adicionando event listeners...');
+        
+        this.worker.on('completed', (job) => {
+          console.log(`[MDR_QUEUE] Job ${job.id} completado`);
+        });
+        
+        this.worker.on('failed', (job, err) => {
+          console.error(`[MDR_QUEUE] Job ${job?.id} falhou:`, err.message);
+        });
+        
         this.queueEnabled = true;
-        console.log('[MDR_QUEUE] BullMQ iniciado');
+        console.log('[MDR_QUEUE] ✅ BullMQ iniciado com sucesso!');
       } catch (error) {
-        console.error('[MDR_QUEUE] Falha ao iniciar BullMQ:', error.message);
+        console.error('[MDR_QUEUE] ❌ Falha ao iniciar BullMQ:', error.message);
+        console.error('[MDR_QUEUE] Stack:', error.stack);
       }
     } else {
-      console.warn('[MDR_QUEUE] REDIS_URL não configurada. OCR será síncrono.');
+      console.warn('[MDR_QUEUE] ⚠️ REDIS_URL não configurada. OCR será síncrono.');
     }
   }
 
