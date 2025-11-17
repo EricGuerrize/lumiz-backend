@@ -99,3 +99,80 @@ CREATE TABLE IF NOT EXISTS ocr_jobs (
 
 CREATE INDEX IF NOT EXISTS idx_ocr_jobs_status
   ON ocr_jobs(status);
+
+-- Nudges e lembretes inteligentes do onboarding
+CREATE TABLE IF NOT EXISTS onboarding_nudges (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  phone VARCHAR(20) NOT NULL,
+  type VARCHAR(50) NOT NULL,
+  status VARCHAR(20) DEFAULT 'pending',
+  metadata JSONB DEFAULT '{}'::jsonb,
+  scheduled_at TIMESTAMP DEFAULT NOW(),
+  last_attempt_at TIMESTAMP,
+  sent_at TIMESTAMP,
+  error TEXT,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE (phone, type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_onboarding_nudges_status
+  ON onboarding_nudges(status);
+
+-- Insights automatizados
+CREATE TABLE IF NOT EXISTS user_insights (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+  phone VARCHAR(20),
+  title VARCHAR(120),
+  summary TEXT,
+  insights JSONB DEFAULT '[]'::jsonb,
+  sent_via VARCHAR(30),
+  sent_at TIMESTAMP,
+  metadata JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_insights_user
+  ON user_insights(user_id);
+
+-- ===================================================================
+-- Row Level Security policies (Dashboard direto via Supabase)
+-- ===================================================================
+
+ALTER TABLE IF NOT EXISTS transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF NOT EXISTS categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF NOT EXISTS onboarding_progress ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF NOT EXISTS mdr_configs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF NOT EXISTS ocr_jobs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF NOT EXISTS user_insights ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY IF NOT EXISTS users_select_transactions
+  ON transactions
+  FOR SELECT
+  USING (user_id = auth.uid());
+
+CREATE POLICY IF NOT EXISTS users_select_categories
+  ON categories
+  FOR SELECT
+  USING (user_id = auth.uid());
+
+CREATE POLICY IF NOT EXISTS users_select_onboarding_progress
+  ON onboarding_progress
+  FOR SELECT
+  USING (user_id = auth.uid());
+
+CREATE POLICY IF NOT EXISTS users_select_mdr_configs
+  ON mdr_configs
+  FOR SELECT
+  USING (user_id = auth.uid());
+
+CREATE POLICY IF NOT EXISTS users_select_ocr_jobs
+  ON ocr_jobs
+  FOR SELECT
+  USING (user_id = auth.uid());
+
+CREATE POLICY IF NOT EXISTS users_select_insights
+  ON user_insights
+  FOR SELECT
+  USING (user_id = auth.uid());

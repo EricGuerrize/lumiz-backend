@@ -6,6 +6,8 @@ const webhookRoutes = require('./routes/webhook');
 const dashboardRoutes = require('./routes/dashboard.routes');
 const onboardingRoutes = require('./routes/onboarding.routes');
 const reminderService = require('./services/reminderService');
+const nudgeService = require('./services/nudgeService');
+const insightService = require('./services/insightService');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -53,14 +55,20 @@ app.get('/api/cron/reminders', async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    console.log('[CRON] Iniciando verificação de lembretes...');
+    console.log('[CRON] Iniciando verificação de lembretes e nudges...');
     const reminders = await reminderService.checkAndSendReminders();
+    const nudges = await nudgeService.checkAndSendNudges();
+    const insights = await insightService.generateDailyInsights();
 
     res.json({
       status: 'success',
       timestamp: new Date().toISOString(),
       reminders_sent: reminders.length,
-      details: reminders
+      nudge_sent: nudges.length,
+      insights_generated: insights.length,
+      reminders,
+      nudges,
+      insights
     });
   } catch (error) {
     console.error('[CRON] Erro:', error);

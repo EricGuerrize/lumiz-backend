@@ -4,6 +4,7 @@ const userController = require('./userController');
 const transactionController = require('./transactionController');
 const reminderService = require('../services/reminderService');
 const documentService = require('../services/documentService');
+const insightService = require('../services/insightService');
 
 class MessageController {
   constructor() {
@@ -93,6 +94,9 @@ class MessageController {
 
         case 'consultar_meta':
           response = await this.handleGoalProgress(user);
+          break;
+        case 'insights':
+          response = await this.handleInsights(user);
           break;
 
         case 'enviar_documento':
@@ -966,6 +970,16 @@ class MessageController {
     } catch (error) {
       console.error('Erro ao calcular progresso da meta:', error);
       return 'Erro ao calcular meta 😢\n\nTente novamente.';
+    }
+  }
+
+  async handleInsights(user) {
+    try {
+      const message = await insightService.getInsightsMessage(user.id);
+      return message;
+    } catch (error) {
+      console.error('Erro ao buscar insights:', error);
+      return 'Não consegui gerar insights agora 😢\n\nTenta novamente mais tarde.';
     }
   }
 

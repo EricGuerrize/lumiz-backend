@@ -152,8 +152,15 @@ O backend agora possui um módulo completo de onboarding composto por três fase
 - `POST /api/onboarding/mdr/ocr` – processa print com OCR e extrai taxas automaticamente.
 - `GET /api/onboarding/assistant/prompts` – sugere prompts contextuais para o bot.
 - `GET /api/onboarding/metrics` – métricas agregadas (taxa de conclusão, tempo médio, adoção MDR, NPS).
+- Cron `/api/cron/reminders` – dispara lembretes de parcelas, nudges de onboarding e insights diários via Gemini.
 
 Todas as respostas retornam o progresso atual (`progress_label`) permitindo retomar exatamente onde o usuário parou.
+
+### Dashboard + RLS no Supabase
+
+- As tabelas `transactions`, `categories`, `onboarding_progress`, `mdr_configs` e `ocr_jobs` têm Row Level Security habilitado (`user_id = auth.uid()`), permitindo que o frontend consulte direto o Supabase usando apenas o `anon key`.
+- Quando o token não estiver disponível (ex.: sessão expirada), o frontend pode usar os endpoints REST (`/api/dashboard/*`) com o JWT do Supabase Auth — o middleware `authenticateFlexible` já suporta ambos os cenários.
+- Variáveis necessárias no frontend (Vercel/Vite): `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_SUPABASE_PUBLISHABLE_KEY` (opcional) e `VITE_API_URL` apontando para este backend.
 
 ## Funcionalidades
 
@@ -175,6 +182,10 @@ O Gemini AI identifica automaticamente:
 Criadas automaticamente para novos usuários:
 - **Entradas:** Salário, Freelance, Investimento
 - **Saídas:** Alimentação, Transporte, Moradia, Lazer, Saúde, Educação, Outros
+
+### Insights Automatizados
+- Worker diário analisa KPIs de cada clínica, gera insights com Gemini e salva na tabela `user_insights`.
+- O bot envia o resumo pelo WhatsApp e o usuário pode solicitar a qualquer momento com o comando `insights`.
 
 ## Estrutura do Banco de Dados
 

@@ -132,21 +132,33 @@ class OnboardingController {
         provider
       });
 
+      const mdrStatus = result.status === 'queued' ? 'pending' : 'pending_review';
+      const lastConfigId = result.config?.id || null;
+
       await onboardingService.savePhaseData(phone, 'phase2', {
         question_choice: 'configurar_agora',
-        mdr_status: 'pending_review',
-        last_mdr_config_id: result.config.id
+        mdr_status: mdrStatus,
+        last_mdr_config_id: lastConfigId
       });
       await onboardingService.updateStepStatus(phone, 'phase2_mdr_setup', 'pending', {
         source: 'ocr',
-        config_id: result.config.id
+        config_id: lastConfigId
       });
 
-      res.status(202).json({
+      const responsePayload = {
         jobId: result.job.id,
-        extraction: result.extraction,
-        config: result.config
-      });
+        status: result.status
+      };
+
+      if (result.extraction) {
+        responsePayload.extraction = result.extraction;
+      }
+
+      if (result.config) {
+        responsePayload.config = result.config;
+      }
+
+      res.status(result.status === 'queued' ? 202 : 200).json(responsePayload);
     } catch (error) {
       res.status(error.status || 500).json({ error: error.message });
     }

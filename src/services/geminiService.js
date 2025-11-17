@@ -54,6 +54,7 @@ INTENÇÕES:
 - exportar_dados: exportar, baixar relatório, me manda pdf, excel, planilha, download, gerar relatório
 - consultar_agenda: agenda, agendamentos, compromissos, consultas marcadas, ver agenda
 - consultar_meta: meta, minha meta, progresso, objetivo, quanto falta, atingir meta
+- insights: insights, dicas, sugestoes, sugestões, recomendacoes, recomendações
 - ajuda: ajuda, como usar, exemplos, o que você faz, como funciona
 - saudacao: oi, olá, bom dia, boa tarde, boa noite
 - desfazer: cancelar, desfazer, apagar última, errei, deletar última
@@ -173,6 +174,9 @@ EXEMPLOS:
 "Objetivo" → {"intencao":"consultar_meta","dados":{}}
 "Quanto falta" → {"intencao":"consultar_meta","dados":{}}
 "Atingir meta" → {"intencao":"consultar_meta","dados":{}}
+"Insights" → {"intencao":"insights","dados":{}}
+"Me dá dicas" → {"intencao":"insights","dados":{}}
+"Sugestões" → {"intencao":"insights","dados":{}}
 "Ajuda" → {"intencao":"ajuda","dados":{}}
 "Oi" → {"intencao":"saudacao","dados":{}}
 
