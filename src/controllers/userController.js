@@ -1,9 +1,147 @@
 const supabase = require('../db/supabase');
+const onboardingService = require('../services/onboardingService');
 
 class UserController {
   constructor() {
     // Armazena dados de onboarding em andamento
     this.onboardingData = new Map();
+  }
+
+  maskCnpj(cnpj) {
+    if (!cnpj) return null;
+    return cnpj.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
+  }
+
+  normalizeTeamRange(input) {
+    if (!input) return null;
+    const normalized = input.toString().trim().toLowerCase();
+
+    const map = {
+      '1': '1-5',
+      '2': '6-10',
+      '3': '11-20',
+      '4': '20+',
+      '1-5': '1-5',
+      '1 a 5': '1-5',
+      '6-10': '6-10',
+      '6 a 10': '6-10',
+      '11-20': '11-20',
+      '11 a 20': '11-20',
+      '20+': '20+',
+      '20 +': '20+',
+      '20 ou mais': '20+'
+    };
+
+    if (map[normalized]) {
+      return map[normalized];
+    }
+
+    const number = parseInt(normalized, 10);
+    if (Number.isNaN(number)) {
+      return null;
+    }
+    if (number <= 5) return '1-5';
+    if (number <= 10) return '6-10';
+    if (number <= 20) return '11-20';
+    return '20+';
+  }
+
+  normalizeVolumeRange(input) {
+    if (!input) return null;
+    const normalized = input.toString().trim().toLowerCase();
+
+    const map = {
+      '1': 'até 30',
+      '2': '30-60',
+      '3': '60-100',
+      '4': '100+',
+      'ate 30': 'até 30',
+      'até 30': 'até 30',
+      '30-60': '30-60',
+      '60-100': '60-100',
+      '100+': '100+',
+      '100 +': '100+',
+      '100 ou mais': '100+'
+    };
+
+    if (map[normalized]) {
+      return map[normalized];
+    }
+
+    const number = parseInt(normalized, 10);
+    if (Number.isNaN(number)) {
+      return null;
+    }
+    if (number <= 30) return 'até 30';
+    if (number <= 60) return '30-60';
+    if (number <= 100) return '60-100';
+    return '100+';
+  }
+
+  normalizeMdrChoice(input) {
+    if (!input) return null;
+    const normalized = input.toString().trim().toLowerCase();
+
+    if (normalized === '1' || normalized.includes('configurar')) {
+      return 'configurar_agora';
+    }
+    if (normalized === '2' || normalized.includes('lembrar')) {
+      return 'lembrar_mais_tarde';
+    }
+    if (normalized === '3' || normalized.includes('nao uso') || normalized.includes('não uso')) {
+      return 'nao_usa_maquininha';
+    }
+    return null;
+  }
+
+  getMdrChoiceMessage(choice) {
+    switch (choice) {
+      case 'configurar_agora':
+        return 'Perfeito! Assim que finalizarmos, você pode cadastrar as taxas pelo dashboard ou me enviar um print da maquininha que eu leio via OCR.';
+      case 'lembrar_mais_tarde':
+        return 'Sem problemas! Vou deixar anotado para te lembrar em outro momento.';
+      case 'nao_usa_maquininha':
+        return 'Tudo bem! Vou marcar aqui que você não utiliza maquininha/cartão.';
+      default:
+        return '';
+    }
+  }
+
+  humanizeMdrChoice(choice) {
+    switch (choice) {
+      case 'configurar_agora':
+        return 'Vai configurar agora';
+      case 'lembrar_mais_tarde':
+        return 'Lembrar mais tarde';
+      case 'nao_usa_maquininha':
+        return 'Não usa maquininha';
+      default:
+        return 'Não informado';
+    }
+  }
+
+  async buildConfirmationMessage(phone, onboarding) {
+    const linhas = [
+      `👤 *Nome:* ${onboarding.data.nome_completo}`,
+      `🏥 *Clínica:* ${onboarding.data.nome_clinica}`,
+      `📧 *Email:* ${onboarding.data.email}`,
+      `📱 *WhatsApp:* ${phone}`,
+      `🧾 *CNPJ:* ${
+        onboarding.data.cnpj
+          ? this.maskCnpj(onboarding.data.cnpj)
+          : onboarding.data.cnpj_status === 'skipped'
+            ? 'Prefere informar depois'
+            : 'Não informado'
+      }`,
+      `👥 *Equipe:* ${onboarding.data.team_size_range || 'Não informado'}`,
+      `📈 *Volume mensal:* ${onboarding.data.volume_range || 'Não informado'}`,
+      `💳 *Taxas MDR:* ${this.humanizeMdrChoice(onboarding.data.mdr_choice)}`
+    ];
+
+    const progressLabel = await onboardingService.getProgressLabel(phone);
+    const progressText = progressLabel ? `\n${progressLabel}\n` : '';
+
+    return `Perfeito! Confirma os dados antes de criar sua conta:\n\n${linhas.join('\n')}\n${progressText}\nTá tudo certo? Responde *SIM* pra criar ou *NÃO* pra ajustar.`;
   }
 
   async findUserByPhone(phone) {
@@ -36,12 +174,28 @@ class UserController {
     return data ? data.step : null;
   }
 
-  startOnboarding(phone) {
+  async startOnboarding(phone) {
     this.onboardingData.set(phone, {
       step: 'nome_completo',
-      data: { telefone: phone },
+      data: {
+        telefone: phone,
+        cnpj_status: 'pending'
+      },
       timestamp: Date.now()
     });
+
+    try {
+      await onboardingService.ensureState(phone, null, {
+        stage: 'phase1',
+        channel: 'whatsapp',
+        abVariant: 'whatsapp_v1'
+      });
+      await onboardingService.updateStepStatus(phone, 'phase1_welcome', 'completed', {
+        channel: 'whatsapp'
+      });
+    } catch (error) {
+      console.error('Erro ao iniciar progresso de onboarding:', error);
+    }
   }
 
   async processOnboarding(phone, message) {
@@ -51,38 +205,213 @@ class UserController {
     const messageTrimmed = message.trim();
 
     switch (onboarding.step) {
-      case 'nome_completo':
+      case 'nome_completo': {
         if (messageTrimmed.length < 3) {
           return 'Por favor, digite seu nome completo (mínimo 3 caracteres).';
         }
         onboarding.data.nome_completo = messageTrimmed;
         onboarding.step = 'nome_clinica';
-        return `Prazer, ${messageTrimmed.split(' ')[0]}! 😊\n\nAgora me diz: *Qual o nome da sua clínica?*`;
 
-      case 'nome_clinica':
+        try {
+          await onboardingService.savePhaseData(phone, 'phase1', {
+            contact_name: messageTrimmed
+          });
+          await onboardingService.updateStepStatus(phone, 'phase1_name', 'completed', {
+            value: messageTrimmed
+          });
+        } catch (error) {
+          console.error('Erro ao salvar progresso (nome):', error);
+        }
+
+        const progressLabel = await onboardingService.getProgressLabel(phone);
+        const progressText = progressLabel ? `\n\n${progressLabel}` : '';
+
+        return `Prazer, ${messageTrimmed.split(' ')[0]}! 😊${progressText}\n\nAgora me diz: *Qual o nome da sua clínica?*`;
+      }
+
+      case 'nome_clinica': {
         if (messageTrimmed.length < 2) {
           return 'Por favor, digite o nome da clínica.';
         }
         onboarding.data.nome_clinica = messageTrimmed;
         onboarding.step = 'email';
-        return `*${messageTrimmed}* - nome bonito! 💜\n\nÚltima pergunta: *Qual seu email?*\n\n(Você vai usar esse email para acessar o dashboard online)`;
 
-      case 'email':
-        // Validação básica de email
+        try {
+          await onboardingService.savePhaseData(phone, 'phase1', {
+            clinic_name: messageTrimmed
+          });
+          await onboardingService.updateStepStatus(phone, 'phase1_clinic', 'completed', {
+            value: messageTrimmed
+          });
+        } catch (error) {
+          console.error('Erro ao salvar progresso (clínica):', error);
+        }
+
+        const progressLabel = await onboardingService.getProgressLabel(phone);
+        const progressText = progressLabel ? `\n\n${progressLabel}` : '';
+
+        return `*${messageTrimmed}* - nome bonito! 💜${progressText}\n\nAgora me diz: *Qual seu email?*\n(Você usa para acessar o dashboard)`;
+      }
+
+      case 'email': {
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailRegex.test(messageTrimmed)) {
           return 'Esse email não parece válido. 🤔\n\nDigite um email válido (ex: seu@email.com)';
         }
         onboarding.data.email = messageTrimmed.toLowerCase();
+        onboarding.step = 'cnpj';
+
+        try {
+          await onboardingService.savePhaseData(phone, 'phase1', {
+            email: onboarding.data.email
+          });
+          await onboardingService.updateStepStatus(phone, 'phase1_email', 'completed', {
+            value: onboarding.data.email
+          });
+        } catch (error) {
+          console.error('Erro ao salvar progresso (email):', error);
+        }
+
+        const progressLabel = await onboardingService.getProgressLabel(phone);
+        const progressText = progressLabel ? `\n\n${progressLabel}` : '';
+
+        return `Perfeito!${progressText}\n\nAgora, se tiver o *CNPJ da clínica*, já me passa? Assim deixo tudo pronto.\n\nSe preferir, responda *Pular* ou *Prefiro não informar agora*.`;
+      }
+
+      case 'cnpj': {
+        const digits = messageTrimmed.replace(/\D/g, '');
+        const skip = onboardingService.isSkipResponse(messageTrimmed.toLowerCase());
+
+        if (skip) {
+          onboarding.data.cnpj_status = 'skipped';
+        } else {
+          if (digits.length !== 14) {
+            return 'O CNPJ precisa ter 14 dígitos. Se preferir, responda *Pular*.';
+          }
+          onboarding.data.cnpj = digits;
+          onboarding.data.cnpj_status = 'provided';
+        }
+
+        onboarding.step = 'numero_funcionarios';
+
+        try {
+          await onboardingService.savePhaseData(phone, 'phase1', {
+            cnpj: onboarding.data.cnpj || null,
+            cnpj_status: onboarding.data.cnpj_status
+          });
+          await onboardingService.updateStepStatus(
+            phone,
+            'phase1_cnpj',
+            skip ? 'skipped' : 'completed',
+            {
+              masked: onboarding.data.cnpj ? this.maskCnpj(onboarding.data.cnpj) : 'skipped'
+            }
+          );
+        } catch (error) {
+          console.error('Erro ao salvar CNPJ:', error);
+        }
+
+        const progressLabel = await onboardingService.getProgressLabel(phone);
+        const progressText = progressLabel ? `\n\n${progressLabel}` : '';
+
+        return `Show!${progressText}\n\nAgora me conta: *quantas pessoas trabalham com você hoje?*\n\nEscolhe uma opção:\n1️⃣ 1-5 pessoas\n2️⃣ 6-10 pessoas\n3️⃣ 11-20 pessoas\n4️⃣ 20+ pessoas\n\nSe preferir, responde com o número ou digita *Pular*.`;
+      }
+
+      case 'numero_funcionarios': {
+        const skip = onboardingService.isSkipResponse(messageTrimmed.toLowerCase());
+        const range = skip ? null : this.normalizeTeamRange(messageTrimmed);
+
+        if (!range && !skip) {
+          return 'Me envia apenas um número ou uma das opções: 1-5, 6-10, 11-20, 20+. Ou digita *Pular*.';
+        }
+
+        onboarding.data.team_size_range = range;
+        onboarding.step = 'volume_mensal';
+
+        try {
+          await onboardingService.savePhaseData(phone, 'phase1', {
+            team_size_range: range,
+            team_size_status: skip ? 'skipped' : 'provided'
+          });
+          await onboardingService.updateStepStatus(
+            phone,
+            'phase1_team_size',
+            skip ? 'skipped' : 'completed',
+            { value: range || 'skipped' }
+          );
+        } catch (error) {
+          console.error('Erro ao salvar número de funcionários:', error);
+        }
+
+        const progressLabel = await onboardingService.getProgressLabel(phone);
+        const progressText = progressLabel ? `\n\n${progressLabel}` : '';
+
+        return `Perfeito!${progressText}\n\nE qual é o *volume mensal de atendimentos/pacientes*? Pode mandar uma faixa:\n• até 30\n• 30-60\n• 60-100\n• 100+\n\nOu digita *Prefiro não informar agora*.`;
+      }
+
+      case 'volume_mensal': {
+        const skip = onboardingService.isSkipResponse(messageTrimmed.toLowerCase());
+        const volumeRange = skip ? null : this.normalizeVolumeRange(messageTrimmed);
+
+        if (!volumeRange && !skip) {
+          return 'Manda uma faixa aproximada: até 30, 30-60, 60-100, 100+. Ou digita *Pular*.';
+        }
+
+        onboarding.data.volume_range = volumeRange;
+        onboarding.step = 'mdr_pergunta';
+
+        try {
+          await onboardingService.savePhaseData(phone, 'phase1', {
+            volume_range: volumeRange,
+            volume_status: skip ? 'skipped' : 'provided'
+          });
+          await onboardingService.updateStepStatus(
+            phone,
+            'phase1_volume',
+            skip ? 'skipped' : 'completed',
+            { value: volumeRange || 'skipped' }
+          );
+          await onboardingService.updateState(phone, {
+            stage: 'phase2',
+            phase: 2
+          });
+        } catch (error) {
+          console.error('Erro ao salvar volume mensal:', error);
+        }
+
+        const progressLabel = await onboardingService.getProgressLabel(phone);
+        const progressText = progressLabel ? `\n\n${progressLabel}` : '';
+
+        return `Top!${progressText}\n\nAgora me diz:\n\n*Vamos cadastrar as taxas da sua maquininha? Assim automatizamos os cálculos pra você.*\n\nResponda com uma opção:\n1️⃣ Configurar agora (leva ~3 minutos)\n2️⃣ Lembrar mais tarde\n3️⃣ Não uso maquininha/cartão`;
+      }
+
+      case 'mdr_pergunta': {
+        const choice = this.normalizeMdrChoice(messageTrimmed);
+
+        if (!choice) {
+          return 'Responda 1 para configurar agora, 2 para lembrar depois ou 3 se não usa maquininha.';
+        }
+
+        onboarding.data.mdr_choice = choice;
         onboarding.step = 'confirmacao';
 
-        // Pede confirmação dos dados
-        return `Perfeito! Confirma os dados antes de criar sua conta:\n\n` +
-               `👤 *Nome:* ${onboarding.data.nome_completo}\n` +
-               `🏥 *Clínica:* ${onboarding.data.nome_clinica}\n` +
-               `📧 *Email:* ${onboarding.data.email}\n` +
-               `📱 *WhatsApp:* ${phone}\n\n` +
-               `Tá tudo certo? Responde *SIM* pra criar ou *NÃO* pra recomeçar`;
+        try {
+          await onboardingService.savePhaseData(phone, 'phase2', {
+            question_choice: choice,
+            mdr_status: choice === 'configurar_agora' ? 'pending' : 'opt_out'
+          });
+          await onboardingService.updateStepStatus(phone, 'phase2_mdr_question', 'completed', {
+            choice
+          });
+        } catch (error) {
+          console.error('Erro ao salvar escolha de MDR:', error);
+        }
+
+        const instructions = this.getMdrChoiceMessage(choice);
+        const confirmationMessage = await this.buildConfirmationMessage(phone, onboarding);
+
+        return `${instructions}\n\n${confirmationMessage}`;
+      }
 
       case 'confirmacao':
         const resposta = messageTrimmed.toLowerCase();
@@ -95,6 +424,26 @@ class UserController {
 
             // Cria procedimentos padrão
             await this.createDefaultProcedimentos(result.user.id);
+
+             try {
+               await onboardingService.updateState(phone, {
+                 userId: result.user.id,
+                 stage: 'phase3',
+                 phase: 3,
+                 data: {
+                   phase3: {
+                     onboarding_completed_at: new Date().toISOString(),
+                     assistant_persona: 'lumiz_whatsapp'
+                   }
+                 }
+               });
+               await onboardingService.updateStepStatus(phone, 'phase3_whatsapp', 'completed', {
+                 channel: 'whatsapp'
+               });
+               await onboardingService.markCompleted(phone);
+             } catch (progressError) {
+               console.error('Erro ao finalizar progresso do onboarding:', progressError);
+             }
 
             let response = `🎉 *CONTA CRIADA COM SUCESSO!*\n\n` +
                    `Seu cadastro tá pronto! Agora você pode usar a Lumiz pelo WhatsApp e pelo dashboard online.\n\n`;
@@ -118,12 +467,7 @@ class UserController {
             return `Erro ao criar cadastro 😢\n\n${error.message}\n\nTente novamente enviando qualquer mensagem.`;
           }
         } else if (resposta === 'não' || resposta === 'nao' || resposta === 'n' || resposta === 'recomeçar') {
-          // Reinicia o onboarding
-          this.onboardingData.set(phone, {
-            step: 'nome_completo',
-            data: { telefone: phone },
-            timestamp: Date.now()
-          });
+          await this.startOnboarding(phone);
           return `Ok, vamos recomeçar! 😊\n\n*Qual o seu nome completo?*`;
         } else {
           return `Não entendi... Responde *SIM* pra confirmar ou *NÃO* pra recomeçar`;

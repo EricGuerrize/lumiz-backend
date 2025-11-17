@@ -4,6 +4,7 @@ require('dotenv').config();
 
 const webhookRoutes = require('./routes/webhook');
 const dashboardRoutes = require('./routes/dashboard.routes');
+const onboardingRoutes = require('./routes/onboarding.routes');
 const reminderService = require('./services/reminderService');
 
 const app = express();
@@ -33,6 +34,7 @@ app.use((req, res, next) => {
 
 app.use('/api', webhookRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/onboarding', onboardingRoutes);
 
 app.get('/health', (req, res) => {
   res.json({

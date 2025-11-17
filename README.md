@@ -135,6 +135,26 @@ Verifica status do servidor.
 ### `GET /`
 Informações sobre a API.
 
+## Onboarding Inteligente
+
+O backend agora possui um módulo completo de onboarding composto por três fases:
+
+- **Fase 1** – coleta gamificada dos dados principais (nome, clínica, email, CNPJ opcional, tamanho da equipe e volume mensal) com salvamento em tempo real.
+- **Fase 2** – configuração das taxas MDR, permitindo cadastro manual ou envio de prints/prints para OCR (Stone, PagSeguro, Rede, Cielo, GetNet, Mercado Pago).
+- **Fase 3** – geração de prompts contextuais para o assistente WhatsApp e conclusão do fluxo.
+
+### Endpoints principais
+
+- `GET /api/onboarding/state` – obtém ou inicia o progresso (usa `x-user-phone`).
+- `PATCH /api/onboarding/state` – atualiza estágio/dados do onboarding.
+- `POST /api/onboarding/steps` – marca passos como concluídos ou pulados.
+- `POST /api/onboarding/mdr/manual` – registra taxas manualmente.
+- `POST /api/onboarding/mdr/ocr` – processa print com OCR e extrai taxas automaticamente.
+- `GET /api/onboarding/assistant/prompts` – sugere prompts contextuais para o bot.
+- `GET /api/onboarding/metrics` – métricas agregadas (taxa de conclusão, tempo médio, adoção MDR, NPS).
+
+Todas as respostas retornam o progresso atual (`progress_label`) permitindo retomar exatamente onde o usuário parou.
+
 ## Funcionalidades
 
 ### Processamento de Linguagem Natural

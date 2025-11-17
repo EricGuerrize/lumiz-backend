@@ -27,7 +27,7 @@ class MessageController {
 
       // Se não encontrou usuário, inicia onboarding
       if (!user) {
-        userController.startOnboarding(phone);
+        await userController.startOnboarding(phone);
         return `Olá! Sou a *Lumiz* 💜\n\nSua assistente para gestão de clínica estética!\n\nParece que você ainda não tem cadastro.\nVou te ajudar a configurar!\n\n*Qual o seu nome completo?*`;
       }
 
@@ -978,7 +978,7 @@ class MessageController {
 
       const user = await userController.findUserByPhone(phone);
       if (!user) {
-        userController.startOnboarding(phone);
+        await userController.startOnboarding(phone);
         return `Olá! Sou a *Lumiz* 💜\n\nParece que você ainda não tem cadastro.\nVou te ajudar a configurar!\n\n*Qual o seu nome completo?*`;
       }
 
@@ -1016,7 +1016,7 @@ class MessageController {
 
       const user = await userController.findUserByPhone(phone);
       if (!user) {
-        userController.startOnboarding(phone);
+        await userController.startOnboarding(phone);
         return `Olá! Sou a *Lumiz* 💜\n\nParece que você ainda não tem cadastro.\nVou te ajudar a configurar!\n\n*Qual o seu nome completo?*`;
       }
 
