@@ -9,7 +9,12 @@ const reminderService = require('./services/reminderService');
 const nudgeService = require('./services/nudgeService');
 const insightService = require('./services/insightService');
 // Garante que mdrService seja inicializado na startup para ativar BullMQ
-const mdrService = require('./services/mdrService');
+try {
+  const mdrService = require('./services/mdrService');
+  console.log('[SERVER] mdrService carregado com sucesso');
+} catch (error) {
+  console.error('[SERVER] Erro ao carregar mdrService:', error.message);
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
