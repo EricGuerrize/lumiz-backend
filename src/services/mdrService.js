@@ -18,7 +18,10 @@ class MdrService {
     if (process.env.REDIS_URL) {
       try {
         console.log('[MDR_QUEUE] Conectando ao Redis...');
-        this.connection = new IORedis(process.env.REDIS_URL);
+        // BullMQ requer maxRetriesPerRequest: null
+        this.connection = new IORedis(process.env.REDIS_URL, {
+          maxRetriesPerRequest: null
+        });
         console.log('[MDR_QUEUE] Redis conectado, criando Queue...');
         this.queue = new Queue('mdr-ocr', { connection: this.connection });
         console.log('[MDR_QUEUE] Queue criada, criando Worker...');
