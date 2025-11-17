@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const supabase = require('../db/supabase');
 const transactionController = require('../controllers/transactionController');
 const userController = require('../controllers/userController');
 const { authenticateFlexible } = require('../middleware/authMiddleware');
@@ -191,12 +192,36 @@ router.get('/stats/timeline', async (req, res) => {
 // GET /api/dashboard/user - Informações do usuário
 router.get('/user', async (req, res) => {
   try {
+    const userId = req.user.id;
+    const phone = req.user.telefone;
+    
+    // Debug: verifica se há transações para este usuário
+    const { data: transactions, error: transError } = await supabase
+      .from('transactions')
+      .select('id, type, amount, description, date')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(5);
+    
+    const { data: contasPagar, error: contasError } = await supabase
+      .from('contas_pagar')
+      .select('id, valor, descricao, data_vencimento')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(5);
+    
     res.json({
-      id: req.user.id,
+      id: userId,
       nome: req.user.nome_completo,
       clinica: req.user.nome_clinica,
-      phone: req.user.telefone,
-      createdAt: req.user.created_at
+      phone: phone,
+      createdAt: req.user.created_at,
+      debug: {
+        totalTransactions: transactions?.length || 0,
+        recentTransactions: transactions || [],
+        totalContasPagar: contasPagar?.length || 0,
+        recentContasPagar: contasPagar || []
+      }
     });
   } catch (error) {
     console.error('Error getting user info:', error);
