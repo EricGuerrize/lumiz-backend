@@ -11,6 +11,8 @@ class MessageController {
     this.pendingTransactions = new Map();
     // Armazena transações de documentos pendentes
     this.pendingDocumentTransactions = new Map();
+    // Armazena última transação registrada por usuário (para desfazer)
+    this.lastTransactions = new Map();
   }
 
   async handleIncomingMessage(phone, message) {
@@ -71,6 +73,10 @@ class MessageController {
 
         case 'codigo_boleto':
           response = await this.handleBarcodeMessage(user, intent, phone);
+          break;
+
+        case 'desfazer':
+          response = await this.handleUndoLastTransaction(user, phone);
           break;
 
         case 'saudacao':
@@ -189,7 +195,7 @@ class MessageController {
       const { tipo, valor, categoria, descricao, data, forma_pagamento, parcelas, bandeira_cartao } = pending.dados;
 
       try {
-        await transactionController.createTransaction(user.id, {
+        const transaction = await transactionController.createTransaction(user.id, {
           tipo,
           valor,
           categoria,
@@ -198,6 +204,15 @@ class MessageController {
           forma_pagamento,
           parcelas,
           bandeira_cartao
+        });
+
+        // Salva a última transação para possível desfazer
+        this.lastTransactions.set(phone, {
+          transactionId: transaction.id,
+          tipo,
+          valor,
+          categoria,
+          timestamp: Date.now()
         });
 
         // Remove da lista de pendentes
@@ -214,7 +229,8 @@ class MessageController {
           successMsg += `📅 Você receberá lembretes mensais!\n\n`;
         }
 
-        successMsg += `Tudo anotadinho! ✅`;
+        successMsg += `Tudo anotadinho! ✅\n\n`;
+        successMsg += `_Errou algo? Manda "desfazer" nos próximos 10 min_`;
 
         return successMsg;
       } catch (error) {
@@ -477,6 +493,46 @@ class MessageController {
     response += `Ou se preferir, manda uma foto do boleto que eu leio tudo automaticamente 📸`;
 
     return response;
+  }
+
+  async handleUndoLastTransaction(user, phone) {
+    try {
+      const lastTransaction = this.lastTransactions.get(phone);
+
+      if (!lastTransaction) {
+        return `Não encontrei nenhuma transação recente pra desfazer 🤔\n\nVocê só pode desfazer nos primeiros 10 minutos após registrar.`;
+      }
+
+      // Verifica se expirou (10 minutos)
+      if (Date.now() - lastTransaction.timestamp > 10 * 60 * 1000) {
+        this.lastTransactions.delete(phone);
+        return `Passou o tempo pra desfazer essa transação 😅\n\nVocê tem 10 minutos após o registro.\n\nSe precisar corrigir, vai ter que acessar o dashboard.`;
+      }
+
+      // Deleta a transação
+      const deleted = await transactionController.deleteTransaction(
+        user.id,
+        lastTransaction.transactionId
+      );
+
+      if (!deleted) {
+        this.lastTransactions.delete(phone);
+        return `Não consegui encontrar essa transação 🤔\n\nTalvez já tenha sido removida.`;
+      }
+
+      const emoji = lastTransaction.tipo === 'entrada' ? '💰' : '💸';
+      const tipoTexto = lastTransaction.tipo === 'entrada' ? 'venda' : 'custo';
+
+      // Remove do histórico
+      this.lastTransactions.delete(phone);
+
+      return `${emoji} *Transação desfeita!*\n\n` +
+             `Removi a ${tipoTexto} de *R$ ${lastTransaction.valor.toFixed(2)}* (${lastTransaction.categoria})\n\n` +
+             `Quer registrar novamente com os dados corretos? É só me mandar! 😊`;
+    } catch (error) {
+      console.error('Erro ao desfazer transação:', error);
+      return `Erro ao desfazer transação 😢\n\nTente novamente.`;
+    }
   }
 
   async handleDocumentConfirmation(phone, message, user) {

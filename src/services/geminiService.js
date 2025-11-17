@@ -29,11 +29,12 @@ INTENÇÕES:
 - consultar_historico: histórico, últimas, movimentações
 - relatorio_mensal: relatório, mês, mensal
 - consultar_parcelas: parcelas, parcelado, cartão, receber, a receber
-- ajuda: ajuda, como usar, exemplos
+- ajuda: ajuda, como usar, exemplos, o que você faz, como funciona
 - saudacao: oi, olá, bom dia, boa tarde, boa noite
-- enviar_documento: boleto, extrato, nota fiscal, comprovante, documento, pdf
-- codigo_boleto: sequência de 47-48 dígitos (código de barras de boleto)
-- apenas_valor: SÓ número, nada mais
+- desfazer: cancelar, desfazer, apagar última, errei, deletar última
+- enviar_documento: boleto, extrato, nota fiscal, comprovante, documento, pdf (SÓ a palavra, sem números)
+- codigo_boleto: sequência longa de dígitos (44-48 números), pode ter pontos, hífens ou espaços. Ex: 84650000002-7 05870162202-7...
+- apenas_valor: SÓ um número isolado (até 6 dígitos), nada mais
 - apenas_procedimento: SÓ nome de procedimento/produto, sem valor
 - mensagem_ambigua: não conseguiu identificar
 
@@ -87,7 +88,19 @@ EXEMPLOS:
 "extrato" → {"intencao":"enviar_documento","dados":{}}
 "nota fiscal" → {"intencao":"enviar_documento","dados":{}}
 
+"cancelar última" → {"intencao":"desfazer","dados":{}}
+"errei" → {"intencao":"desfazer","dados":{}}
+"apagar última" → {"intencao":"desfazer","dados":{}}
+"desfazer" → {"intencao":"desfazer","dados":{}}
+
+"84650000002-7 05870162202-7 51105719000-7 00832414587-2" → {"intencao":"codigo_boleto","dados":{"codigo":"84650000002705870162202751105719000008324145872"}}
+
 "23793.38128 60000.000003 00000.000408 1 84340000012345" → {"intencao":"codigo_boleto","dados":{"codigo":"23793381286000000000300000004081843400001234"}}
+
+"84650000002705870162202751105719000008324145872" → {"intencao":"codigo_boleto","dados":{"codigo":"84650000002705870162202751105719000008324145872"}}
+
+"o que você faz" → {"intencao":"ajuda","dados":{}}
+"como funciona" → {"intencao":"ajuda","dados":{}}
 
 RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
 `;

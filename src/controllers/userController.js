@@ -74,44 +74,59 @@ class UserController {
           return 'Esse email não parece válido. 🤔\n\nDigite um email válido (ex: seu@email.com)';
         }
         onboarding.data.email = messageTrimmed.toLowerCase();
+        onboarding.step = 'confirmacao';
 
-        // Finaliza o cadastro
-        try {
-          const result = await this.createUserFromOnboarding(onboarding.data);
-          this.onboardingData.delete(phone);
+        // Pede confirmação dos dados
+        return `Perfeito! Confirma os dados antes de criar sua conta:\n\n` +
+               `👤 *Nome:* ${onboarding.data.nome_completo}\n` +
+               `🏥 *Clínica:* ${onboarding.data.nome_clinica}\n` +
+               `📧 *Email:* ${onboarding.data.email}\n` +
+               `📱 *WhatsApp:* ${phone}\n\n` +
+               `Tá tudo certo? Responde *SIM* pra criar ou *NÃO* pra recomeçar`;
 
-          // Cria procedimentos padrão
-          await this.createDefaultProcedimentos(result.user.id);
+      case 'confirmacao':
+        const resposta = messageTrimmed.toLowerCase();
 
-          let response = `🎉 *CADASTRO CONCLUÍDO!*\n\n` +
-                 `✅ Nome: ${result.user.nome_completo}\n` +
-                 `✅ Clínica: ${result.user.nome_clinica}\n` +
-                 `✅ Email: ${onboarding.data.email}\n` +
-                 `✅ WhatsApp: ${phone}\n\n`;
+        if (resposta === 'sim' || resposta === 's' || resposta === 'confirmar' || resposta === 'ok') {
+          // Finaliza o cadastro
+          try {
+            const result = await this.createUserFromOnboarding(onboarding.data);
+            this.onboardingData.delete(phone);
 
-          response += `🔐 *ACESSO AO DASHBOARD:*\n` +
-                     `Email: ${onboarding.data.email}\n` +
-                     `Senha: ${result.tempPassword}\n\n` +
-                     `Acesse: https://lumiz-financeiro.vercel.app\n\n`;
+            // Cria procedimentos padrão
+            await this.createDefaultProcedimentos(result.user.id);
 
-          if (result.resetLink) {
-            response += `_Recomendamos trocar a senha depois._\n\n`;
+            let response = `🎉 *CONTA CRIADA COM SUCESSO!*\n\n` +
+                   `Seu cadastro tá pronto! Agora você pode usar a Lumiz pelo WhatsApp e pelo dashboard online.\n\n`;
+
+            response += `🔐 *ACESSE O DASHBOARD:*\n` +
+                       `📧 Email: ${onboarding.data.email}\n` +
+                       `🔑 Senha: ${result.tempPassword}\n` +
+                       `🌐 Link: lumiz-financeiro.vercel.app\n\n`;
+
+            response += `_Guarde essa senha! Você pode trocar depois no dashboard._\n\n`;
+
+            response += `*Pronto pra começar?* 🚀\n\n` +
+                   `Me manda sua primeira venda assim:\n` +
+                   `_"Botox 2800 paciente Maria"_\n\n` +
+                   `Ou manda "ajuda" que te mostro tudo que sei fazer! 😊`;
+
+            return response;
+          } catch (error) {
+            console.error('Erro ao criar usuário:', error);
+            this.onboardingData.delete(phone);
+            return `Erro ao criar cadastro 😢\n\n${error.message}\n\nTente novamente enviando qualquer mensagem.`;
           }
-
-          response += `Agora você pode:\n` +
-                 `📝 Registrar atendimentos\n` +
-                 `📊 Ver relatórios\n` +
-                 `💰 Controlar finanças\n\n` +
-                 `*Comece assim:*\n` +
-                 `"Botox 2800 paciente Maria"\n` +
-                 `"Preenchimento 1500 João"\n\n` +
-                 `Ou digite "ajuda" para ver mais opções! 😊`;
-
-          return response;
-        } catch (error) {
-          console.error('Erro ao criar usuário:', error);
-          this.onboardingData.delete(phone);
-          return `Erro ao criar cadastro 😢\n\n${error.message}\n\nTente novamente enviando qualquer mensagem.`;
+        } else if (resposta === 'não' || resposta === 'nao' || resposta === 'n' || resposta === 'recomeçar') {
+          // Reinicia o onboarding
+          this.onboardingData.set(phone, {
+            step: 'nome_completo',
+            data: { telefone: phone },
+            timestamp: Date.now()
+          });
+          return `Ok, vamos recomeçar! 😊\n\n*Qual o seu nome completo?*`;
+        } else {
+          return `Não entendi... Responde *SIM* pra confirmar ou *NÃO* pra recomeçar`;
         }
 
       default:
