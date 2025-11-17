@@ -66,7 +66,7 @@ class MessageController {
           break;
 
         case 'enviar_documento':
-          response = `📄 *DOCUMENTOS*\n\nPode me enviar:\n\n📸 *Foto* de boleto, extrato ou nota fiscal\n📝 *Screenshot* de comprovante\n🔢 *Código de barras* do boleto (47-48 dígitos)\n\nVou analisar e extrair as informações automaticamente! ✨`;
+          response = `Claro! Manda a foto do documento que eu analiso pra você 📸\n\nPode ser:\n• Boleto\n• Nota fiscal\n• Extrato bancário\n• Comprovante de pagamento\n\nEu vou ler e te mostrar as informações certinho!\n\nSe preferir, pode colar o código de barras do boleto também (aquele número grande) que eu reconheço 😉`;
           break;
 
         case 'codigo_boleto':
@@ -74,11 +74,11 @@ class MessageController {
           break;
 
         case 'saudacao':
-          response = `Oi! Sou a *Lumiz* 💜\nAssistente financeira para clínicas de estética.\n\n*Me manda assim:*\n\n📝 *Para registrar venda:*\n"Botox, 2800, paciente Maria"\n"Preenchimento labial 1500 pix"\n\n📝 *Para registrar custo:*\n"Insumos 3200"\n"Marketing 800"\n\n📊 *Para consultar:*\n"Saldo" ou "Resumo"\n"Histórico"\n"Relatório"\n\nMe manda sua primeira movimentação! 😊`;
+          response = `Oi! Tudo bem? Sou a *Lumiz* 💜\n\nTo aqui pra te ajudar a organizar as finanças da sua clínica de um jeito simples!\n\nPode me mandar:\n• Uma venda que você fez hoje\n• Um custo que precisa registrar\n• Ou me perguntar como está o caixa\n\nÉ só escrever naturalmente, tipo:\n_"Fiz um botox hoje, 2800 reais"_\n_"Comprei insumos por 1500"_\n_"Como tá meu saldo?"_\n\nBora começar? 😊`;
           break;
 
         case 'ajuda':
-          response = `*Exemplos de uso:* 📋\n\n💰 *REGISTRAR VENDA:*\n"Botox 2800 paciente Ana"\n"Preenchimento 1500 pix"\n"Harmonização facial 4500"\n\n💸 *REGISTRAR CUSTO:*\n"Insumos 3200"\n"Marketing 800"\n"Aluguel 5000"\n\n📄 *DOCUMENTOS:*\nEnvie foto de boleto/extrato\nOu cole o código de barras (47-48 dígitos)\n\n📊 *CONSULTAR:*\n"Saldo" - ver resumo\n"Histórico" - últimas movimentações\n"Relatório" - relatório do mês\n"Parcelas" - ver a receber\n\n*Dica:* Quanto mais info, melhor! Ex:\n"Botox glabela, 2800, Dra. Maria, cartão 3x"`;
+          response = `Posso te ajudar com várias coisas! 😊\n\n*💰 Registrar vendas:*\nMe conta o procedimento e valor, tipo:\n_"Harmonização 4500 da cliente Maria"_\n_"Preenchimento labial 2200"_\n\n*💸 Registrar custos:*\n_"Paguei 3200 de insumos"_\n_"Marketing 800 reais"_\n\n*📊 Ver como tá o financeiro:*\n_"Qual meu saldo?"_\n_"Me mostra o relatório do mês"_\n_"Quero ver minhas últimas vendas"_\n\n*📄 Documentos:*\nManda foto de boleto ou nota fiscal que eu leio pra você!\n\n*💳 Parcelas:*\n_"Quais parcelas tenho pra receber?"_\n\nÉ só me mandar que eu entendo! 🤗`;
           break;
 
         case 'apenas_valor':
@@ -90,11 +90,11 @@ class MessageController {
           break;
 
         case 'mensagem_ambigua':
-          response = 'Não entendi 🤔\n\nMe manda assim:\n"Botox 2800" (venda)\n"Insumos 3200" (custo)\n\nOu digite "ajuda"';
+          response = 'Hmm, não consegui entender direito 🤔\n\nTenta me explicar melhor! Por exemplo:\n_"Fiz um botox de 2800"_ ou _"Gastei 3200 em insumos"_\n\nSe precisar, é só mandar "ajuda" que te mostro tudo que sei fazer!';
           break;
 
         default:
-          response = 'Não entendi 🤔\n\nTenta assim:\n"Botox 2800"\n"Insumos 3200"\n"Saldo"\n\nOu manda "ajuda"';
+          response = 'Opa, não entendi essa 😅\n\nPode reformular? Tipo:\n_"Vendi um preenchimento por 1500"_\n_"Paguei conta de luz 450"_\n_"Como tá meu saldo?"_\n\nOu manda "ajuda" que te explico melhor!';
       }
 
       return response;
@@ -153,13 +153,13 @@ class MessageController {
   async handleOnlyValue(intent, phone) {
     const valor = intent.dados.valor;
 
-    return `Vi *R$ ${valor.toFixed(2)}* 💰\n\nIsso é venda ou custo?\n\nMe manda assim:\n"Botox ${valor}" (se for venda)\n"Insumos ${valor}" (se for custo)`;
+    return `Entendi, *R$ ${valor.toFixed(2)}* 💰\n\nMas isso foi uma venda ou um gasto?\n\nMe conta mais, tipo:\n_"Botox ${valor}"_ se foi uma venda\n_"Insumos ${valor}"_ se foi um custo`;
   }
 
   async handleOnlyProcedure(intent, phone) {
     const categoria = intent.dados.categoria;
 
-    return `Vi *${categoria}* 💉\n\nQual o valor?\n\nMe manda assim:\n"${categoria} 2800"`;
+    return `Beleza, *${categoria}*! 💉\n\nE qual foi o valor?\n\nMe manda completo, tipo:\n_"${categoria} 2800"_`;
   }
 
   async handleConfirmation(phone, message, user) {
@@ -238,7 +238,7 @@ class MessageController {
     }
 
     // Resposta inválida
-    return 'Não entendi 🤔\n\nResponde "sim" para confirmar ou "não" para cancelar.';
+    return 'Não entendi... É *sim* pra confirmar ou *não* pra cancelar 😊';
   }
 
   async handleBalance(user) {
@@ -249,16 +249,22 @@ class MessageController {
       ? ((lucro / balance.entradas) * 100).toFixed(1)
       : 0;
 
-    let response = `📊 *RESUMO*\n\n`;
-    response += `💰 Vendas: *R$ ${balance.entradas.toFixed(2)}*\n`;
-    response += `💸 Custos: *R$ ${balance.saidas.toFixed(2)}*\n`;
-    response += `✨ Lucro: *R$ ${lucro.toFixed(2)}* (${margemPercentual}%)\n\n`;
-
     if (balance.entradas === 0 && balance.saidas === 0) {
-      response += `Ainda não tem movimentações.\n\nMe manda sua primeira venda:\n"Botox 2800"`;
-    } else {
-      response += `Manda "relatório" pra ver detalhado`;
+      return `Ainda não tem nenhuma movimentação registrada 📋\n\nMe conta sua primeira venda!\nTipo: _"Botox 2800 da cliente Maria"_`;
     }
+
+    let response = `Olha só como tá seu financeiro! 📊\n\n`;
+    response += `*Vendas:* R$ ${balance.entradas.toFixed(2)}\n`;
+    response += `*Custos:* R$ ${balance.saidas.toFixed(2)}\n`;
+    response += `*Lucro:* R$ ${lucro.toFixed(2)} _(${margemPercentual}% de margem)_\n\n`;
+
+    if (lucro > 0) {
+      response += `Tá no positivo! 🎉\n`;
+    } else if (lucro < 0) {
+      response += `Opa, tá no vermelho... 😬\n`;
+    }
+
+    response += `\nQuer ver o relatório completo do mês? Manda _"relatório"_`;
 
     return response;
   }
@@ -267,10 +273,10 @@ class MessageController {
     const transactions = await transactionController.getRecentTransactions(user.id, 5);
 
     if (transactions.length === 0) {
-      return 'Sem movimentações ainda 📋\n\nMe manda sua primeira:\n"Botox 2800"';
+      return `Não achei nenhuma movimentação ainda 📋\n\nBora registrar a primeira?\nÉ só me mandar tipo: _"Botox 2800"_`;
     }
 
-    let response = `📜 *ÚLTIMAS 5*\n\n`;
+    let response = `Suas últimas movimentações:\n\n`;
 
     transactions.forEach((t) => {
       const emoji = t.type === 'entrada' ? '💰' : '💸';
@@ -284,7 +290,9 @@ class MessageController {
       response += `${emoji} ${sinal}R$ ${parseFloat(t.amount).toFixed(2)} • ${categoria} • ${data}\n`;
     });
 
-    return response.trim();
+    response += `\nPra ver mais detalhes, manda _"relatório"_`;
+
+    return response;
   }
 
   async handleMonthlyReport(user) {
@@ -300,16 +308,20 @@ class MessageController {
       ? ((lucro / report.entradas) * 100).toFixed(1)
       : 0;
 
-    const mesNome = now.toLocaleDateString('pt-BR', { month: 'long' }).toUpperCase();
+    const mesNome = now.toLocaleDateString('pt-BR', { month: 'long' });
 
-    let response = `📊 *RELATÓRIO ${mesNome}*\n\n`;
-    response += `💰 Vendas: *R$ ${report.entradas.toFixed(2)}*\n`;
-    response += `💸 Custos: *R$ ${report.saidas.toFixed(2)}*\n`;
-    response += `✨ Lucro: *R$ ${lucro.toFixed(2)}* (${margemPercentual}%)\n`;
-    response += `📝 ${report.totalTransacoes} movimentações\n`;
+    if (report.totalTransacoes === 0) {
+      return `Ainda não tem movimentações em ${mesNome} 📋\n\nBora começar? Me manda sua primeira venda!`;
+    }
+
+    let response = `Seu relatório de *${mesNome}*! 📊\n\n`;
+    response += `*Faturamento:* R$ ${report.entradas.toFixed(2)}\n`;
+    response += `*Custos:* R$ ${report.saidas.toFixed(2)}\n`;
+    response += `*Lucro líquido:* R$ ${lucro.toFixed(2)} _(${margemPercentual}%)_\n\n`;
+    response += `Total de ${report.totalTransacoes} movimentações esse mês\n`;
 
     if (Object.keys(report.porCategoria).length > 0) {
-      response += `\n*TOP CATEGORIAS:*\n`;
+      response += `\n*Principais categorias:*\n`;
       Object.entries(report.porCategoria)
         .sort((a, b) => b[1].total - a[1].total)
         .slice(0, 5)
@@ -317,6 +329,12 @@ class MessageController {
           const emoji = data.tipo === 'entrada' ? '💰' : '💸';
           response += `${emoji} ${cat}: R$ ${data.total.toFixed(2)}\n`;
         });
+    }
+
+    if (lucro > 0) {
+      response += `\nMandando bem! 💪`;
+    } else if (lucro < 0) {
+      response += `\nBora reverter esse cenário! 💪`;
     }
 
     return response;
@@ -453,11 +471,10 @@ class MessageController {
 
     // Por enquanto, apenas informa que recebeu o código
     // Futuramente pode integrar com API de consulta de boleto
-    let response = `🔢 *CÓDIGO DE BARRAS*\n\n`;
-    response += `Recebi o código:\n${codigo}\n\n`;
-    response += `Para registrar este boleto como custo, me informe:\n\n`;
-    response += `📝 *Exemplo:*\n"Fornecedor 1500" ou "Insumos 2300"\n\n`;
-    response += `Ou envie uma *foto do boleto* que eu extraio automaticamente! 📸`;
+    let response = `Recebi o código do boleto! 🔢\n\n`;
+    response += `Agora me diz: esse boleto é de quê e qual o valor?\n\n`;
+    response += `Por exemplo:\n_"Fornecedor 1500"_\n_"Conta de luz 450"_\n\n`;
+    response += `Ou se preferir, manda uma foto do boleto que eu leio tudo automaticamente 📸`;
 
     return response;
   }
