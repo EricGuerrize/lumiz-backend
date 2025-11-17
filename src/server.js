@@ -31,8 +31,8 @@ app.use(cors({
     'http://localhost:5173' // Vite dev server
   ],
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'x-user-phone']
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-user-phone']
 }));
 
 app.use(express.json());
