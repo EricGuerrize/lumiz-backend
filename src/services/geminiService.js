@@ -28,6 +28,7 @@ INTENÇÕES:
 - consultar_saldo: saldo, resumo, lucro, quanto tenho
 - consultar_historico: histórico, últimas, movimentações
 - relatorio_mensal: relatório, mês, mensal
+- comparar_meses: comparar, comparação, versus, vs, mês passado, mês anterior
 - consultar_parcelas: parcelas, parcelado, cartão, receber, a receber
 - ajuda: ajuda, como usar, exemplos, o que você faz, como funciona
 - saudacao: oi, olá, bom dia, boa tarde, boa noite
@@ -44,23 +45,32 @@ EXTRAÇÃO:
 - DESCRICAO: paciente, marca, forma de pagamento
 - DATA: "${dataHoje}" (se "ontem": calcular)
 - TIPO: "entrada" (venda) ou "saida" (custo)
-- FORMA_PAGAMENTO: "avista" (padrão), "parcelado" (se mencionar parcelas/cartão)
+- FORMA_PAGAMENTO: "pix", "dinheiro", "debito", "credito_avista", "parcelado" (padrão: "avista" se não especificado)
 - PARCELAS: número de parcelas (se parcelado)
 - BANDEIRA_CARTAO: visa, mastercard, elo, etc (se mencionado)
+- NOME_CLIENTE: nome do paciente/cliente (se mencionado)
 
 EXEMPLOS:
 
 "Botox 2800" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":2800.00,"categoria":"Botox","forma_pagamento":"avista","data":"${dataHoje}"}}
 
-"Botox 2800 paciente Maria" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":2800.00,"categoria":"Botox","descricao":"Paciente Maria","forma_pagamento":"avista","data":"${dataHoje}"}}
+"Botox 2800 paciente Maria" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":2800.00,"categoria":"Botox","descricao":"Paciente Maria","forma_pagamento":"avista","nome_cliente":"Maria","data":"${dataHoje}"}}
 
-"Botox 2800 3x cartão paciente Maria" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":2800.00,"categoria":"Botox","descricao":"Paciente Maria","forma_pagamento":"parcelado","parcelas":3,"data":"${dataHoje}"}}
+"Botox 2800 pix cliente Ana" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":2800.00,"categoria":"Botox","descricao":"PIX - Cliente Ana","forma_pagamento":"pix","nome_cliente":"Ana","data":"${dataHoje}"}}
+
+"Preenchimento 1500 dinheiro Maria Silva" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":1500.00,"categoria":"Preenchimento","descricao":"Dinheiro - Maria Silva","forma_pagamento":"dinheiro","nome_cliente":"Maria Silva","data":"${dataHoje}"}}
+
+"Harmonização 3000 débito paciente João" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":3000.00,"categoria":"Harmonização","descricao":"Débito - Paciente João","forma_pagamento":"debito","nome_cliente":"João","data":"${dataHoje}"}}
+
+"Bioestimulador 4500 crédito à vista cliente Paula" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":4500.00,"categoria":"Bioestimulador","descricao":"Crédito à vista - Cliente Paula","forma_pagamento":"credito_avista","nome_cliente":"Paula","data":"${dataHoje}"}}
+
+"Botox 2800 3x cartão paciente Maria" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":2800.00,"categoria":"Botox","descricao":"Paciente Maria","forma_pagamento":"parcelado","parcelas":3,"nome_cliente":"Maria","data":"${dataHoje}"}}
 
 "Preenchimento 4500 6x visa" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":4500.00,"categoria":"Preenchimento","forma_pagamento":"parcelado","parcelas":6,"bandeira_cartao":"visa","data":"${dataHoje}"}}
 
-"Harmonização 8000 10x mastercard cliente João" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":8000.00,"categoria":"Harmonização","descricao":"Cliente João","forma_pagamento":"parcelado","parcelas":10,"bandeira_cartao":"mastercard","data":"${dataHoje}"}}
+"Harmonização 8000 10x mastercard cliente João" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":8000.00,"categoria":"Harmonização","descricao":"Cliente João","forma_pagamento":"parcelado","parcelas":10,"bandeira_cartao":"mastercard","nome_cliente":"João","data":"${dataHoje}"}}
 
-"Preenchimento labial 1500 pix" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":1500.00,"categoria":"Preenchimento labial","descricao":"PIX","forma_pagamento":"avista","data":"${dataHoje}"}}
+"Preenchimento labial 1500 pix" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":1500.00,"categoria":"Preenchimento labial","forma_pagamento":"pix","data":"${dataHoje}"}}
 
 "Harmonização facial 4500" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":4500.00,"categoria":"Harmonização facial","forma_pagamento":"avista","data":"${dataHoje}"}}
 
@@ -74,6 +84,10 @@ EXEMPLOS:
 "Resumo" → {"intencao":"consultar_saldo","dados":{}}
 "Histórico" → {"intencao":"consultar_historico","dados":{}}
 "Relatório" → {"intencao":"relatorio_mensal","dados":{}}
+"Comparar" → {"intencao":"comparar_meses","dados":{}}
+"Comparar meses" → {"intencao":"comparar_meses","dados":{}}
+"Como foi mês passado" → {"intencao":"comparar_meses","dados":{}}
+"Evolução" → {"intencao":"comparar_meses","dados":{}}
 "Parcelas" → {"intencao":"consultar_parcelas","dados":{}}
 "A receber" → {"intencao":"consultar_parcelas","dados":{}}
 "Cartão" → {"intencao":"consultar_parcelas","dados":{}}

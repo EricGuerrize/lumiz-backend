@@ -63,6 +63,10 @@ class MessageController {
           response = await this.handleMonthlyReport(user);
           break;
 
+        case 'comparar_meses':
+          response = await this.handleCompareMonths(user);
+          break;
+
         case 'consultar_parcelas':
           response = await this.handlePendingInstallments(user);
           break;
@@ -111,7 +115,7 @@ class MessageController {
   }
 
   async handleTransactionRequest(user, intent, phone) {
-    const { tipo, valor, categoria, descricao, data, forma_pagamento, parcelas, bandeira_cartao } = intent.dados;
+    const { tipo, valor, categoria, descricao, data, forma_pagamento, parcelas, bandeira_cartao, nome_cliente } = intent.dados;
 
     if (!valor || valor <= 0) {
       return 'Não consegui identificar o valor 🤔\n\nMe manda assim: "Botox 2800" ou "Insumos 3200"';
@@ -120,7 +124,7 @@ class MessageController {
     // Armazena a transação pendente
     this.pendingTransactions.set(phone, {
       user,
-      dados: { tipo, valor, categoria, descricao, data, forma_pagamento, parcelas, bandeira_cartao },
+      dados: { tipo, valor, categoria, descricao, data, forma_pagamento, parcelas, bandeira_cartao, nome_cliente },
       timestamp: Date.now()
     });
 
@@ -135,11 +139,18 @@ class MessageController {
     let message = `${emoji} *${tipoTexto}*\n\n`;
     message += `💵 *R$ ${valor.toFixed(2)}*\n`;
     message += `📂 ${categoria || 'Sem categoria'}\n`;
-    if (descricao) {
+
+    // Mostra nome do cliente se disponível
+    if (nome_cliente) {
+      message += `👤 ${nome_cliente}\n`;
+    }
+
+    if (descricao && !nome_cliente) {
+      // Só mostra descrição se não tiver cliente (para evitar duplicação)
       message += `📝 ${descricao}\n`;
     }
 
-    // Adiciona informações de parcelamento
+    // Adiciona informações de pagamento
     if (forma_pagamento === 'parcelado' && parcelas) {
       const valorParcela = valor / parcelas;
       message += `💳 *${parcelas}x de R$ ${valorParcela.toFixed(2)}*\n`;
@@ -147,13 +158,27 @@ class MessageController {
         message += `🏷️ ${bandeira_cartao.toUpperCase()}\n`;
       }
     } else {
-      message += `💳 À vista\n`;
+      // Mostra forma de pagamento de forma amigável
+      const formaTexto = this.getPaymentMethodText(forma_pagamento);
+      message += `💳 ${formaTexto}\n`;
     }
 
     message += `📅 ${dataFormatada}\n\n`;
     message += `Responde *SIM* pra confirmar ou *NÃO* pra cancelar`;
 
     return message;
+  }
+
+  getPaymentMethodText(forma_pagamento) {
+    const metodos = {
+      'pix': 'PIX',
+      'dinheiro': 'Dinheiro',
+      'debito': 'Débito',
+      'credito_avista': 'Crédito à vista',
+      'avista': 'À vista',
+      'parcelado': 'Parcelado'
+    };
+    return metodos[forma_pagamento] || 'À vista';
   }
 
   async handleOnlyValue(intent, phone) {
@@ -356,20 +381,101 @@ class MessageController {
     return response;
   }
 
+  async handleCompareMonths(user) {
+    const now = new Date();
+    const currentMonth = now.getMonth() + 1;
+    const currentYear = now.getFullYear();
+
+    // Calcula mês anterior
+    let previousMonth = currentMonth - 1;
+    let previousYear = currentYear;
+    if (previousMonth === 0) {
+      previousMonth = 12;
+      previousYear = currentYear - 1;
+    }
+
+    const reportCurrent = await transactionController.getMonthlyReport(
+      user.id,
+      currentYear,
+      currentMonth
+    );
+
+    const reportPrevious = await transactionController.getMonthlyReport(
+      user.id,
+      previousYear,
+      previousMonth
+    );
+
+    const currentMonthName = now.toLocaleDateString('pt-BR', { month: 'long' });
+    const previousMonthName = new Date(previousYear, previousMonth - 1).toLocaleDateString('pt-BR', { month: 'long' });
+
+    const lucroCurrent = reportCurrent.entradas - reportCurrent.saidas;
+    const lucroPrevious = reportPrevious.entradas - reportPrevious.saidas;
+
+    // Calcula variações
+    const variacaoEntradas = reportPrevious.entradas > 0
+      ? (((reportCurrent.entradas - reportPrevious.entradas) / reportPrevious.entradas) * 100).toFixed(1)
+      : reportCurrent.entradas > 0 ? 100 : 0;
+
+    const variacaoSaidas = reportPrevious.saidas > 0
+      ? (((reportCurrent.saidas - reportPrevious.saidas) / reportPrevious.saidas) * 100).toFixed(1)
+      : reportCurrent.saidas > 0 ? 100 : 0;
+
+    const variacaoLucro = reportPrevious.entradas > 0
+      ? (((lucroCurrent - lucroPrevious) / Math.abs(lucroPrevious || 1)) * 100).toFixed(1)
+      : lucroCurrent > 0 ? 100 : 0;
+
+    let response = `📊 *COMPARATIVO DE MESES*\n\n`;
+
+    // Mês atual
+    response += `*${currentMonthName.toUpperCase()}* (atual)\n`;
+    response += `💰 Vendas: R$ ${reportCurrent.entradas.toFixed(2)}\n`;
+    response += `💸 Custos: R$ ${reportCurrent.saidas.toFixed(2)}\n`;
+    response += `📈 Lucro: R$ ${lucroCurrent.toFixed(2)}\n\n`;
+
+    // Mês anterior
+    response += `*${previousMonthName.toUpperCase()}*\n`;
+    response += `💰 Vendas: R$ ${reportPrevious.entradas.toFixed(2)}\n`;
+    response += `💸 Custos: R$ ${reportPrevious.saidas.toFixed(2)}\n`;
+    response += `📈 Lucro: R$ ${lucroPrevious.toFixed(2)}\n\n`;
+
+    // Variações
+    response += `*VARIAÇÃO*\n`;
+
+    const setaEntradas = variacaoEntradas >= 0 ? '📈' : '📉';
+    const setaSaidas = variacaoSaidas >= 0 ? '📈' : '📉';
+    const setaLucro = variacaoLucro >= 0 ? '📈' : '📉';
+
+    response += `${setaEntradas} Vendas: ${variacaoEntradas >= 0 ? '+' : ''}${variacaoEntradas}%\n`;
+    response += `${setaSaidas} Custos: ${variacaoSaidas >= 0 ? '+' : ''}${variacaoSaidas}%\n`;
+    response += `${setaLucro} Lucro: ${variacaoLucro >= 0 ? '+' : ''}${variacaoLucro}%\n\n`;
+
+    // Análise
+    if (lucroCurrent > lucroPrevious) {
+      response += `Tá crescendo! 🎉 Seu lucro aumentou R$ ${(lucroCurrent - lucroPrevious).toFixed(2)}`;
+    } else if (lucroCurrent < lucroPrevious) {
+      response += `Lucro caiu R$ ${(lucroPrevious - lucroCurrent).toFixed(2)} 😬\nBora focar em aumentar as vendas!`;
+    } else {
+      response += `Lucro estável! 🤝`;
+    }
+
+    return response;
+  }
+
   async handlePendingInstallments(user) {
     try {
       const installments = await reminderService.getPendingInstallments(user.id);
 
       if (installments.length === 0) {
-        return `💳 *PARCELAS A RECEBER*\n\nNenhuma parcela pendente! ✅\n\nPara registrar venda parcelada:\n"Botox 2800 3x cartão paciente Maria"`;
+        return `Não tem parcelas pendentes! ✅\n\nPra registrar venda parcelada, é só me mandar:\n_"Botox 2800 3x cartão paciente Maria"_`;
       }
 
       let response = `💳 *PARCELAS A RECEBER*\n\n`;
 
       // Total a receber
       const totalReceber = installments.reduce((sum, i) => sum + i.valor_parcela, 0);
-      response += `💵 Total: *R$ ${totalReceber.toFixed(2)}*\n`;
-      response += `📋 ${installments.length} parcela${installments.length > 1 ? 's' : ''}\n\n`;
+      response += `💵 Total pendente: *R$ ${totalReceber.toFixed(2)}*\n`;
+      response += `📋 ${installments.length} parcela${installments.length > 1 ? 's' : ''} restante${installments.length > 1 ? 's' : ''}\n\n`;
 
       // Agrupa por mês
       const porMes = {};
@@ -396,14 +502,28 @@ class MessageController {
             month: '2-digit'
           });
 
-          response += `  ${p.parcela_atual}/${p.total_parcelas} • R$ ${p.valor_parcela.toFixed(2)} • ${p.cliente}\n`;
+          // Formato: parcela • valor • cliente • procedimento
+          let linha = `  ${p.parcela_atual}/${p.total_parcelas} • R$ ${p.valor_parcela.toFixed(2)}`;
+          linha += ` • ${p.cliente}`;
+
+          // Adiciona procedimento se disponível
+          if (p.procedimento && p.procedimento !== 'Procedimento') {
+            linha += ` _(${p.procedimento})_`;
+          }
+
+          // Adiciona bandeira se disponível
+          if (p.bandeira) {
+            linha += ` 🏷️${p.bandeira}`;
+          }
+
+          response += `${linha}\n`;
           count++;
         }
         response += `\n`;
       }
 
       if (installments.length > 10) {
-        response += `... e mais ${installments.length - 10} parcela${installments.length - 10 > 1 ? 's' : ''}`;
+        response += `_... e mais ${installments.length - 10} parcela${installments.length - 10 > 1 ? 's' : ''}_`;
       }
 
       return response.trim();
