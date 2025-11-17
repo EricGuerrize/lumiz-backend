@@ -22,14 +22,13 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Configuração CORS para permitir o frontend
+const allowedOrigins = [
+  'https://lumiz-financeiro.vercel.app',
+  'http://localhost:5173'
+];
+
 app.use(cors({
-  origin: [
-    'https://lumiz-financeiro.vercel.app',
-    'https://preview--lumiz-financeiro.lovable.app',
-    'https://lumiz-financeiro.lovable.app',
-    'http://localhost:3000',
-    'http://localhost:5173' // Vite dev server
-  ],
+  origin: allowedOrigins,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-user-phone']
