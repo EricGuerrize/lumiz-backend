@@ -9,12 +9,30 @@ class GeminiService {
   }
 
   async processMessage(message) {
-    const dataHoje = new Date().toISOString().split('T')[0];
+    const hoje = new Date();
+    const dataHoje = hoje.toISOString().split('T')[0];
+    const diaSemanaHoje = hoje.getDay(); // 0=domingo, 1=segunda, etc.
+    const diasSemana = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+    const nomeDiaHoje = diasSemana[diaSemanaHoje];
+
+    // Calcula datas relativas para exemplos
+    const ontem = new Date(hoje);
+    ontem.setDate(ontem.getDate() - 1);
+    const dataOntem = ontem.toISOString().split('T')[0];
+
+    const anteontem = new Date(hoje);
+    anteontem.setDate(anteontem.getDate() - 2);
+    const dataAnteontem = anteontem.toISOString().split('T')[0];
+
+    const semanaPassada = new Date(hoje);
+    semanaPassada.setDate(semanaPassada.getDate() - 7);
+    const dataSemanaPassada = semanaPassada.toISOString().split('T')[0];
 
     const prompt = `
 TAREFA: Analisar mensagem e retornar JSON com intenção e dados extraídos.
 
 CONTEXTO: Clínica de estética.
+DATA DE HOJE: ${dataHoje} (${nomeDiaHoje}-feira)
 
 REGRA PRINCIPAL DE CLASSIFICAÇÃO:
 - Palavras que indicam VENDA (registrar_entrada): botox, preenchimento, harmonização, bioestimulador, fios, peeling, laser, paciente, cliente, procedimento
@@ -43,7 +61,12 @@ EXTRAÇÃO:
 - VALOR: números (1500, 2.800, 3mil = 3000)
 - CATEGORIA: nome do procedimento ou tipo de custo
 - DESCRICAO: paciente, marca, forma de pagamento
-- DATA: "${dataHoje}" (se "ontem": calcular)
+- DATA: "${dataHoje}" por padrão. Calcule datas relativas:
+  * "ontem" = subtrair 1 dia de ${dataHoje}
+  * "anteontem" = subtrair 2 dias
+  * "semana passada" = subtrair 7 dias
+  * "segunda", "terça", etc = calcular o último dia da semana mencionado (se hoje é ${nomeDiaHoje}, calcule corretamente)
+  * "dia 15" ou "15/11" = usar a data específica
 - TIPO: "entrada" (venda) ou "saida" (custo)
 - FORMA_PAGAMENTO: "pix", "dinheiro", "debito", "credito_avista", "parcelado" (padrão: "avista" se não especificado)
 - PARCELAS: número de parcelas (se parcelado)
@@ -79,6 +102,14 @@ EXEMPLOS:
 "Marketing 800" → {"intencao":"registrar_saida","dados":{"tipo":"saida","valor":800.00,"categoria":"Marketing","data":"${dataHoje}"}}
 
 "Aluguel 5000" → {"intencao":"registrar_saida","dados":{"tipo":"saida","valor":5000.00,"categoria":"Aluguel","data":"${dataHoje}"}}
+
+"Botox 2800 ontem" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":2800.00,"categoria":"Botox","forma_pagamento":"avista","data":"${dataOntem}"}}
+
+"Preenchimento 3500 semana passada cliente Ana" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":3500.00,"categoria":"Preenchimento","descricao":"Cliente Ana","forma_pagamento":"avista","nome_cliente":"Ana","data":"${dataSemanaPassada}"}}
+
+"Insumos 1200 ontem" → {"intencao":"registrar_saida","dados":{"tipo":"saida","valor":1200.00,"categoria":"Insumos","data":"${dataOntem}"}}
+
+"Harmonização 5000 pix anteontem paciente João" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":5000.00,"categoria":"Harmonização","descricao":"PIX - Paciente João","forma_pagamento":"pix","nome_cliente":"João","data":"${dataAnteontem}"}}
 
 "Saldo" → {"intencao":"consultar_saldo","dados":{}}
 "Resumo" → {"intencao":"consultar_saldo","dados":{}}

@@ -100,7 +100,11 @@ class MessageController {
           break;
 
         case 'mensagem_ambigua':
-          response = 'Hmm, não consegui entender direito 🤔\n\nTenta me explicar melhor! Por exemplo:\n_"Fiz um botox de 2800"_ ou _"Gastei 3200 em insumos"_\n\nSe precisar, é só mandar "ajuda" que te mostro tudo que sei fazer!';
+          response = await this.handleAmbiguousMessage(user, message);
+          break;
+
+        case 'erro':
+          response = 'Ops, tive um probleminha técnico 🤔\n\nPode tentar de novo? Se continuar dando erro, tenta simplificar a mensagem.\n\nExemplo: _"Botox 2800"_';
           break;
 
         default:
@@ -110,7 +114,7 @@ class MessageController {
       return response;
     } catch (error) {
       console.error('Erro ao processar mensagem:', error);
-      return 'Desculpe, ocorreu um erro ao processar sua mensagem. Tente novamente.';
+      return 'Eita, deu um erro aqui 😅\n\nTenta de novo! Se o problema continuar, me manda a mensagem de um jeito mais simples.\n\nExemplo: _"Botox 2800 cliente Maria"_';
     }
   }
 
@@ -255,7 +259,21 @@ class MessageController {
         }
 
         successMsg += `Tudo anotadinho! ✅\n\n`;
-        successMsg += `_Errou algo? Manda "desfazer" nos próximos 10 min_`;
+
+        // Adiciona dica contextual aleatória
+        const dicas = [
+          '_Errou algo? Manda "desfazer" nos próximos 10 min_',
+          '_Quer ver seu saldo? Manda "saldo"_',
+          '_Quer comparar com mês passado? Manda "comparar"_',
+          '_Quer ver suas parcelas? Manda "parcelas"_',
+          '_Manda "relatório" pra ver o resumo do mês_'
+        ];
+
+        if (tipo === 'entrada' && forma_pagamento !== 'parcelado') {
+          successMsg += dicas[Math.floor(Math.random() * dicas.length)];
+        } else {
+          successMsg += `_Errou algo? Manda "desfazer" nos próximos 10 min_`;
+        }
 
         return successMsg;
       } catch (error) {
@@ -613,6 +631,56 @@ class MessageController {
     response += `Ou se preferir, manda uma foto do boleto que eu leio tudo automaticamente 📸`;
 
     return response;
+  }
+
+  async handleAmbiguousMessage(user, message) {
+    try {
+      // Busca últimas transações para sugerir categorias
+      const recentTrans = await transactionController.getRecentTransactions(user.id, 3);
+
+      let response = `Hmm, não consegui entender direito 🤔\n\n`;
+
+      // Analisa a mensagem para dar dicas específicas
+      const msgLower = message.toLowerCase();
+      const temNumero = /\d+/.test(message);
+      const temPalavraChave = /botox|preenchimento|harmoniza|insumo|marketing|aluguel/i.test(message);
+
+      if (!temNumero && temPalavraChave) {
+        response += `Parece que falta o valor! Tenta assim:\n`;
+        if (msgLower.includes('botox')) {
+          response += `_"Botox 2800"_ ou _"Botox 2800 cliente Maria"_\n\n`;
+        } else if (msgLower.includes('preench')) {
+          response += `_"Preenchimento 3500"_ ou _"Preenchimento labial 2200"_\n\n`;
+        } else {
+          response += `_"${message} + valor"_\n\n`;
+        }
+      } else if (temNumero && !temPalavraChave) {
+        response += `Entendi o número, mas não sei o que é. Isso foi uma venda ou um gasto?\n\n`;
+        response += `Exemplo:\n_"Botox ${message}"_ se foi venda\n_"Insumos ${message}"_ se foi custo\n\n`;
+      } else {
+        response += `Tenta me explicar de um jeito mais simples! Por exemplo:\n`;
+        response += `_"Fiz um botox de 2800"_ ou _"Gastei 3200 em insumos"_\n\n`;
+      }
+
+      // Sugere baseado no histórico se tiver
+      if (recentTrans.length > 0) {
+        const categorias = [...new Set(recentTrans.map(t => t.categories?.name).filter(Boolean))];
+        if (categorias.length > 0) {
+          response += `💡 *Suas últimas categorias:*\n`;
+          categorias.slice(0, 3).forEach(cat => {
+            response += `• ${cat}\n`;
+          });
+          response += `\n`;
+        }
+      }
+
+      response += `Ou manda "ajuda" pra ver todos os comandos! 😊`;
+
+      return response;
+    } catch (error) {
+      console.error('Erro ao gerar mensagem de ajuda:', error);
+      return 'Hmm, não consegui entender direito 🤔\n\nTenta me explicar melhor! Por exemplo:\n_"Fiz um botox de 2800"_ ou _"Gastei 3200 em insumos"_\n\nSe precisar, é só mandar "ajuda" que te mostro tudo que sei fazer!';
+    }
   }
 
   async handleUndoLastTransaction(user, phone) {
