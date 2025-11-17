@@ -8,6 +8,8 @@ const onboardingRoutes = require('./routes/onboarding.routes');
 const reminderService = require('./services/reminderService');
 const nudgeService = require('./services/nudgeService');
 const insightService = require('./services/insightService');
+// Garante que mdrService seja inicializado na startup para ativar BullMQ
+const mdrService = require('./services/mdrService');
 
 const app = express();
 const PORT = process.env.PORT || 3000;

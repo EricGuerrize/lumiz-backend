@@ -8,10 +8,13 @@ const onboardingService = require('./onboardingService');
 
 class MdrService {
   constructor() {
+    console.log('[MDR_QUEUE] Inicializando MdrService...');
     this.queue = null;
     this.worker = null;
     this.queueScheduler = null;
     this.queueEnabled = false;
+
+    console.log('[MDR_QUEUE] REDIS_URL:', process.env.REDIS_URL ? 'configurada' : 'não configurada');
 
     if (process.env.REDIS_URL) {
       try {
