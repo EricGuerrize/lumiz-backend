@@ -2,6 +2,7 @@
  * Simple smoke tests to validate core endpoints.
  * Requires Supabase credentials because onboarding persistence hits the DB.
  */
+require('dotenv').config();
 process.env.NODE_ENV = process.env.NODE_ENV || 'test';
 
 const missingSupabaseEnv = !process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY;
