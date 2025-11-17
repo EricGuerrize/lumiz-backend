@@ -113,8 +113,10 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`
+let server = null;
+if (process.env.NODE_ENV !== 'test') {
+  server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`
 ╔════════════════════════════════════════╗
 ║         LUMIZ BACKEND STARTED          ║
 ╚════════════════════════════════════════╝
@@ -130,6 +132,8 @@ Endpoints:
   - Health: http://localhost:${PORT}/health
   - Dashboard: http://localhost:${PORT}/api/dashboard/*
   `);
-});
+  });
+}
 
 module.exports = app;
+module.exports.server = server;
