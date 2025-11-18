@@ -134,7 +134,7 @@ class MessageController {
           break;
 
         case 'buscar_transacao':
-          response = await this.handleSearchTransaction(user, intent);
+          response = await this.handleSearchTransaction(user, intent, message);
           break;
 
         case 'definir_meta':
