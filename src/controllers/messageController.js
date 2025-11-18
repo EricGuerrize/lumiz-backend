@@ -6,6 +6,7 @@ const reminderService = require('../services/reminderService');
 const documentService = require('../services/documentService');
 const insightService = require('../services/insightService');
 const pdfService = require('../services/pdfService');
+const supabase = require('../db/supabase');
 
 class MessageController {
   constructor() {
@@ -15,6 +16,8 @@ class MessageController {
     this.pendingDocumentTransactions = new Map();
     // Armazena última transação registrada por usuário (para desfazer)
     this.lastTransactions = new Map();
+    // Armazena edições pendentes
+    this.pendingEdits = new Map();
   }
 
   async handleIncomingMessage(phone, message) {
@@ -43,6 +46,11 @@ class MessageController {
         return await this.handleDocumentConfirmation(phone, message, user);
       }
 
+      // Verifica se existe edição pendente
+      if (this.pendingEdits.has(phone)) {
+        return await this.handleEditConfirmation(phone, message, user);
+      }
+
       const intent = await geminiService.processMessage(message);
 
       let response = '';
@@ -64,10 +72,10 @@ class MessageController {
         case 'relatorio_mensal':
           // Verifica se usuário quer PDF
           if (intent.dados?.formato === 'pdf' || message.toLowerCase().includes('pdf')) {
-            await this.handleMonthlyReportPDF(user, phone);
+            await this.handleMonthlyReportPDF(user, phone, intent.dados);
             return null; // PDF será enviado diretamente
           }
-          response = await this.handleMonthlyReport(user);
+          response = await this.handleMonthlyReport(user, intent.dados);
           break;
 
         case 'exportar_dados':
@@ -119,6 +127,18 @@ class MessageController {
 
         case 'desfazer':
           response = await this.handleUndoLastTransaction(user, phone);
+          break;
+
+        case 'editar_transacao':
+          response = await this.handleEditTransaction(user, phone, intent);
+          break;
+
+        case 'buscar_transacao':
+          response = await this.handleSearchTransaction(user, intent);
+          break;
+
+        case 'definir_meta':
+          response = await this.handleDefineGoal(user, phone, intent);
           break;
 
         case 'saudacao':
@@ -392,30 +412,67 @@ class MessageController {
     return response;
   }
 
-  async handleMonthlyReport(user) {
+  async handleMonthlyReport(user, dados = {}) {
     const now = new Date();
-    const report = await transactionController.getMonthlyReport(
-      user.id,
-      now.getFullYear(),
-      now.getMonth() + 1
-    );
+    let year = now.getFullYear();
+    let month = now.getMonth() + 1;
+    let periodoTexto = '';
+
+    // Detecta período customizado
+    if (dados?.mes || dados?.ano) {
+      month = dados.mes || month;
+      year = dados.ano || year;
+    } else if (dados?.periodo) {
+      const periodo = dados.periodo.toLowerCase();
+      
+      // Detecta semana
+      if (periodo.includes('semana')) {
+        const inicioSemana = new Date(now);
+        inicioSemana.setDate(now.getDate() - now.getDay());
+        const fimSemana = new Date(inicioSemana);
+        fimSemana.setDate(inicioSemana.getDate() + 6);
+        
+        periodoTexto = `Semana (${inicioSemana.toLocaleDateString('pt-BR')} a ${fimSemana.toLocaleDateString('pt-BR')})`;
+        // Para semana, usa getMonthlyReport com mês atual (aproximação)
+        month = now.getMonth() + 1;
+        year = now.getFullYear();
+      }
+      // Detecta mês específico
+      else if (periodo.includes('janeiro')) { month = 1; }
+      else if (periodo.includes('fevereiro')) { month = 2; }
+      else if (periodo.includes('março') || periodo.includes('marco')) { month = 3; }
+      else if (periodo.includes('abril')) { month = 4; }
+      else if (periodo.includes('maio')) { month = 5; }
+      else if (periodo.includes('junho')) { month = 6; }
+      else if (periodo.includes('julho')) { month = 7; }
+      else if (periodo.includes('agosto')) { month = 8; }
+      else if (periodo.includes('setembro')) { month = 9; }
+      else if (periodo.includes('outubro')) { month = 10; }
+      else if (periodo.includes('novembro')) { month = 11; }
+      else if (periodo.includes('dezembro')) { month = 12; }
+    }
+
+    const report = await transactionController.getMonthlyReport(user.id, year, month);
 
     const lucro = report.entradas - report.saidas;
     const margemPercentual = report.entradas > 0
       ? ((lucro / report.entradas) * 100).toFixed(1)
       : 0;
 
-    const mesNome = now.toLocaleDateString('pt-BR', { month: 'long' });
+    const mesNome = periodoTexto || new Date(year, month - 1, 1).toLocaleDateString('pt-BR', { 
+      month: 'long', 
+      year: 'numeric' 
+    });
 
     if (report.totalTransacoes === 0) {
-      return `Ainda não tem movimentações em ${mesNome} 📋\n\nBora começar? Me manda sua primeira venda!`;
+      return `Ainda não tem movimentações em ${mesNome}.\n\nBora começar? Me manda sua primeira venda!`;
     }
 
-    let response = `Seu relatório de *${mesNome}*! 📊\n\n`;
-    response += `*Faturamento:* R$ ${report.entradas.toFixed(2)}\n`;
-    response += `*Custos:* R$ ${report.saidas.toFixed(2)}\n`;
-    response += `*Lucro líquido:* R$ ${lucro.toFixed(2)} _(${margemPercentual}%)_\n\n`;
-    response += `Total de ${report.totalTransacoes} movimentações esse mês\n`;
+    let response = `*RELATÓRIO - ${mesNome}*\n\n`;
+    response += `Faturamento: R$ ${report.entradas.toFixed(2)}\n`;
+    response += `Custos: R$ ${report.saidas.toFixed(2)}\n`;
+    response += `Lucro líquido: R$ ${lucro.toFixed(2)} (${margemPercentual}%)\n\n`;
+    response += `Total: ${report.totalTransacoes} movimentações\n`;
 
     if (Object.keys(report.porCategoria).length > 0) {
       response += `\n*Principais categorias:*\n`;
@@ -423,32 +480,52 @@ class MessageController {
         .sort((a, b) => b[1].total - a[1].total)
         .slice(0, 5)
         .forEach(([cat, data]) => {
-          const emoji = data.tipo === 'entrada' ? '💰' : '💸';
-          response += `${emoji} ${cat}: R$ ${data.total.toFixed(2)}\n`;
+          const tipo = data.tipo === 'entrada' ? 'Receita' : 'Custo';
+          response += `${tipo} - ${cat}: R$ ${data.total.toFixed(2)}\n`;
         });
     }
 
-    response += `\n💡 Quer o relatório completo em PDF? Manda _"me manda pdf"_ ou _"gerar pdf"_\n`;
+    response += `\nPara PDF completo, digite "me manda pdf" ou "gerar pdf".`;
 
     if (lucro > 0) {
-      response += `\nMandando bem! 💪`;
+      response += `\n\nMandando bem!`;
     } else if (lucro < 0) {
-      response += `\nBora reverter esse cenário! 💪`;
+      response += `\n\nBora reverter esse cenário!`;
     }
 
     return response;
   }
 
-  async handleMonthlyReportPDF(user, phone) {
+  async handleMonthlyReportPDF(user, phone, dados = {}) {
     try {
       const now = new Date();
-      const year = now.getFullYear();
-      const month = now.getMonth() + 1;
+      let year = now.getFullYear();
+      let month = now.getMonth() + 1;
+
+      // Detecta período customizado
+      if (dados?.mes || dados?.ano) {
+        month = dados.mes || month;
+        year = dados.ano || year;
+      } else if (dados?.periodo) {
+        const periodo = dados.periodo.toLowerCase();
+        if (periodo.includes('janeiro')) { month = 1; }
+        else if (periodo.includes('fevereiro')) { month = 2; }
+        else if (periodo.includes('março') || periodo.includes('marco')) { month = 3; }
+        else if (periodo.includes('abril')) { month = 4; }
+        else if (periodo.includes('maio')) { month = 5; }
+        else if (periodo.includes('junho')) { month = 6; }
+        else if (periodo.includes('julho')) { month = 7; }
+        else if (periodo.includes('agosto')) { month = 8; }
+        else if (periodo.includes('setembro')) { month = 9; }
+        else if (periodo.includes('outubro')) { month = 10; }
+        else if (periodo.includes('novembro')) { month = 11; }
+        else if (periodo.includes('dezembro')) { month = 12; }
+      }
 
       // Envia mensagem de processamento
       await evolutionService.sendMessage(
         phone,
-        '📄 Gerando seu relatório em PDF...\n\nIsso pode levar alguns segundos! ⏳'
+        'Gerando seu relatório em PDF...\n\nIsso pode levar alguns segundos!'
       );
 
       // Gera o PDF
@@ -465,13 +542,13 @@ class MessageController {
       // Confirmação
       await evolutionService.sendMessage(
         phone,
-        '✅ *PDF gerado e enviado!*\n\nSeu relatório mensal completo está no documento acima 📊'
+        '*PDF gerado e enviado!*\n\nSeu relatório mensal completo está no documento acima.'
       );
     } catch (error) {
       console.error('[PDF] Erro ao gerar/enviar PDF:', error);
       await evolutionService.sendMessage(
         phone,
-        '❌ Ops! Não consegui gerar o PDF agora.\n\nTente novamente em alguns instantes ou acesse o dashboard web.'
+        'Ops! Não consegui gerar o PDF agora.\n\nTente novamente em alguns instantes ou acesse o dashboard web.'
       );
     }
   }
@@ -984,32 +1061,42 @@ class MessageController {
       const currentMonth = now.getMonth() + 1;
       const currentYear = now.getFullYear();
 
-      // Calcula mês anterior
-      let previousMonth = currentMonth - 1;
-      let previousYear = currentYear;
-      if (previousMonth === 0) {
-        previousMonth = 12;
-        previousYear = currentYear - 1;
-      }
-
       const reportCurrent = await transactionController.getMonthlyReport(
         user.id,
         currentYear,
         currentMonth
       );
 
-      const reportPrevious = await transactionController.getMonthlyReport(
-        user.id,
-        previousYear,
-        previousMonth
-      );
-
-      const currentMonthName = now.toLocaleDateString('pt-BR', { month: 'long' });
       const faturamentoAtual = reportCurrent.entradas;
-      const faturamentoAnterior = reportPrevious.entradas;
 
-      // Meta: 10% acima do mês anterior (ou R$ 10.000 se não houver histórico)
-      const meta = faturamentoAnterior > 0 ? faturamentoAnterior * 1.1 : 10000;
+      // Busca meta configurada pelo usuário
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('meta_mensal')
+        .eq('id', user.id)
+        .single();
+
+      let meta = profile?.meta_mensal;
+
+      // Se não tem meta configurada, calcula automática (10% acima do mês anterior)
+      if (!meta || meta <= 0) {
+        let previousMonth = currentMonth - 1;
+        let previousYear = currentYear;
+        if (previousMonth === 0) {
+          previousMonth = 12;
+          previousYear = currentYear - 1;
+        }
+
+        const reportPrevious = await transactionController.getMonthlyReport(
+          user.id,
+          previousYear,
+          previousMonth
+        );
+
+        const faturamentoAnterior = reportPrevious.entradas;
+        meta = faturamentoAnterior > 0 ? faturamentoAnterior * 1.1 : 10000;
+      }
+
       const percentualAtingido = meta > 0 ? ((faturamentoAtual / meta) * 100).toFixed(1) : 0;
       const faltando = Math.max(0, meta - faturamentoAtual);
 
@@ -1025,35 +1112,37 @@ class MessageController {
       const barraVazia = 10 - barraCheia;
       const barra = '▓'.repeat(barraCheia) + '░'.repeat(barraVazia);
 
-      response += `${barra} *${percentualAtingido}%*\n\n`;
+      response += `${barra} ${percentualAtingido}%\n\n`;
 
-      response += `💰 *Faturamento:* R$ ${faturamentoAtual.toFixed(2)}\n`;
-      response += `🎯 *Meta:* R$ ${meta.toFixed(2)}\n`;
+      response += `Faturamento: R$ ${faturamentoAtual.toFixed(2)}\n`;
+      response += `Meta: R$ ${meta.toFixed(2)}\n`;
 
       if (faltando > 0) {
-        response += `📉 *Falta:* R$ ${faltando.toFixed(2)}\n\n`;
+        response += `Falta: R$ ${faltando.toFixed(2)}\n\n`;
       } else {
-        response += `✅ *Meta atingida!*\n\n`;
+        response += `*Meta atingida!*\n\n`;
       }
 
-      response += `📅 ${diasRestantes} dia${diasRestantes !== 1 ? 's' : ''} restante${diasRestantes !== 1 ? 's' : ''} no mês\n\n`;
+      response += `${diasRestantes} dia${diasRestantes !== 1 ? 's' : ''} restante${diasRestantes !== 1 ? 's' : ''} no mês\n\n`;
 
       // Análise e dicas
       if (percentualAtingido >= 100) {
-        response += `🎉 *Parabéns!* Você já bateu a meta!\n`;
-        response += `Continue assim e supere ainda mais! 🚀`;
+        response += `*Parabéns!* Você já bateu a meta!\n`;
+        response += `Continue assim e supere ainda mais!`;
       } else if (percentualAtingido >= 75) {
-        response += `💪 *Quase lá!* Falta pouco pra bater a meta!\n`;
+        response += `*Quase lá!* Falta pouco pra bater a meta.\n`;
         response += `Média diária necessária: R$ ${(faltando / Math.max(1, diasRestantes)).toFixed(2)}`;
       } else if (percentualAtingido >= 50) {
-        response += `📈 *Bom progresso!* Mas precisa acelerar.\n`;
+        response += `*Bom progresso!* Mas precisa acelerar.\n`;
         response += `Média diária necessária: R$ ${(faltando / Math.max(1, diasRestantes)).toFixed(2)}`;
       } else {
-        response += `⚠️ *Atenção!* Meta ainda distante.\n`;
+        response += `*Atenção!* Meta ainda distante.\n`;
         response += `Média diária necessária: R$ ${(faltando / Math.max(1, diasRestantes)).toFixed(2)}`;
       }
 
-      response += `\n\n💡 _Meta baseada em +10% do mês anterior_`;
+      if (!profile?.meta_mensal) {
+        response += `\n\nPara definir sua meta personalizada, digite "minha meta é [valor]".`;
+      }
 
       return response;
     } catch (error) {
@@ -1315,6 +1404,290 @@ class MessageController {
     }
 
     return 'Não entendi 🤔\n\nResponde "sim" para registrar ou "não" para cancelar.';
+  }
+
+  // ========== NOVOS HANDLERS ==========
+
+  async handleEditTransaction(user, phone, intent) {
+    try {
+      const lastTransaction = this.lastTransactions.get(phone);
+
+      if (!lastTransaction) {
+        return 'Não encontrei nenhuma transação recente para editar.\n\nVocê só pode editar transações registradas nos últimos 10 minutos.';
+      }
+
+      // Verifica se expirou (10 minutos)
+      if (Date.now() - lastTransaction.timestamp > 10 * 60 * 1000) {
+        this.lastTransactions.delete(phone);
+        return 'Passou o tempo para editar essa transação.\n\nVocê tem 10 minutos após o registro.';
+      }
+
+      // Mostra transação atual e pergunta o que mudar
+      const tipoTexto = lastTransaction.tipo === 'entrada' ? 'Receita' : 'Custo';
+      let msg = `*EDITAR TRANSAÇÃO*\n\n`;
+      msg += `Tipo: ${tipoTexto}\n`;
+      msg += `Valor: R$ ${lastTransaction.valor.toFixed(2)}\n`;
+      msg += `Categoria: ${lastTransaction.categoria}\n`;
+      msg += `Data: ${new Date(lastTransaction.data).toLocaleDateString('pt-BR')}\n`;
+      if (lastTransaction.descricao) {
+        msg += `Descrição: ${lastTransaction.descricao}\n`;
+      }
+      msg += `\nO que você quer mudar?\n`;
+      msg += `• Digite o novo valor (ex: "3000")\n`;
+      msg += `• Digite a nova categoria (ex: "Botox")\n`;
+      msg += `• Digite a nova data (ex: "15/11")\n`;
+      msg += `• Digite a nova descrição\n`;
+      msg += `\nOu digite "cancelar" para não editar.`;
+
+      // Armazena edição pendente
+      this.pendingEdits.set(phone, {
+        transactionId: lastTransaction.transactionId,
+        tipo: lastTransaction.tipo,
+        valor: lastTransaction.valor,
+        categoria: lastTransaction.categoria,
+        data: lastTransaction.data,
+        descricao: lastTransaction.descricao,
+        timestamp: Date.now()
+      });
+
+      return msg;
+    } catch (error) {
+      console.error('Erro ao iniciar edição:', error);
+      return 'Erro ao editar transação. Tente novamente.';
+    }
+  }
+
+  async handleEditConfirmation(phone, message, user) {
+    const pending = this.pendingEdits.get(phone);
+
+    if (!pending) {
+      return 'Não encontrei edição pendente.';
+    }
+
+    // Verifica se expirou (10 minutos)
+    if (Date.now() - pending.timestamp > 10 * 60 * 1000) {
+      this.pendingEdits.delete(phone);
+      return 'O tempo para editar expirou.';
+    }
+
+    const messageLower = message.toLowerCase().trim();
+
+    // Cancelar
+    if (messageLower === 'cancelar' || messageLower === 'não' || messageLower === 'nao') {
+      this.pendingEdits.delete(phone);
+      return 'Edição cancelada.';
+    }
+
+    // Processa a edição
+    try {
+      const updates = {};
+      let changed = false;
+
+      // Detecta valor (número isolado ou com R$)
+      const valorMatch = message.match(/r?\$?\s*(\d+(?:[.,]\d{2})?)/i) || message.match(/^(\d+(?:[.,]\d{2})?)$/);
+      if (valorMatch) {
+        const valor = parseFloat(valorMatch[1].replace(',', '.'));
+        if (valor > 0 && valor !== pending.valor) {
+          updates.valor = valor;
+          changed = true;
+        }
+      }
+
+      // Detecta data (formato brasileiro)
+      const dataMatch = message.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?/);
+      if (dataMatch) {
+        const dia = parseInt(dataMatch[1]);
+        const mes = parseInt(dataMatch[2]);
+        const ano = dataMatch[3] ? parseInt(dataMatch[3]) : new Date().getFullYear();
+        const novaData = new Date(ano, mes - 1, dia).toISOString().split('T')[0];
+        if (novaData !== pending.data) {
+          updates.data = novaData;
+          changed = true;
+        }
+      }
+
+      // Se não detectou valor nem data, assume que é categoria ou descrição
+      if (!valorMatch && !dataMatch && message.length > 2) {
+        // Tenta detectar se é categoria (palavras curtas) ou descrição
+        if (message.split(' ').length <= 3) {
+          updates.categoria = message;
+          changed = true;
+        } else {
+          updates.descricao = message;
+          changed = true;
+        }
+      }
+
+      if (!changed) {
+        return 'Não entendi o que você quer mudar.\n\nDigite:\n• Um valor (ex: "3000")\n• Uma categoria (ex: "Botox")\n• Uma data (ex: "15/11")\n• Uma descrição\n\nOu "cancelar" para não editar.';
+      }
+
+      // Atualiza a transação
+      const updated = await transactionController.updateTransaction(
+        user.id,
+        pending.transactionId,
+        updates
+      );
+
+      if (!updated) {
+        this.pendingEdits.delete(phone);
+        return 'Não consegui encontrar essa transação para editar.';
+      }
+
+      // Atualiza lastTransactions
+      this.lastTransactions.set(phone, {
+        transactionId: pending.transactionId,
+        tipo: pending.tipo,
+        valor: updates.valor || pending.valor,
+        categoria: updates.categoria || pending.categoria,
+        data: updates.data || pending.data,
+        descricao: updates.descricao || pending.descricao,
+        timestamp: Date.now()
+      });
+
+      this.pendingEdits.delete(phone);
+
+      const tipoTexto = pending.tipo === 'entrada' ? 'receita' : 'custo';
+      let response = `*Transação editada com sucesso!*\n\n`;
+      response += `Tipo: ${tipoTexto}\n`;
+      if (updates.valor) response += `Valor: R$ ${updates.valor.toFixed(2)}\n`;
+      if (updates.categoria) response += `Categoria: ${updates.categoria}\n`;
+      if (updates.data) response += `Data: ${new Date(updates.data).toLocaleDateString('pt-BR')}\n`;
+      if (updates.descricao) response += `Descrição: ${updates.descricao}\n`;
+
+      return response;
+    } catch (error) {
+      console.error('Erro ao editar transação:', error);
+      this.pendingEdits.delete(phone);
+      return 'Erro ao editar transação. Tente novamente.';
+    }
+  }
+
+  async handleSearchTransaction(user, intent) {
+    try {
+      const searchTerm = intent.dados?.termo || intent.dados?.busca || '';
+
+      if (!searchTerm) {
+        return 'O que você quer buscar?\n\nExemplos:\n• "buscar botox"\n• "encontrar maria"\n• "procurar 2800"';
+      }
+
+      // Busca em atendimentos
+      const { data: atendimentos } = await supabase
+        .from('atendimentos')
+        .select(`
+          id,
+          valor_total,
+          data,
+          observacoes,
+          clientes(nome),
+          atendimento_procedimentos(
+            procedimentos(nome)
+          )
+        `)
+        .eq('user_id', user.id)
+        .or(`observacoes.ilike.%${searchTerm}%,clientes.nome.ilike.%${searchTerm}%`)
+        .order('data', { ascending: false })
+        .limit(10);
+
+      // Busca em contas a pagar
+      const { data: contas } = await supabase
+        .from('contas_pagar')
+        .select('id, valor, data, descricao, categoria')
+        .eq('user_id', user.id)
+        .or(`descricao.ilike.%${searchTerm}%,categoria.ilike.%${searchTerm}%`)
+        .order('data', { ascending: false })
+        .limit(10);
+
+      const results = [];
+
+      // Processa atendimentos
+      if (atendimentos) {
+        atendimentos.forEach(a => {
+          const procedimento = a.atendimento_procedimentos?.[0]?.procedimentos?.nome || 'Procedimento';
+          const cliente = a.clientes?.nome || '';
+          results.push({
+            tipo: 'entrada',
+            valor: parseFloat(a.valor_total || 0),
+            categoria: procedimento,
+            descricao: cliente || a.observacoes || '',
+            data: a.data,
+            id: a.id
+          });
+        });
+      }
+
+      // Processa contas
+      if (contas) {
+        contas.forEach(c => {
+          results.push({
+            tipo: 'saida',
+            valor: parseFloat(c.valor || 0),
+            categoria: c.categoria || c.descricao || '',
+            descricao: c.descricao || '',
+            data: c.data,
+            id: c.id
+          });
+        });
+      }
+
+      if (results.length === 0) {
+        return `Não encontrei nenhuma transação com "${searchTerm}".\n\nTente buscar por:\n• Nome do procedimento\n• Nome do cliente\n• Valor aproximado\n• Categoria`;
+      }
+
+      // Ordena por data (mais recente primeiro)
+      results.sort((a, b) => new Date(b.data) - new Date(a.data));
+
+      let response = `*Encontrei ${results.length} transação(ões):*\n\n`;
+
+      results.slice(0, 8).forEach((r, index) => {
+        const tipo = r.tipo === 'entrada' ? 'Receita' : 'Custo';
+        const data = new Date(r.data).toLocaleDateString('pt-BR');
+        response += `${index + 1}. ${tipo}: R$ ${r.valor.toFixed(2)}\n`;
+        response += `   ${r.categoria}`;
+        if (r.descricao) response += ` - ${r.descricao}`;
+        response += `\n   Data: ${data}\n\n`;
+      });
+
+      if (results.length > 8) {
+        response += `... e mais ${results.length - 8} transação(ões)\n\n`;
+      }
+
+      response += `Para ver mais detalhes, acesse o dashboard.`;
+
+      return response;
+    } catch (error) {
+      console.error('Erro ao buscar transação:', error);
+      return 'Erro ao buscar transações. Tente novamente.';
+    }
+  }
+
+  async handleDefineGoal(user, phone, intent) {
+    try {
+      const valor = intent.dados?.valor || intent.dados?.meta;
+
+      if (!valor || valor <= 0) {
+        return 'Qual é a sua meta de faturamento?\n\nExemplos:\n• "minha meta é 50000"\n• "definir meta 50k"\n• "objetivo de 50000 reais"';
+      }
+
+      // Salva meta no perfil do usuário
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          meta_mensal: parseFloat(valor),
+          meta_atualizada_em: new Date().toISOString()
+        })
+        .eq('id', user.id);
+
+      if (error) {
+        console.error('Erro ao salvar meta:', error);
+        return 'Erro ao definir meta. Tente novamente.';
+      }
+
+      return `*Meta definida com sucesso!*\n\nMeta mensal: R$ ${parseFloat(valor).toFixed(2)}\n\nPara ver seu progresso, digite "meta".`;
+    } catch (error) {
+      console.error('Erro ao definir meta:', error);
+      return 'Erro ao definir meta. Tente novamente.';
+    }
   }
 }
 
