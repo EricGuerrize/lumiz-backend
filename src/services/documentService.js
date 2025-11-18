@@ -24,8 +24,29 @@ class DocumentService {
       const imageBuffer = Buffer.from(imageResponse.data);
       const base64Image = imageBuffer.toString('base64');
 
-      // Detecta o tipo MIME
-      const mimeType = imageResponse.headers['content-type'] || 'image/jpeg';
+      // Detecta o tipo MIME - verifica o header primeiro, depois os primeiros bytes
+      let mimeType = imageResponse.headers['content-type'];
+      
+      // Se não tiver MIME type válido ou for application/octet-stream, detecta pelo conteúdo
+      if (!mimeType || mimeType === 'application/octet-stream' || !mimeType.startsWith('image/')) {
+        // Detecta pelo magic number (primeiros bytes)
+        const firstBytes = imageBuffer.slice(0, 4);
+        
+        if (firstBytes[0] === 0xFF && firstBytes[1] === 0xD8) {
+          mimeType = 'image/jpeg';
+        } else if (firstBytes[0] === 0x89 && firstBytes[1] === 0x50 && firstBytes[2] === 0x4E && firstBytes[3] === 0x47) {
+          mimeType = 'image/png';
+        } else if (firstBytes[0] === 0x47 && firstBytes[1] === 0x49 && firstBytes[2] === 0x46) {
+          mimeType = 'image/gif';
+        } else if (firstBytes[0] === 0x52 && firstBytes[1] === 0x49 && firstBytes[2] === 0x46 && firstBytes[3] === 0x46) {
+          mimeType = 'image/webp';
+        } else {
+          // Fallback para JPEG (mais comum)
+          mimeType = 'image/jpeg';
+        }
+        
+        console.log('[DOC] MIME type detectado pelo conteúdo:', mimeType);
+      }
 
       const dataHoje = new Date().toISOString().split('T')[0];
 

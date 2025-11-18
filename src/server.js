@@ -34,8 +34,9 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'x-user-phone']
 }));
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Aumenta limite para aceitar imagens grandes no webhook
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
