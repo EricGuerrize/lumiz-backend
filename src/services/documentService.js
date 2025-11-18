@@ -1,6 +1,5 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const axios = require('axios');
-const FileType = require('file-type');
 require('dotenv').config();
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -25,23 +24,43 @@ class DocumentService {
       const imageBuffer = Buffer.from(imageResponse.data);
       const base64Image = imageBuffer.toString('base64');
 
-      // DETECÇÃO DE MIME TYPE usando file-type (biblioteca confiável)
+      // DETECÇÃO DE MIME TYPE usando magic numbers (método confiável e compatível)
       console.log('[DOC] ===== INÍCIO DETECÇÃO MIME TYPE =====');
       const headerMimeType = imageResponse.headers['content-type'];
       console.log('[DOC] MIME type do header HTTP:', headerMimeType);
 
-      // Usa file-type para detectar o tipo real do arquivo (mais confiável)
+      // Detecta pelo magic number (primeiros bytes) - método mais confiável
+      const firstBytes = imageBuffer.slice(0, 12);
       let mimeType = null;
-      try {
-        const fileType = await FileType.fromBuffer(imageBuffer);
-        if (fileType && fileType.mime) {
-          mimeType = fileType.mime;
-          console.log('[DOC] ✅ MIME type detectado pelo file-type:', mimeType);
-        } else {
-          console.log('[DOC] ⚠️ file-type não conseguiu detectar o tipo');
-        }
-      } catch (error) {
-        console.error('[DOC] Erro ao detectar tipo com file-type:', error.message);
+
+      // JPEG: FF D8 FF
+      if (firstBytes[0] === 0xFF && firstBytes[1] === 0xD8 && firstBytes[2] === 0xFF) {
+        mimeType = 'image/jpeg';
+        console.log('[DOC] ✅ Detectado: JPEG (FF D8 FF)');
+      }
+      // PNG: 89 50 4E 47 0D 0A 1A 0A
+      else if (firstBytes[0] === 0x89 && firstBytes[1] === 0x50 && firstBytes[2] === 0x4E && firstBytes[3] === 0x47) {
+        mimeType = 'image/png';
+        console.log('[DOC] ✅ Detectado: PNG (89 50 4E 47)');
+      }
+      // GIF: 47 49 46 38 (GIF8)
+      else if (firstBytes[0] === 0x47 && firstBytes[1] === 0x49 && firstBytes[2] === 0x46 && firstBytes[3] === 0x38) {
+        mimeType = 'image/gif';
+        console.log('[DOC] ✅ Detectado: GIF (47 49 46 38)');
+      }
+      // WEBP: RIFF...WEBP
+      else if (firstBytes[0] === 0x52 && firstBytes[1] === 0x49 && firstBytes[2] === 0x46 && firstBytes[3] === 0x46 &&
+               firstBytes[8] === 0x57 && firstBytes[9] === 0x45 && firstBytes[10] === 0x42 && firstBytes[11] === 0x50) {
+        mimeType = 'image/webp';
+        console.log('[DOC] ✅ Detectado: WEBP (RIFF...WEBP)');
+      }
+      // BMP: 42 4D
+      else if (firstBytes[0] === 0x42 && firstBytes[1] === 0x4D) {
+        mimeType = 'image/bmp';
+        console.log('[DOC] ✅ Detectado: BMP (42 4D)');
+      }
+      else {
+        console.log('[DOC] ⚠️ Tipo não identificado pelos magic numbers');
       }
 
       // Fallback: usa header HTTP se válido
