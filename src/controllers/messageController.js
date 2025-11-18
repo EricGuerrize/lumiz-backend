@@ -1563,11 +1563,21 @@ class MessageController {
     }
   }
 
-  async handleSearchTransaction(user, intent) {
+  async handleSearchTransaction(user, intent, messageOriginal = '') {
     try {
-      const searchTerm = intent.dados?.termo || intent.dados?.busca || '';
+      // Extrai termo de busca da mensagem original
+      // Remove palavras de busca comuns e pega o resto
+      let searchTerm = messageOriginal
+        .toLowerCase()
+        .replace(/\b(buscar|encontrar|procurar|achar|mostrar|transação|transacao)\b/gi, '')
+        .trim();
 
+      // Se não encontrou, tenta dos dados do intent
       if (!searchTerm) {
+        searchTerm = intent.dados?.termo || intent.dados?.busca || intent.dados?.procurar || '';
+      }
+
+      if (!searchTerm || searchTerm.length < 2) {
         return 'O que você quer buscar?\n\nExemplos:\n• "buscar botox"\n• "encontrar maria"\n• "procurar 2800"';
       }
 
