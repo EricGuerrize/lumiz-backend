@@ -179,6 +179,15 @@ Não identificado:
 RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
 `;
 
+      // Validação final antes de enviar - garante que nunca será application/octet-stream
+      if (!mimeType || mimeType === 'application/octet-stream' || !mimeType.startsWith('image/')) {
+        console.error('[DOC] ERRO CRÍTICO: mimeType inválido antes de enviar:', mimeType);
+        mimeType = 'image/jpeg'; // Força JPEG como último recurso
+        console.log('[DOC] MIME type corrigido para:', mimeType);
+      }
+
+      console.log('[DOC] Enviando para Gemini com mimeType:', mimeType);
+
       const imagePart = {
         inlineData: {
           data: base64Image,
