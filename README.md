@@ -135,6 +135,41 @@ Verifica status do servidor.
 ### `GET /`
 Informações sobre a API.
 
+## 📄 Geração de PDF de Relatórios
+
+O bot agora pode gerar e enviar relatórios mensais em PDF via WhatsApp!
+
+### Como usar:
+- Mande _"relatório"_ para ver o resumo mensal
+- Mande _"me manda pdf"_ ou _"gerar pdf"_ para receber o PDF completo
+- O PDF inclui:
+  - Resumo financeiro (faturamento, custos, lucro)
+  - Principais categorias
+  - Transações detalhadas
+  - Informações da clínica
+
+### Endpoint:
+- `POST /api/onboarding/export` - Gera PDF do relatório mensal (via WhatsApp)
+
+## 🏦 DDA (Débito Direto Autorizado)
+
+Estrutura básica implementada para consulta automática de boletos via APIs bancárias.
+
+### Status:
+- ✅ Estrutura base criada
+- ⏳ Aguardando escolha do provedor (Bradesco, Itaú, Gerencianet, etc)
+- ⏳ Implementação específica por provedor pendente
+
+### Configuração:
+```env
+DDA_PROVIDER=bradesco  # ou itau, gerencianet, etc
+DDA_API_KEY=sua_key
+DDA_API_SECRET=sua_secret
+```
+
+### Documentação:
+Veja `docs/DDA_SETUP.md` para detalhes completos sobre integração DDA.
+
 ## Onboarding Inteligente
 
 O backend agora possui um módulo completo de onboarding composto por três fases:
