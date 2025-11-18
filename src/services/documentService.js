@@ -1,5 +1,6 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const axios = require('axios');
+const { fileTypeFromBuffer } = require('file-type');
 require('dotenv').config();
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -24,64 +25,40 @@ class DocumentService {
       const imageBuffer = Buffer.from(imageResponse.data);
       const base64Image = imageBuffer.toString('base64');
 
-      // FORÇA DETECÇÃO DE MIME TYPE - SEMPRE garante tipo válido
-      let mimeType = imageResponse.headers['content-type'] || null;
+      // DETECÇÃO DE MIME TYPE usando file-type (biblioteca confiável)
       console.log('[DOC] ===== INÍCIO DETECÇÃO MIME TYPE =====');
-      console.log('[DOC] MIME type do header HTTP:', mimeType);
+      const headerMimeType = imageResponse.headers['content-type'];
+      console.log('[DOC] MIME type do header HTTP:', headerMimeType);
 
-      // Detecta pelo magic number (primeiros bytes) - método mais confiável
-      const firstBytes = imageBuffer.slice(0, 12);
-      const hex = Array.from(firstBytes.slice(0, 4)).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ');
-      console.log('[DOC] Primeiros bytes (hex):', hex);
-
-      let detectedMimeType = null;
-
-      // JPEG (FF D8 FF)
-      if (firstBytes[0] === 0xFF && firstBytes[1] === 0xD8) {
-        detectedMimeType = 'image/jpeg';
-        console.log('[DOC] ✅ Detectado: JPEG');
-      }
-      // PNG (89 50 4E 47)
-      else if (firstBytes[0] === 0x89 && firstBytes[1] === 0x50 && firstBytes[2] === 0x4E && firstBytes[3] === 0x47) {
-        detectedMimeType = 'image/png';
-        console.log('[DOC] ✅ Detectado: PNG');
-      }
-      // GIF (47 49 46)
-      else if (firstBytes[0] === 0x47 && firstBytes[1] === 0x49 && firstBytes[2] === 0x46) {
-        detectedMimeType = 'image/gif';
-        console.log('[DOC] ✅ Detectado: GIF');
-      }
-      // WEBP (RIFF...WEBP)
-      else if (firstBytes[0] === 0x52 && firstBytes[1] === 0x49 && firstBytes[2] === 0x46 && firstBytes[3] === 0x46 &&
-               firstBytes[8] === 0x57 && firstBytes[9] === 0x45 && firstBytes[10] === 0x42 && firstBytes[11] === 0x50) {
-        detectedMimeType = 'image/webp';
-        console.log('[DOC] ✅ Detectado: WEBP');
-      }
-      // BMP (42 4D)
-      else if (firstBytes[0] === 0x42 && firstBytes[1] === 0x4D) {
-        detectedMimeType = 'image/bmp';
-        console.log('[DOC] ✅ Detectado: BMP');
-      }
-      else {
-        console.log('[DOC] ⚠️ Tipo não identificado pelos magic numbers');
+      // Usa file-type para detectar o tipo real do arquivo (mais confiável)
+      let mimeType = null;
+      try {
+        const fileType = await fileTypeFromBuffer(imageBuffer);
+        if (fileType && fileType.mime) {
+          mimeType = fileType.mime;
+          console.log('[DOC] ✅ MIME type detectado pelo file-type:', mimeType);
+        } else {
+          console.log('[DOC] ⚠️ file-type não conseguiu detectar o tipo');
+        }
+      } catch (error) {
+        console.error('[DOC] Erro ao detectar tipo com file-type:', error.message);
       }
 
-      // DECISÃO FINAL: Prioriza detecção por bytes, depois header válido, senão força JPEG
-      if (detectedMimeType) {
-        mimeType = detectedMimeType;
-        console.log('[DOC] ✅ Usando MIME type detectado pelos bytes:', mimeType);
-      }
-      else if (mimeType && mimeType.startsWith('image/') && mimeType !== 'application/octet-stream') {
-        console.log('[DOC] ✅ Usando MIME type do header HTTP:', mimeType);
-      }
-      else {
-        mimeType = 'image/jpeg'; // FORÇA JPEG como padrão seguro
-        console.log('[DOC] ⚠️ Forçando JPEG como padrão (tipo não detectado)');
+      // Fallback: usa header HTTP se válido
+      if (!mimeType || !mimeType.startsWith('image/')) {
+        if (headerMimeType && headerMimeType.startsWith('image/') && headerMimeType !== 'application/octet-stream') {
+          mimeType = headerMimeType;
+          console.log('[DOC] ✅ Usando MIME type do header HTTP:', mimeType);
+        } else {
+          // Último recurso: força JPEG (formato mais comum e suportado)
+          mimeType = 'image/jpeg';
+          console.log('[DOC] ⚠️ Forçando JPEG como padrão seguro');
+        }
       }
 
       // VALIDAÇÃO FINAL ABSOLUTA - nunca permite application/octet-stream
       if (mimeType === 'application/octet-stream' || !mimeType || !mimeType.startsWith('image/')) {
-        console.error('[DOC] ❌ ERRO: MIME type ainda inválido após todas as validações:', mimeType);
+        console.error('[DOC] ❌ ERRO: MIME type inválido detectado:', mimeType);
         mimeType = 'image/jpeg';
         console.log('[DOC] ✅ Corrigido para JPEG');
       }
