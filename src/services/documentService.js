@@ -26,11 +26,21 @@ class DocumentService {
 
       // DETECÇÃO DE MIME TYPE usando magic numbers (método confiável e compatível)
       console.log('[DOC] ===== INÍCIO DETECÇÃO MIME TYPE =====');
+      console.log('[DOC] Tamanho do buffer:', imageBuffer.length, 'bytes');
       const headerMimeType = imageResponse.headers['content-type'];
       console.log('[DOC] MIME type do header HTTP:', headerMimeType);
 
+      // Validação básica do buffer
+      if (!imageBuffer || imageBuffer.length === 0) {
+        throw new Error('Buffer de imagem vazio ou inválido');
+      }
+
       // Detecta pelo magic number (primeiros bytes) - método mais confiável
       const firstBytes = imageBuffer.slice(0, 12);
+      const hexPreview = Array.from(firstBytes.slice(0, 8))
+        .map(b => b.toString(16).padStart(2, '0').toUpperCase())
+        .join(' ');
+      console.log('[DOC] Primeiros bytes (hex):', hexPreview);
       let mimeType = null;
 
       // JPEG: FF D8 FF
@@ -214,8 +224,20 @@ RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
         throw new Error('MIME type application/octet-stream não pode ser enviado ao Gemini');
       }
 
+      // Validação do base64
+      if (!base64Image || base64Image.length === 0) {
+        throw new Error('Base64 da imagem está vazio');
+      }
+
+      // Validação do tamanho (Gemini tem limite de ~20MB para base64)
+      const base64SizeMB = (base64Image.length * 3) / 4 / 1024 / 1024;
+      console.log('[DOC] Tamanho da imagem (base64):', base64Image.length, 'bytes (~', base64SizeMB.toFixed(2), 'MB)');
+      
+      if (base64SizeMB > 20) {
+        throw new Error(`Imagem muito grande: ${base64SizeMB.toFixed(2)}MB (limite: 20MB)`);
+      }
+
       console.log('[DOC] ✅ Enviando para Gemini com mimeType:', mimeType);
-      console.log('[DOC] ✅ Tamanho da imagem (base64):', base64Image.length, 'bytes');
 
       const imagePart = {
         inlineData: {
@@ -229,27 +251,63 @@ RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
         throw new Error('MIME type ainda inválido no imagePart - abortando envio');
       }
 
-      const result = await this.model.generateContent([prompt, imagePart]);
-      const response = await result.response;
-      const text = response.text();
+      try {
+        console.log('[DOC] Chamando Gemini API...');
+        const result = await this.model.generateContent([prompt, imagePart]);
+        const response = await result.response;
+        const text = response.text();
+        console.log('[DOC] ✅ Resposta do Gemini recebida, tamanho:', text.length, 'caracteres');
 
-      // Remove markdown code blocks se houver
-      const jsonText = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+        // Remove markdown code blocks se houver
+        const jsonText = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
 
-      return JSON.parse(jsonText);
+        return JSON.parse(jsonText);
+      } catch (geminiError) {
+        console.error('[DOC] ❌ Erro ao chamar Gemini API:', geminiError.message);
+        
+        // Tratamento específico para erros conhecidos
+        if (geminiError.message && geminiError.message.includes('Provided image is not valid')) {
+          throw new Error('A imagem enviada não é válida. Verifique se é uma imagem JPEG, PNG ou WEBP válida.');
+        }
+        
+        if (geminiError.message && geminiError.message.includes('mimeType')) {
+          throw new Error(`Erro de MIME type: ${mimeType}. A imagem pode estar corrompida.`);
+        }
+        
+        // Re-throw com contexto adicional
+        throw new Error(`Erro ao processar imagem com Gemini: ${geminiError.message}`);
+      }
     } catch (error) {
-      console.error('[DOC] Erro ao processar imagem:', error);
+      console.error('[DOC] ❌ Erro ao processar imagem:', error.message);
+      console.error('[DOC] Stack trace:', error.stack);
       return {
         tipo_documento: 'erro',
         transacoes: [],
-        erro: error.message
+        erro: error.message || 'Erro desconhecido ao processar imagem'
       };
     }
   }
 
   formatDocumentSummary(result) {
     if (result.tipo_documento === 'erro') {
-      return `Erro ao analisar documento 😢\n\nTente enviar novamente ou registre manualmente.`;
+      let errorMessage = `Erro ao analisar documento 😢\n\n`;
+      
+      if (result.erro) {
+        // Mensagens mais específicas para o usuário
+        if (result.erro.includes('não é válida')) {
+          errorMessage += `A imagem não é válida. Por favor, envie uma foto em formato JPEG ou PNG.\n\n`;
+        } else if (result.erro.includes('muito grande')) {
+          errorMessage += `A imagem é muito grande. Por favor, envie uma imagem menor.\n\n`;
+        } else if (result.erro.includes('MIME type')) {
+          errorMessage += `Erro ao identificar o tipo da imagem. Tente enviar novamente.\n\n`;
+        } else {
+          errorMessage += `Detalhes: ${result.erro}\n\n`;
+        }
+      }
+      
+      errorMessage += `Tente:\n- Enviar uma foto mais nítida\n- Verificar se é JPEG ou PNG\n- Ou registre manualmente:\n"Insumos 3200"`;
+      
+      return errorMessage;
     }
 
     if (result.tipo_documento === 'nao_identificado') {
