@@ -35,8 +35,10 @@ app.use(cors({
 }));
 
 // Aumenta limite para aceitar imagens grandes no webhook
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+const jsonLimit = '10mb';
+app.use(express.json({ limit: jsonLimit }));
+app.use(express.urlencoded({ extended: true, limit: jsonLimit }));
+console.log(`[SERVER] Body parser configurado com limite de ${jsonLimit}`);
 
 app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
