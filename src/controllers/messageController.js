@@ -5,6 +5,7 @@ const transactionController = require('./transactionController');
 const reminderService = require('../services/reminderService');
 const documentService = require('../services/documentService');
 const insightService = require('../services/insightService');
+const pdfService = require('../services/pdfService');
 
 class MessageController {
   constructor() {
@@ -61,8 +62,17 @@ class MessageController {
           break;
 
         case 'relatorio_mensal':
+          // Verifica se usuário quer PDF
+          if (intent.dados?.formato === 'pdf' || message.toLowerCase().includes('pdf')) {
+            await this.handleMonthlyReportPDF(user, phone);
+            return null; // PDF será enviado diretamente
+          }
           response = await this.handleMonthlyReport(user);
           break;
+
+        case 'exportar_dados':
+          await this.handleExportData(user, phone, intent.dados);
+          return null; // PDF será enviado diretamente
 
         case 'comparar_meses':
           response = await this.handleCompareMonths(user);
@@ -418,6 +428,8 @@ class MessageController {
         });
     }
 
+    response += `\n💡 Quer o relatório completo em PDF? Manda _"me manda pdf"_ ou _"gerar pdf"_\n`;
+
     if (lucro > 0) {
       response += `\nMandando bem! 💪`;
     } else if (lucro < 0) {
@@ -425,6 +437,83 @@ class MessageController {
     }
 
     return response;
+  }
+
+  async handleMonthlyReportPDF(user, phone) {
+    try {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = now.getMonth() + 1;
+
+      // Envia mensagem de processamento
+      await evolutionService.sendMessage(
+        phone,
+        '📄 Gerando seu relatório em PDF...\n\nIsso pode levar alguns segundos! ⏳'
+      );
+
+      // Gera o PDF
+      const pdfBuffer = await pdfService.generateMonthlyReportPDF(user.id, year, month);
+      const base64Pdf = pdfBuffer.toString('base64');
+      
+      // Nome do arquivo
+      const mesNome = now.toLocaleDateString('pt-BR', { month: 'long' });
+      const fileName = `Relatorio_${mesNome}_${year}.pdf`;
+
+      // Envia o PDF
+      await evolutionService.sendDocument(phone, base64Pdf, fileName, 'application/pdf');
+
+      // Confirmação
+      await evolutionService.sendMessage(
+        phone,
+        '✅ *PDF gerado e enviado!*\n\nSeu relatório mensal completo está no documento acima 📊'
+      );
+    } catch (error) {
+      console.error('[PDF] Erro ao gerar/enviar PDF:', error);
+      await evolutionService.sendMessage(
+        phone,
+        '❌ Ops! Não consegui gerar o PDF agora.\n\nTente novamente em alguns instantes ou acesse o dashboard web.'
+      );
+    }
+  }
+
+  async handleExportData(user, phone, dados) {
+    try {
+      const now = new Date();
+      let year = now.getFullYear();
+      let month = now.getMonth() + 1;
+
+      // Tenta extrair mês/ano da mensagem se fornecido
+      if (dados?.mes) {
+        month = parseInt(dados.mes);
+      }
+      if (dados?.ano) {
+        year = parseInt(dados.ano);
+      }
+
+      await evolutionService.sendMessage(
+        phone,
+        '📄 Gerando seu relatório em PDF...\n\nIsso pode levar alguns segundos! ⏳'
+      );
+
+      const pdfBuffer = await pdfService.generateMonthlyReportPDF(user.id, year, month);
+      const base64Pdf = pdfBuffer.toString('base64');
+      
+      const mesNome = new Date(year, month - 1, 1).toLocaleDateString('pt-BR', { month: 'long' });
+      const fileName = `Relatorio_${mesNome}_${year}.pdf`;
+
+      await evolutionService.sendDocument(phone, base64Pdf, fileName, 'application/pdf');
+
+      await evolutionService.sendMessage(
+        phone,
+        '✅ *Relatório exportado com sucesso!*\n\nSeu PDF está pronto acima 📊'
+      );
+    } catch (error) {
+      console.error('[EXPORT] Erro ao exportar dados:', error);
+      await evolutionService.sendMessage(
+        phone,
+        '❌ Não consegui gerar o relatório agora.\n\nTente novamente em alguns instantes.'
+      );
+    }
   }
 
   async handleCompareMonths(user) {

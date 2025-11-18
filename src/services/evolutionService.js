@@ -129,6 +129,41 @@ class EvolutionService {
     }
   }
 
+  async sendDocument(phone, base64File, fileName, mimeType = 'application/pdf') {
+    try {
+      const url = `${this.baseUrl}/message/sendMedia/${this.instanceName}`;
+
+      const payload = {
+        number: phone,
+        mediatype: 'document',
+        media: `data:${mimeType};base64,${base64File}`,
+        fileName: fileName,
+        caption: ''
+      };
+
+      // Timeout maior para upload de arquivos (30 segundos)
+      const response = await retryWithBackoff(
+        () => withTimeout(
+          this.axiosInstance.post(url, payload, {
+            headers: {
+              'apikey': this.apiKey,
+              'Content-Type': 'application/json'
+            }
+          }),
+          30000, // 30 segundos para upload
+          'Timeout ao enviar documento via Evolution API (30s)'
+        ),
+        2,
+        1000
+      );
+
+      return response.data;
+    } catch (error) {
+      console.error('[EVOLUTION] Erro ao enviar documento:', error.response?.data || error.message);
+      throw error;
+    }
+  }
+
   async getInstanceStatus() {
     try {
       const url = `${this.baseUrl}/instance/connectionState/${this.instanceName}`;
