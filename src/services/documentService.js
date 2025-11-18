@@ -74,6 +74,12 @@ class DocumentService {
         console.warn('[DOC] Não foi possível detectar tipo, usando JPEG como fallback');
       }
 
+      // GARANTIA: Nunca permite application/octet-stream (não suportado pelo Gemini)
+      if (mimeType === 'application/octet-stream' || !mimeType.startsWith('image/')) {
+        console.warn('[DOC] MIME type inválido detectado:', mimeType, '- forçando image/jpeg');
+        mimeType = 'image/jpeg';
+      }
+
       console.log('[DOC] MIME type final usado:', mimeType);
 
       const dataHoje = new Date().toISOString().split('T')[0];
