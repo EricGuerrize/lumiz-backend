@@ -33,27 +33,37 @@ class DocumentService {
 TAREFA: Analisar esta imagem de documento financeiro e extrair informações.
 
 TIPOS DE DOCUMENTO:
-1. BOLETO: código de barras, valor, vencimento, beneficiário
-2. EXTRATO BANCÁRIO: lista de transações com datas e valores
-3. COMPROVANTE DE PAGAMENTO: valor pago, data, destinatário
-4. NOTA FISCAL: valor total, fornecedor, data, itens
-5. FATURA DE CARTÃO: valor total, parcelas, data vencimento
-6. RECIBO: valor, serviço prestado, data
+1. BOLETO: código de barras, valor, vencimento, beneficiário, linha digitável
+2. EXTRATO BANCÁRIO: lista de transações com datas e valores, créditos e débitos
+3. COMPROVANTE DE PAGAMENTO PIX: comprovante de transferência PIX, valor, data/hora, destinatário/remetente, chave PIX
+4. COMPROVANTE DE PAGAMENTO: valor pago, data, destinatário, qualquer comprovante de pagamento
+5. NOTA FISCAL: valor total, fornecedor, data, itens, CNPJ, número da nota
+6. FATURA DE CARTÃO: valor total, parcelas, data vencimento, bandeira
+7. RECIBO: valor, serviço prestado, data
 
 EXTRAÇÃO:
-- tipo_documento: tipo identificado
+- tipo_documento: tipo identificado (boleto, extrato, comprovante_pix, comprovante, nota_fiscal, fatura, recibo)
 - transacoes: array de transações encontradas, cada uma com:
   - tipo: "entrada" ou "saida"
-  - valor: número
-  - categoria: nome/descrição
+  - valor: número (sempre positivo)
+  - categoria: nome/descrição (ex: "Fornecedor XYZ", "Cliente Maria", "Pix Recebido", "Pix Enviado")
   - data: data da transação (formato YYYY-MM-DD)
-  - descricao: detalhes adicionais
+  - descricao: detalhes adicionais (ex: "Boleto vencimento 20/11", "Pix de João Silva")
 
-REGRAS:
-- Para BOLETO/NOTA FISCAL/FATURA: geralmente é SAÍDA (custo)
+REGRAS IMPORTANTES:
+- Para BOLETO/NOTA FISCAL/FATURA: sempre é SAÍDA (custo a pagar)
+- Para COMPROVANTE PIX: 
+  * Procure por: "PIX", "Transferência PIX", "Chave PIX", "Comprovante de Transferência"
+  * Se mostra "Você recebeu" / "Crédito" / seta apontando para você = tipo "entrada"
+  * Se mostra "Você enviou" / "Débito" / seta apontando para fora = tipo "saida"
+  * Identifique pela direção da seta, texto "recebido/enviado", ou contexto visual
+  * Extraia valor, data/hora, nome do remetente/destinatário
+- Para NOTA FISCAL: procure por "NF", "NFe", "Nota Fiscal", CNPJ, valor total, fornecedor
 - Para EXTRATO: analise cada linha (crédito=entrada, débito=saída)
-- Para COMPROVANTE: pode ser entrada ou saída dependendo do contexto
+- Para COMPROVANTE genérico: analise o contexto (pagamento=saída, recebimento=entrada)
 - Se não conseguir identificar, retorne tipo_documento: "nao_identificado"
+- SEMPRE extraia pelo menos uma transação se identificar o documento
+- Seja assertivo: se identificar qualquer documento financeiro, extraia os dados mesmo que incompletos
 
 EXEMPLOS DE RESPOSTA:
 
@@ -88,6 +98,42 @@ Extrato:
       "descricao": "Cliente Maria"
     }
   ]
+}
+
+Comprovante PIX (recebido):
+{
+  "tipo_documento": "comprovante_pix",
+  "transacoes": [{
+    "tipo": "entrada",
+    "valor": 1500.00,
+    "categoria": "Pix Recebido",
+    "data": "${dataHoje}",
+    "descricao": "Pix de João Silva"
+  }]
+}
+
+Comprovante PIX (enviado/pago):
+{
+  "tipo_documento": "comprovante_pix",
+  "transacoes": [{
+    "tipo": "saida",
+    "valor": 500.00,
+    "categoria": "Pix Enviado",
+    "data": "${dataHoje}",
+    "descricao": "Pix para Fornecedor ABC"
+  }]
+}
+
+Nota Fiscal:
+{
+  "tipo_documento": "nota_fiscal",
+  "transacoes": [{
+    "tipo": "saida",
+    "valor": 3200.00,
+    "categoria": "Fornecedor XYZ",
+    "data": "${dataHoje}",
+    "descricao": "NF 12345 - Insumos"
+  }]
 }
 
 Não identificado:
@@ -136,6 +182,7 @@ RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
     const tipoNome = {
       'boleto': 'BOLETO',
       'extrato': 'EXTRATO BANCÁRIO',
+      'comprovante_pix': 'COMPROVANTE PIX',
       'comprovante': 'COMPROVANTE',
       'nota_fiscal': 'NOTA FISCAL',
       'fatura': 'FATURA DE CARTÃO',
