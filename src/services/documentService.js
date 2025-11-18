@@ -1,6 +1,6 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const axios = require('axios');
-const { fileTypeFromBuffer } = require('file-type');
+const FileType = require('file-type');
 require('dotenv').config();
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -33,7 +33,7 @@ class DocumentService {
       // Usa file-type para detectar o tipo real do arquivo (mais confiável)
       let mimeType = null;
       try {
-        const fileType = await fileTypeFromBuffer(imageBuffer);
+        const fileType = await FileType.fromBuffer(imageBuffer);
         if (fileType && fileType.mime) {
           mimeType = fileType.mime;
           console.log('[DOC] ✅ MIME type detectado pelo file-type:', mimeType);
