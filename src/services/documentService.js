@@ -200,7 +200,20 @@ Não identificado:
 RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
 `;
 
-      console.log('[DOC] Enviando para Gemini com mimeType:', mimeType);
+      // VALIDAÇÃO CRÍTICA FINAL - nunca permite application/octet-stream
+      if (!mimeType || mimeType === 'application/octet-stream' || !mimeType.startsWith('image/')) {
+        console.error('[DOC] ⚠️ ERRO CRÍTICO: mimeType inválido detectado:', mimeType);
+        mimeType = 'image/jpeg'; // Força JPEG
+        console.log('[DOC] ✅ MIME type corrigido para:', mimeType);
+      }
+
+      // Validação dupla antes de criar imagePart
+      if (mimeType === 'application/octet-stream') {
+        throw new Error('MIME type application/octet-stream não pode ser enviado ao Gemini');
+      }
+
+      console.log('[DOC] ✅ Enviando para Gemini com mimeType:', mimeType);
+      console.log('[DOC] ✅ Tamanho da imagem (base64):', base64Image.length, 'bytes');
 
       const imagePart = {
         inlineData: {
@@ -208,6 +221,11 @@ RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
           mimeType: mimeType
         }
       };
+
+      // Validação final do objeto antes de enviar
+      if (imagePart.inlineData.mimeType === 'application/octet-stream') {
+        throw new Error('MIME type ainda inválido no imagePart - abortando envio');
+      }
 
       const result = await this.model.generateContent([prompt, imagePart]);
       const response = await result.response;
