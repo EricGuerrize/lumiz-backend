@@ -445,15 +445,27 @@ class UserController {
                console.error('Erro ao finalizar progresso do onboarding:', progressError);
              }
 
-            let response = `🎉 *CONTA CRIADA COM SUCESSO!*\n\n` +
-                   `Seu cadastro tá pronto! Agora você pode usar a Lumiz pelo WhatsApp e pelo dashboard online.\n\n`;
+            let response;
 
-            response += `🔐 *ACESSE O DASHBOARD:*\n` +
-                       `📧 Email: ${onboarding.data.email}\n` +
-                       `🔑 Senha: ${result.tempPassword}\n` +
-                       `🌐 Link: lumiz-financeiro.vercel.app\n\n`;
+            if (result.userAlreadyExisted) {
+              // Usuário já tinha conta - apenas vinculou WhatsApp
+              response = `✅ *WHATSAPP VINCULADO COM SUCESSO!*\n\n` +
+                     `Identifiquei que você já tem uma conta com o email *${onboarding.data.email}*!\n\n` +
+                     `Vinculei este WhatsApp à sua conta existente. Agora todas as transações que você registrar aqui vão aparecer no dashboard! 🎉\n\n`;
 
-            response += `_Guarde essa senha! Você pode trocar depois no dashboard._\n\n`;
+              response += `📱 *Seu telefone foi vinculado:* ${phone}\n\n`;
+            } else {
+              // Usuário novo
+              response = `🎉 *CONTA CRIADA COM SUCESSO!*\n\n` +
+                     `Seu cadastro tá pronto! Agora você pode usar a Lumiz pelo WhatsApp e pelo dashboard online.\n\n`;
+
+              response += `🔐 *ACESSE O DASHBOARD:*\n` +
+                         `📧 Email: ${onboarding.data.email}\n` +
+                         `🔑 Senha: ${result.tempPassword}\n` +
+                         `🌐 Link: lumiz-financeiro.vercel.app\n\n`;
+
+              response += `_Guarde essa senha! Você pode trocar depois no dashboard._\n\n`;
+            }
 
             response += `*Pronto pra começar?* 🚀\n\n` +
                    `Me manda sua primeira venda assim:\n` +
@@ -483,84 +495,138 @@ class UserController {
     try {
       const { nome_completo, nome_clinica, telefone, email } = data;
 
-      // Gera uma senha temporária aleatória
-      const tempPassword = Math.random().toString(36).slice(-12) + 'A1!';
+      // PRIMEIRO: Verifica se já existe um usuário com este email
+      const { data: existingAuthUser, error: lookupError } = await supabase.auth.admin.listUsers();
 
-      // Cria usuário no Supabase Auth
-      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-        email: email,
-        password: tempPassword,
-        email_confirm: true, // Confirma email automaticamente
-        user_metadata: {
-          nome_completo,
-          nome_clinica,
-          telefone
-        }
-      });
-
-      if (authError) {
-        if (authError.message.includes('already been registered')) {
-          throw new Error('Este email já está cadastrado. Use outro email.');
-        }
-        console.error('Erro Auth:', authError);
-        throw new Error('Erro ao criar conta. Tente novamente.');
+      let existingUser = null;
+      if (!lookupError && existingAuthUser?.users) {
+        existingUser = existingAuthUser.users.find(u => u.email === email);
       }
 
-      const userId = authData.user.id;
-      console.log('Usuário Auth criado:', userId);
+      let userId;
+      let tempPassword = null;
+      let userCreated = false;
 
-      // Cria profile com o mesmo ID do Auth
-      const { data: newUser, error: profileError } = await supabase
-        .from('profiles')
-        .insert([{
-          id: userId,
-          nome_completo,
-          nome_clinica,
-          telefone,
-          is_active: true
-        }])
-        .select()
-        .single();
+      if (existingUser) {
+        // USUÁRIO JÁ EXISTE! Apenas atualiza o profile com telefone
+        userId = existingUser.id;
+        console.log('Usuário já existe (email):', email, '- ID:', userId);
+        console.log('Atualizando telefone e dados do profile...');
 
-      if (profileError) {
-        // Se der erro no profile, deleta o usuário do Auth
-        await supabase.auth.admin.deleteUser(userId);
-        if (profileError.code === '23505') {
-          throw new Error('Este telefone já está cadastrado.');
+        // Atualiza o profile existente com telefone e outros dados do WhatsApp
+        const { error: updateError } = await supabase
+          .from('profiles')
+          .update({
+            telefone: telefone,
+            nome_completo: nome_completo || existingUser.user_metadata?.nome_completo,
+            nome_clinica: nome_clinica || existingUser.user_metadata?.nome_clinica
+          })
+          .eq('id', userId);
+
+        if (updateError) {
+          console.error('Erro ao atualizar profile:', updateError);
+          throw new Error('Erro ao vincular telefone à conta existente.');
         }
-        throw profileError;
-      }
 
-      // Cria role de admin para o usuário
-      await supabase
-        .from('user_roles')
-        .insert([{
-          user_id: userId,
-          role: 'admin'
-        }]);
+        console.log('Profile atualizado com sucesso! Telefone vinculado:', telefone);
 
-      // Gera link de reset de senha para o usuário definir sua senha
-      let resetLink = null;
-      try {
-        const { data: resetData, error: resetError } = await supabase.auth.admin.generateLink({
-          type: 'recovery',
+        // Não cria senha nova, usuário já tem credenciais
+        userCreated = false;
+      } else {
+        // USUÁRIO NÃO EXISTE - Cria novo
+        console.log('Criando novo usuário:', email);
+
+        // Gera uma senha temporária aleatória
+        tempPassword = Math.random().toString(36).slice(-12) + 'A1!';
+
+        // Cria usuário no Supabase Auth
+        const { data: authData, error: authError } = await supabase.auth.admin.createUser({
           email: email,
-          options: {
-            redirectTo: process.env.DASHBOARD_URL || 'https://lumiz-financeiro.vercel.app'
+          password: tempPassword,
+          email_confirm: true, // Confirma email automaticamente
+          user_metadata: {
+            nome_completo,
+            nome_clinica,
+            telefone
           }
         });
 
-        if (!resetError && resetData) {
-          resetLink = resetData.properties?.action_link;
+        if (authError) {
+          console.error('Erro Auth:', authError);
+          throw new Error('Erro ao criar conta. Tente novamente.');
         }
-      } catch (linkError) {
-        console.error('Erro ao gerar link de reset:', linkError);
+
+        userId = authData.user.id;
+        userCreated = true;
+        console.log('Usuário Auth criado:', userId);
+
+        // Cria profile com o mesmo ID do Auth
+        const { data: newUser, error: profileError } = await supabase
+          .from('profiles')
+          .insert([{
+            id: userId,
+            nome_completo,
+            nome_clinica,
+            telefone,
+            is_active: true
+          }])
+          .select()
+          .single();
+
+        if (profileError) {
+          // Se der erro no profile, deleta o usuário do Auth
+          await supabase.auth.admin.deleteUser(userId);
+          if (profileError.code === '23505') {
+            throw new Error('Este telefone já está cadastrado.');
+          }
+          throw profileError;
+        }
+
+        // Cria role de admin para o usuário (se novo)
+        await supabase
+          .from('user_roles')
+          .insert([{
+            user_id: userId,
+            role: 'admin'
+          }]);
+      }
+
+      // Busca o profile atualizado/criado
+      const { data: profile, error: fetchError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (fetchError) {
+        throw new Error('Erro ao buscar profile atualizado.');
+      }
+
+      // Gera link de reset de senha (apenas se usuário novo)
+      let resetLink = null;
+      if (userCreated) {
+        try {
+          const { data: resetData, error: resetError } = await supabase.auth.admin.generateLink({
+            type: 'recovery',
+            email: email,
+            options: {
+              redirectTo: process.env.DASHBOARD_URL || 'https://lumiz-financeiro.vercel.app'
+            }
+          });
+
+          if (!resetError && resetData) {
+            resetLink = resetData.properties?.action_link;
+          }
+        } catch (linkError) {
+          console.error('Erro ao gerar link de reset:', linkError);
+        }
       }
 
       return {
-        user: newUser,
+        user: profile,
         resetLink,
-        tempPassword // Envia senha temporária para login imediato
+        tempPassword, // Apenas se usuário novo
+        userAlreadyExisted: !userCreated // Flag para mensagem customizada
       };
     } catch (error) {
       console.error('Erro ao criar usuário no onboarding:', error);
