@@ -62,6 +62,9 @@ INTENÇÕES:
 - ajuda: ajuda, como usar, exemplos, o que você faz, como funciona
 - saudacao: oi, olá, bom dia, boa tarde, boa noite
 - desfazer: cancelar, desfazer, apagar última, errei, deletar última
+- editar_transacao: editar última, corrigir última, mudar última, alterar última
+- buscar_transacao: buscar, encontrar, procurar, achar, mostrar transação
+- definir_meta: minha meta é, definir meta, meta de, objetivo de, quero faturar
 - enviar_documento: boleto, extrato, nota fiscal, comprovante, documento, pdf (SÓ a palavra, sem números)
 - codigo_boleto: sequência longa de dígitos (44-48 números), pode ter pontos, hífens ou espaços. Ex: 84650000002-7 05870162202-7...
 - apenas_valor: SÓ um número isolado (até 6 dígitos), nada mais
