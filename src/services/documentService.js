@@ -26,11 +26,15 @@ class DocumentService {
 
       // Detecta o tipo MIME - verifica o header primeiro, depois os primeiros bytes
       let mimeType = imageResponse.headers['content-type'];
+      console.log('[DOC] MIME type do header:', mimeType);
       
       // Se não tiver MIME type válido ou for application/octet-stream, detecta pelo conteúdo
       if (!mimeType || mimeType === 'application/octet-stream' || !mimeType.startsWith('image/')) {
+        console.log('[DOC] MIME type inválido, detectando pelo conteúdo...');
         // Detecta pelo magic number (primeiros bytes)
         const firstBytes = imageBuffer.slice(0, 4);
+        const hex = Array.from(firstBytes).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ');
+        console.log('[DOC] Primeiros bytes (hex):', hex);
         
         if (firstBytes[0] === 0xFF && firstBytes[1] === 0xD8) {
           mimeType = 'image/jpeg';
@@ -43,10 +47,19 @@ class DocumentService {
         } else {
           // Fallback para JPEG (mais comum)
           mimeType = 'image/jpeg';
+          console.log('[DOC] Tipo não identificado, usando JPEG como fallback');
         }
         
         console.log('[DOC] MIME type detectado pelo conteúdo:', mimeType);
       }
+      
+      // Validação final - nunca enviar application/octet-stream
+      if (mimeType === 'application/octet-stream' || !mimeType.startsWith('image/')) {
+        console.warn('[DOC] MIME type ainda inválido após detecção, forçando JPEG');
+        mimeType = 'image/jpeg';
+      }
+      
+      console.log('[DOC] MIME type final usado:', mimeType);
 
       const dataHoje = new Date().toISOString().split('T')[0];
 
