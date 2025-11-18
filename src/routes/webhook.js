@@ -1,19 +1,43 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const messageController = require('../controllers/messageController');
 const evolutionService = require('../services/evolutionService');
 
-router.post('/webhook', async (req, res) => {
+// Rate limiting específico para webhook (30 req/min por IP)
+const webhookLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minuto
+  max: 30, // máximo 30 mensagens por minuto por IP
+  message: 'Muitas mensagens recebidas, aguarde um momento.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+router.post('/webhook', webhookLimiter, async (req, res) => {
   try {
-    // Reduzido para evitar rate limit do Railway
+    // Validação de entrada
+    if (!req.body || typeof req.body !== 'object') {
+      return res.status(400).json({ status: 'error', reason: 'Invalid request body' });
+    }
+
     const { event, data } = req.body;
 
+    // Valida tamanho máximo do body (proteção adicional)
+    const bodySize = JSON.stringify(req.body).length;
+    if (bodySize > 10 * 1024 * 1024) { // 10MB
+      return res.status(413).json({ status: 'error', reason: 'Request too large' });
+    }
+
     if (event === 'messages.upsert') {
+      if (!data || typeof data !== 'object') {
+        return res.status(200).json({ status: 'ignored', reason: 'invalid data structure' });
+      }
+
       const key = data?.key;
       const message = data?.message;
 
       if (!key || !message) {
-        console.log('Mensagem sem estrutura válida');
+        console.log('[WEBHOOK] Mensagem sem estrutura válida');
         return res.status(200).json({ status: 'ignored', reason: 'invalid structure' });
       }
 
@@ -21,12 +45,17 @@ router.post('/webhook', async (req, res) => {
         return res.status(200).json({ status: 'ignored', reason: 'own message' });
       }
 
+      // Valida e sanitiza telefone
       const phone = key.remoteJid?.split('@')[0];
+      if (!phone || phone.length < 10 || phone.length > 20) {
+        console.log('[WEBHOOK] Telefone inválido:', phone);
+        return res.status(200).json({ status: 'ignored', reason: 'invalid phone' });
+      }
 
-      // Extrai texto da mensagem
-      const messageText = message.conversation ||
+      // Extrai texto da mensagem (sanitiza)
+      const messageText = (message.conversation ||
                           message.extendedTextMessage?.text ||
-                          '';
+                          '').substring(0, 5000); // Limita tamanho
 
       // Verifica se é imagem ou documento
       const imageMessage = message.imageMessage;

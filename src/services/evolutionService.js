@@ -1,11 +1,20 @@
 const axios = require('axios');
+const { withTimeout, retryWithBackoff } = require('../utils/timeout');
 require('dotenv').config();
+
+// Timeout para chamadas da Evolution API (10 segundos)
+const EVOLUTION_TIMEOUT_MS = 10000;
 
 class EvolutionService {
   constructor() {
     this.baseUrl = process.env.EVOLUTION_API_URL;
     this.apiKey = process.env.EVOLUTION_API_KEY;
     this.instanceName = process.env.EVOLUTION_INSTANCE_NAME;
+    
+    // Configura timeout padrão para axios
+    this.axiosInstance = axios.create({
+      timeout: EVOLUTION_TIMEOUT_MS
+    });
   }
 
   async sendMessage(phone, message) {
@@ -17,16 +26,28 @@ class EvolutionService {
         text: message
       };
 
-      const response = await axios.post(url, payload, {
-        headers: {
-          'apikey': this.apiKey,
-          'Content-Type': 'application/json'
-        }
-      });
+      // Adiciona retry com timeout
+      const response = await retryWithBackoff(
+        () => withTimeout(
+          this.axiosInstance.post(url, payload, {
+            headers: {
+              'apikey': this.apiKey,
+              'Content-Type': 'application/json'
+            }
+          }),
+          EVOLUTION_TIMEOUT_MS,
+          'Timeout ao enviar mensagem via Evolution API (10s)'
+        ),
+        2, // 2 tentativas (não queremos spam)
+        500 // delay inicial de 500ms
+      );
 
       return response.data;
     } catch (error) {
-      console.error('Erro ao enviar mensagem:', error.response?.data || error.message);
+      console.error('[EVOLUTION] Erro ao enviar mensagem:', error.response?.data || error.message);
+      if (error.message.includes('Timeout')) {
+        console.error('[EVOLUTION] Timeout excedido ao enviar mensagem');
+      }
       throw error;
     }
   }
@@ -49,16 +70,24 @@ class EvolutionService {
         }))
       };
 
-      const response = await axios.post(url, payload, {
-        headers: {
-          'apikey': this.apiKey,
-          'Content-Type': 'application/json'
-        }
-      });
+      const response = await retryWithBackoff(
+        () => withTimeout(
+          this.axiosInstance.post(url, payload, {
+            headers: {
+              'apikey': this.apiKey,
+              'Content-Type': 'application/json'
+            }
+          }),
+          EVOLUTION_TIMEOUT_MS,
+          'Timeout ao enviar botões via Evolution API (10s)'
+        ),
+        2,
+        500
+      );
 
       return response.data;
     } catch (error) {
-      console.error('Erro ao enviar botões:', error.response?.data || error.message);
+      console.error('[EVOLUTION] Erro ao enviar botões:', error.response?.data || error.message);
       // Fallback para mensagem de texto se botões não funcionarem
       return await this.sendMessage(phone, message);
     }
@@ -77,16 +106,24 @@ class EvolutionService {
         sections: sections
       };
 
-      const response = await axios.post(url, payload, {
-        headers: {
-          'apikey': this.apiKey,
-          'Content-Type': 'application/json'
-        }
-      });
+      const response = await retryWithBackoff(
+        () => withTimeout(
+          this.axiosInstance.post(url, payload, {
+            headers: {
+              'apikey': this.apiKey,
+              'Content-Type': 'application/json'
+            }
+          }),
+          EVOLUTION_TIMEOUT_MS,
+          'Timeout ao enviar lista via Evolution API (10s)'
+        ),
+        2,
+        500
+      );
 
       return response.data;
     } catch (error) {
-      console.error('Erro ao enviar lista:', error.response?.data || error.message);
+      console.error('[EVOLUTION] Erro ao enviar lista:', error.response?.data || error.message);
       // Fallback para mensagem de texto se lista não funcionar
       return await this.sendMessage(phone, message);
     }
@@ -96,15 +133,23 @@ class EvolutionService {
     try {
       const url = `${this.baseUrl}/instance/connectionState/${this.instanceName}`;
 
-      const response = await axios.get(url, {
-        headers: {
-          'apikey': this.apiKey
-        }
-      });
+      const response = await retryWithBackoff(
+        () => withTimeout(
+          this.axiosInstance.get(url, {
+            headers: {
+              'apikey': this.apiKey
+            }
+          }),
+          EVOLUTION_TIMEOUT_MS,
+          'Timeout ao verificar status da Evolution API (10s)'
+        ),
+        2,
+        500
+      );
 
       return response.data;
     } catch (error) {
-      console.error('Erro ao verificar status:', error.response?.data || error.message);
+      console.error('[EVOLUTION] Erro ao verificar status:', error.response?.data || error.message);
       throw error;
     }
   }
