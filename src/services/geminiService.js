@@ -1,7 +1,11 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { withTimeout, retryWithBackoff } = require('../utils/timeout');
 require('dotenv').config();
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
+// Timeout para chamadas do Gemini (30 segundos)
+const GEMINI_TIMEOUT_MS = 30000;
 
 class GeminiService {
   constructor() {
@@ -206,7 +210,17 @@ RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
 `;
 
     try {
-      const result = await this.model.generateContent(prompt);
+      // Adiciona timeout e retry para chamadas do Gemini
+      const result = await retryWithBackoff(
+        () => withTimeout(
+          this.model.generateContent(prompt),
+          GEMINI_TIMEOUT_MS,
+          'Timeout ao processar mensagem com Gemini (30s)'
+        ),
+        3, // 3 tentativas
+        1000 // delay inicial de 1s
+      );
+      
       const response = await result.response;
       const text = response.text();
 
@@ -214,7 +228,10 @@ RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
 
       return JSON.parse(jsonText);
     } catch (error) {
-      console.error('Erro no Gemini:', error);
+      console.error('[GEMINI] Erro ao processar mensagem:', error.message);
+      if (error.message.includes('Timeout')) {
+        console.error('[GEMINI] Timeout excedido após 30 segundos');
+      }
       return {
         intencao: 'erro',
         dados: {}

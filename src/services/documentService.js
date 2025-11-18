@@ -1,6 +1,10 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const axios = require('axios');
+const { withTimeout, retryWithBackoff } = require('../utils/timeout');
 require('dotenv').config();
+
+// Timeout para processamento de imagens (60 segundos - imagens podem demorar)
+const IMAGE_PROCESSING_TIMEOUT_MS = 60000;
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
@@ -13,13 +17,18 @@ class DocumentService {
     try {
       console.log('[DOC] Processando imagem:', imageUrl);
 
-      // Baixa a imagem
-      const imageResponse = await axios.get(imageUrl, {
-        responseType: 'arraybuffer',
-        headers: {
-          'apikey': process.env.EVOLUTION_API_KEY
-        }
-      });
+      // Baixa a imagem com timeout
+      const imageResponse = await withTimeout(
+        axios.get(imageUrl, {
+          responseType: 'arraybuffer',
+          timeout: 30000, // 30 segundos para download
+          headers: {
+            'apikey': process.env.EVOLUTION_API_KEY
+          }
+        }),
+        30000,
+        'Timeout ao baixar imagem (30s)'
+      );
 
       const imageBuffer = Buffer.from(imageResponse.data);
       const base64Image = imageBuffer.toString('base64');
@@ -253,7 +262,16 @@ RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
 
       try {
         console.log('[DOC] Chamando Gemini API...');
-        const result = await this.model.generateContent([prompt, imagePart]);
+        // Adiciona timeout e retry para processamento de imagem
+        const result = await retryWithBackoff(
+          () => withTimeout(
+            this.model.generateContent([prompt, imagePart]),
+            IMAGE_PROCESSING_TIMEOUT_MS,
+            'Timeout ao processar imagem com Gemini (60s)'
+          ),
+          2, // 2 tentativas (imagens são caras)
+          2000 // delay inicial de 2s
+        );
         const response = await result.response;
         const text = response.text();
         console.log('[DOC] ✅ Resposta do Gemini recebida, tamanho:', text.length, 'caracteres');

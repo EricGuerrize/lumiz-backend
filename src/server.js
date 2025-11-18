@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
 const webhookRoutes = require('./routes/webhook');
@@ -34,14 +35,36 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'x-user-phone']
 }));
 
+// Rate limiting - proteção contra spam/abuse
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: 100, // máximo 100 requisições por IP por janela
+  message: 'Muitas requisições deste IP, tente novamente em alguns minutos.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Rate limiting mais restritivo para webhook (pode receber muitas mensagens)
+const webhookLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minuto
+  max: 30, // máximo 30 mensagens por minuto por IP
+  message: 'Muitas mensagens recebidas, aguarde um momento.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use(limiter);
+console.log('[SERVER] Rate limiting configurado (100 req/15min por IP)');
+
 // Aumenta limite para aceitar imagens grandes no webhook
 const jsonLimit = '10mb';
 app.use(express.json({ limit: jsonLimit }));
 app.use(express.urlencoded({ extended: true, limit: jsonLimit }));
 console.log(`[SERVER] Body parser configurado com limite de ${jsonLimit}`);
 
+// Logging de requisições
 app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path} - IP: ${req.ip}`);
   next();
 });
 
@@ -49,12 +72,48 @@ app.use('/api', webhookRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/onboarding', onboardingRoutes);
 
-app.get('/health', (req, res) => {
-  res.json({
+app.get('/health', async (req, res) => {
+  const health = {
     status: 'ok',
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV
-  });
+    environment: process.env.NODE_ENV,
+    checks: {
+      database: 'unknown',
+      redis: 'unknown',
+      evolution: 'unknown'
+    }
+  };
+
+  try {
+    // Verifica Supabase
+    const supabase = require('./db/supabase');
+    const { error: dbError } = await supabase.from('profiles').select('id').limit(1);
+    health.checks.database = dbError ? 'error' : 'ok';
+  } catch (error) {
+    health.checks.database = 'error';
+    health.status = 'degraded';
+  }
+
+  try {
+    // Verifica Redis/BullMQ
+    const mdrService = require('./services/mdrService');
+    health.checks.redis = mdrService.queueEnabled ? 'ok' : 'not_configured';
+  } catch (error) {
+    health.checks.redis = 'error';
+  }
+
+  try {
+    // Verifica Evolution API
+    const evolutionService = require('./services/evolutionService');
+    await evolutionService.getInstanceStatus();
+    health.checks.evolution = 'ok';
+  } catch (error) {
+    health.checks.evolution = 'error';
+    health.status = 'degraded';
+  }
+
+  const statusCode = health.status === 'ok' ? 200 : 503;
+  res.status(statusCode).json(health);
 });
 
 // Endpoint para cron job de lembretes
@@ -150,7 +209,50 @@ Endpoints:
   - Test: http://localhost:${PORT}/api/test
   - Health: http://localhost:${PORT}/health
   - Dashboard: http://localhost:${PORT}/api/dashboard/*
-  `);
+    `);
+  });
+
+  // Graceful shutdown - fecha conexões adequadamente
+  const gracefulShutdown = (signal) => {
+    console.log(`\n[SHUTDOWN] Recebido ${signal}, iniciando graceful shutdown...`);
+    
+    server.close(() => {
+      console.log('[SHUTDOWN] Servidor HTTP fechado');
+      
+      // Fecha conexões do BullMQ/Redis se existirem
+      try {
+        const mdrService = require('./services/mdrService');
+        if (mdrService.connection) {
+          mdrService.connection.quit();
+          console.log('[SHUTDOWN] Conexão Redis fechada');
+        }
+      } catch (error) {
+        // Ignora se não houver conexão
+      }
+      
+      console.log('[SHUTDOWN] Processo finalizado');
+      process.exit(0);
+    });
+
+    // Força shutdown após 10 segundos
+    setTimeout(() => {
+      console.error('[SHUTDOWN] Forçando shutdown após timeout');
+      process.exit(1);
+    }, 10000);
+  };
+
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+  
+  // Trata erros não capturados
+  process.on('uncaughtException', (error) => {
+    console.error('[FATAL] Erro não capturado:', error);
+    gracefulShutdown('uncaughtException');
+  });
+
+  process.on('unhandledRejection', (reason, promise) => {
+    console.error('[FATAL] Promise rejeitada não tratada:', reason);
+    gracefulShutdown('unhandledRejection');
   });
 }
 
