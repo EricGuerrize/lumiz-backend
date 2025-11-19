@@ -572,7 +572,7 @@ class MessageController {
       console.error('[PDF] Erro ao gerar/enviar PDF:', error);
       await evolutionService.sendMessage(
         phone,
-        'Ops! Não consegui gerar o PDF agora.\n\nTente novamente em alguns instantes ou acesse o dashboard web.'
+        'Ops! Não consegui gerar o PDF agora.\n\nTente novamente em alguns instantes.'
       );
     }
   }
@@ -1017,7 +1017,7 @@ class MessageController {
 
       response += `━━━━━━━━━━━━━━━━━━━━\n\n`;
       response += `📱 *Copie este relatório* e cole onde precisar!\n\n`;
-      response += `💡 Para relatório completo em PDF/Excel, acesse o dashboard web.`;
+      response += `💡 Para relatório completo em PDF, digite "relatório pdf".`;
 
       return response;
     } catch (error) {
@@ -1031,7 +1031,7 @@ class MessageController {
       const agendamentos = await transactionController.getUpcomingSchedules(user.id);
 
       if (agendamentos.length === 0) {
-        return `📅 *SUA AGENDA*\n\nNenhum agendamento encontrado! 📋\n\nVocê pode agendar consultas pelo dashboard web ou aguarde a próxima versão com agendamento via WhatsApp! 😊`;
+        return `📅 *SUA AGENDA*\n\nNenhum agendamento encontrado! 📋\n\nAguarde a próxima versão com agendamento via WhatsApp! 😊`;
       }
 
       let response = `📅 *PRÓXIMOS AGENDAMENTOS*\n\n`;
@@ -1070,7 +1070,7 @@ class MessageController {
         });
       });
 
-      response += `💡 Para gerenciar agendamentos completos, acesse o dashboard web.`;
+      response += `💡 Em breve você poderá gerenciar agendamentos completos pelo WhatsApp!`;
 
       return response;
     } catch (error) {
@@ -1328,7 +1328,7 @@ class MessageController {
       // Verifica se expirou (10 minutos)
       if (Date.now() - lastTransaction.timestamp > 10 * 60 * 1000) {
         this.lastTransactions.delete(phone);
-        return `Passou o tempo pra desfazer essa transação 😅\n\nVocê tem 10 minutos após o registro.\n\nSe precisar corrigir, vai ter que acessar o dashboard.`;
+        return `Passou o tempo pra desfazer essa transação 😅\n\nVocê tem 10 minutos após o registro.\n\nSe precisar corrigir, use o comando "editar" ou "buscar" para encontrar a transação.`;
       }
 
       // Deleta a transação
@@ -1725,7 +1725,7 @@ class MessageController {
         response += `... e mais ${uniqueResults.length - 10} transação(ões)\n\n`;
       }
 
-      response += `Para ver mais detalhes, acesse o dashboard.`;
+      response += `Para ver mais detalhes, digite "buscar" seguido do nome ou valor.`;
 
       return response;
     } catch (error) {

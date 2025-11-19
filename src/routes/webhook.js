@@ -283,7 +283,7 @@ router.post('/user/link-email', async (req, res) => {
     try {
       const confirmationMessage = `*CADASTRO CONCLUÍDO COM SUCESSO!*\n\n` +
         `Seu email foi vinculado ao seu WhatsApp!\n\n` +
-        `Agora você tem acesso completo ao dashboard:\n` +
+        `Agora você tem acesso completo:\n` +
         `🌐 lumiz-financeiro.vercel.app\n\n` +
         `*Pronto pra começar?* 🚀\n\n` +
         `Me manda sua primeira venda assim:\n` +

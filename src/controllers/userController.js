@@ -99,7 +99,7 @@ class UserController {
   getMdrChoiceMessage(choice) {
     switch (choice) {
       case 'configurar_agora':
-        return 'Perfeito! Assim que finalizarmos, você pode cadastrar as taxas pelo dashboard ou me enviar um print da maquininha que eu leio via OCR.';
+        return 'Perfeito! Assim que finalizarmos, você pode cadastrar as taxas me enviando um print da maquininha que eu leio via OCR.';
       case 'lembrar_mais_tarde':
         return 'Sem problemas! Vou deixar anotado para te lembrar em outro momento.';
       case 'nao_usa_maquininha':
@@ -425,14 +425,14 @@ class UserController {
 
             // Mensagem final do onboarding - envia link de cadastro
             response = `*CADASTRO BÁSICO CONCLUÍDO!*\n\n` +
-                      `Ótimo! Já coletei suas informações básicas. Agora falta só uma última etapa para você ter acesso completo ao dashboard.\n\n` +
-                      `*CADASTRE-SE NO DASHBOARD*\n\n` +
-                      `Clique no link abaixo para criar sua conta e ter acesso ao dashboard:\n\n` +
+                      `Ótimo! Já coletei suas informações básicas. Agora falta só uma última etapa para você ter acesso completo.\n\n` +
+                      `*CADASTRE-SE*\n\n` +
+                      `Clique no link abaixo para criar sua conta:\n\n` +
                       `${result.registrationLink}\n\n` +
                       `*O que acontece quando você se cadastrar:*\n` +
                       `• Seu email será vinculado ao seu WhatsApp\n` +
-                      `• Você terá acesso ao dashboard completo\n` +
-                      `• Todas as transações do WhatsApp aparecerão no dashboard\n\n` +
+                      `• Você terá acesso completo a todos os recursos\n` +
+                      `• Todas as transações do WhatsApp ficarão sincronizadas\n\n` +
                       `*Importante:*\n` +
                       `• O link é válido por 48 horas\n` +
                       `• Você pode continuar usando o WhatsApp normalmente enquanto isso\n\n` +

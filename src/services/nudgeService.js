@@ -126,7 +126,7 @@ class NudgeService {
 
   buildPhase1Message(state) {
     const firstName = state.data?.phase1?.contact_name?.split(' ')[0] || 'Oi';
-    return `${firstName}, posso te ajudar a finalizar seu cadastro na Lumiz? 💜\n\nFaltam só alguns detalhes pra liberar todos os relatórios e o dashboard da sua clínica.\n\nMe manda uma mensagem por aqui quando puder que a gente conclui rapidinho!`;
+    return `${firstName}, posso te ajudar a finalizar seu cadastro na Lumiz? 💜\n\nFaltam só alguns detalhes pra liberar todos os recursos da sua clínica.\n\nMe manda uma mensagem por aqui quando puder que a gente conclui rapidinho!`;
   }
 
   buildPhase2FollowupMessage() {
@@ -139,7 +139,7 @@ class NudgeService {
 
   buildWelcomeMessage(state) {
     const clinic = state.data?.phase1?.clinic_name || 'sua clínica';
-    return `🎉 Onboarding concluído!\n\n${clinic} já pode usar a Lumiz no WhatsApp e no dashboard.\n\nQuer uma dica do que fazer agora? Manda \"insights\" ou registra sua próxima venda 🙂`;
+    return `🎉 Onboarding concluído!\n\n${clinic} já pode usar a Lumiz no WhatsApp!\n\nQuer uma dica do que fazer agora? Manda \"insights\" ou registra sua próxima venda 🙂`;
   }
 
   async getExistingNudge(phone, type) {

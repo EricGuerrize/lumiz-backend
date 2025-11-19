@@ -180,7 +180,7 @@ Escreva insights em tom positivo, prático, sempre sugerindo próximos passos.
       message += '\n';
     });
 
-    message += `\nQuer mais detalhes? Manda "insights" ou abre o dashboard.`;
+    message += `\nQuer mais detalhes? Manda "insights" novamente.`;
 
     try {
       await evolutionService.sendMessage(user.telefone, message.trim());
@@ -224,7 +224,7 @@ Escreva insights em tom positivo, prático, sempre sugerindo próximos passos.
     });
 
     if (insights.length > 1) {
-      message += `\nTenho mais ${insights.length - 1} relatório${insights.length - 1 > 1 ? 's' : ''} salvo${insights.length - 1 > 1 ? 's' : ''} no dashboard.`;
+      message += `\nTenho mais ${insights.length - 1} relatório${insights.length - 1 > 1 ? 's' : ''} disponível${insights.length - 1 > 1 ? 'eis' : ''}. Manda "insights" novamente para ver.`;
     }
 
     return message.trim();
