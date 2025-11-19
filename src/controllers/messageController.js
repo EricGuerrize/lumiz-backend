@@ -51,12 +51,14 @@ class MessageController {
         return await this.handleEditConfirmation(phone, message, user);
       }
 
-      // Busca contexto histórico (últimas 5 mensagens) para melhorar entendimento
+      // Busca contexto histórico e exemplos similares (RAG) para melhorar entendimento
       const conversationHistoryService = require('../services/conversationHistoryService');
       const recentHistory = await conversationHistoryService.getRecentHistory(user.id, 5);
+      const similarExamples = await conversationHistoryService.findSimilarExamples(message, user.id, 3);
       
       const intent = await geminiService.processMessage(message, {
-        recentMessages: recentHistory
+        recentMessages: recentHistory,
+        similarExamples: similarExamples
       });
 
       let response = '';
@@ -175,14 +177,15 @@ class MessageController {
           response = 'Opa, não entendi essa 😅\n\nPode reformular? Tipo:\n_"Vendi um preenchimento por 1500"_\n_"Paguei conta de luz 450"_\n_"Como tá meu saldo?"_\n\nOu manda "ajuda" que te explico melhor!';
       }
 
-      // Salva conversa no histórico para uso futuro
+      // Salva conversa no histórico para uso futuro (RAG)
       if (response && response !== null) {
         try {
           await conversationHistoryService.saveConversation(
             user.id,
             message,
             response,
-            intent.intencao
+            intent.intencao,
+            { dados: intent.dados } // Salva contexto adicional
           );
         } catch (error) {
           // Não quebra se falhar ao salvar histórico
