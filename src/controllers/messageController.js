@@ -1608,30 +1608,28 @@ class MessageController {
         const valorMin = valorNumerico * 0.9;
         const valorMax = valorNumerico * 1.1;
         atendQuery = atendQuery.gte('valor_total', valorMin).lte('valor_total', valorMax);
-      } else {
-        // Busca por texto em observações
-        atendQuery = atendQuery.ilike('observacoes', `%${searchTerm}%`);
       }
+      // Para busca por texto, busca todos e filtra depois (mais flexível)
 
       const { data: atendimentos, error: atendError } = await atendQuery
         .order('data', { ascending: false })
-        .limit(20);
+        .limit(50); // Busca mais para filtrar depois
 
       if (!atendError && atendimentos) {
-        // Filtra também por nome do cliente e procedimento se não for busca por valor
         atendimentos.forEach(a => {
           const procedimento = a.atendimento_procedimentos?.[0]?.procedimentos?.nome || '';
           const cliente = a.clientes?.nome || '';
           const observacoes = (a.observacoes || '').toLowerCase();
+          const termoLower = searchTerm.toLowerCase();
 
           // Se não é busca por valor, verifica se o termo está em algum campo
           if (!isValorBusca) {
-            const termoLower = searchTerm.toLowerCase();
             const matchProcedimento = procedimento.toLowerCase().includes(termoLower);
             const matchCliente = cliente.toLowerCase().includes(termoLower);
             const matchObservacoes = observacoes.includes(termoLower);
+            const matchValor = a.valor_total && a.valor_total.toString().includes(searchTerm);
 
-            if (!matchProcedimento && !matchCliente && !matchObservacoes) {
+            if (!matchProcedimento && !matchCliente && !matchObservacoes && !matchValor) {
               return; // Não faz match, pula
             }
           }
