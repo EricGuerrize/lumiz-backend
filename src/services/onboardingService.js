@@ -5,7 +5,6 @@ const STEP_BLUEPRINT = [
   { id: 'phase1_welcome', label: 'Boas-vindas', phase: 1, optional: false },
   { id: 'phase1_name', label: 'Nome completo', phase: 1, optional: false },
   { id: 'phase1_clinic', label: 'Nome da clínica', phase: 1, optional: false },
-  { id: 'phase1_email', label: 'Email', phase: 1, optional: false },
   { id: 'phase1_cnpj', label: 'CNPJ', phase: 1, optional: true },
   { id: 'phase1_team_size', label: 'Tamanho da equipe', phase: 1, optional: false },
   { id: 'phase1_volume', label: 'Volume mensal', phase: 1, optional: false },
@@ -19,7 +18,6 @@ const DEFAULT_DATA = {
   phase1: {
     contact_name: null,
     clinic_name: null,
-    email: null,
     cnpj: null,
     cnpj_status: 'pending',
     team_size_range: null,
