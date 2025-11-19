@@ -102,6 +102,38 @@ router.post('/webhook', webhookLimiter, async (req, res) => {
   }
 });
 
+// POST /api/test/send-setup-email - Testa envio de email (apenas para desenvolvimento)
+router.post('/test/send-setup-email', async (req, res) => {
+  try {
+    // Apenas em desenvolvimento
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(403).json({ error: 'Endpoint desabilitado em produção' });
+    }
+
+    const { email, nome } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ error: 'Email é obrigatório' });
+    }
+
+    const emailService = require('../services/emailService');
+    const result = await emailService.sendSetupEmail(email, nome || '');
+
+    if (result) {
+      res.json({
+        success: true,
+        message: 'Email enviado com sucesso',
+        setupLink: result.setupLink
+      });
+    } else {
+      res.status(500).json({ error: 'Erro ao enviar email' });
+    }
+  } catch (error) {
+    console.error('Erro ao testar email:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.post('/test', async (req, res) => {
   try {
     const { phone, message } = req.body;
