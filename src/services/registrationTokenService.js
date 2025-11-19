@@ -33,7 +33,7 @@ class RegistrationTokenService {
       return {
         token,
         expiresAt: expiresAt.toISOString(),
-        registrationLink: `https://lumiz-financeiro.vercel.app/register?phone=${encodeURIComponent(phone)}&token=${token}`
+        registrationLink: `https://lumiz-financeiro.vercel.app/setup-account?phone=${encodeURIComponent(phone)}&token=${token}`
       };
     } catch (error) {
       console.error('[REG_TOKEN] Erro ao gerar token de cadastro:', error);
