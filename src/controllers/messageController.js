@@ -51,9 +51,19 @@ class MessageController {
         return await this.handleEditConfirmation(phone, message, user);
       }
 
-      const intent = await geminiService.processMessage(message);
+      // Busca contexto histórico (últimas 5 mensagens) para melhorar entendimento
+      const conversationHistoryService = require('../services/conversationHistoryService');
+      const recentHistory = await conversationHistoryService.getRecentHistory(user.id, 5);
+      
+      const intent = await geminiService.processMessage(message, {
+        recentMessages: recentHistory
+      });
 
       let response = '';
+
+      // Salva conversa no histórico (após processar, antes de responder)
+      // Isso permite usar no próximo ciclo
+      const conversationHistoryService = require('../services/conversationHistoryService');
 
       switch (intent.intencao) {
         case 'registrar_entrada':
@@ -167,6 +177,16 @@ class MessageController {
 
         default:
           response = 'Opa, não entendi essa 😅\n\nPode reformular? Tipo:\n_"Vendi um preenchimento por 1500"_\n_"Paguei conta de luz 450"_\n_"Como tá meu saldo?"_\n\nOu manda "ajuda" que te explico melhor!';
+      }
+
+      // Salva conversa no histórico para uso futuro
+      if (response && response !== null) {
+        await conversationHistoryService.saveConversation(
+          user.id,
+          message,
+          response,
+          intent.intencao
+        );
       }
 
       return response;

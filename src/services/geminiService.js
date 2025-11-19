@@ -12,7 +12,7 @@ class GeminiService {
     this.model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
   }
 
-  async processMessage(message) {
+  async processMessage(message, context = {}) {
     const hoje = new Date();
     const dataHoje = hoje.toISOString().split('T')[0];
     const diaSemanaHoje = hoje.getDay(); // 0=domingo, 1=segunda, etc.
@@ -32,17 +32,33 @@ class GeminiService {
     semanaPassada.setDate(semanaPassada.getDate() - 7);
     const dataSemanaPassada = semanaPassada.toISOString().split('T')[0];
 
+    // Contexto histórico (se fornecido)
+    let contextSection = '';
+    if (context.recentMessages && context.recentMessages.length > 0) {
+      contextSection = `\n\nCONTEXTO HISTÓRICO (últimas conversas do usuário):\n${context.recentMessages.map((m, i) => 
+        `${i + 1}. Usuário: "${m.user_message}"\n   Bot: "${m.bot_response}"`
+      ).join('\n\n')}\n\nUse este contexto para entender melhor a intenção atual.`;
+    }
+
     const prompt = `
 TAREFA: Analisar mensagem e retornar JSON com intenção e dados extraídos.
 
 CONTEXTO: Clínica de estética.
 DATA DE HOJE: ${dataHoje} (${nomeDiaHoje}-feira)
+${contextSection}
+
+SYSTEM INSTRUCTIONS:
+- Você é um assistente especializado em gestão financeira para clínicas estéticas
+- Seja preciso na extração de dados (valores, datas, categorias)
+- Quando houver ambiguidade, prefira a intenção mais comum no contexto de clínicas
+- Use o contexto histórico para entender melhor a intenção do usuário
+- Se a mensagem for incompleta mas tiver contexto histórico, use o contexto para completar
 
 REGRA PRINCIPAL DE CLASSIFICAÇÃO:
-- Palavras que indicam VENDA (registrar_entrada): botox, preenchimento, harmonização, bioestimulador, fios, peeling, laser, paciente, cliente, procedimento, fiz um, realizei, atendi, vendi, fechei, fiz, atendimento
+- Palavras que indicam VENDA (registrar_entrada): botox, preenchimento, harmonização, bioestimulador, fios, peeling, laser, paciente, cliente, procedimento, fiz um, realizei, atendi, vendi, fechei, fiz, atendimento, tox (abreviação de botox), preench (abreviação de preenchimento)
 - Palavras que indicam CUSTO (registrar_saida): insumos, marketing, aluguel, energia, internet, material, produto, fornecedor, boleto, conta, paguei, gastei, comprei, pagar
 
-MENSAGEM: "${message}"
+MENSAGEM ATUAL: "${message}"
 
 INTENÇÕES:
 - registrar_entrada: tem VALOR + palavra de VENDA
@@ -90,6 +106,8 @@ EXTRAÇÃO:
 EXEMPLOS:
 
 "Botox 2800" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":2800.00,"categoria":"Botox","forma_pagamento":"avista","data":"${dataHoje}"}}
+
+"tox 2800" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":2800.00,"categoria":"Botox","forma_pagamento":"avista","data":"${dataHoje}"}}
 
 "Botox 2800 paciente Maria" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":2800.00,"categoria":"Botox","descricao":"Paciente Maria","forma_pagamento":"avista","nome_cliente":"Maria","data":"${dataHoje}"}}
 
