@@ -457,16 +457,31 @@ class UserController {
               response += `📱 *Seu telefone foi vinculado:* ${phone}\n\n`;
             } else {
               // Usuário novo criado
-              response = `*CONTA CRIADA COM SUCESSO!*\n\n` +
-                        `Seu cadastro está pronto! Agora você pode usar a Lumiz pelo WhatsApp e pelo dashboard online.\n\n` +
-                        `*CONFIGURAÇÃO DE SENHA*\n\n` +
-                        `Enviamos um email para:\n📧 ${onboarding.data.email}\n\n` +
-                        `No email você encontrará um link para criar sua senha de acesso ao dashboard.\n\n` +
-                        `*Importante:*\n` +
-                        `• O link é válido por 24 horas\n` +
-                        `• Verifique sua caixa de entrada e spam\n` +
-                        `• Após criar a senha, você poderá acessar o dashboard\n\n` +
-                        `🌐 Dashboard: lumiz-financeiro.vercel.app\n\n`;
+              if (result.setupLink) {
+                // Se temos o link de setup, inclui na mensagem
+                response = `*CONTA CRIADA COM SUCESSO!*\n\n` +
+                          `Seu cadastro está pronto! Agora você pode usar a Lumiz pelo WhatsApp e pelo dashboard online.\n\n` +
+                          `*CONFIGURAÇÃO DE SENHA*\n\n` +
+                          `Clique no link abaixo para criar sua senha de acesso ao dashboard:\n\n` +
+                          `${result.setupLink}\n\n` +
+                          `*Importante:*\n` +
+                          `• O link é válido por 24 horas\n` +
+                          `• Você também receberá este link por email\n` +
+                          `• Após criar a senha, você poderá acessar o dashboard\n\n` +
+                          `🌐 Dashboard: lumiz-financeiro.vercel.app\n\n`;
+              } else {
+                // Fallback se o link não foi gerado (Edge Function não deployada)
+                response = `*CONTA CRIADA COM SUCESSO!*\n\n` +
+                          `Seu cadastro está pronto! Agora você pode usar a Lumiz pelo WhatsApp e pelo dashboard online.\n\n` +
+                          `*CONFIGURAÇÃO DE SENHA*\n\n` +
+                          `Enviamos um email para:\n📧 ${onboarding.data.email}\n\n` +
+                          `No email você encontrará um link para criar sua senha de acesso ao dashboard.\n\n` +
+                          `*Importante:*\n` +
+                          `• O link é válido por 24 horas\n` +
+                          `• Verifique sua caixa de entrada e spam\n` +
+                          `• Após criar a senha, você poderá acessar o dashboard\n\n` +
+                          `🌐 Dashboard: lumiz-financeiro.vercel.app\n\n`;
+              }
             }
 
             response += `*Pronto pra começar?* 🚀\n\n` +
@@ -604,11 +619,17 @@ class UserController {
         throw new Error('Erro ao buscar profile atualizado.');
       }
 
-      // Envia email de setup (apenas se usuário novo)
+      // Envia email de setup (apenas se usuário novo) e captura o link
+      let setupLink = null;
       if (userCreated) {
         try {
-          await emailService.sendSetupEmail(email, nome_completo);
-          console.log('[USER] Email de setup enviado para:', email);
+          const emailResult = await emailService.sendSetupEmail(email, nome_completo);
+          if (emailResult && emailResult.setupLink) {
+            setupLink = emailResult.setupLink;
+            console.log('[USER] Email de setup enviado para:', email);
+          } else {
+            console.warn('[USER] Email enviado mas sem link de setup retornado');
+          }
         } catch (emailError) {
           console.error('[USER] Erro ao enviar email de setup (não crítico):', emailError);
           // Não bloqueia a criação do usuário se o email falhar
@@ -618,7 +639,8 @@ class UserController {
       return {
         user: profile,
         tempPassword: null, // Não retorna mais senha temporária
-        userAlreadyExisted: !userCreated // Flag para mensagem customizada
+        userAlreadyExisted: !userCreated, // Flag para mensagem customizada
+        setupLink: setupLink // Link de setup para incluir na mensagem
       };
     } catch (error) {
       console.error('Erro ao criar usuário no onboarding:', error);
