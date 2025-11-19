@@ -1,5 +1,6 @@
 const supabase = require('../db/supabase');
 const onboardingService = require('../services/onboardingService');
+const emailService = require('../services/emailService');
 
 class UserController {
   constructor() {
@@ -602,30 +603,20 @@ class UserController {
         throw new Error('Erro ao buscar profile atualizado.');
       }
 
-      // Gera link de reset de senha (apenas se usuário novo)
-      let resetLink = null;
+      // Envia email de setup (apenas se usuário novo)
       if (userCreated) {
         try {
-          const { data: resetData, error: resetError } = await supabase.auth.admin.generateLink({
-            type: 'recovery',
-            email: email,
-            options: {
-              redirectTo: process.env.DASHBOARD_URL || 'https://lumiz-financeiro.vercel.app'
-            }
-          });
-
-          if (!resetError && resetData) {
-            resetLink = resetData.properties?.action_link;
-          }
-        } catch (linkError) {
-          console.error('Erro ao gerar link de reset:', linkError);
+          await emailService.sendSetupEmail(email, nome_completo);
+          console.log('[USER] Email de setup enviado para:', email);
+        } catch (emailError) {
+          console.error('[USER] Erro ao enviar email de setup (não crítico):', emailError);
+          // Não bloqueia a criação do usuário se o email falhar
         }
       }
 
       return {
         user: profile,
-        resetLink,
-        tempPassword, // Apenas se usuário novo
+        tempPassword: null, // Não retorna mais senha temporária
         userAlreadyExisted: !userCreated // Flag para mensagem customizada
       };
     } catch (error) {
