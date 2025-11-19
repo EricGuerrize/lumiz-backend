@@ -221,22 +221,51 @@ router.post('/user/link-email', async (req, res) => {
 
     const userId = authData.user.id;
 
-    // Atualiza o perfil com o ID do Auth e email
-    const { error: updateError } = await supabase
+    // Cria novo perfil com o ID do Auth (não podemos atualizar ID de chave primária)
+    const { error: createError } = await supabase
       .from('profiles')
-      .update({
-        id: userId, // Atualiza o ID para o ID do Auth
-        email: email
-      })
-      .eq('id', profile.id);
+      .insert([{
+        id: userId,
+        nome_completo: profile.nome_completo,
+        nome_clinica: profile.nome_clinica,
+        telefone: profile.telefone,
+        email: email,
+        cnpj: profile.cnpj,
+        is_active: true
+      }]);
 
-    if (updateError) {
-      // Se der erro, deleta o usuário Auth criado
-      await supabase.auth.admin.deleteUser(userId);
-      console.error('[LINK_EMAIL] Erro ao atualizar perfil:', updateError);
-      return res.status(500).json({ 
-        error: 'Erro ao vincular email ao perfil' 
-      });
+    if (createError) {
+      // Se der erro (ex: ID já existe), tenta atualizar o perfil existente
+      if (createError.code === '23505') {
+        // Perfil já existe com este ID, apenas atualiza email
+        const { error: updateError } = await supabase
+          .from('profiles')
+          .update({ email: email })
+          .eq('id', userId);
+
+        if (updateError) {
+          await supabase.auth.admin.deleteUser(userId);
+          console.error('[LINK_EMAIL] Erro ao atualizar perfil:', updateError);
+          return res.status(500).json({ 
+            error: 'Erro ao vincular email ao perfil' 
+          });
+        }
+      } else {
+        // Outro erro, deleta usuário Auth
+        await supabase.auth.admin.deleteUser(userId);
+        console.error('[LINK_EMAIL] Erro ao criar perfil:', createError);
+        return res.status(500).json({ 
+          error: 'Erro ao vincular email ao perfil' 
+        });
+      }
+    } else {
+      // Se criou novo perfil, deleta o perfil temporário antigo
+      if (profile.id !== userId) {
+        await supabase
+          .from('profiles')
+          .delete()
+          .eq('id', profile.id);
+      }
     }
 
     // Cria role de admin
