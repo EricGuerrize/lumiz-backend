@@ -3,6 +3,8 @@ const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const messageController = require('../controllers/messageController');
 const evolutionService = require('../services/evolutionService');
+const userController = require('../controllers/userController');
+const registrationTokenService = require('../services/registrationTokenService');
 
 // Rate limiting específico para webhook (30 req/min por IP)
 const webhookLimiter = rateLimit({
@@ -151,6 +153,127 @@ router.post('/test', async (req, res) => {
   } catch (error) {
     console.error('Erro ao testar:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/user/link-email - Vincula email ao perfil existente (chamado pelo frontend após cadastro)
+router.post('/user/link-email', async (req, res) => {
+  try {
+    const { phone, token, email, password } = req.body;
+
+    if (!phone || !token || !email || !password) {
+      return res.status(400).json({ 
+        error: 'phone, token, email e password são obrigatórios' 
+      });
+    }
+
+    // Valida o token de cadastro
+    const tokenValidation = await registrationTokenService.validateRegistrationToken(token);
+    
+    if (!tokenValidation.valid || tokenValidation.phone !== phone) {
+      return res.status(400).json({ 
+        error: 'Token inválido ou expirado' 
+      });
+    }
+
+    // Busca o perfil existente pelo telefone
+    const supabase = require('../db/supabase');
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('telefone', phone)
+      .single();
+
+    if (profileError || !profile) {
+      return res.status(404).json({ 
+        error: 'Perfil não encontrado para este telefone' 
+      });
+    }
+
+    // Verifica se já existe usuário com este email
+    const { data: existingUsers } = await supabase.auth.admin.listUsers();
+    const existingUser = existingUsers?.users?.find(u => u.email === email);
+
+    if (existingUser) {
+      return res.status(400).json({ 
+        error: 'Este email já está cadastrado' 
+      });
+    }
+
+    // Cria usuário no Supabase Auth
+    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+      email: email,
+      password: password,
+      email_confirm: true,
+      user_metadata: {
+        nome_completo: profile.nome_completo,
+        nome_clinica: profile.nome_clinica,
+        telefone: phone
+      }
+    });
+
+    if (authError) {
+      console.error('[LINK_EMAIL] Erro ao criar usuário Auth:', authError);
+      return res.status(500).json({ 
+        error: 'Erro ao criar conta. Tente novamente.' 
+      });
+    }
+
+    const userId = authData.user.id;
+
+    // Atualiza o perfil com o ID do Auth e email
+    const { error: updateError } = await supabase
+      .from('profiles')
+      .update({
+        id: userId, // Atualiza o ID para o ID do Auth
+        email: email
+      })
+      .eq('id', profile.id);
+
+    if (updateError) {
+      // Se der erro, deleta o usuário Auth criado
+      await supabase.auth.admin.deleteUser(userId);
+      console.error('[LINK_EMAIL] Erro ao atualizar perfil:', updateError);
+      return res.status(500).json({ 
+        error: 'Erro ao vincular email ao perfil' 
+      });
+    }
+
+    // Cria role de admin
+    await supabase
+      .from('user_roles')
+      .insert([{
+        user_id: userId,
+        role: 'admin'
+      }]);
+
+    // Marca token como usado
+    await registrationTokenService.markTokenAsUsed(tokenValidation.tokenId);
+
+    // Envia mensagem de confirmação via WhatsApp
+    try {
+      const confirmationMessage = `*CADASTRO CONCLUÍDO COM SUCESSO!*\n\n` +
+        `Seu email foi vinculado ao seu WhatsApp!\n\n` +
+        `Agora você tem acesso completo ao dashboard:\n` +
+        `🌐 lumiz-financeiro.vercel.app\n\n` +
+        `*Pronto pra começar?* 🚀\n\n` +
+        `Me manda sua primeira venda assim:\n` +
+        `_"Botox 2800 paciente Maria"_\n\n` +
+        `Ou manda "ajuda" que te mostro tudo que sei fazer! 😊`;
+
+      await evolutionService.sendMessage(phone, confirmationMessage);
+    } catch (whatsappError) {
+      console.error('[LINK_EMAIL] Erro ao enviar mensagem WhatsApp (não crítico):', whatsappError);
+    }
+
+    res.json({
+      success: true,
+      message: 'Email vinculado com sucesso',
+      userId: userId
+    });
+  } catch (error) {
+    console.error('[LINK_EMAIL] Erro:', error);
+    res.status(500).json({ error: error.message || 'Erro interno' });
   }
 });
 
