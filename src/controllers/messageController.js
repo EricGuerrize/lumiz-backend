@@ -1595,10 +1595,10 @@ class MessageController {
           data,
           observacoes,
           cliente_id,
-          clientes!inner(nome),
+          clientes(nome),
           atendimento_procedimentos(
             procedimento_id,
-            procedimentos!inner(nome)
+            procedimentos(nome)
           )
         `)
         .eq('user_id', user.id);
