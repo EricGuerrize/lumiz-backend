@@ -1,6 +1,7 @@
 const supabase = require('../db/supabase');
 const onboardingService = require('../services/onboardingService');
 const emailService = require('../services/emailService');
+const registrationTokenService = require('../services/registrationTokenService');
 
 class UserController {
   constructor() {
@@ -235,7 +236,7 @@ class UserController {
           return 'Por favor, digite o nome da clínica.';
         }
         onboarding.data.nome_clinica = messageTrimmed;
-        onboarding.step = 'email';
+        onboarding.step = 'cnpj';
 
         try {
           await onboardingService.savePhaseData(phone, 'phase1', {
@@ -251,32 +252,7 @@ class UserController {
         const progressLabel = await onboardingService.getProgressLabel(phone);
         const progressText = progressLabel ? `\n\n${progressLabel}` : '';
 
-        return `*${messageTrimmed}* - nome bonito! 💜${progressText}\n\nAgora me diz: *Qual seu email?*\n(Você usa para acessar o dashboard)`;
-      }
-
-      case 'email': {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(messageTrimmed)) {
-          return 'Esse email não parece válido. 🤔\n\nDigite um email válido (ex: seu@email.com)';
-        }
-        onboarding.data.email = messageTrimmed.toLowerCase();
-        onboarding.step = 'cnpj';
-
-        try {
-          await onboardingService.savePhaseData(phone, 'phase1', {
-            email: onboarding.data.email
-          });
-          await onboardingService.updateStepStatus(phone, 'phase1_email', 'completed', {
-            value: onboarding.data.email
-          });
-        } catch (error) {
-          console.error('Erro ao salvar progresso (email):', error);
-        }
-
-        const progressLabel = await onboardingService.getProgressLabel(phone);
-        const progressText = progressLabel ? `\n\n${progressLabel}` : '';
-
-        return `Perfeito!${progressText}\n\nAgora, se tiver o *CNPJ da clínica*, já me passa? Assim deixo tudo pronto.\n\nSe preferir, responda *Pular* ou *Prefiro não informar agora*.`;
+        return `*${messageTrimmed}* - nome bonito! 💜${progressText}\n\nAgora, se tiver o *CNPJ da clínica*, já me passa? Assim deixo tudo pronto.\n\nSe preferir, responda *Pular* ou *Prefiro não informar agora*.`;
       }
 
       case 'cnpj': {
@@ -448,41 +424,20 @@ class UserController {
 
             let response;
 
-            if (result.userAlreadyExisted) {
-              // Usuário já tinha conta - apenas vinculou WhatsApp
-              response = `✅ *WHATSAPP VINCULADO COM SUCESSO!*\n\n` +
-                     `Identifiquei que você já tem uma conta com o email *${onboarding.data.email}*!\n\n` +
-                     `Vinculei este WhatsApp à sua conta existente. Agora todas as transações que você registrar aqui vão aparecer no dashboard! 🎉\n\n`;
-
-              response += `📱 *Seu telefone foi vinculado:* ${phone}\n\n`;
-            } else {
-              // Usuário novo criado
-              if (result.setupLink) {
-                // Se temos o link de setup, inclui na mensagem
-                response = `*CONTA CRIADA COM SUCESSO!*\n\n` +
-                          `Seu cadastro está pronto! Agora você pode usar a Lumiz pelo WhatsApp e pelo dashboard online.\n\n` +
-                          `*CONFIGURAÇÃO DE SENHA*\n\n` +
-                          `Clique no link abaixo para criar sua senha de acesso ao dashboard:\n\n` +
-                          `${result.setupLink}\n\n` +
-                          `*Importante:*\n` +
-                          `• O link é válido por 24 horas\n` +
-                          `• Você também receberá este link por email\n` +
-                          `• Após criar a senha, você poderá acessar o dashboard\n\n` +
-                          `🌐 Dashboard: lumiz-financeiro.vercel.app\n\n`;
-              } else {
-                // Fallback se o link não foi gerado (Edge Function não deployada)
-                response = `*CONTA CRIADA COM SUCESSO!*\n\n` +
-                          `Seu cadastro está pronto! Agora você pode usar a Lumiz pelo WhatsApp e pelo dashboard online.\n\n` +
-                          `*CONFIGURAÇÃO DE SENHA*\n\n` +
-                          `Enviamos um email para:\n📧 ${onboarding.data.email}\n\n` +
-                          `No email você encontrará um link para criar sua senha de acesso ao dashboard.\n\n` +
-                          `*Importante:*\n` +
-                          `• O link é válido por 24 horas\n` +
-                          `• Verifique sua caixa de entrada e spam\n` +
-                          `• Após criar a senha, você poderá acessar o dashboard\n\n` +
-                          `🌐 Dashboard: lumiz-financeiro.vercel.app\n\n`;
-              }
-            }
+            // Mensagem final do onboarding - envia link de cadastro
+            response = `*CADASTRO BÁSICO CONCLUÍDO!*\n\n` +
+                      `Ótimo! Já coletei suas informações básicas. Agora falta só uma última etapa para você ter acesso completo ao dashboard.\n\n` +
+                      `*CADASTRE-SE NO DASHBOARD*\n\n` +
+                      `Clique no link abaixo para criar sua conta e ter acesso ao dashboard:\n\n` +
+                      `${result.registrationLink}\n\n` +
+                      `*O que acontece quando você se cadastrar:*\n` +
+                      `• Seu email será vinculado ao seu WhatsApp\n` +
+                      `• Você terá acesso ao dashboard completo\n` +
+                      `• Todas as transações do WhatsApp aparecerão no dashboard\n\n` +
+                      `*Importante:*\n` +
+                      `• O link é válido por 48 horas\n` +
+                      `• Você pode continuar usando o WhatsApp normalmente enquanto isso\n\n` +
+                      `Assim que finalizar o cadastro, eu te aviso aqui no WhatsApp! 😊`;
 
             response += `*Pronto pra começar?* 🚀\n\n` +
                    `Me manda sua primeira venda assim:\n` +
@@ -510,140 +465,81 @@ class UserController {
 
   async createUserFromOnboarding(data) {
     try {
-      const { nome_completo, nome_clinica, telefone, email } = data;
+      const { nome_completo, nome_clinica, telefone } = data;
 
-      // PRIMEIRO: Verifica se já existe um usuário com este email
-      const { data: existingAuthUser, error: lookupError } = await supabase.auth.admin.listUsers();
+      // Verifica se já existe um perfil com este telefone
+      const { data: existingProfile, error: lookupError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('telefone', telefone)
+        .single();
 
-      let existingUser = null;
-      if (!lookupError && existingAuthUser?.users) {
-        existingUser = existingAuthUser.users.find(u => u.email === email);
-      }
+      let profile;
+      let profileCreated = false;
 
-      let userId;
-      let tempPassword = null;
-      let userCreated = false;
-
-      if (existingUser) {
-        // USUÁRIO JÁ EXISTE! Apenas atualiza o profile com telefone
-        userId = existingUser.id;
-        console.log('Usuário já existe (email):', email, '- ID:', userId);
-        console.log('Atualizando telefone e dados do profile...');
-
-        // Atualiza o profile existente com telefone e outros dados do WhatsApp
-        const { error: updateError } = await supabase
+      if (existingProfile && !lookupError) {
+        // PERFIL JÁ EXISTE - apenas atualiza dados
+        console.log('Perfil já existe para telefone:', telefone);
+        profile = existingProfile;
+        
+        // Atualiza dados se necessário
+        const { data: updatedProfile, error: updateError } = await supabase
           .from('profiles')
           .update({
-            telefone: telefone,
-            nome_completo: nome_completo || existingUser.user_metadata?.nome_completo,
-            nome_clinica: nome_clinica || existingUser.user_metadata?.nome_clinica
+            nome_completo: nome_completo || existingProfile.nome_completo,
+            nome_clinica: nome_clinica || existingProfile.nome_clinica
           })
-          .eq('id', userId);
+          .eq('id', existingProfile.id)
+          .select()
+          .single();
 
-        if (updateError) {
-          console.error('Erro ao atualizar profile:', updateError);
-          throw new Error('Erro ao vincular telefone à conta existente.');
+        if (!updateError && updatedProfile) {
+          profile = updatedProfile;
         }
-
-        console.log('Profile atualizado com sucesso! Telefone vinculado:', telefone);
-
-        // Não cria senha nova, usuário já tem credenciais
-        userCreated = false;
       } else {
-        // USUÁRIO NÃO EXISTE - Cria novo
-        console.log('Criando novo usuário:', email);
-
-        // Gera uma senha temporária aleatória
-        tempPassword = Math.random().toString(36).slice(-12) + 'A1!';
-
-        // Cria usuário no Supabase Auth
-        const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-          email: email,
-          password: tempPassword,
-          email_confirm: true, // Confirma email automaticamente
-          user_metadata: {
-            nome_completo,
-            nome_clinica,
-            telefone
-          }
-        });
-
-        if (authError) {
-          console.error('Erro Auth:', authError);
-          throw new Error('Erro ao criar conta. Tente novamente.');
-        }
-
-        userId = authData.user.id;
-        userCreated = true;
-        console.log('Usuário Auth criado:', userId);
-
-        // Cria profile com o mesmo ID do Auth
-        const { data: newUser, error: profileError } = await supabase
+        // CRIA PERFIL TEMPORÁRIO (sem usuário Auth ainda)
+        // O usuário será criado quando se cadastrar no frontend
+        console.log('Criando perfil temporário para telefone:', telefone);
+        
+        // Gera um ID temporário (será atualizado quando vincular email)
+        const tempId = require('uuid').v4();
+        
+        const { data: newProfile, error: profileError } = await supabase
           .from('profiles')
           .insert([{
-            id: userId,
+            id: tempId,
             nome_completo,
             nome_clinica,
             telefone,
-            is_active: true
+            is_active: true,
+            email: null // Email será preenchido quando usuário se cadastrar
           }])
           .select()
           .single();
 
         if (profileError) {
-          // Se der erro no profile, deleta o usuário do Auth
-          await supabase.auth.admin.deleteUser(userId);
           if (profileError.code === '23505') {
             throw new Error('Este telefone já está cadastrado.');
           }
           throw profileError;
         }
 
-        // Cria role de admin para o usuário (se novo)
-        await supabase
-          .from('user_roles')
-          .insert([{
-            user_id: userId,
-            role: 'admin'
-          }]);
+        profile = newProfile;
+        profileCreated = true;
+        console.log('Perfil temporário criado:', profile.id);
       }
 
-      // Busca o profile atualizado/criado
-      const { data: profile, error: fetchError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
-
-      if (fetchError) {
-        throw new Error('Erro ao buscar profile atualizado.');
-      }
-
-      // Envia email de setup (apenas se usuário novo) e captura o link
-      let setupLink = null;
-      if (userCreated) {
-        try {
-          const emailResult = await emailService.sendSetupEmail(email, nome_completo);
-          if (emailResult && emailResult.setupLink) {
-            setupLink = emailResult.setupLink;
-            console.log('[USER] Email de setup enviado para:', email);
-          } else {
-            console.warn('[USER] Email enviado mas sem link de setup retornado');
-          }
-        } catch (emailError) {
-          console.error('[USER] Erro ao enviar email de setup (não crítico):', emailError);
-          // Não bloqueia a criação do usuário se o email falhar
-        }
-      }
+      // Gera token de cadastro e link
+      const { token, registrationLink } = await registrationTokenService.generateRegistrationToken(telefone, 48);
 
       return {
         user: profile,
-        tempPassword: null, // Não retorna mais senha temporária
-        userAlreadyExisted: !userCreated, // Flag para mensagem customizada
-        setupLink: setupLink // Link de setup para incluir na mensagem
+        registrationLink: registrationLink,
+        token: token,
+        profileCreated: profileCreated
       };
     } catch (error) {
-      console.error('Erro ao criar usuário no onboarding:', error);
+      console.error('Erro ao criar perfil no onboarding:', error);
       throw error;
     }
   }
