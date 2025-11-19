@@ -22,7 +22,10 @@ CREATE INDEX IF NOT EXISTS idx_conversation_history_message_gin ON public.conver
 -- RLS (Row Level Security)
 ALTER TABLE public.conversation_history ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY IF NOT EXISTS users_select_conversation_history
+-- Remove política se existir e cria nova
+DROP POLICY IF EXISTS users_select_conversation_history ON public.conversation_history;
+
+CREATE POLICY users_select_conversation_history
   ON public.conversation_history
   FOR SELECT
   USING (user_id = auth.uid());
