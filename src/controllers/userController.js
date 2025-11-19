@@ -126,7 +126,6 @@ class UserController {
     const linhas = [
       `👤 *Nome:* ${onboarding.data.nome_completo}`,
       `🏥 *Clínica:* ${onboarding.data.nome_clinica}`,
-      `📧 *Email:* ${onboarding.data.email}`,
       `📱 *WhatsApp:* ${phone}`,
       `🧾 *CNPJ:* ${
         onboarding.data.cnpj
