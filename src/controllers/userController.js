@@ -457,15 +457,25 @@ class UserController {
               response += `📱 *Seu telefone foi vinculado:* ${phone}\n\n`;
             } else {
               // Usuário novo
-              response = `🎉 *CONTA CRIADA COM SUCESSO!*\n\n` +
-                     `Seu cadastro tá pronto! Agora você pode usar a Lumiz pelo WhatsApp e pelo dashboard online.\n\n`;
-
-              response += `🔐 *ACESSE O DASHBOARD:*\n` +
-                         `📧 Email: ${onboarding.data.email}\n` +
-                         `🔑 Senha: ${result.tempPassword}\n` +
-                         `🌐 Link: lumiz-financeiro.vercel.app\n\n`;
-
-              response += `_Guarde essa senha! Você pode trocar depois no dashboard._\n\n`;
+              if (result.userAlreadyExisted) {
+                // Usuário já existia, apenas vinculou telefone
+                response = `*CONTA VINCULADA COM SUCESSO!*\n\n` +
+                          `Seu WhatsApp foi vinculado à sua conta existente!\n\n` +
+                          `📧 Email: ${onboarding.data.email}\n` +
+                          `🌐 Dashboard: lumiz-financeiro.vercel.app\n\n`;
+              } else {
+                // Usuário novo criado
+                response = `*CONTA CRIADA COM SUCESSO!*\n\n` +
+                          `Seu cadastro está pronto! Agora você pode usar a Lumiz pelo WhatsApp e pelo dashboard online.\n\n` +
+                          `*CONFIGURAÇÃO DE SENHA*\n\n` +
+                          `Enviamos um email para:\n📧 ${onboarding.data.email}\n\n` +
+                          `No email você encontrará um link para criar sua senha de acesso ao dashboard.\n\n` +
+                          `*Importante:*\n` +
+                          `• O link é válido por 24 horas\n` +
+                          `• Verifique sua caixa de entrada e spam\n` +
+                          `• Após criar a senha, você poderá acessar o dashboard\n\n` +
+                          `🌐 Dashboard: lumiz-financeiro.vercel.app\n\n`;
+              }
             }
 
             response += `*Pronto pra começar?* 🚀\n\n` +
