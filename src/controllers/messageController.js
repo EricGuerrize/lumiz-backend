@@ -1566,7 +1566,6 @@ class MessageController {
   async handleSearchTransaction(user, intent, messageOriginal = '') {
     try {
       // Extrai termo de busca da mensagem original
-      // Remove palavras de busca comuns e pega o resto
       let searchTerm = messageOriginal
         .toLowerCase()
         .replace(/\b(buscar|encontrar|procurar|achar|mostrar|transação|transacao)\b/gi, '')
@@ -1581,53 +1580,92 @@ class MessageController {
         return 'O que você quer buscar?\n\nExemplos:\n• "buscar botox"\n• "encontrar maria"\n• "procurar 2800"';
       }
 
-      // Busca em atendimentos
-      const { data: atendimentos } = await supabase
+      // Detecta se é busca por valor numérico
+      const valorNumerico = parseFloat(searchTerm.replace(/[^\d.,]/g, '').replace(',', '.'));
+      const isValorBusca = !isNaN(valorNumerico) && valorNumerico > 0;
+
+      const results = [];
+
+      // Busca em atendimentos - busca mais abrangente
+      let atendQuery = supabase
         .from('atendimentos')
         .select(`
           id,
           valor_total,
           data,
           observacoes,
-          clientes(nome),
+          cliente_id,
+          clientes!inner(nome),
           atendimento_procedimentos(
-            procedimentos(nome)
+            procedimento_id,
+            procedimentos!inner(nome)
           )
         `)
-        .eq('user_id', user.id)
-        .or(`observacoes.ilike.%${searchTerm}%,clientes.nome.ilike.%${searchTerm}%`)
+        .eq('user_id', user.id);
+
+      if (isValorBusca) {
+        // Busca por valor aproximado (±10%)
+        const valorMin = valorNumerico * 0.9;
+        const valorMax = valorNumerico * 1.1;
+        atendQuery = atendQuery.gte('valor_total', valorMin).lte('valor_total', valorMax);
+      } else {
+        // Busca por texto em observações
+        atendQuery = atendQuery.ilike('observacoes', `%${searchTerm}%`);
+      }
+
+      const { data: atendimentos, error: atendError } = await atendQuery
         .order('data', { ascending: false })
-        .limit(10);
+        .limit(20);
 
-      // Busca em contas a pagar
-      const { data: contas } = await supabase
-        .from('contas_pagar')
-        .select('id, valor, data, descricao, categoria')
-        .eq('user_id', user.id)
-        .or(`descricao.ilike.%${searchTerm}%,categoria.ilike.%${searchTerm}%`)
-        .order('data', { ascending: false })
-        .limit(10);
-
-      const results = [];
-
-      // Processa atendimentos
-      if (atendimentos) {
+      if (!atendError && atendimentos) {
+        // Filtra também por nome do cliente e procedimento se não for busca por valor
         atendimentos.forEach(a => {
-          const procedimento = a.atendimento_procedimentos?.[0]?.procedimentos?.nome || 'Procedimento';
+          const procedimento = a.atendimento_procedimentos?.[0]?.procedimentos?.nome || '';
           const cliente = a.clientes?.nome || '';
+          const observacoes = (a.observacoes || '').toLowerCase();
+
+          // Se não é busca por valor, verifica se o termo está em algum campo
+          if (!isValorBusca) {
+            const termoLower = searchTerm.toLowerCase();
+            const matchProcedimento = procedimento.toLowerCase().includes(termoLower);
+            const matchCliente = cliente.toLowerCase().includes(termoLower);
+            const matchObservacoes = observacoes.includes(termoLower);
+
+            if (!matchProcedimento && !matchCliente && !matchObservacoes) {
+              return; // Não faz match, pula
+            }
+          }
+
           results.push({
             tipo: 'entrada',
             valor: parseFloat(a.valor_total || 0),
-            categoria: procedimento,
-            descricao: cliente || a.observacoes || '',
+            categoria: procedimento || 'Procedimento',
+            descricao: cliente || observacoes || '',
             data: a.data,
             id: a.id
           });
         });
       }
 
-      // Processa contas
-      if (contas) {
+      // Busca em contas a pagar
+      let contasQuery = supabase
+        .from('contas_pagar')
+        .select('id, valor, data, descricao, categoria')
+        .eq('user_id', user.id);
+
+      if (isValorBusca) {
+        const valorMin = valorNumerico * 0.9;
+        const valorMax = valorNumerico * 1.1;
+        contasQuery = contasQuery.gte('valor', valorMin).lte('valor', valorMax);
+      } else {
+        contasQuery = contasQuery.or(`descricao.ilike.%${searchTerm}%,categoria.ilike.%${searchTerm}%`);
+      }
+
+      const { data: contas, error: contasError } = await contasQuery
+        .order('data', { ascending: false })
+        .limit(20);
+
+      if (!contasError && contas) {
         contas.forEach(c => {
           results.push({
             tipo: 'saida',
@@ -1644,12 +1682,15 @@ class MessageController {
         return `Não encontrei nenhuma transação com "${searchTerm}".\n\nTente buscar por:\n• Nome do procedimento\n• Nome do cliente\n• Valor aproximado\n• Categoria`;
       }
 
-      // Ordena por data (mais recente primeiro)
-      results.sort((a, b) => new Date(b.data) - new Date(a.data));
+      // Remove duplicatas e ordena por data (mais recente primeiro)
+      const uniqueResults = results.filter((r, index, self) =>
+        index === self.findIndex(t => t.id === r.id && t.tipo === r.tipo)
+      );
+      uniqueResults.sort((a, b) => new Date(b.data) - new Date(a.data));
 
-      let response = `*Encontrei ${results.length} transação(ões):*\n\n`;
+      let response = `*Encontrei ${uniqueResults.length} transação(ões):*\n\n`;
 
-      results.slice(0, 8).forEach((r, index) => {
+      uniqueResults.slice(0, 10).forEach((r, index) => {
         const tipo = r.tipo === 'entrada' ? 'Receita' : 'Custo';
         const data = new Date(r.data).toLocaleDateString('pt-BR');
         response += `${index + 1}. ${tipo}: R$ ${r.valor.toFixed(2)}\n`;
@@ -1658,8 +1699,8 @@ class MessageController {
         response += `\n   Data: ${data}\n\n`;
       });
 
-      if (results.length > 8) {
-        response += `... e mais ${results.length - 8} transação(ões)\n\n`;
+      if (uniqueResults.length > 10) {
+        response += `... e mais ${uniqueResults.length - 10} transação(ões)\n\n`;
       }
 
       response += `Para ver mais detalhes, acesse o dashboard.`;
