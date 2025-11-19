@@ -61,10 +61,6 @@ class MessageController {
 
       let response = '';
 
-      // Salva conversa no histórico (após processar, antes de responder)
-      // Isso permite usar no próximo ciclo
-      const conversationHistoryService = require('../services/conversationHistoryService');
-
       switch (intent.intencao) {
         case 'registrar_entrada':
         case 'registrar_saida':
@@ -181,12 +177,17 @@ class MessageController {
 
       // Salva conversa no histórico para uso futuro
       if (response && response !== null) {
-        await conversationHistoryService.saveConversation(
-          user.id,
-          message,
-          response,
-          intent.intencao
-        );
+        try {
+          await conversationHistoryService.saveConversation(
+            user.id,
+            message,
+            response,
+            intent.intencao
+          );
+        } catch (error) {
+          // Não quebra se falhar ao salvar histórico
+          console.error('[MESSAGE] Erro ao salvar histórico (não crítico):', error.message);
+        }
       }
 
       return response;
