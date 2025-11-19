@@ -143,7 +143,7 @@ class ReminderService {
       message += `*Vence em ${diasParaVencimento} dias*\n\n`;
     }
 
-    message += `Para marcar como paga, digite "paguei ${descricao.toLowerCase()}" ou acesse o dashboard.`;
+    message += `Para marcar como paga, digite "paguei ${descricao.toLowerCase()}".`;
 
     return message;
   }
