@@ -40,12 +40,21 @@ class GeminiService {
       ).join('\n\n')}\n\nUse este contexto para entender melhor a intenção atual.`;
     }
 
+    // Exemplos similares (RAG) - se fornecido
+    let ragSection = '';
+    if (context.similarExamples && context.similarExamples.length > 0) {
+      ragSection = `\n\nEXEMPLOS SIMILARES QUE FUNCIONARAM (use como referência):\n${context.similarExamples.map((ex, i) => 
+        `${i + 1}. Usuário: "${ex.user_message}"\n   Intenção: ${ex.intent}\n   Resposta do bot: "${ex.bot_response.substring(0, 100)}..."`
+      ).join('\n\n')}\n\nUse estes exemplos para entender melhor a intenção da mensagem atual. Se a mensagem atual for similar a algum exemplo, use a mesma intenção.`;
+    }
+
     const prompt = `
 TAREFA: Analisar mensagem e retornar JSON com intenção e dados extraídos.
 
 CONTEXTO: Clínica de estética.
 DATA DE HOJE: ${dataHoje} (${nomeDiaHoje}-feira)
 ${contextSection}
+${ragSection}
 
 SYSTEM INSTRUCTIONS:
 - Você é um assistente especializado em gestão financeira para clínicas estéticas
