@@ -411,7 +411,9 @@ class MessageController {
       response += `Opa, tá no vermelho... 😬\n`;
     }
 
-    response += `\nQuer ver o relatório completo do mês? Manda _"relatório"_`;
+    // Adiciona sugestão contextual
+    response += `\n💡 *Dica:* Quer ver o relatório completo? Digite "relatório"\n`;
+    response += `💡 *Dica:* Quer comparar com mês passado? Digite "comparar"`;
 
     return response;
   }
@@ -437,7 +439,9 @@ class MessageController {
       response += `${emoji} ${sinal}R$ ${parseFloat(t.amount).toFixed(2)} • ${categoria} • ${data}\n`;
     });
 
-    response += `\nPra ver mais detalhes, manda _"relatório"_`;
+    // Adiciona sugestão contextual
+    response += `\n💡 *Dica:* Quer buscar uma transação específica? Digite "buscar" seguido do nome ou valor\n`;
+    response += `💡 *Dica:* Quer ver o relatório completo? Digite "relatório"`;
 
     return response;
   }
@@ -515,12 +519,14 @@ class MessageController {
         });
     }
 
-    response += `\nPara PDF completo, digite "me manda pdf" ou "gerar pdf".`;
+    // Adiciona sugestão contextual
+    response += `\n💡 *Dica:* Quer exportar em PDF? Digite "relatório pdf"\n`;
+    response += `💡 *Dica:* Quer comparar com mês passado? Digite "comparar"`;
 
     if (lucro > 0) {
-      response += `\n\nMandando bem!`;
+      response += `\n\nMandando bem! 🎉`;
     } else if (lucro < 0) {
-      response += `\n\nBora reverter esse cenário!`;
+      response += `\n\nBora reverter esse cenário! 💪`;
     }
 
     return response;
@@ -1362,7 +1368,8 @@ class MessageController {
 
       return `${emoji} *Transação desfeita!*\n\n` +
              `Removi a ${tipoTexto} de *R$ ${lastTransaction.valor.toFixed(2)}* (${lastTransaction.categoria})\n\n` +
-             `Quer registrar novamente com os dados corretos? É só me mandar! 😊`;
+             `💡 *Dica:* Quer registrar novamente? É só me mandar a transação correta!\n` +
+             `💡 *Dica:* Quer ver seu saldo atualizado? Digite "saldo"`;
     } catch (error) {
       console.error('Erro ao desfazer transação:', error);
       return `Erro ao desfazer transação 😢\n\nTente novamente.`;
@@ -1584,12 +1591,13 @@ class MessageController {
       this.pendingEdits.delete(phone);
 
       const tipoTexto = pending.tipo === 'entrada' ? 'receita' : 'custo';
-      let response = `*Transação editada com sucesso!*\n\n`;
-      response += `Tipo: ${tipoTexto}\n`;
-      if (updates.valor) response += `Valor: R$ ${updates.valor.toFixed(2)}\n`;
-      if (updates.categoria) response += `Categoria: ${updates.categoria}\n`;
-      if (updates.data) response += `Data: ${new Date(updates.data).toLocaleDateString('pt-BR')}\n`;
-      if (updates.descricao) response += `Descrição: ${updates.descricao}\n`;
+      const emoji = pending.tipo === 'entrada' ? '💰' : '💸';
+      let response = `✅ *Transação editada com sucesso!*\n\n`;
+      response += `${emoji} ${tipoTexto}: *R$ ${transaction.valor.toFixed(2)}*\n`;
+      if (transaction.categoria) response += `📂 ${transaction.categoria}\n`;
+      if (transaction.data) response += `📅 ${new Date(transaction.data).toLocaleDateString('pt-BR')}\n`;
+      response += `\n💡 *Dica:* Quer ver seu saldo atualizado? Digite "saldo"\n`;
+      response += `💡 *Dica:* Quer buscar outra transação? Digite "buscar"`;
 
       return response;
     } catch (error) {
