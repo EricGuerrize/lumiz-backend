@@ -469,10 +469,12 @@ class UserController {
           // Envia botões para classificação
           const evolutionService = require('../services/evolutionService');
           try {
+            // Cria título curto para os botões
+            const buttonTitle = `Custo: ${descricao} - R$ ${valor.toFixed(2)}`;
             const buttonResult = await evolutionService.sendButtons(
               phone,
-              response,
-              ['📦 Variável (depende dos procedimentos)', '🏠 Fixo (todo mês)']
+              buttonTitle,
+              ['Variável', 'Fixo']
             );
             
             // Se os botões foram enviados com sucesso, retorna null para não enviar mensagem adicional
