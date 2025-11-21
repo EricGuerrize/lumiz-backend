@@ -308,11 +308,19 @@ class UserController {
 
         // Envia botões para formas de pagamento
         const evolutionService = require('../services/evolutionService');
-        await evolutionService.sendButtons(
-          phone,
-          '*Hoje você recebe como? (Pode marcar mais de uma)*',
-          ['PIX', 'Cartão', 'Dinheiro', 'Link de pagamento', 'Outros']
-        );
+        try {
+          await evolutionService.sendButtons(
+            phone,
+            '*Hoje você recebe como? (Pode marcar mais de uma)*',
+            ['PIX', 'Cartão', 'Dinheiro', 'Link de pagamento', 'Outros']
+          );
+          // Aguarda um pouco para garantir que os botões foram enviados
+          await new Promise(resolve => setTimeout(resolve, 500));
+        } catch (error) {
+          console.error('Erro ao enviar botões de formas de pagamento:', error);
+          // Fallback: envia como texto
+          return '*Hoje você recebe como? (Pode marcar mais de uma)*\n\n• PIX\n• Cartão\n• Dinheiro\n• Link de pagamento\n• Outros\n\nDigite as opções separadas por vírgula (ex: "PIX, Cartão").';
+        }
 
         return ''; // Botões já foram enviados
       }

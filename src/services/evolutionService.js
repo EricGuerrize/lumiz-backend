@@ -56,16 +56,19 @@ class EvolutionService {
     try {
       const url = `${this.baseUrl}/message/sendButtons/${this.instanceName}`;
 
+      // Limita título a 20 caracteres (limite do WhatsApp)
+      const title = message.length > 20 ? message.substring(0, 17) + '...' : message;
+      
       const payload = {
         number: phone,
-        title: message,
-        description: '',
+        title: title,
+        description: message.length > 20 ? message : '',
         footer: 'Lumiz - Sua assistente financeira 💜',
         buttons: buttons.map((btn, index) => ({
           type: 'replyButton',
           reply: {
             id: `btn_${index}`,
-            title: btn
+            title: btn.length > 20 ? btn.substring(0, 20) : btn // Limita tamanho do botão
           }
         }))
       };
