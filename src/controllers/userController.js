@@ -147,16 +147,57 @@ class UserController {
 
   async findUserByPhone(phone) {
     try {
-      // Busca na tabela profiles pelo telefone
-      const { data: existingUser, error: fetchError } = await supabase
+      // Normaliza telefone (remove caracteres não numéricos)
+      const normalizePhone = (p) => p ? p.replace(/\D/g, '') : '';
+      const normalizedPhone = normalizePhone(phone);
+      
+      // Busca na tabela profiles pelo telefone (tenta múltiplos formatos)
+      // Formato 1: telefone exato
+      let { data: existingUser } = await supabase
         .from('profiles')
         .select('*')
         .eq('telefone', phone)
-        .single();
+        .maybeSingle();
 
-      if (fetchError && fetchError.code !== 'PGRST116') {
-        // PGRST116 = não encontrado, outros erros são problemas reais
-        throw fetchError;
+      // Se não encontrou, tenta com código do país (55)
+      if (!existingUser && normalizedPhone && !normalizedPhone.startsWith('55') && normalizedPhone.length >= 10) {
+        const phoneWithCountry = `55${normalizedPhone}`;
+        const { data: profileWithCountry } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('telefone', phoneWithCountry)
+          .maybeSingle();
+        
+        if (profileWithCountry) {
+          existingUser = profileWithCountry;
+        }
+      }
+
+      // Se ainda não encontrou, tenta sem código do país
+      if (!existingUser && normalizedPhone && normalizedPhone.startsWith('55') && normalizedPhone.length >= 12) {
+        const phoneWithoutCountry = normalizedPhone.substring(2);
+        const { data: profileWithoutCountry } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('telefone', phoneWithoutCountry)
+          .maybeSingle();
+        
+        if (profileWithoutCountry) {
+          existingUser = profileWithoutCountry;
+        }
+      }
+
+      // Se ainda não encontrou, busca todos e compara normalizados (fallback)
+      if (!existingUser && normalizedPhone) {
+        const { data: allProfiles } = await supabase
+          .from('profiles')
+          .select('*');
+        
+        if (allProfiles) {
+          existingUser = allProfiles.find(p => 
+            p.telefone && normalizePhone(p.telefone) === normalizedPhone
+          );
+        }
       }
 
       return existingUser || null;
