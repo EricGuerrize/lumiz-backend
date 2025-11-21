@@ -66,8 +66,9 @@ class EvolutionService {
         const cleanBtn = btn.replace(/[📦🏠✅✏️❌]/g, '').trim();
         const shortBtn = cleanBtn.length > 20 ? cleanBtn.substring(0, 17) + '...' : cleanBtn;
         return {
-          id: `btn_${index}`,
-          displayText: shortBtn
+          buttonId: `btn_${index}`,
+          buttonText: shortBtn,
+          type: 1 // 1 = reply button
         };
       });
       
