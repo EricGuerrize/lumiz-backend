@@ -22,8 +22,8 @@ class MessageController {
 
   async handleIncomingMessage(phone, message) {
     try {
-      // Verifica se está em processo de onboarding
-      if (userController.isOnboarding(phone)) {
+      // Verifica se está em processo de onboarding (agora é async)
+      if (await userController.isOnboarding(phone)) {
         return await userController.processOnboarding(phone, message);
       }
 
@@ -1223,7 +1223,7 @@ class MessageController {
   async handleImageMessage(phone, mediaUrl, caption) {
     try {
       // Verifica se está em onboarding e se pode processar imagem (steps de custo)
-      if (userController.isOnboarding(phone)) {
+      if (await userController.isOnboarding(phone)) {
         const step = userController.getOnboardingStep(phone);
         // Permite processar imagem durante steps de custo
         if (step === 'pedir_custo_variavel' || step === 'pedir_custo_fixo') {
@@ -1294,7 +1294,7 @@ class MessageController {
   async handleDocumentMessage(phone, mediaUrl, fileName) {
     try {
       // Verifica se está em onboarding e se pode processar documento (steps de custo)
-      if (userController.isOnboarding(phone)) {
+      if (await userController.isOnboarding(phone)) {
         const step = userController.getOnboardingStep(phone);
         // Permite processar documento durante steps de custo
         if (step === 'pedir_custo_variavel' || step === 'pedir_custo_fixo') {
