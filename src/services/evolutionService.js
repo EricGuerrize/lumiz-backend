@@ -58,19 +58,26 @@ class EvolutionService {
 
       // Limita título a 20 caracteres (limite do WhatsApp)
       const title = message.length > 20 ? message.substring(0, 17) + '...' : message;
+      const description = message.length > 20 ? message.substring(20) : '';
+      
+      // Limita e formata botões (máximo 3 botões, título máximo 20 caracteres)
+      const formattedButtons = buttons.slice(0, 3).map((btn, index) => {
+        // Remove emojis e limita tamanho
+        const cleanBtn = btn.replace(/[📦🏠✅✏️❌]/g, '').trim();
+        const shortBtn = cleanBtn.length > 20 ? cleanBtn.substring(0, 17) + '...' : cleanBtn;
+        return {
+          id: `btn_${index}`,
+          displayText: shortBtn
+        };
+      });
       
       const payload = {
         number: phone,
+        buttonsText: title,
         title: title,
-        description: message.length > 20 ? message : '',
-        footer: 'Lumiz - Sua assistente financeira 💜',
-        buttons: buttons.map((btn, index) => ({
-          type: 'replyButton',
-          reply: {
-            id: `btn_${index}`,
-            title: btn.length > 20 ? btn.substring(0, 20) : btn // Limita tamanho do botão
-          }
-        }))
+        description: description || '',
+        footer: 'Lumiz',
+        buttons: formattedButtons
       };
 
       const response = await retryWithBackoff(
