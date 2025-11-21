@@ -166,8 +166,35 @@ class UserController {
     }
   }
 
-  isOnboarding(phone) {
-    return this.onboardingData.has(phone);
+  async isOnboarding(phone) {
+    // Verifica se está no Map (cache em memória)
+    if (!this.onboardingData.has(phone)) {
+      return false;
+    }
+
+    // Verifica se ainda existe no banco (validação adicional)
+    // Se não existe no banco, limpa o cache e retorna false
+    try {
+      const { data: onboardingProgress } = await supabase
+        .from('onboarding_progress')
+        .select('id, completed')
+        .eq('phone', phone)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      // Se não existe no banco OU está completo, limpa o cache
+      if (!onboardingProgress || onboardingProgress.completed) {
+        this.onboardingData.delete(phone);
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error('[ONBOARDING] Erro ao verificar onboarding no banco:', error);
+      // Em caso de erro, mantém o cache (mais seguro)
+      return this.onboardingData.has(phone);
+    }
   }
 
   getOnboardingStep(phone) {
