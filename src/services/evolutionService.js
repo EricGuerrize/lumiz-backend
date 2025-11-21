@@ -67,7 +67,9 @@ class EvolutionService {
         const shortBtn = cleanBtn.length > 20 ? cleanBtn.substring(0, 17) + '...' : cleanBtn;
         return {
           buttonId: `btn_${index}`,
-          buttonText: shortBtn,
+          buttonText: {
+            displayText: shortBtn
+          },
           type: 1 // 1 = reply button
         };
       });
@@ -80,6 +82,8 @@ class EvolutionService {
         footer: 'Lumiz',
         buttons: formattedButtons
       };
+      
+      console.log('[EVOLUTION] Payload dos botões:', JSON.stringify(payload, null, 2));
 
       const response = await retryWithBackoff(
         () => withTimeout(
