@@ -466,29 +466,9 @@ class UserController {
           response += `• Categoria sugerida: Compra de insumo\n\n`;
           response += `*Agora me diz: esse custo é fixo ou variável?*`;
 
-          // Envia botões para classificação
-          const evolutionService = require('../services/evolutionService');
-          try {
-            // Cria título curto para os botões
-            const buttonTitle = `Custo: ${descricao} - R$ ${valor.toFixed(2)}`;
-            const buttonResult = await evolutionService.sendButtons(
-              phone,
-              buttonTitle,
-              ['Variável', 'Fixo']
-            );
-            
-            // Se os botões foram enviados com sucesso, retorna null para não enviar mensagem adicional
-            if (buttonResult) {
-              return null;
-            } else {
-              // Se falhou, retorna a mensagem como texto
-              return response + '\n\nResponda: "Variável" ou "Fixo"';
-            }
-          } catch (error) {
-            console.error('Erro ao enviar botões de classificação:', error);
-            // Se falhar, retorna a mensagem como texto
-            return response + '\n\nResponda: "Variável" ou "Fixo"';
-          }
+          // Envia opções como texto (simulando botões)
+          response += '\n\nResponda: "Variável" ou "Fixo"';
+          return response;
         } else {
           return `Não entendi como um custo 🤔\n\nMe manda algo como:\n"Comprei 6 frascos de Biogeli, paguei 1.800 no cartão"\n\nOu envie foto de boleto/nota fiscal.`;
         }
