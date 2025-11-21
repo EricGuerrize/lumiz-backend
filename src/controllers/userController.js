@@ -432,8 +432,20 @@ class UserController {
 
       // NOVO: Pedir custo variável
       case 'pedir_custo_variavel': {
-        const geminiService = require('../services/geminiService');
-        const intent = await geminiService.processMessage(messageTrimmed);
+        // Verifica se é um intent JSON (vindo de processamento de imagem)
+        let intent;
+        try {
+          const parsed = JSON.parse(messageTrimmed);
+          if (parsed.intencao && parsed.dados) {
+            intent = parsed;
+          } else {
+            throw new Error('Not a valid intent');
+          }
+        } catch (e) {
+          // Não é JSON, processa como mensagem normal
+          const geminiService = require('../services/geminiService');
+          intent = await geminiService.processMessage(messageTrimmed);
+        }
 
         if (intent.intencao === 'registrar_saida' || intent.intencao === 'enviar_documento') {
           // Processou um custo, agora precisa classificar
@@ -517,8 +529,20 @@ class UserController {
 
       // NOVO: Pedir custo fixo
       case 'pedir_custo_fixo': {
-        const geminiService = require('../services/geminiService');
-        const intent = await geminiService.processMessage(messageTrimmed);
+        // Verifica se é um intent JSON (vindo de processamento de imagem)
+        let intent;
+        try {
+          const parsed = JSON.parse(messageTrimmed);
+          if (parsed.intencao && parsed.dados) {
+            intent = parsed;
+          } else {
+            throw new Error('Not a valid intent');
+          }
+        } catch (e) {
+          // Não é JSON, processa como mensagem normal
+          const geminiService = require('../services/geminiService');
+          intent = await geminiService.processMessage(messageTrimmed);
+        }
 
         if (intent.intencao === 'registrar_saida' || intent.intencao === 'enviar_documento') {
           onboarding.data.custo_pendente = intent.dados;
