@@ -177,22 +177,42 @@ class UserController {
 
   /**
    * Verifica se usuário já interagiu antes (usuário antigo)
+   * Verifica tanto onboarding_progress quanto profiles para detectar usuário antigo
    */
   async isReturningUser(phone) {
     try {
-      // Verifica se existe onboarding_progress anterior
+      // Verifica se existe perfil cadastrado (mais confiável)
+      const { data: existingProfile } = await supabase
+        .from('profiles')
+        .select('id, created_at')
+        .eq('telefone', phone)
+        .maybeSingle();
+
+      if (existingProfile) {
+        console.log('[ONBOARDING] Usuário antigo detectado (perfil existe):', phone);
+        return true;
+      }
+
+      // Verifica se existe onboarding_progress anterior (mas só se não tiver perfil)
       const { data: existingOnboarding } = await supabase
         .from('onboarding_progress')
-        .select('id, created_at')
+        .select('id, created_at, completed')
         .eq('phone', phone)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
 
-      // Se existe onboarding anterior (mesmo que incompleto), é usuário antigo
-      return !!existingOnboarding;
+      // Só considera antigo se o onboarding foi completado (não apenas iniciado)
+      if (existingOnboarding && existingOnboarding.completed) {
+        console.log('[ONBOARDING] Usuário antigo detectado (onboarding completo):', phone);
+        return true;
+      }
+
+      console.log('[ONBOARDING] Novo usuário detectado:', phone);
+      return false;
     } catch (error) {
       console.error('[ONBOARDING] Erro ao verificar usuário antigo:', error);
+      // Em caso de erro, assume novo usuário (mais seguro)
       return false;
     }
   }
