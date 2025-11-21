@@ -306,27 +306,8 @@ class UserController {
           console.error('Erro ao salvar perfil:', error);
         }
 
-        // Envia botões para formas de pagamento
-        const evolutionService = require('../services/evolutionService');
-        try {
-          const buttonResult = await evolutionService.sendButtons(
-            phone,
-            '*Hoje você recebe como? (Pode marcar mais de uma)*',
-            ['PIX', 'Cartão', 'Dinheiro', 'Link de pagamento', 'Outros']
-          );
-          
-          // Se os botões foram enviados com sucesso, retorna null para não enviar mensagem adicional
-          if (buttonResult) {
-            return null;
-          } else {
-            // Se falhou, envia como texto
-            return '*Hoje você recebe como? (Pode marcar mais de uma)*\n\n• PIX\n• Cartão\n• Dinheiro\n• Link de pagamento\n• Outros\n\nDigite as opções separadas por vírgula (ex: "PIX, Cartão").';
-          }
-        } catch (error) {
-          console.error('Erro ao enviar botões de formas de pagamento:', error);
-          // Fallback: envia como texto
-          return '*Hoje você recebe como? (Pode marcar mais de uma)*\n\n• PIX\n• Cartão\n• Dinheiro\n• Link de pagamento\n• Outros\n\nDigite as opções separadas por vírgula (ex: "PIX, Cartão").';
-        }
+        // Envia opções como texto (simulando botões)
+        return '*Hoje você recebe como? (Pode marcar mais de uma)*\n\n• PIX\n• Cartão\n• Dinheiro\n• Link de pagamento\n• Outros\n\nDigite as opções separadas por vírgula (ex: "PIX, Cartão").';
       }
 
       // NOVO: Formas de pagamento (múltipla escolha)
