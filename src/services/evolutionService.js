@@ -67,10 +67,7 @@ class EvolutionService {
         const shortBtn = cleanBtn.length > 20 ? cleanBtn.substring(0, 17) + '...' : cleanBtn;
         return {
           buttonId: `btn_${index}`,
-          buttonText: {
-            displayText: shortBtn
-          },
-          type: 1 // 1 = reply button
+          displayText: shortBtn
         };
       });
       
