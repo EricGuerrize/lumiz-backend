@@ -1222,9 +1222,42 @@ class MessageController {
 
   async handleImageMessage(phone, mediaUrl, caption) {
     try {
-      // Verifica se usuário está cadastrado
+      // Verifica se está em onboarding e se pode processar imagem (steps de custo)
       if (userController.isOnboarding(phone)) {
-        return 'Complete seu cadastro primeiro! 😊\n\nQual o seu nome completo?';
+        const step = userController.getOnboardingStep(phone);
+        // Permite processar imagem durante steps de custo
+        if (step === 'pedir_custo_variavel' || step === 'pedir_custo_fixo') {
+          // Processa a imagem e retorna para o onboarding
+          const documentService = require('../services/documentService');
+          const result = await documentService.processImage(mediaUrl);
+          
+          if (result.tipo_documento === 'erro' || result.tipo_documento === 'nao_identificado') {
+            return 'Não consegui ler o documento na imagem 😢\n\nTente enviar uma foto mais nítida ou registre manualmente (ex: "Comprei 6 frascos de Biogeli, paguei 1.800 no cartão").';
+          }
+
+          if (result.transacoes.length === 0) {
+            return 'Não encontrei informações de custo na imagem 😢\n\nTente enviar uma foto mais nítida ou registre manualmente.';
+          }
+
+          // Usa a primeira transação encontrada
+          const transacao = result.transacoes[0];
+          // Simula um intent para processar no onboarding
+          const intent = {
+            intencao: 'registrar_saida',
+            dados: {
+              valor: transacao.valor,
+              categoria: transacao.categoria || 'Custo',
+              descricao: transacao.descricao || '',
+              forma_pagamento: transacao.forma_pagamento || 'PIX',
+              data: transacao.data || new Date().toISOString().split('T')[0]
+            }
+          };
+
+          // Processa como se fosse uma mensagem de texto
+          return await userController.processOnboarding(phone, JSON.stringify(intent));
+        } else {
+          return 'Complete seu cadastro primeiro! 😊\n\nContinue respondendo as perguntas.';
+        }
       }
 
       const user = await userController.findUserByPhone(phone);
@@ -1260,9 +1293,16 @@ class MessageController {
 
   async handleDocumentMessage(phone, mediaUrl, fileName) {
     try {
-      // Verifica se usuário está cadastrado
+      // Verifica se está em onboarding e se pode processar documento (steps de custo)
       if (userController.isOnboarding(phone)) {
-        return 'Complete seu cadastro primeiro! 😊\n\nQual o seu nome completo?';
+        const step = userController.getOnboardingStep(phone);
+        // Permite processar documento durante steps de custo
+        if (step === 'pedir_custo_variavel' || step === 'pedir_custo_fixo') {
+          // Processa como imagem
+          return await this.handleImageMessage(phone, mediaUrl, '');
+        } else {
+          return 'Complete seu cadastro primeiro! 😊\n\nContinue respondendo as perguntas.';
+        }
       }
 
       const user = await userController.findUserByPhone(phone);
