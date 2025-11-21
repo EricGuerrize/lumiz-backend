@@ -309,20 +309,24 @@ class UserController {
         // Envia botões para formas de pagamento
         const evolutionService = require('../services/evolutionService');
         try {
-          await evolutionService.sendButtons(
+          const buttonResult = await evolutionService.sendButtons(
             phone,
             '*Hoje você recebe como? (Pode marcar mais de uma)*',
             ['PIX', 'Cartão', 'Dinheiro', 'Link de pagamento', 'Outros']
           );
-          // Aguarda um pouco para garantir que os botões foram enviados
-          await new Promise(resolve => setTimeout(resolve, 500));
+          
+          // Se os botões foram enviados com sucesso, retorna null para não enviar mensagem adicional
+          if (buttonResult) {
+            return null;
+          } else {
+            // Se falhou, envia como texto
+            return '*Hoje você recebe como? (Pode marcar mais de uma)*\n\n• PIX\n• Cartão\n• Dinheiro\n• Link de pagamento\n• Outros\n\nDigite as opções separadas por vírgula (ex: "PIX, Cartão").';
+          }
         } catch (error) {
           console.error('Erro ao enviar botões de formas de pagamento:', error);
           // Fallback: envia como texto
           return '*Hoje você recebe como? (Pode marcar mais de uma)*\n\n• PIX\n• Cartão\n• Dinheiro\n• Link de pagamento\n• Outros\n\nDigite as opções separadas por vírgula (ex: "PIX, Cartão").';
         }
-
-        return ''; // Botões já foram enviados
       }
 
       // NOVO: Formas de pagamento (múltipla escolha)
@@ -452,13 +456,25 @@ class UserController {
 
           // Envia botões para classificação
           const evolutionService = require('../services/evolutionService');
-          await evolutionService.sendButtons(
-            phone,
-            response,
-            ['📦 Variável (depende dos procedimentos)', '🏠 Fixo (todo mês)']
-          );
-
-          return ''; // Botões já foram enviados
+          try {
+            const buttonResult = await evolutionService.sendButtons(
+              phone,
+              response,
+              ['📦 Variável (depende dos procedimentos)', '🏠 Fixo (todo mês)']
+            );
+            
+            // Se os botões foram enviados com sucesso, retorna null para não enviar mensagem adicional
+            if (buttonResult) {
+              return null;
+            } else {
+              // Se falhou, retorna a mensagem como texto
+              return response + '\n\nResponda: "Variável" ou "Fixo"';
+            }
+          } catch (error) {
+            console.error('Erro ao enviar botões de classificação:', error);
+            // Se falhar, retorna a mensagem como texto
+            return response + '\n\nResponda: "Variável" ou "Fixo"';
+          }
         } else {
           return `Não entendi como um custo 🤔\n\nMe manda algo como:\n"Comprei 6 frascos de Biogeli, paguei 1.800 no cartão"\n\nOu envie foto de boleto/nota fiscal.`;
         }
