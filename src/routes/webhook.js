@@ -88,7 +88,7 @@ router.post('/webhook', webhookLimiter, async (req, res) => {
             response = await messageController.handleIncomingMessage(phone, messageText);
           }
 
-          if (response && response.trim() !== '') {
+          if (response) {
             await evolutionService.sendMessage(phone, response);
           }
         } catch (error) {
