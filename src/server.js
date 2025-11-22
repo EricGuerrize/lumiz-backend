@@ -205,7 +205,7 @@ app.use((err, req, res, next) => {
 let server = null;
 if (process.env.NODE_ENV !== 'test') {
   server = app.listen(PORT, '0.0.0.0', () => {
-    console.log(`
+  console.log(`
 ╔════════════════════════════════════════╗
 ║         LUMIZ BACKEND STARTED          ║
 ╚════════════════════════════════════════╝
@@ -220,8 +220,8 @@ Endpoints:
   - Test: http://localhost:${PORT}/api/test
   - Health: http://localhost:${PORT}/health
   - Dashboard: http://localhost:${PORT}/api/dashboard/*
-    `);
-  });
+  `);
+});
 
   // Graceful shutdown - fecha conexões adequadamente
   const gracefulShutdown = (signal) => {

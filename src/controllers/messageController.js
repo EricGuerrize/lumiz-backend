@@ -22,35 +22,36 @@ class MessageController {
 
   async handleIncomingMessage(phone, message) {
     try {
-      // Verifica se está em processo de onboarding (agora é async)
-      if (await userController.isOnboarding(phone)) {
+      // Verifica se está em processo de onboarding
+      if (userController.isOnboarding(phone)) {
         return await userController.processOnboarding(phone, message);
       }
+
+      // Detecta mensagem inicial do teste gratuito
+      const messageLower = message.toLowerCase().trim();
+      const isTesteGratuitoMessage = messageLower.includes('quero organizar') || 
+                                     messageLower.includes('teste gratuito') ||
+                                     messageLower.includes('convite para o teste');
 
       // Busca usuário pelo telefone
       const user = await userController.findUserByPhone(phone);
 
-      // Se não encontrou usuário, verifica se é usuário antigo e inicia onboarding
-      if (!user) {
-        const isReturning = await userController.isReturningUser(phone);
-        await userController.startOnboarding(phone, isReturning);
-        
-        if (isReturning) {
+      // Se detectou mensagem de teste gratuito
+      if (isTesteGratuitoMessage) {
+        if (user) {
           // Usuário antigo
-          return `Que bom que você voltou! Você já tá com o convite do teste gratuito, perfeito!\n\nEsse teste é o primeiro passo: ele vai mostrar como a Lumiz realiza a gestão do seu financeiro pelo WhatsApp em poucos minutos. Depois disso, pra continuar a gestão da sua clínica no dia a dia, só com o plano pago mesmo.\n\n*Para começar seu teste, qual é o nome da sua clínica?*`;
+          return `Que bom que você voltou! Você já tá com o convite do teste gratuito, perfeito! Esse teste é o primeiro passo: ele vai mostrar como a Lumiz realiza a gestão do seu financeiro pelo WhatsApp em poucos minutos. Depois disso, pra continuar a gestão da sua clínica no dia a dia, aí só com o plano pago mesmo.`;
         } else {
-          // Novo usuário - 3 mensagens
-          // Mensagem 1
-          await evolutionService.sendMessage(phone, `Oi, prazer! Sou a Lumiz 👋\n\nSou a IA que vai organizar o financeiro da sua clínica — direto pelo WhatsApp.`);
-          
-          // Mensagem 2 (com vídeo - por enquanto só texto, vídeo será adicionado depois)
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          await evolutionService.sendMessage(phone, `Antes de começarmos, veja este vídeo rapidinho para entender como eu te ajudo a controlar tudo sem planilhas.\n\n*[Vídeo será enviado aqui - 30-40s]*`);
-          
-          // Mensagem 3
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          return `Vou te ajudar a cuidar das finanças da sua clínica de forma simples, automática e sem complicação.\n\n*Para começar seu teste, qual é o nome da sua clínica?*`;
+          // Usuário novo - inicia novo onboarding
+          await userController.startNewOnboarding(phone);
+          return `Oi, prazer! Sou a Lumiz 👋\n\nSou a IA que vai organizar o financeiro da sua clínica — direto pelo WhatsApp.\n\nAntes de começarmos, veja este vídeo rapidinho para entender como eu te ajudo a controlar tudo sem planilhas.\n\nVou te ajudar a cuidar das finanças da sua clínica de forma simples, automática e sem complicação.\n\nPara começar seu teste, qual é o nome da sua clínica?`;
         }
+      }
+
+      // Se não encontrou usuário e não é mensagem de teste, inicia onboarding antigo (fallback)
+      if (!user) {
+        await userController.startOnboarding(phone);
+        return `Olá! Sou a *Lumiz* 💜\n\nSua assistente para gestão de clínica estética!\n\nParece que você ainda não tem cadastro.\nVou te ajudar a configurar!\n\n*Qual o seu nome completo?*`;
       }
 
       // Verifica se existe uma transação pendente de confirmação
@@ -191,7 +192,7 @@ class MessageController {
           break;
 
         default:
-          response = await this.handleNotUnderstood(message);
+          response = 'Opa, não entendi essa 😅\n\nPode reformular? Tipo:\n_"Vendi um preenchimento por 1500"_\n_"Paguei conta de luz 450"_\n_"Como tá meu saldo?"_\n\nOu manda "ajuda" que te explico melhor!';
       }
 
       // Salva conversa no histórico para uso futuro (RAG)
@@ -267,9 +268,7 @@ class MessageController {
     }
 
     message += `📅 ${dataFormatada}\n\n`;
-    message += `✅ *Confirmar* - Salvar esta transação\n`;
-    message += `❌ *Cancelar* - Não salvar\n\n`;
-    message += `Ou digite "sim" para confirmar ou "não" para cancelar`;
+    message += `Responde *SIM* pra confirmar ou *NÃO* pra cancelar`;
 
     return message;
   }
@@ -361,23 +360,19 @@ class MessageController {
 
         successMsg += `Tudo anotadinho! ✅\n\n`;
 
-        // Adiciona sugestão contextual baseada no tipo de transação
-        if (tipo === 'entrada') {
-          if (forma_pagamento === 'parcelado') {
-            successMsg += `💡 *Dica:* Quer ver suas parcelas? Digite "parcelas"\n`;
-            successMsg += `💡 *Dica:* Errou algo? Digite "desfazer" nos próximos 10 minutos\n`;
-          } else {
-            const dicas = [
-              '💡 *Dica:* Quer ver seu saldo? Digite "saldo"',
-              '💡 *Dica:* Quer ver o relatório do mês? Digite "relatório"',
-              '💡 *Dica:* Quer comparar com mês passado? Digite "comparar"',
-              '💡 *Dica:* Errou algo? Digite "desfazer" nos próximos 10 minutos'
-            ];
-            successMsg += dicas[Math.floor(Math.random() * dicas.length)] + '\n';
-          }
+        // Adiciona dica contextual aleatória
+        const dicas = [
+          '_Errou algo? Manda "desfazer" nos próximos 10 min_',
+          '_Quer ver seu saldo? Manda "saldo"_',
+          '_Quer comparar com mês passado? Manda "comparar"_',
+          '_Quer ver suas parcelas? Manda "parcelas"_',
+          '_Manda "relatório" pra ver o resumo do mês_'
+        ];
+
+        if (tipo === 'entrada' && forma_pagamento !== 'parcelado') {
+          successMsg += dicas[Math.floor(Math.random() * dicas.length)];
         } else {
-          successMsg += `💡 *Dica:* Quer ver seus custos? Digite "histórico"\n`;
-          successMsg += `💡 *Dica:* Errou algo? Digite "desfazer" nos próximos 10 minutos\n`;
+          successMsg += `_Errou algo? Manda "desfazer" nos próximos 10 min_`;
         }
 
         return successMsg;
@@ -428,9 +423,7 @@ class MessageController {
       response += `Opa, tá no vermelho... 😬\n`;
     }
 
-    // Adiciona sugestão contextual
-    response += `\n💡 *Dica:* Quer ver o relatório completo? Digite "relatório"\n`;
-    response += `💡 *Dica:* Quer comparar com mês passado? Digite "comparar"`;
+    response += `\nQuer ver o relatório completo do mês? Manda _"relatório"_`;
 
     return response;
   }
@@ -456,9 +449,7 @@ class MessageController {
       response += `${emoji} ${sinal}R$ ${parseFloat(t.amount).toFixed(2)} • ${categoria} • ${data}\n`;
     });
 
-    // Adiciona sugestão contextual
-    response += `\n💡 *Dica:* Quer buscar uma transação específica? Digite "buscar" seguido do nome ou valor\n`;
-    response += `💡 *Dica:* Quer ver o relatório completo? Digite "relatório"`;
+    response += `\nPra ver mais detalhes, manda _"relatório"_`;
 
     return response;
   }
@@ -536,14 +527,12 @@ class MessageController {
         });
     }
 
-    // Adiciona sugestão contextual
-    response += `\n💡 *Dica:* Quer exportar em PDF? Digite "relatório pdf"\n`;
-    response += `💡 *Dica:* Quer comparar com mês passado? Digite "comparar"`;
+    response += `\nPara PDF completo, digite "me manda pdf" ou "gerar pdf".`;
 
     if (lucro > 0) {
-      response += `\n\nMandando bem! 🎉`;
+      response += `\n\nMandando bem!`;
     } else if (lucro < 0) {
-      response += `\n\nBora reverter esse cenário! 💪`;
+      response += `\n\nBora reverter esse cenário!`;
     }
 
     return response;
@@ -723,10 +712,6 @@ class MessageController {
     } else {
       response += `Lucro estável! 🤝`;
     }
-
-    // Adiciona sugestão contextual
-    response += `\n\n💡 *Dica:* Quer ver o relatório completo? Digite "relatório"\n`;
-    response += `💡 *Dica:* Quer ver insights? Digite "insights"`;
 
     return response;
   }
@@ -1050,9 +1035,7 @@ class MessageController {
 
       response += `━━━━━━━━━━━━━━━━━━━━\n\n`;
       response += `📱 *Copie este relatório* e cole onde precisar!\n\n`;
-      // Adiciona sugestão contextual
-      response += `\n💡 *Dica:* Quer exportar em PDF? Digite "relatório pdf"\n`;
-      response += `💡 *Dica:* Quer comparar com mês passado? Digite "comparar"`;
+      response += `💡 Para relatório completo em PDF, digite "relatório pdf".`;
 
       return response;
     } catch (error) {
@@ -1222,42 +1205,43 @@ class MessageController {
 
   async handleImageMessage(phone, mediaUrl, caption) {
     try {
-      // Verifica se está em onboarding e se pode processar imagem (steps de custo)
-      if (await userController.isOnboarding(phone)) {
+      // Verifica se está em onboarding
+      if (userController.isOnboarding(phone)) {
         const step = userController.getOnboardingStep(phone);
-        // Permite processar imagem durante steps de custo
-        if (step === 'pedir_custo_variavel' || step === 'pedir_custo_fixo') {
-          // Processa a imagem e retorna para o onboarding
+        
+        // Se está no step de primeira venda ou custos, processa a imagem
+        if (step === 'primeira_venda' || step === 'primeiro_custo' || step === 'segundo_custo') {
           const documentService = require('../services/documentService');
           const result = await documentService.processImage(mediaUrl);
-          
+
           if (result.tipo_documento === 'erro' || result.tipo_documento === 'nao_identificado') {
-            return 'Não consegui ler o documento na imagem 😢\n\nTente enviar uma foto mais nítida ou registre manualmente (ex: "Comprei 6 frascos de Biogeli, paguei 1.800 no cartão").';
+            return 'Não consegui identificar esse documento 🤔\n\nPode me enviar uma foto mais clara ou descrever a transação em texto?';
           }
 
           if (result.transacoes.length === 0) {
-            return 'Não encontrei informações de custo na imagem 😢\n\nTente enviar uma foto mais nítida ou registre manualmente.';
+            return 'Não encontrei transações nesse documento 🤔\n\nPode me enviar outra foto ou descrever a transação em texto?';
           }
 
-          // Usa a primeira transação encontrada
+          // Processa a primeira transação encontrada
           const transacao = result.transacoes[0];
-          // Simula um intent para processar no onboarding
-          const intent = {
-            intencao: 'registrar_saida',
-            dados: {
-              valor: transacao.valor,
-              categoria: transacao.categoria || 'Custo',
-              descricao: transacao.descricao || '',
-              forma_pagamento: transacao.forma_pagamento || 'PIX',
-              data: transacao.data || new Date().toISOString().split('T')[0]
+          
+          // Converte transação em formato que o onboarding entende
+          // Cria uma mensagem simulada baseada na transação extraída
+          let mensagemSimulada = '';
+          if (transacao.tipo === 'entrada') {
+            mensagemSimulada = `${transacao.categoria || 'Venda'} ${transacao.valor}`;
+            if (transacao.descricao) {
+              mensagemSimulada += ` ${transacao.descricao}`;
             }
-          };
-
-          // Processa como se fosse uma mensagem de texto
-          return await userController.processOnboarding(phone, JSON.stringify(intent));
-        } else {
-          return 'Complete seu cadastro primeiro! 😊\n\nContinue respondendo as perguntas.';
+          } else {
+            mensagemSimulada = `${transacao.categoria || transacao.descricao || 'Custo'} ${transacao.valor}`;
+          }
+          
+          // Retorna para o processamento do onboarding
+          return await userController.processOnboarding(phone, mensagemSimulada);
         }
+        
+        return 'Complete seu cadastro primeiro! 😊';
       }
 
       const user = await userController.findUserByPhone(phone);
@@ -1293,16 +1277,9 @@ class MessageController {
 
   async handleDocumentMessage(phone, mediaUrl, fileName) {
     try {
-      // Verifica se está em onboarding e se pode processar documento (steps de custo)
-      if (await userController.isOnboarding(phone)) {
-        const step = userController.getOnboardingStep(phone);
-        // Permite processar documento durante steps de custo
-        if (step === 'pedir_custo_variavel' || step === 'pedir_custo_fixo') {
-          // Processa como imagem
-          return await this.handleImageMessage(phone, mediaUrl, '');
-        } else {
-          return 'Complete seu cadastro primeiro! 😊\n\nContinue respondendo as perguntas.';
-        }
+      // Verifica se usuário está cadastrado
+      if (userController.isOnboarding(phone)) {
+        return 'Complete seu cadastro primeiro! 😊\n\nQual o seu nome completo?';
       }
 
       const user = await userController.findUserByPhone(phone);
@@ -1425,8 +1402,7 @@ class MessageController {
 
       return `${emoji} *Transação desfeita!*\n\n` +
              `Removi a ${tipoTexto} de *R$ ${lastTransaction.valor.toFixed(2)}* (${lastTransaction.categoria})\n\n` +
-             `💡 *Dica:* Quer registrar novamente? É só me mandar a transação correta!\n` +
-             `💡 *Dica:* Quer ver seu saldo atualizado? Digite "saldo"`;
+             `Quer registrar novamente com os dados corretos? É só me mandar! 😊`;
     } catch (error) {
       console.error('Erro ao desfazer transação:', error);
       return `Erro ao desfazer transação 😢\n\nTente novamente.`;
@@ -1648,13 +1624,12 @@ class MessageController {
       this.pendingEdits.delete(phone);
 
       const tipoTexto = pending.tipo === 'entrada' ? 'receita' : 'custo';
-      const emoji = pending.tipo === 'entrada' ? '💰' : '💸';
-      let response = `✅ *Transação editada com sucesso!*\n\n`;
-      response += `${emoji} ${tipoTexto}: *R$ ${transaction.valor.toFixed(2)}*\n`;
-      if (transaction.categoria) response += `📂 ${transaction.categoria}\n`;
-      if (transaction.data) response += `📅 ${new Date(transaction.data).toLocaleDateString('pt-BR')}\n`;
-      response += `\n💡 *Dica:* Quer ver seu saldo atualizado? Digite "saldo"\n`;
-      response += `💡 *Dica:* Quer buscar outra transação? Digite "buscar"`;
+      let response = `*Transação editada com sucesso!*\n\n`;
+      response += `Tipo: ${tipoTexto}\n`;
+      if (updates.valor) response += `Valor: R$ ${updates.valor.toFixed(2)}\n`;
+      if (updates.categoria) response += `Categoria: ${updates.categoria}\n`;
+      if (updates.data) response += `Data: ${new Date(updates.data).toLocaleDateString('pt-BR')}\n`;
+      if (updates.descricao) response += `Descrição: ${updates.descricao}\n`;
 
       return response;
     } catch (error) {
@@ -1802,76 +1777,13 @@ class MessageController {
         response += `... e mais ${uniqueResults.length - 10} transação(ões)\n\n`;
       }
 
-      // Adiciona sugestão contextual
-      response += `\n💡 *Dica:* Quer editar alguma transação? Digite "editar" seguido do número\n`;
-      response += `💡 *Dica:* Quer ver o relatório completo? Digite "relatório"`;
+      response += `Para ver mais detalhes, digite "buscar" seguido do nome ou valor.`;
 
       return response;
     } catch (error) {
       console.error('Erro ao buscar transação:', error);
       return 'Erro ao buscar transações. Tente novamente.';
     }
-  }
-
-  /**
-   * Trata mensagens não entendidas, analisando palavras-chave e sugerindo opções
-   */
-  async handleNotUnderstood(message) {
-    const messageLower = message.toLowerCase();
-    
-    // Palavras-chave para detectar intenções prováveis
-    const keywords = {
-      registrar: ['vender', 'vendi', 'fiz', 'atendi', 'realizei', 'fechei', 'botox', 'preenchimento', 'harmonização', 'procedimento', 'paciente', 'cliente'],
-      custo: ['paguei', 'gastei', 'comprei', 'pagar', 'conta', 'boleto', 'insumos', 'material', 'fornecedor'],
-      saldo: ['saldo', 'caixa', 'quanto tenho', 'quanto tem', 'dinheiro', 'lucro'],
-      relatorio: ['relatório', 'relatorio', 'resumo', 'mês', 'mensal', 'balanço'],
-      historico: ['histórico', 'historico', 'últimas', 'ultimas', 'movimentações', 'movimentacoes'],
-      buscar: ['buscar', 'encontrar', 'procurar', 'achar', 'mostrar'],
-      meta: ['meta', 'objetivo', 'progresso', 'quanto falta'],
-      ajuda: ['ajuda', 'help', 'como usar', 'o que você faz', 'comandos']
-    };
-
-    // Detecta palavras-chave na mensagem
-    const detectedIntents = [];
-    for (const [intent, words] of Object.entries(keywords)) {
-      if (words.some(word => messageLower.includes(word))) {
-        detectedIntents.push(intent);
-      }
-    }
-
-    // Se detectou intenções, sugere baseado nelas
-    if (detectedIntents.length > 0) {
-      const suggestions = [];
-      
-      if (detectedIntents.includes('registrar')) {
-        suggestions.push('1️⃣ Registrar venda (ex: "Botox 2800 paciente Maria")');
-      }
-      if (detectedIntents.includes('custo')) {
-        suggestions.push('2️⃣ Registrar custo (ex: "Paguei insumos 1500")');
-      }
-      if (detectedIntents.includes('saldo')) {
-        suggestions.push('3️⃣ Ver saldo (digite "saldo")');
-      }
-      if (detectedIntents.includes('relatorio')) {
-        suggestions.push('4️⃣ Ver relatório (digite "relatório")');
-      }
-      if (detectedIntents.includes('historico')) {
-        suggestions.push('5️⃣ Ver histórico (digite "histórico")');
-      }
-      if (detectedIntents.includes('buscar')) {
-        suggestions.push('6️⃣ Buscar transação (ex: "buscar botox")');
-      }
-      if (detectedIntents.includes('meta')) {
-        suggestions.push('7️⃣ Ver meta (digite "meta")');
-      }
-
-      if (suggestions.length > 0) {
-        return `Não entendi bem 😅\n\nVocê quis dizer:\n${suggestions.slice(0, 3).join('\n')}\n\nOu digite "ajuda" para ver todos os comandos.`;
-      }
-    }
-
-    // Fallback padrão
-    return `Não entendi essa mensagem 😅\n\nVocê pode:\n• Registrar venda: "Botox 2800 paciente Maria"\n• Registrar custo: "Paguei insumos 1500"\n• Ver saldo: "saldo"\n• Ver relatório: "relatório"\n\nOu digite "ajuda" para ver todos os comandos.`;
   }
 
   async handleDefineGoal(user, phone, intent) {
@@ -1896,10 +1808,7 @@ class MessageController {
         return 'Erro ao definir meta. Tente novamente.';
       }
 
-      return `✅ *Meta definida com sucesso!*\n\n` +
-             `🎯 Meta mensal: *R$ ${parseFloat(valor).toFixed(2)}*\n\n` +
-             `💡 *Dica:* Quer ver seu progresso? Digite "meta"\n` +
-             `💡 *Dica:* Quer ver seu saldo atual? Digite "saldo"`;
+      return `*Meta definida com sucesso!*\n\nMeta mensal: R$ ${parseFloat(valor).toFixed(2)}\n\nPara ver seu progresso, digite "meta".`;
     } catch (error) {
       console.error('Erro ao definir meta:', error);
       return 'Erro ao definir meta. Tente novamente.';

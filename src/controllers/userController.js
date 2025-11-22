@@ -147,57 +147,16 @@ class UserController {
 
   async findUserByPhone(phone) {
     try {
-      // Normaliza telefone (remove caracteres não numéricos)
-      const normalizePhone = (p) => p ? p.replace(/\D/g, '') : '';
-      const normalizedPhone = normalizePhone(phone);
-      
-      // Busca na tabela profiles pelo telefone (tenta múltiplos formatos)
-      // Formato 1: telefone exato
-      let { data: existingUser } = await supabase
+      // Busca na tabela profiles pelo telefone
+      const { data: existingUser, error: fetchError } = await supabase
         .from('profiles')
         .select('*')
         .eq('telefone', phone)
-        .maybeSingle();
+        .single();
 
-      // Se não encontrou, tenta com código do país (55)
-      if (!existingUser && normalizedPhone && !normalizedPhone.startsWith('55') && normalizedPhone.length >= 10) {
-        const phoneWithCountry = `55${normalizedPhone}`;
-        const { data: profileWithCountry } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('telefone', phoneWithCountry)
-          .maybeSingle();
-        
-        if (profileWithCountry) {
-          existingUser = profileWithCountry;
-        }
-      }
-
-      // Se ainda não encontrou, tenta sem código do país
-      if (!existingUser && normalizedPhone && normalizedPhone.startsWith('55') && normalizedPhone.length >= 12) {
-        const phoneWithoutCountry = normalizedPhone.substring(2);
-        const { data: profileWithoutCountry } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('telefone', phoneWithoutCountry)
-          .maybeSingle();
-        
-        if (profileWithoutCountry) {
-          existingUser = profileWithoutCountry;
-        }
-      }
-
-      // Se ainda não encontrou, busca todos e compara normalizados (fallback)
-      if (!existingUser && normalizedPhone) {
-        const { data: allProfiles } = await supabase
-          .from('profiles')
-          .select('*');
-        
-        if (allProfiles) {
-          existingUser = allProfiles.find(p => 
-            p.telefone && normalizePhone(p.telefone) === normalizedPhone
-          );
-        }
+      if (fetchError && fetchError.code !== 'PGRST116') {
+        // PGRST116 = não encontrado, outros erros são problemas reais
+        throw fetchError;
       }
 
       return existingUser || null;
@@ -207,35 +166,8 @@ class UserController {
     }
   }
 
-  async isOnboarding(phone) {
-    // Verifica se está no Map (cache em memória)
-    if (!this.onboardingData.has(phone)) {
-      return false;
-    }
-
-    // Verifica se ainda existe no banco (validação adicional)
-    // Se não existe no banco, limpa o cache e retorna false
-    try {
-      const { data: onboardingProgress } = await supabase
-        .from('onboarding_progress')
-        .select('id, completed')
-        .eq('phone', phone)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      // Se não existe no banco OU está completo, limpa o cache
-      if (!onboardingProgress || onboardingProgress.completed) {
-        this.onboardingData.delete(phone);
-        return false;
-      }
-
-      return true;
-    } catch (error) {
-      console.error('[ONBOARDING] Erro ao verificar onboarding no banco:', error);
-      // Em caso de erro, mantém o cache (mais seguro)
-      return this.onboardingData.has(phone);
-    }
+  isOnboarding(phone) {
+    return this.onboardingData.has(phone);
   }
 
   getOnboardingStep(phone) {
@@ -243,55 +175,12 @@ class UserController {
     return data ? data.step : null;
   }
 
-  /**
-   * Verifica se usuário já interagiu antes (usuário antigo)
-   * Verifica tanto onboarding_progress quanto profiles para detectar usuário antigo
-   */
-  async isReturningUser(phone) {
-    try {
-      // Verifica se existe perfil cadastrado (mais confiável)
-      const { data: existingProfile } = await supabase
-        .from('profiles')
-        .select('id, created_at')
-        .eq('telefone', phone)
-        .maybeSingle();
-
-      if (existingProfile) {
-        console.log('[ONBOARDING] Usuário antigo detectado (perfil existe):', phone);
-        return true;
-      }
-
-      // Verifica se existe onboarding_progress anterior (mas só se não tiver perfil)
-      const { data: existingOnboarding } = await supabase
-        .from('onboarding_progress')
-        .select('id, created_at, completed')
-        .eq('phone', phone)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      // Só considera antigo se o onboarding foi completado (não apenas iniciado)
-      if (existingOnboarding && existingOnboarding.completed) {
-        console.log('[ONBOARDING] Usuário antigo detectado (onboarding completo):', phone);
-        return true;
-      }
-
-      console.log('[ONBOARDING] Novo usuário detectado:', phone);
-      return false;
-    } catch (error) {
-      console.error('[ONBOARDING] Erro ao verificar usuário antigo:', error);
-      // Em caso de erro, assume novo usuário (mais seguro)
-      return false;
-    }
-  }
-
-  async startOnboarding(phone, isReturningUser = false) {
-    // Nova ordem: clínica primeiro
+  async startOnboarding(phone) {
     this.onboardingData.set(phone, {
-      step: 'nome_clinica',
+      step: 'nome_completo',
       data: {
         telefone: phone,
-        is_returning_user: isReturningUser
+        cnpj_status: 'pending'
       },
       timestamp: Date.now()
     });
@@ -300,13 +189,39 @@ class UserController {
       await onboardingService.ensureState(phone, null, {
         stage: 'phase1',
         channel: 'whatsapp',
-        abVariant: 'whatsapp_v2' // Nova versão do fluxo
+        abVariant: 'whatsapp_v1'
       });
       await onboardingService.updateStepStatus(phone, 'phase1_welcome', 'completed', {
         channel: 'whatsapp'
       });
     } catch (error) {
       console.error('Erro ao iniciar progresso de onboarding:', error);
+    }
+  }
+
+  async startNewOnboarding(phone) {
+    this.onboardingData.set(phone, {
+      step: 'nome_clinica',
+      data: {
+        telefone: phone,
+        primeira_venda: null,
+        primeiro_custo: null,
+        segundo_custo: null
+      },
+      timestamp: Date.now()
+    });
+
+    try {
+      await onboardingService.ensureState(phone, null, {
+        stage: 'phase1',
+        channel: 'whatsapp',
+        abVariant: 'whatsapp_v2'
+      });
+      await onboardingService.updateStepStatus(phone, 'phase1_welcome', 'completed', {
+        channel: 'whatsapp'
+      });
+    } catch (error) {
+      console.error('Erro ao iniciar novo onboarding:', error);
     }
   }
 
@@ -317,35 +232,343 @@ class UserController {
     const messageTrimmed = message.trim();
 
     switch (onboarding.step) {
-      // NOVA ORDEM: Clínica primeiro
+      // ========== NOVO FLUXO DE ONBOARDING (TESTE GRATUITO) ==========
       case 'nome_clinica': {
-        if (messageTrimmed.length < 2) {
-          return 'Por favor, digite o nome da clínica.';
+        // Verifica se é novo fluxo (tem primeira_venda no data)
+        if (onboarding.data.primeira_venda === undefined) {
+          // Novo fluxo
+          if (messageTrimmed.length < 2) {
+            return 'Por favor, digite o nome da sua clínica.';
+          }
+          onboarding.data.nome_clinica = messageTrimmed;
+          onboarding.step = 'nome_completo';
+          return `Perfeito! 😄\n\nE qual o seu nome mesmo? Vou te chamar direitinho aqui 😉`;
         }
-        onboarding.data.nome_clinica = messageTrimmed;
-        onboarding.step = 'nome_completo'; // Agora nome vem depois da clínica
-
-        try {
-          await onboardingService.savePhaseData(phone, 'phase1', {
-            clinic_name: messageTrimmed
-          });
-          await onboardingService.updateStepStatus(phone, 'phase1_clinic', 'completed', {
-            value: messageTrimmed
-          });
-        } catch (error) {
-          console.error('Erro ao salvar progresso (clínica):', error);
-        }
-
-        return `Perfeito! 😄\n\n*E qual o seu nome mesmo? Vou te chamar direitinho aqui 😉*`;
+        // Fallthrough para fluxo antigo
       }
 
-      // Nome completo agora é segundo
+      case 'nome_completo': {
+        // Verifica se é novo fluxo
+        if (onboarding.data.primeira_venda === undefined && onboarding.step === 'nome_completo') {
+          // Novo fluxo
+          if (messageTrimmed.length < 3) {
+            return 'Por favor, digite seu nome (mínimo 3 caracteres).';
+          }
+          onboarding.data.nome_completo = messageTrimmed;
+          onboarding.step = 'funcao';
+          return `Prazer, ${messageTrimmed.split(' ')[0]}! 😊\n\nVocê é:\n1. Proprietária(o) da clínica\n2. Gestora(o)\n3. Recepcionista\n4. Outra função`;
+        }
+        // Fallthrough para fluxo antigo
+      }
+
+      case 'funcao': {
+        const funcaoNum = parseInt(messageTrimmed);
+        if (funcaoNum >= 1 && funcaoNum <= 4) {
+          const funcoes = {
+            1: 'Proprietária(o)',
+            2: 'Gestora(o)',
+            3: 'Recepcionista',
+            4: 'Outra função'
+          };
+          onboarding.data.funcao = funcoes[funcaoNum];
+          onboarding.step = 'formas_pagamento';
+          return `Ótimo! Agora me conta:\n\nHoje você recebe como? (Pode marcar mais de uma)\n\n1. PIX\n2. Cartão\n3. Dinheiro\n4. Link de pagamento\n5. Outros\n\nDigite os números separados por vírgula (ex: 1,2,3)`;
+        }
+        return 'Por favor, digite um número de 1 a 4.';
+      }
+
+      case 'formas_pagamento': {
+        const numeros = messageTrimmed.split(/[,\s]+/).map(n => parseInt(n.trim())).filter(n => !isNaN(n) && n >= 1 && n <= 5);
+        if (numeros.length === 0) {
+          return 'Por favor, digite os números das formas de pagamento separados por vírgula (ex: 1,2,3).';
+        }
+        const formas = {
+          1: 'PIX',
+          2: 'Cartão',
+          3: 'Dinheiro',
+          4: 'Link de pagamento',
+          5: 'Outros'
+        };
+        onboarding.data.formas_pagamento = numeros.map(n => formas[n]);
+        onboarding.step = 'vendas_mes';
+        return `Perfeito! Agora me diz:\n\nEm média, quantas vendas você faz por mês?`;
+      }
+
+      case 'vendas_mes': {
+        const vendas = parseInt(messageTrimmed);
+        if (isNaN(vendas) || vendas < 0) {
+          return 'Por favor, digite um número válido de vendas por mês.';
+        }
+        onboarding.data.vendas_mes = vendas;
+        onboarding.step = 'primeira_venda';
+        return `Ótimo, já entendi seu tamanho. Isso vai me ajudar a te entregar relatórios melhores.\n\nAgora vamos fazer seu primeiro teste rápido 😄\n\nMe envie uma venda da sua clínica, do jeitinho que você falaria para um amigo.`;
+      }
+
+      case 'primeira_venda': {
+        // Verifica se pediu exemplo
+        if (messageTrimmed.toLowerCase().includes('exemplo') || messageTrimmed.toLowerCase().includes('exemplo')) {
+          return `Pode ser assim:\n\n"Júlia fez um full face com 12ml, usamos 10 Biogelis volume e 1 Juvederm. Total 15.600, pagou 3.000 no PIX e o resto em 6x no cartão."\n\nEu entendo tudo automaticamente.`;
+        }
+
+        // Processa a venda usando geminiService
+        const geminiService = require('../services/geminiService');
+        const intent = await geminiService.processMessage(messageTrimmed, {});
+        
+        if (intent.intencao === 'registrar_entrada' && intent.dados?.valor) {
+          // Salva a primeira venda
+          onboarding.data.primeira_venda = intent.dados;
+          onboarding.step = 'primeiro_custo';
+          
+          // Confirma a venda
+          const valor = intent.dados.valor.toFixed(2);
+          const categoria = intent.dados.categoria || 'Procedimento';
+          let confirmacao = `Entrada registrada! 🟣\n\n`;
+          confirmacao += `• Valor: R$ ${valor}\n`;
+          confirmacao += `• Categoria: ${categoria}\n`;
+          if (intent.dados.nome_cliente) {
+            confirmacao += `• Cliente: ${intent.dados.nome_cliente}\n`;
+          }
+          confirmacao += `\nAgora que já sei quanto entrou, bora ver o outro lado do financeiro?\n\nMe envie agora um custo da sua clínica — pode ser algo simples como uma compra de insumo, produto ou maquininha. Se quiser, pode mandar foto do boleto, PDF, nota fiscal ou até um texto.`;
+          
+          return confirmacao;
+        } else {
+          return `Não consegui entender essa venda 🤔\n\nPode me mandar de novo? Exemplo:\n\n"Botox 2800 cliente Maria"\n\nOu digite "exemplo" para ver um exemplo mais completo.`;
+        }
+      }
+
+      case 'primeiro_custo': {
+        // Processa o custo usando geminiService
+        const geminiService = require('../services/geminiService');
+        const intent = await geminiService.processMessage(messageTrimmed, {});
+        
+        if (intent.intencao === 'registrar_saida' && intent.dados?.valor) {
+          onboarding.data.primeiro_custo = intent.dados;
+          
+          // Verifica se precisa perguntar sobre parcelamento
+          if (!intent.dados.parcelas && intent.dados.forma_pagamento === 'parcelado') {
+            onboarding.step = 'primeiro_custo_parcelas';
+            return `Vi que você mencionou parcelamento. Em quantas vezes foi parcelado?`;
+          }
+          
+          // Mostra resumo e pergunta se é fixo ou variável
+          onboarding.step = 'primeiro_custo_tipo';
+          const valor = intent.dados.valor.toFixed(2);
+          const categoria = intent.dados.categoria || intent.dados.descricao || 'Custo';
+          const quantidade = intent.dados.quantidade ? ` • Quantidade: ${intent.dados.quantidade} unidades` : '';
+          const pagamento = intent.dados.forma_pagamento === 'parcelado' && intent.dados.parcelas 
+            ? `${intent.dados.parcelas}x no Cartão`
+            : intent.dados.forma_pagamento === 'pix' ? 'PIX'
+            : intent.dados.forma_pagamento === 'dinheiro' ? 'Dinheiro'
+            : 'Cartão';
+          
+          let resumo = `Show! Aqui está o que registrei:\n\n`;
+          resumo += `• Descrição: ${categoria}${quantidade}\n`;
+          resumo += `• Valor: R$ ${valor}\n`;
+          resumo += `• Pagamento: ${pagamento}\n`;
+          resumo += `• Categoria sugerida: Compra de insumo\n\n`;
+          resumo += `Agora me diz: esse custo é fixo ou variável?\n\nDigite 1 para Variável ou 2 para Fixo`;
+          
+          return resumo;
+        } else {
+          return `Não consegui entender esse custo 🤔\n\nPode me mandar de novo? Exemplo:\n\n"Comprei 6 frascos de Biogeli, paguei 1.800 no cartão."`;
+        }
+      }
+
+      case 'primeiro_custo_parcelas': {
+        const parcelas = parseInt(messageTrimmed);
+        if (isNaN(parcelas) || parcelas < 1) {
+          return 'Por favor, digite o número de parcelas.';
+        }
+        onboarding.data.primeiro_custo.parcelas = parcelas;
+        onboarding.step = 'primeiro_custo_tipo';
+        
+        const valor = onboarding.data.primeiro_custo.valor.toFixed(2);
+        const categoria = onboarding.data.primeiro_custo.categoria || onboarding.data.primeiro_custo.descricao || 'Custo';
+        const quantidade = onboarding.data.primeiro_custo.quantidade ? ` • Quantidade: ${onboarding.data.primeiro_custo.quantidade} unidades` : '';
+        
+        let resumo = `Show! Aqui está o que registrei:\n\n`;
+        resumo += `• Descrição: ${categoria}${quantidade}\n`;
+        resumo += `• Valor: R$ ${valor}\n`;
+        resumo += `• Pagamento: ${parcelas}x no Cartão\n`;
+        resumo += `• Categoria sugerida: Compra de insumo\n\n`;
+        resumo += `Agora me diz: esse custo é fixo ou variável?\n\nDigite 1 para Variável ou 2 para Fixo`;
+        
+        return resumo;
+      }
+
+      case 'primeiro_custo_tipo': {
+        const tipoNum = parseInt(messageTrimmed);
+        if (tipoNum === 1) {
+          onboarding.data.primeiro_custo.tipo_custo = 'variável';
+          onboarding.step = 'segundo_custo';
+          return `Perfeito! Lancei como custo variável. Isso me ajuda a entender melhor o comportamento financeiro da sua clínica 💜\n\nAgora falta só um custo fixo pra completar o seu painel inicial.\n\nMe envie algo como aluguel, software, salário, internet… o que for mais fácil pra você.`;
+        } else if (tipoNum === 2) {
+          // Se escolheu fixo, já pode ir para o resumo
+          onboarding.data.primeiro_custo.tipo_custo = 'fixo';
+          onboarding.step = 'resumo_final';
+          // Processa o resumo final (cria usuário e mostra resumo)
+          try {
+            const result = await this.createUserFromOnboarding(onboarding.data);
+            
+            // Salva as transações registradas durante o onboarding
+            await this.saveOnboardingTransactions(result.user.id, onboarding.data);
+            
+            // Cria procedimentos padrão
+            await this.createDefaultProcedimentos(result.user.id);
+            
+            try {
+              await onboardingService.updateState(phone, {
+                userId: result.user.id,
+                stage: 'phase3',
+                phase: 3,
+                data: {
+                  phase3: {
+                    onboarding_completed_at: new Date().toISOString(),
+                    assistant_persona: 'lumiz_whatsapp'
+                  }
+                }
+              });
+              await onboardingService.updateStepStatus(phone, 'phase3_whatsapp', 'completed', {
+                channel: 'whatsapp'
+              });
+              await onboardingService.markCompleted(phone);
+            } catch (progressError) {
+              console.error('Erro ao finalizar progresso do onboarding:', progressError);
+            }
+
+            const resumo = await this.buildResumoFinal(phone, onboarding, result.registrationLink);
+            this.onboardingData.delete(phone);
+            
+            return resumo;
+          } catch (error) {
+            console.error('Erro ao criar usuário:', error);
+            this.onboardingData.delete(phone);
+            return `Erro ao criar cadastro 😢\n\n${error.message}\n\nTente novamente enviando qualquer mensagem.`;
+          }
+        } else {
+          return 'Por favor, digite 1 para Variável ou 2 para Fixo.';
+        }
+      }
+
+      case 'segundo_custo': {
+        // Processa o segundo custo (fixo)
+        const geminiService = require('../services/geminiService');
+        const intent = await geminiService.processMessage(messageTrimmed, {});
+        
+        if (intent.intencao === 'registrar_saida' && intent.dados?.valor) {
+          onboarding.data.segundo_custo = intent.dados;
+          onboarding.data.segundo_custo.tipo_custo = 'fixo';
+          onboarding.step = 'segundo_custo_confirmacao';
+          
+          const valor = intent.dados.valor.toFixed(2);
+          const categoria = intent.dados.categoria || intent.dados.descricao || 'Custo';
+          const pagamento = intent.dados.forma_pagamento === 'pix' ? 'PIX' : 'Cartão';
+          
+          return `Boa! Peguei aqui:\n\n• ${categoria} — R$ ${valor}\n• Pagamento: ${pagamento}\n\nLançar como custo fixo mensal?\n\nDigite 1 para Sim ou 2 para Não`;
+        } else {
+          return `Não consegui entender esse custo 🤔\n\nPode me mandar de novo? Exemplo:\n\n"Aluguel 5.000"`;
+        }
+      }
+
+      case 'segundo_custo_confirmacao': {
+        const confirmacao = parseInt(messageTrimmed);
+        if (confirmacao === 1) {
+          onboarding.step = 'resumo_final';
+          // Processa o resumo final (cria usuário e mostra resumo)
+          try {
+            const result = await this.createUserFromOnboarding(onboarding.data);
+            
+            // Salva as transações registradas durante o onboarding
+            await this.saveOnboardingTransactions(result.user.id, onboarding.data);
+            
+            // Cria procedimentos padrão
+            await this.createDefaultProcedimentos(result.user.id);
+            
+            try {
+              await onboardingService.updateState(phone, {
+                userId: result.user.id,
+                stage: 'phase3',
+                phase: 3,
+                data: {
+                  phase3: {
+                    onboarding_completed_at: new Date().toISOString(),
+                    assistant_persona: 'lumiz_whatsapp'
+                  }
+                }
+              });
+              await onboardingService.updateStepStatus(phone, 'phase3_whatsapp', 'completed', {
+                channel: 'whatsapp'
+              });
+              await onboardingService.markCompleted(phone);
+            } catch (progressError) {
+              console.error('Erro ao finalizar progresso do onboarding:', progressError);
+            }
+
+            const resumo = await this.buildResumoFinal(phone, onboarding, result.registrationLink);
+            this.onboardingData.delete(phone);
+            
+            return resumo;
+          } catch (error) {
+            console.error('Erro ao criar usuário:', error);
+            this.onboardingData.delete(phone);
+            return `Erro ao criar cadastro 😢\n\n${error.message}\n\nTente novamente enviando qualquer mensagem.`;
+          }
+        } else if (confirmacao === 2) {
+          return 'Ok, pode me enviar outro custo fixo então.';
+        } else {
+          return 'Por favor, digite 1 para Sim ou 2 para Não.';
+        }
+      }
+
+      case 'resumo_final': {
+        // Cria o usuário e finaliza
+        try {
+          const result = await this.createUserFromOnboarding(onboarding.data);
+          
+          // Salva as transações registradas durante o onboarding
+          await this.saveOnboardingTransactions(result.user.id, onboarding.data);
+          
+          // Cria procedimentos padrão
+          await this.createDefaultProcedimentos(result.user.id);
+          
+          try {
+            await onboardingService.updateState(phone, {
+              userId: result.user.id,
+              stage: 'phase3',
+              phase: 3,
+              data: {
+                phase3: {
+                  onboarding_completed_at: new Date().toISOString(),
+                  assistant_persona: 'lumiz_whatsapp'
+                }
+              }
+            });
+            await onboardingService.updateStepStatus(phone, 'phase3_whatsapp', 'completed', {
+              channel: 'whatsapp'
+            });
+            await onboardingService.markCompleted(phone);
+          } catch (progressError) {
+            console.error('Erro ao finalizar progresso do onboarding:', progressError);
+          }
+
+          const resumo = await this.buildResumoFinal(phone, onboarding, result.registrationLink);
+          this.onboardingData.delete(phone);
+          
+          return resumo;
+        } catch (error) {
+          console.error('Erro ao criar usuário:', error);
+          this.onboardingData.delete(phone);
+          return `Erro ao criar cadastro 😢\n\n${error.message}\n\nTente novamente enviando qualquer mensagem.`;
+        }
+      }
+
+      // ========== FLUXO ANTIGO (FALLBACK) ==========
       case 'nome_completo': {
         if (messageTrimmed.length < 3) {
           return 'Por favor, digite seu nome completo (mínimo 3 caracteres).';
         }
         onboarding.data.nome_completo = messageTrimmed;
-        onboarding.step = 'perfil_usuario'; // Novo step
+        onboarding.step = 'nome_clinica';
 
         try {
           await onboardingService.savePhaseData(phone, 'phase1', {
@@ -358,272 +581,36 @@ class UserController {
           console.error('Erro ao salvar progresso (nome):', error);
         }
 
-        return `Prazer, ${messageTrimmed.split(' ')[0]}! 😊\n\n*Você é:\n\n1. Proprietária(o) da clínica\n2. Gestora(o)\n3. Recepcionista\n4. Outra função?*`;
+        const progressLabel = await onboardingService.getProgressLabel(phone);
+        const progressText = progressLabel ? `\n\n${progressLabel}` : '';
+
+        return `Prazer, ${messageTrimmed.split(' ')[0]}! 😊${progressText}\n\nAgora me diz: *Qual o nome da sua clínica?*`;
       }
 
-      // NOVO: Perfil do usuário
-      case 'perfil_usuario': {
-        const perfilMap = {
-          '1': 'proprietaria',
-          '2': 'gestora',
-          '3': 'recepcionista',
-          '4': 'outra',
-          'proprietária': 'proprietaria',
-          'proprietario': 'proprietaria',
-          'gestora': 'gestora',
-          'gestor': 'gestora',
-          'recepcionista': 'recepcionista',
-          'outra': 'outra'
-        };
-        
-        const perfilLower = messageTrimmed.toLowerCase().trim();
-        const perfil = perfilMap[perfilLower] || (perfilMap[perfilLower.split(' ')[0]] || null);
-
-        if (!perfil) {
-          return 'Por favor, escolha uma opção:\n1. Proprietária(o)\n2. Gestora(o)\n3. Recepcionista\n4. Outra função';
+      case 'nome_clinica': {
+        if (messageTrimmed.length < 2) {
+          return 'Por favor, digite o nome da clínica.';
         }
-
-        onboarding.data.perfil_usuario = perfil;
-        onboarding.step = 'formas_pagamento'; // Novo step
+        onboarding.data.nome_clinica = messageTrimmed;
+        onboarding.step = 'cnpj';
 
         try {
           await onboardingService.savePhaseData(phone, 'phase1', {
-            perfil_usuario: perfil
+            clinic_name: messageTrimmed
+          });
+          await onboardingService.updateStepStatus(phone, 'phase1_clinic', 'completed', {
+            value: messageTrimmed
           });
         } catch (error) {
-          console.error('Erro ao salvar perfil:', error);
+          console.error('Erro ao salvar progresso (clínica):', error);
         }
 
-        // Envia opções como texto (simulando botões)
-        return '*Hoje você recebe como? (Pode marcar mais de uma)*\n\n• PIX\n• Cartão\n• Dinheiro\n• Link de pagamento\n• Outros\n\nDigite as opções separadas por vírgula (ex: "PIX, Cartão").';
+        const progressLabel = await onboardingService.getProgressLabel(phone);
+        const progressText = progressLabel ? `\n\n${progressLabel}` : '';
+
+        return `*${messageTrimmed}* - nome bonito! 💜${progressText}\n\nAgora, se tiver o *CNPJ da clínica*, já me passa? Assim deixo tudo pronto.\n\nSe preferir, responda *Pular* ou *Prefiro não informar agora*.`;
       }
 
-      // NOVO: Formas de pagamento (múltipla escolha)
-      case 'formas_pagamento': {
-        const formas = [];
-        const formasMap = {
-          'pix': 'pix',
-          'cartão': 'cartao',
-          'cartao': 'cartao',
-          'dinheiro': 'dinheiro',
-          'link de pagamento': 'link_pagamento',
-          'link': 'link_pagamento',
-          'outros': 'outros',
-          'outro': 'outros'
-        };
-
-        // Pode receber múltiplas respostas (botões ou texto)
-        const partes = messageTrimmed.toLowerCase().split(/[,\s]+/);
-        partes.forEach(parte => {
-          const parteTrim = parte.trim();
-          if (formasMap[parteTrim]) {
-            formas.push(formasMap[parteTrim]);
-          }
-        });
-
-        // Se não encontrou nenhuma, tenta buscar no texto completo
-        if (formas.length === 0) {
-          for (const [key, value] of Object.entries(formasMap)) {
-            if (messageTrimmed.toLowerCase().includes(key)) {
-              formas.push(value);
-            }
-          }
-        }
-
-        if (formas.length === 0) {
-          return 'Por favor, escolha pelo menos uma forma de pagamento:\n• PIX\n• Cartão\n• Dinheiro\n• Link de pagamento\n• Outros';
-        }
-
-        onboarding.data.formas_pagamento = formas;
-        onboarding.step = 'volume_vendas'; // Ajustado nome
-
-        try {
-          await onboardingService.savePhaseData(phone, 'phase1', {
-            formas_pagamento: formas
-          });
-        } catch (error) {
-          console.error('Erro ao salvar formas de pagamento:', error);
-        }
-
-        return `Ótimo! Já anotei suas formas de pagamento. 💜\n\n*Em média, quantas vendas você faz por mês?*`;
-      }
-
-      // Volume de vendas (ajustado)
-      case 'volume_vendas': {
-        // Aceita número direto ou texto
-        const numero = parseInt(messageTrimmed.replace(/\D/g, ''), 10);
-        
-        if (isNaN(numero) || numero <= 0) {
-          return 'Por favor, me diga quantas vendas você faz por mês (pode ser um número aproximado).';
-        }
-
-        onboarding.data.volume_vendas = numero;
-        onboarding.step = 'momento_wow'; // Novo step - momento WOW
-
-        try {
-          await onboardingService.savePhaseData(phone, 'phase1', {
-            volume_vendas: numero,
-            volume_status: 'provided'
-          });
-          await onboardingService.updateStepStatus(
-            phone,
-            'phase1_volume',
-            'completed',
-            { value: numero }
-          );
-        } catch (error) {
-          console.error('Erro ao salvar volume de vendas:', error);
-        }
-
-        return `Ótimo, já entendi seu tamanho. Isso vai me ajudar a te entregar relatórios melhores.\n\n*Agora vamos fazer seu primeiro teste rápido 😄\n\nMe envie uma venda da sua clínica, do jeitinho que você falaria para um amigo.*\n\n*Exemplo:*\n"Júlia fez um full face com 12ml, usamos 10 Biogelis volume e 1 Juvederm. Total 15.600, pagou 3.000 no PIX e o resto em 6x no cartão."\n\nEu entendo tudo automaticamente.`;
-      }
-
-      // NOVO: Momento WOW - esperando primeira venda
-      case 'momento_wow': {
-        // Processa a venda usando o messageController
-        const geminiService = require('../services/geminiService');
-        const intent = await geminiService.processMessage(messageTrimmed);
-
-        if (intent.intencao === 'registrar_entrada') {
-          // Venda foi processada, agora pede custo
-          onboarding.data.primeira_venda = intent.dados;
-          onboarding.step = 'pedir_custo_variavel';
-
-          // Salva a venda temporariamente (será confirmada depois)
-          onboarding.data.venda_pendente = intent.dados;
-
-          return `Entrada registrada! 🟣\n\nAgora que já sei quanto entrou, bora ver o outro lado do financeiro?\n\nMe envie agora um custo da sua clínica — pode ser algo simples como uma compra de insumo, produto ou maquininha.\n\nSe quiser, pode mandar foto do boleto, PDF, nota fiscal ou até um texto.`;
-        } else {
-          // Não entendeu como venda, pede novamente
-          return `Não entendi bem como uma venda 🤔\n\nMe manda assim:\n"Júlia fez um full face com 12ml, usamos 10 Biogelis volume e 1 Juvederm. Total 15.600, pagou 3.000 no PIX e o resto em 6x no cartão."\n\nOu mais simples: "Botox 2800 paciente Maria"`;
-        }
-      }
-
-      // NOVO: Pedir custo variável
-      case 'pedir_custo_variavel': {
-        // Verifica se é um intent JSON (vindo de processamento de imagem)
-        let intent;
-        try {
-          const parsed = JSON.parse(messageTrimmed);
-          if (parsed.intencao && parsed.dados) {
-            intent = parsed;
-          } else {
-            throw new Error('Not a valid intent');
-          }
-        } catch (e) {
-          // Não é JSON, processa como mensagem normal
-          const geminiService = require('../services/geminiService');
-          intent = await geminiService.processMessage(messageTrimmed);
-        }
-
-        if (intent.intencao === 'registrar_saida' || intent.intencao === 'enviar_documento') {
-          // Processou um custo, agora precisa classificar
-          onboarding.data.custo_pendente = intent.dados;
-          onboarding.step = 'classificar_custo';
-
-          // Extrai informações do custo
-          const descricao = intent.dados?.categoria || intent.dados?.descricao || 'Custo';
-          const valor = intent.dados?.valor || 0;
-          const quantidade = intent.dados?.quantidade || '';
-          const formaPagamento = intent.dados?.forma_pagamento || 'Não especificado';
-
-          let response = `Show! Aqui está o que registrei:\n\n`;
-          response += `• Descrição: ${descricao}\n`;
-          if (quantidade) response += `• Quantidade: ${quantidade}\n`;
-          response += `• Valor: R$ ${valor.toFixed(2)}\n`;
-          response += `• Pagamento: ${formaPagamento}\n`;
-          response += `• Categoria sugerida: Compra de insumo\n\n`;
-          response += `*Agora me diz: esse custo é fixo ou variável?*`;
-
-          // Envia opções como texto (simulando botões)
-          response += '\n\nResponda: "Variável" ou "Fixo"';
-          return response;
-        } else {
-          return `Não entendi como um custo 🤔\n\nMe manda algo como:\n"Comprei 6 frascos de Biogeli, paguei 1.800 no cartão"\n\nOu envie foto de boleto/nota fiscal.`;
-        }
-      }
-
-      // NOVO: Classificar custo (fixo/variável)
-      case 'classificar_custo': {
-        const messageLower = messageTrimmed.toLowerCase();
-        const isVariavel = messageLower.includes('variável') || messageLower.includes('variavel') || messageLower.includes('📦');
-        const isFixo = messageLower.includes('fixo') || messageLower.includes('🏠') || messageLower.includes('todo mês');
-
-        if (!isVariavel && !isFixo) {
-          return 'Por favor, escolha uma opção:\n📦 Variável (depende dos procedimentos)\n🏠 Fixo (todo mês)';
-        }
-
-        const tipoCusto = isVariavel ? 'variavel' : 'fixo';
-        onboarding.data.custo_pendente.tipo_custo = tipoCusto;
-        onboarding.data.custos_registrados = onboarding.data.custos_registrados || [];
-        onboarding.data.custos_registrados.push({
-          ...onboarding.data.custo_pendente,
-          tipo_custo: tipoCusto
-        });
-
-        if (isVariavel) {
-          // Custo variável registrado, agora pede custo fixo
-          onboarding.step = 'pedir_custo_fixo';
-          return `Perfeito! Lancei como custo variável.\n\nIsso me ajuda a calcular suas análises com mais precisão 💜\n\n*Agora falta só um custo fixo pra completar o seu painel inicial.\n\nMe envie algo como aluguel, software, salário, internet… o que for mais fácil pra você.*`;
-        } else {
-          // Custo fixo registrado, mas ainda precisa do variável
-          if (!onboarding.data.custos_registrados.some(c => c.tipo_custo === 'variavel')) {
-            onboarding.step = 'pedir_custo_variavel';
-            return `Perfeito! Lancei como custo fixo.\n\n*Agora me envie um custo variável (como compra de insumos, produtos, etc).*`;
-          } else {
-            // Já tem ambos, pode mostrar resumo
-            onboarding.step = 'resumo_final';
-            return await this.showResumoFinal(phone, onboarding);
-          }
-        }
-      }
-
-      // NOVO: Pedir custo fixo
-      case 'pedir_custo_fixo': {
-        // Verifica se é um intent JSON (vindo de processamento de imagem)
-        let intent;
-        try {
-          const parsed = JSON.parse(messageTrimmed);
-          if (parsed.intencao && parsed.dados) {
-            intent = parsed;
-          } else {
-            throw new Error('Not a valid intent');
-          }
-        } catch (e) {
-          // Não é JSON, processa como mensagem normal
-          const geminiService = require('../services/geminiService');
-          intent = await geminiService.processMessage(messageTrimmed);
-        }
-
-        if (intent.intencao === 'registrar_saida' || intent.intencao === 'enviar_documento') {
-          onboarding.data.custo_pendente = intent.dados;
-          onboarding.data.custo_pendente.tipo_custo = 'fixo';
-          onboarding.data.custos_registrados = onboarding.data.custos_registrados || [];
-          onboarding.data.custos_registrados.push(onboarding.data.custo_pendente);
-
-          const descricao = intent.dados?.categoria || intent.dados?.descricao || 'Custo fixo';
-          const valor = intent.dados?.valor || 0;
-          const formaPagamento = intent.dados?.forma_pagamento || 'PIX';
-
-          onboarding.step = 'resumo_final';
-
-          return `Boa! Peguei aqui:\n\n• ${descricao} — R$ ${valor.toFixed(2)}\n• Pagamento: ${formaPagamento}\n\nLançar como custo fixo mensal?\n\n*Responda "sim" para confirmar.*`;
-        } else {
-          return `Não entendi como um custo fixo 🤔\n\nMe manda algo como:\n"Aluguel 5.000"\n\nOu envie foto de boleto/nota fiscal.`;
-        }
-      }
-
-      // NOVO: Resumo final
-      case 'resumo_final': {
-        const messageLower = messageTrimmed.toLowerCase();
-        if (messageLower.includes('sim') || messageLower.includes('confirmar') || messageLower.includes('ok')) {
-          return await this.showResumoFinal(phone, onboarding);
-        } else {
-          return 'Por favor, confirme com "sim" para ver o resumo final.';
-        }
-      }
-
-      // CASES ANTIGOS (mantidos para compatibilidade, mas não serão usados no novo fluxo)
       case 'cnpj': {
         const digits = messageTrimmed.replace(/\D/g, '');
         const skip = onboardingService.isSkipResponse(messageTrimmed.toLowerCase());
@@ -832,112 +819,6 @@ class UserController {
     }
   }
 
-  /**
-   * Mostra resumo final do teste (SEM calcular margem)
-   */
-  async showResumoFinal(phone, onboarding) {
-    try {
-      const venda = onboarding.data.venda_pendente || onboarding.data.primeira_venda;
-      const custos = onboarding.data.custos_registrados || [];
-
-      const receita = venda?.valor || 0;
-      const custosVariaveis = custos.filter(c => c.tipo_custo === 'variavel').reduce((sum, c) => sum + (c.valor || 0), 0);
-      const custosFixos = custos.filter(c => c.tipo_custo === 'fixo').reduce((sum, c) => sum + (c.valor || 0), 0);
-      const saldoInicial = receita - custosVariaveis - custosFixos;
-
-      let response = `Perfeito! Já organizei suas três primeiras informações 🎉\n\n`;
-      response += `*Aqui vai um resumo inicial, só para você ver como tudo começa a tomar forma:*\n\n`;
-      response += `📊 *Primeiros dados da sua clínica*\n\n`;
-      response += `• Receita cadastrada: R$ ${receita.toFixed(2)}\n`;
-      response += `• Custos do mês (parciais):\n`;
-      response += `  • Custos variáveis registrados: R$ ${custosVariaveis.toFixed(2)}\n`;
-      response += `  • Custos fixos registrados: R$ ${custosFixos.toFixed(2)}\n`;
-      response += `• Saldo inicial: R$ ${saldoInicial.toFixed(2)}\n`;
-      response += `_(Esse valor muda rápido conforme você registra suas vendas e custos reais.)_\n\n`;
-      response += `Com mais dados, te mostro gráficos, histórico, totais, projeções e muito mais — tudo automaticamente 💜\n\n`;
-
-      // Finaliza onboarding e cria usuário
-      const result = await this.createUserFromOnboarding(onboarding.data);
-      this.onboardingData.delete(phone);
-
-      // Cria procedimentos padrão
-      await this.createDefaultProcedimentos(result.user.id);
-
-      try {
-        await onboardingService.updateState(phone, {
-          userId: result.user.id,
-          stage: 'phase3',
-          phase: 3,
-          data: {
-            phase3: {
-              onboarding_completed_at: new Date().toISOString(),
-              assistant_persona: 'lumiz_whatsapp'
-            }
-          }
-        });
-        await onboardingService.updateStepStatus(phone, 'phase3_whatsapp', 'completed', {
-          channel: 'whatsapp'
-        });
-        await onboardingService.markCompleted(phone);
-      } catch (progressError) {
-        console.error('Erro ao finalizar progresso do onboarding:', progressError);
-      }
-
-      // Registra a venda e custos no banco
-      if (venda) {
-        const transactionController = require('./transactionController');
-        try {
-          await transactionController.createTransaction(result.user.id, {
-            tipo: 'entrada',
-            valor: venda.valor,
-            categoria: venda.categoria || 'Procedimento',
-            descricao: venda.descricao || venda.nome_cliente || '',
-            data: venda.data || new Date().toISOString().split('T')[0],
-            forma_pagamento: venda.forma_pagamento || 'avista',
-            parcelas: venda.parcelas || null,
-            bandeira_cartao: venda.bandeira_cartao || null
-          });
-        } catch (error) {
-          console.error('Erro ao registrar venda do onboarding:', error);
-        }
-      }
-
-      // Registra custos
-      for (const custo of custos) {
-        try {
-          await transactionController.createTransaction(result.user.id, {
-            tipo: 'saida',
-            valor: custo.valor,
-            categoria: custo.categoria || custo.descricao || 'Custo',
-            descricao: custo.descricao || '',
-            data: custo.data || new Date().toISOString().split('T')[0]
-          });
-        } catch (error) {
-          console.error('Erro ao registrar custo do onboarding:', error);
-        }
-      }
-
-      response += `*CADASTRO BÁSICO CONCLUÍDO!*\n\n`;
-      response += `Ótimo! Já coletei suas informações básicas. Agora falta só uma última etapa para você ter acesso completo.\n\n`;
-      response += `*CADASTRE-SE*\n\n`;
-      response += `Clique no link abaixo para criar sua conta:\n\n`;
-      response += `${result.registrationLink}\n\n`;
-      response += `*O que acontece quando você se cadastrar:*\n`;
-      response += `• Seu email será vinculado ao seu WhatsApp\n`;
-      response += `• Você terá acesso completo a todos os recursos\n`;
-      response += `• Todas as transações do WhatsApp ficarão sincronizadas\n\n`;
-      response += `*Importante:*\n`;
-      response += `• O link é válido por 48 horas\n`;
-      response += `• Você pode continuar usando o WhatsApp normalmente enquanto isso\n\n`;
-      response += `Assim que finalizar o cadastro, eu te aviso aqui no WhatsApp! 😊`;
-
-      return response;
-    } catch (error) {
-      console.error('Erro ao mostrar resumo final:', error);
-      return 'Erro ao finalizar teste. Tente novamente.';
-    }
-  }
-
   async createUserFromOnboarding(data) {
     try {
       const { nome_completo, nome_clinica, telefone } = data;
@@ -980,24 +861,24 @@ class UserController {
         const tempId = require('uuid').v4();
         
         const { data: newProfile, error: profileError } = await supabase
-          .from('profiles')
-          .insert([{
+        .from('profiles')
+        .insert([{
             id: tempId,
-            nome_completo,
-            nome_clinica,
-            telefone,
+          nome_completo,
+          nome_clinica,
+          telefone,
             is_active: true,
             email: null // Email será preenchido quando usuário se cadastrar
-          }])
-          .select()
-          .single();
+        }])
+        .select()
+        .single();
 
-        if (profileError) {
-          if (profileError.code === '23505') {
-            throw new Error('Este telefone já está cadastrado.');
-          }
-          throw profileError;
+      if (profileError) {
+        if (profileError.code === '23505') {
+          throw new Error('Este telefone já está cadastrado.');
         }
+        throw profileError;
+      }
 
         profile = newProfile;
         profileCreated = true;
@@ -1156,6 +1037,167 @@ class UserController {
     return nome.split(' ')
       .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
       .join(' ');
+  }
+
+  async buildResumoFinal(phone, onboarding, registrationLink = null) {
+    // Calcula totais
+    let receitaTotal = 0;
+    let custosVariaveis = 0;
+    let custosFixos = 0;
+
+    if (onboarding.data.primeira_venda?.valor) {
+      receitaTotal = parseFloat(onboarding.data.primeira_venda.valor);
+    }
+
+    if (onboarding.data.primeiro_custo?.valor) {
+      if (onboarding.data.primeiro_custo.tipo_custo === 'variável') {
+        custosVariaveis = parseFloat(onboarding.data.primeiro_custo.valor);
+      } else {
+        custosFixos = parseFloat(onboarding.data.primeiro_custo.valor);
+      }
+    }
+
+    if (onboarding.data.segundo_custo?.valor) {
+      custosFixos = parseFloat(onboarding.data.segundo_custo.valor);
+    }
+
+    const saldoInicial = receitaTotal - custosVariaveis - custosFixos;
+
+    let resumo = `Perfeito! Já organizei suas três primeiras informações 🎉\n\n`;
+    resumo += `Aqui vai um resumo inicial, só para você ver como tudo começa a tomar forma:\n\n`;
+    resumo += `📊 *Primeiros dados da sua clínica*\n\n`;
+    resumo += `• Receita cadastrada: R$ ${receitaTotal.toFixed(2)}\n`;
+    resumo += `• Custos do mês (parciais):\n`;
+    resumo += `  • Custos variáveis registrados: R$ ${custosVariaveis.toFixed(2)}\n`;
+    resumo += `  • Custos fixos registrados: R$ ${custosFixos.toFixed(2)}\n`;
+    resumo += `• Saldo inicial: R$ ${saldoInicial.toFixed(2)}\n\n`;
+    resumo += `(esse saldo muda rápido conforme você registra suas vendas e custos reais)\n\n`;
+    resumo += `Com mais dados, te mostro gráficos, histórico, totais, projeções e muito mais — tudo automaticamente 💜\n\n`;
+
+    if (registrationLink) {
+      resumo += `*CADASTRE-SE PARA ACESSO COMPLETO*\n\n`;
+      resumo += `Clique no link abaixo para criar sua conta:\n\n`;
+      resumo += `${registrationLink}\n\n`;
+      resumo += `*O que acontece quando você se cadastrar:*\n`;
+      resumo += `• Seu email será vinculado ao seu WhatsApp\n`;
+      resumo += `• Você terá acesso completo a todos os recursos\n`;
+      resumo += `• Todas as transações do WhatsApp ficarão sincronizadas\n\n`;
+      resumo += `*Importante:*\n`;
+      resumo += `• O link é válido por 48 horas\n`;
+      resumo += `• Você pode continuar usando o WhatsApp normalmente enquanto isso\n\n`;
+      resumo += `Assim que finalizar o cadastro, eu te aviso aqui no WhatsApp! 😊`;
+    }
+
+    return resumo;
+  }
+
+  async saveOnboardingTransactions(userId, data) {
+    try {
+      // Salva primeira venda (entrada)
+      if (data.primeira_venda) {
+        const venda = data.primeira_venda;
+        
+        // Busca ou cria cliente
+        let clienteId = null;
+        if (venda.nome_cliente) {
+          const cliente = await this.findOrCreateCliente(userId, venda.nome_cliente);
+          clienteId = cliente.id;
+        }
+
+        // Busca ou cria procedimento
+        let procedimentoId = null;
+        if (venda.categoria) {
+          const procedimento = await this.findOrCreateProcedimento(userId, venda.categoria);
+          procedimentoId = procedimento.id;
+        }
+
+        // Cria atendimento
+        const { data: atendimento, error: atendError } = await supabase
+          .from('atendimentos')
+          .insert([{
+            user_id: userId,
+            cliente_id: clienteId,
+            valor_total: venda.valor,
+            data: venda.data || new Date().toISOString().split('T')[0],
+            observacoes: venda.descricao || '',
+            forma_pagamento: venda.forma_pagamento || 'avista'
+          }])
+          .select()
+          .single();
+
+        if (!atendError && atendimento && procedimentoId) {
+          // Cria relação atendimento-procedimento
+          await supabase
+            .from('atendimento_procedimentos')
+            .insert([{
+              atendimento_id: atendimento.id,
+              procedimento_id: procedimentoId,
+              quantidade: 1
+            }]);
+        }
+
+        // Se for parcelado, cria parcelas
+        if (venda.forma_pagamento === 'parcelado' && venda.parcelas) {
+          const valorParcela = venda.valor / venda.parcelas;
+          const parcelas = [];
+          const dataBase = new Date(venda.data || new Date());
+
+          for (let i = 0; i < venda.parcelas; i++) {
+            const dataParcela = new Date(dataBase);
+            dataParcela.setMonth(dataParcela.getMonth() + i);
+            
+            parcelas.push({
+              atendimento_id: atendimento.id,
+              numero: i + 1,
+              valor: valorParcela,
+              data_vencimento: dataParcela.toISOString().split('T')[0],
+              paga: false,
+              bandeira_cartao: venda.bandeira_cartao || null
+            });
+          }
+
+          await supabase.from('parcelas').insert(parcelas);
+        }
+      }
+
+      // Salva primeiro custo
+      if (data.primeiro_custo) {
+        const custo = data.primeiro_custo;
+        await supabase
+          .from('contas_pagar')
+          .insert([{
+            user_id: userId,
+            valor: custo.valor,
+            data: custo.data || new Date().toISOString().split('T')[0],
+            descricao: custo.descricao || custo.categoria || 'Custo',
+            categoria: custo.categoria || 'Outros',
+            forma_pagamento: custo.forma_pagamento || 'avista',
+            tipo_custo: custo.tipo_custo || 'variável'
+          }]);
+      }
+
+      // Salva segundo custo (fixo)
+      if (data.segundo_custo) {
+        const custo = data.segundo_custo;
+        await supabase
+          .from('contas_pagar')
+          .insert([{
+            user_id: userId,
+            valor: custo.valor,
+            data: custo.data || new Date().toISOString().split('T')[0],
+            descricao: custo.descricao || custo.categoria || 'Custo fixo',
+            categoria: custo.categoria || 'Custo fixo',
+            forma_pagamento: custo.forma_pagamento || 'avista',
+            tipo_custo: 'fixo',
+            recorrente: true // Marca como recorrente
+          }]);
+      }
+
+      console.log('[ONBOARDING] Transações salvas com sucesso para usuário:', userId);
+    } catch (error) {
+      console.error('[ONBOARDING] Erro ao salvar transações:', error);
+      // Não lança erro para não quebrar o fluxo
+    }
   }
 }
 

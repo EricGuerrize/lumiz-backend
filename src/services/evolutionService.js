@@ -56,31 +56,19 @@ class EvolutionService {
     try {
       const url = `${this.baseUrl}/message/sendButtons/${this.instanceName}`;
 
-      // Limita título a 20 caracteres (limite do WhatsApp)
-      const title = message.length > 20 ? message.substring(0, 17) + '...' : message;
-      const description = message.length > 20 ? message.substring(20) : '';
-      
-      // Limita e formata botões (máximo 3 botões, título máximo 20 caracteres)
-      const formattedButtons = buttons.slice(0, 3).map((btn, index) => {
-        // Remove emojis e limita tamanho
-        const cleanBtn = btn.replace(/[📦🏠✅✏️❌]/g, '').trim();
-        const shortBtn = cleanBtn.length > 20 ? cleanBtn.substring(0, 17) + '...' : cleanBtn;
-        return {
-          buttonId: `btn_${index}`,
-          displayText: shortBtn
-        };
-      });
-      
       const payload = {
         number: phone,
-        buttonsText: title,
-        title: title,
-        description: description || '',
-        footer: 'Lumiz',
-        buttons: formattedButtons
+        title: message,
+        description: '',
+        footer: 'Lumiz - Sua assistente financeira 💜',
+        buttons: buttons.map((btn, index) => ({
+          type: 'replyButton',
+          reply: {
+            id: `btn_${index}`,
+            title: btn
+          }
+        }))
       };
-      
-      console.log('[EVOLUTION] Payload dos botões:', JSON.stringify(payload, null, 2));
 
       const response = await retryWithBackoff(
         () => withTimeout(
