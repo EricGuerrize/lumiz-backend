@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "test": "NODE_ENV=test node tests/apiSmoke.test.js"
+    "test": "NODE_ENV=test node tests/apiSmoke.test.js",
+    "build": "npm install --include=optional"
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
