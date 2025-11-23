@@ -1282,14 +1282,14 @@ class MessageController {
   async handleDocumentMessage(phone, mediaUrl, fileName) {
     try {
       // Verifica se usuário está cadastrado
-      if (userController.isOnboarding(phone)) {
-        return 'Complete seu cadastro primeiro! 😊\n\nQual o seu nome completo?';
+      if (onboardingFlowService.isOnboarding(phone)) {
+        return 'Complete seu cadastro primeiro! 😊\n\nQual o nome da sua clínica?';
       }
 
       const user = await userController.findUserByPhone(phone);
       if (!user) {
-        await userController.startOnboarding(phone);
-        return `Olá! Sou a *Lumiz* 💜\n\nParece que você ainda não tem cadastro.\nVou te ajudar a configurar!\n\n*Qual o seu nome completo?*`;
+        await onboardingFlowService.startNewOnboarding(phone);
+        return `Oi, prazer! Sou a Lumiz 👋\n\nSou a IA que vai organizar o financeiro da sua clínica — direto pelo WhatsApp.\n\nAntes de começarmos, veja este vídeo rapidinho para entender como eu te ajudo a controlar tudo sem planilhas.\n\nVou te ajudar a cuidar das finanças da sua clínica de forma simples, automática e sem complicação.\n\nPara começar seu teste, qual é o nome da sua clínica?`;
       }
 
       // Por enquanto, só processamos imagens
