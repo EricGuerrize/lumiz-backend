@@ -1,5 +1,6 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const axios = require('axios');
+const sharp = require('sharp');
 const { withTimeout, retryWithBackoff } = require('../utils/timeout');
 require('dotenv').config();
 
@@ -30,8 +31,7 @@ class DocumentService {
         'Timeout ao baixar imagem (30s)'
       );
 
-      const imageBuffer = Buffer.from(imageResponse.data);
-      const base64Image = imageBuffer.toString('base64');
+      let imageBuffer = Buffer.from(imageResponse.data);
 
       // DETECÇÃO DE MIME TYPE usando magic numbers (método confiável e compatível)
       console.log('[DOC] ===== INÍCIO DETECÇÃO MIME TYPE =====');
@@ -69,7 +69,7 @@ class DocumentService {
       }
       // WEBP: RIFF...WEBP
       else if (firstBytes[0] === 0x52 && firstBytes[1] === 0x49 && firstBytes[2] === 0x46 && firstBytes[3] === 0x46 &&
-               firstBytes[8] === 0x57 && firstBytes[9] === 0x45 && firstBytes[10] === 0x42 && firstBytes[11] === 0x50) {
+        firstBytes[8] === 0x57 && firstBytes[9] === 0x45 && firstBytes[10] === 0x42 && firstBytes[11] === 0x50) {
         mimeType = 'image/webp';
         console.log('[DOC] ✅ Detectado: WEBP (RIFF...WEBP)');
       }
@@ -94,14 +94,25 @@ class DocumentService {
         }
       }
 
-      // VALIDAÇÃO FINAL ABSOLUTA - nunca permite application/octet-stream
-      if (mimeType === 'application/octet-stream' || !mimeType || !mimeType.startsWith('image/')) {
-        console.error('[DOC] ❌ ERRO: MIME type inválido detectado:', mimeType);
-        mimeType = 'image/jpeg';
-        console.log('[DOC] ✅ Corrigido para JPEG');
+      // CONVERSÃO AUTOMÁTICA PARA JPEG se não for JPEG ou PNG
+      // Gemini tem problemas com WEBP e outros formatos
+      if (mimeType !== 'image/jpeg' && mimeType !== 'image/png') {
+        console.log('[DOC] 🔄 Convertendo', mimeType, 'para JPEG...');
+        try {
+          imageBuffer = await sharp(imageBuffer)
+            .jpeg({ quality: 90 })
+            .toBuffer();
+          mimeType = 'image/jpeg';
+          console.log('[DOC] ✅ Imagem convertida para JPEG com sucesso');
+        } catch (conversionError) {
+          console.error('[DOC] ❌ Erro ao converter imagem:', conversionError.message);
+          throw new Error('Não foi possível converter a imagem para um formato compatível');
+        }
       }
 
       console.log('[DOC] ===== MIME TYPE FINAL: ' + mimeType + ' =====');
+
+      const base64Image = imageBuffer.toString('base64');
 
       const dataHoje = new Date().toISOString().split('T')[0];
 
@@ -241,7 +252,7 @@ RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
       // Validação do tamanho (Gemini tem limite de ~20MB para base64)
       const base64SizeMB = (base64Image.length * 3) / 4 / 1024 / 1024;
       console.log('[DOC] Tamanho da imagem (base64):', base64Image.length, 'bytes (~', base64SizeMB.toFixed(2), 'MB)');
-      
+
       if (base64SizeMB > 20) {
         throw new Error(`Imagem muito grande: ${base64SizeMB.toFixed(2)}MB (limite: 20MB)`);
       }
@@ -282,16 +293,16 @@ RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
         return JSON.parse(jsonText);
       } catch (geminiError) {
         console.error('[DOC] ❌ Erro ao chamar Gemini API:', geminiError.message);
-        
+
         // Tratamento específico para erros conhecidos
         if (geminiError.message && geminiError.message.includes('Provided image is not valid')) {
           throw new Error('A imagem enviada não é válida. Verifique se é uma imagem JPEG, PNG ou WEBP válida.');
         }
-        
+
         if (geminiError.message && geminiError.message.includes('mimeType')) {
           throw new Error(`Erro de MIME type: ${mimeType}. A imagem pode estar corrompida.`);
         }
-        
+
         // Re-throw com contexto adicional
         throw new Error(`Erro ao processar imagem com Gemini: ${geminiError.message}`);
       }
@@ -309,7 +320,7 @@ RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
   formatDocumentSummary(result) {
     if (result.tipo_documento === 'erro') {
       let errorMessage = `Erro ao analisar documento 😢\n\n`;
-      
+
       if (result.erro) {
         // Mensagens mais específicas para o usuário
         if (result.erro.includes('não é válida')) {
@@ -322,9 +333,9 @@ RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
           errorMessage += `Detalhes: ${result.erro}\n\n`;
         }
       }
-      
+
       errorMessage += `Tente:\n- Enviar uma foto mais nítida\n- Verificar se é JPEG ou PNG\n- Ou registre manualmente:\n"Insumos 3200"`;
-      
+
       return errorMessage;
     }
 
