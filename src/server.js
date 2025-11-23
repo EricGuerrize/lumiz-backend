@@ -1,14 +1,45 @@
 const express = require('express');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
+const cron = require('node-cron');
+const Sentry = require('@sentry/node');
 require('dotenv').config();
 
 const webhookRoutes = require('./routes/webhook');
 const dashboardRoutes = require('./routes/dashboard.routes');
 const onboardingRoutes = require('./routes/onboarding.routes');
+const userRoutes = require('./routes/user.routes');
 const reminderService = require('./services/reminderService');
 const nudgeService = require('./services/nudgeService');
 const insightService = require('./services/insightService');
+
+// Inicializa Sentry se DSN estiver configurado
+if (process.env.SENTRY_DSN) {
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    tracesSampleRate: 1.0,
+    environment: process.env.NODE_ENV || 'development'
+  });
+  console.log('[SERVER] Sentry inicializado');
+}
+
+// Cron Job para limpeza de tokens expirados (roda todo dia à meia-noite)
+cron.schedule('0 0 * * *', async () => {
+  console.log('[CRON] Iniciando limpeza de tokens expirados...');
+  try {
+    const supabase = require('./db/supabase');
+    const { error, count } = await supabase
+      .from('setup_tokens')
+      .delete({ count: 'exact' })
+      .lt('expires_at', new Date().toISOString());
+
+    if (error) throw error;
+    console.log(`[CRON] Limpeza concluída. ${count || 0} tokens removidos.`);
+  } catch (error) {
+    console.error('[CRON] Erro ao limpar tokens:', error);
+    if (process.env.SENTRY_DSN) Sentry.captureException(error);
+  }
+});
 // Garante que mdrService seja inicializado na startup para ativar BullMQ
 console.log('[SERVER] Carregando mdrService...');
 try {
@@ -71,6 +102,7 @@ app.use((req, res, next) => {
 app.use('/api', webhookRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/onboarding', onboardingRoutes);
+app.use('/api/user', userRoutes);
 
 app.get('/health', async (req, res) => {
   const health = {
@@ -129,7 +161,7 @@ app.get('/api/cron/reminders', async (req, res) => {
     const reminders = await reminderService.checkAndSendReminders();
     const nudges = await nudgeService.checkAndSendNudges();
     const insights = await insightService.generateDailyInsights();
-    
+
     // Consulta DDA (boletos automáticos) - apenas se configurado
     let ddaResults = [];
     try {
@@ -205,7 +237,7 @@ app.use((err, req, res, next) => {
 let server = null;
 if (process.env.NODE_ENV !== 'test') {
   server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`
+    console.log(`
 ╔════════════════════════════════════════╗
 ║         LUMIZ BACKEND STARTED          ║
 ╚════════════════════════════════════════╝
@@ -221,15 +253,15 @@ Endpoints:
   - Health: http://localhost:${PORT}/health
   - Dashboard: http://localhost:${PORT}/api/dashboard/*
   `);
-});
+  });
 
   // Graceful shutdown - fecha conexões adequadamente
   const gracefulShutdown = (signal) => {
     console.log(`\n[SHUTDOWN] Recebido ${signal}, iniciando graceful shutdown...`);
-    
+
     server.close(() => {
       console.log('[SHUTDOWN] Servidor HTTP fechado');
-      
+
       // Fecha conexões do BullMQ/Redis se existirem
       try {
         const mdrService = require('./services/mdrService');
@@ -240,7 +272,7 @@ Endpoints:
       } catch (error) {
         // Ignora se não houver conexão
       }
-      
+
       console.log('[SHUTDOWN] Processo finalizado');
       process.exit(0);
     });
@@ -254,7 +286,7 @@ Endpoints:
 
   process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
   process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-  
+
   // Trata erros não capturados
   process.on('uncaughtException', (error) => {
     console.error('[FATAL] Erro não capturado:', error);

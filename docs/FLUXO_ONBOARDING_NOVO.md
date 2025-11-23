@@ -104,6 +104,13 @@ Onboarding direto, sequencial e baseado em números, sem botões, focado em cria
   > 
   > Me envie agora um custo da sua clínica — pode ser algo simples como uma compra de insumo, produto ou maquininha. Se quiser, pode mandar foto do boleto, PDF, nota fiscal ou até um texto."
 
+- **Falha na leitura (Fallback):**
+  - Se o usuário disser que está errado ou a confiança for baixa:
+    > "Ops, li errado? 😅
+    > 
+    > Pode digitar o valor e a descrição corretos pra mim? Prometo aprender pro próximo!"
+
+
 ---
 
 ### **4. PRIMEIRO CUSTO (VARIÁVEL)**
@@ -176,6 +183,12 @@ Onboarding direto, sequencial e baseado em números, sem botões, focado em cria
 - "Ok, pode me enviar outro custo fixo então."
 - Volta para Step 9
 
+#### **Step 9.1: Pular Segundo Custo (Opcional)**
+- Se o usuário demorar mais de 5 minutos ou digitar "Pular":
+  - **Bot responde:** "Sem problemas! Vamos pular essa etapa por enquanto para você ver logo o seu resumo."
+  - Vai direto para o resumo final.
+
+
 ---
 
 ### **6. RESUMO FINAL (WOW FINAL)**
@@ -200,16 +213,16 @@ Onboarding direto, sequencial e baseado em números, sem botões, focado em cria
   > 
   > Com mais dados, te mostro gráficos, histórico, totais, projeções e muito mais — tudo automaticamente 💜
   > 
-  > *CADASTRE-SE PARA ACESSO COMPLETO*
+  > *ACESSE SEUS GRÁFICOS DE LUCRO*
   > 
-  > Clique no link abaixo para criar sua conta:
+  > Para ver seus relatórios detalhados e acessar o painel completo, defina sua senha segura aqui:
   > 
   > [LINK DE CADASTRO]
   > 
-  > *O que acontece quando você se cadastrar:*
-  > • Seu email será vinculado ao seu WhatsApp
-  > • Você terá acesso completo a todos os recursos
-  > • Todas as transações do WhatsApp ficarão sincronizadas
+  > *O que você ganha acessando o painel:*
+  > • Gráficos de evolução de lucro
+  > • Histórico completo das transações
+  > • Gestão avançada de categorias
   > 
   > *Importante:*
   > • O link é válido por 48 horas

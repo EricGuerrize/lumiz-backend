@@ -1,6 +1,7 @@
 const geminiService = require('../services/geminiService');
 const evolutionService = require('../services/evolutionService');
 const userController = require('./userController');
+const onboardingFlowService = require('../services/onboardingFlowService');
 const transactionController = require('./transactionController');
 const reminderService = require('../services/reminderService');
 const documentService = require('../services/documentService');
@@ -23,15 +24,15 @@ class MessageController {
   async handleIncomingMessage(phone, message) {
     try {
       // Verifica se está em processo de onboarding
-      if (userController.isOnboarding(phone)) {
-        return await userController.processOnboarding(phone, message);
+      if (onboardingFlowService.isOnboarding(phone)) {
+        return await onboardingFlowService.processOnboarding(phone, message);
       }
 
       // Detecta mensagem inicial do teste gratuito
       const messageLower = message.toLowerCase().trim();
-      const isTesteGratuitoMessage = messageLower.includes('quero organizar') || 
-                                     messageLower.includes('teste gratuito') ||
-                                     messageLower.includes('convite para o teste');
+      const isTesteGratuitoMessage = messageLower.includes('quero organizar') ||
+        messageLower.includes('teste gratuito') ||
+        messageLower.includes('convite para o teste');
 
       // Busca usuário pelo telefone
       const user = await userController.findUserByPhone(phone);
@@ -43,14 +44,14 @@ class MessageController {
           return `Que bom que você voltou! Você já tá com o convite do teste gratuito, perfeito! Esse teste é o primeiro passo: ele vai mostrar como a Lumiz realiza a gestão do seu financeiro pelo WhatsApp em poucos minutos. Depois disso, pra continuar a gestão da sua clínica no dia a dia, aí só com o plano pago mesmo.`;
         } else {
           // Usuário novo - inicia novo onboarding
-          await userController.startNewOnboarding(phone);
+          await onboardingFlowService.startNewOnboarding(phone);
           return `Oi, prazer! Sou a Lumiz 👋\n\nSou a IA que vai organizar o financeiro da sua clínica — direto pelo WhatsApp.\n\nAntes de começarmos, veja este vídeo rapidinho para entender como eu te ajudo a controlar tudo sem planilhas.\n\nVou te ajudar a cuidar das finanças da sua clínica de forma simples, automática e sem complicação.\n\nPara começar seu teste, qual é o nome da sua clínica?`;
         }
       }
 
       // Se não encontrou usuário e não é mensagem de teste, inicia onboarding antigo (fallback)
       if (!user) {
-        await userController.startOnboarding(phone);
+        await onboardingFlowService.startOnboarding(phone);
         return `Olá! Sou a *Lumiz* 💜\n\nSua assistente para gestão de clínica estética!\n\nParece que você ainda não tem cadastro.\nVou te ajudar a configurar!\n\n*Qual o seu nome completo?*`;
       }
 
@@ -73,7 +74,7 @@ class MessageController {
       const conversationHistoryService = require('../services/conversationHistoryService');
       const recentHistory = await conversationHistoryService.getRecentHistory(user.id, 5);
       const similarExamples = await conversationHistoryService.findSimilarExamples(message, user.id, 3);
-      
+
       const intent = await geminiService.processMessage(message, {
         recentMessages: recentHistory,
         similarExamples: similarExamples
@@ -466,14 +467,14 @@ class MessageController {
       year = dados.ano || year;
     } else if (dados?.periodo) {
       const periodo = dados.periodo.toLowerCase();
-      
+
       // Detecta semana
       if (periodo.includes('semana')) {
         const inicioSemana = new Date(now);
         inicioSemana.setDate(now.getDate() - now.getDay());
         const fimSemana = new Date(inicioSemana);
         fimSemana.setDate(inicioSemana.getDate() + 6);
-        
+
         periodoTexto = `Semana (${inicioSemana.toLocaleDateString('pt-BR')} a ${fimSemana.toLocaleDateString('pt-BR')})`;
         // Para semana, usa getMonthlyReport com mês atual (aproximação)
         month = now.getMonth() + 1;
@@ -501,9 +502,9 @@ class MessageController {
       ? ((lucro / report.entradas) * 100).toFixed(1)
       : 0;
 
-    const mesNome = periodoTexto || new Date(year, month - 1, 1).toLocaleDateString('pt-BR', { 
-      month: 'long', 
-      year: 'numeric' 
+    const mesNome = periodoTexto || new Date(year, month - 1, 1).toLocaleDateString('pt-BR', {
+      month: 'long',
+      year: 'numeric'
     });
 
     if (report.totalTransacoes === 0) {
@@ -573,7 +574,7 @@ class MessageController {
       // Gera o PDF
       const pdfBuffer = await pdfService.generateMonthlyReportPDF(user.id, year, month);
       const base64Pdf = pdfBuffer.toString('base64');
-      
+
       // Nome do arquivo
       const mesNome = now.toLocaleDateString('pt-BR', { month: 'long' });
       const fileName = `Relatorio_${mesNome}_${year}.pdf`;
@@ -616,7 +617,7 @@ class MessageController {
 
       const pdfBuffer = await pdfService.generateMonthlyReportPDF(user.id, year, month);
       const base64Pdf = pdfBuffer.toString('base64');
-      
+
       const mesNome = new Date(year, month - 1, 1).toLocaleDateString('pt-BR', { month: 'long' });
       const fileName = `Relatorio_${mesNome}_${year}.pdf`;
 
@@ -1208,7 +1209,7 @@ class MessageController {
       // Verifica se está em onboarding
       if (userController.isOnboarding(phone)) {
         const step = userController.getOnboardingStep(phone);
-        
+
         // Se está no step de primeira venda ou custos, processa a imagem
         if (step === 'primeira_venda' || step === 'primeiro_custo' || step === 'segundo_custo') {
           const documentService = require('../services/documentService');
@@ -1224,7 +1225,7 @@ class MessageController {
 
           // Processa a primeira transação encontrada
           const transacao = result.transacoes[0];
-          
+
           // Converte transação em formato que o onboarding entende
           // Cria uma mensagem simulada baseada na transação extraída
           let mensagemSimulada = '';
@@ -1236,11 +1237,11 @@ class MessageController {
           } else {
             mensagemSimulada = `${transacao.categoria || transacao.descricao || 'Custo'} ${transacao.valor}`;
           }
-          
+
           // Retorna para o processamento do onboarding
           return await userController.processOnboarding(phone, mensagemSimulada);
         }
-        
+
         return 'Complete seu cadastro primeiro! 😊';
       }
 
@@ -1292,10 +1293,10 @@ class MessageController {
       // PDFs podem ser convertidos em imagens ou processados de outra forma
       if (fileName.toLowerCase().endsWith('.pdf')) {
         return `📄 *PDF RECEBIDO*\n\n` +
-               `Recebi o arquivo: ${fileName}\n\n` +
-               `Por enquanto, prefiro *fotos* ou *screenshots* dos documentos.\n\n` +
-               `📸 Tira uma foto do boleto/extrato e me envia!\n\n` +
-               `Ou registre manualmente:\n"Insumos 3200"`;
+          `Recebi o arquivo: ${fileName}\n\n` +
+          `Por enquanto, prefiro *fotos* ou *screenshots* dos documentos.\n\n` +
+          `📸 Tira uma foto do boleto/extrato e me envia!\n\n` +
+          `Ou registre manualmente:\n"Insumos 3200"`;
       }
 
       // Tenta processar como imagem
@@ -1401,8 +1402,8 @@ class MessageController {
       this.lastTransactions.delete(phone);
 
       return `${emoji} *Transação desfeita!*\n\n` +
-             `Removi a ${tipoTexto} de *R$ ${lastTransaction.valor.toFixed(2)}* (${lastTransaction.categoria})\n\n` +
-             `Quer registrar novamente com os dados corretos? É só me mandar! 😊`;
+        `Removi a ${tipoTexto} de *R$ ${lastTransaction.valor.toFixed(2)}* (${lastTransaction.categoria})\n\n` +
+        `Quer registrar novamente com os dados corretos? É só me mandar! 😊`;
     } catch (error) {
       console.error('Erro ao desfazer transação:', error);
       return `Erro ao desfazer transação 😢\n\nTente novamente.`;
