@@ -18,15 +18,30 @@ class NudgeService {
       const nudges = this.evaluateState(state, now);
 
       for (const nudge of nudges) {
+        // Verifica se já foi enviado
         const existing = await this.getExistingNudge(state.phone, nudge.type);
 
         if (existing && existing.status === 'sent') {
           continue;
         }
 
+        // Verifica cooldown/agendamento
         if (existing?.last_attempt_at) {
           const hoursSinceAttempt = (now - new Date(existing.last_attempt_at)) / 36e5;
           if (hoursSinceAttempt < nudge.cooldownHours) {
+            continue;
+          }
+        }
+
+        // Lógica específica para retenção: verificar se houve atividade
+        if (nudge.type === 'retention_24h') {
+          const hasActivity = await this.checkUserActivity(state.phone, state.completed_at);
+          if (hasActivity) {
+            console.log(`[NUDGE] Usuário ${state.phone} tem atividade, pulando retenção.`);
+            // Marca como "ignorado" ou "sent" para não verificar de novo?
+            // Vamos marcar como sent para não processar mais
+            await this.recordAttempt(existing, state.phone, nudge.type, { skipped: true, reason: 'has_activity' });
+            await this.markSent(state.phone, nudge.type);
             continue;
           }
         }
@@ -53,6 +68,30 @@ class NudgeService {
     }
 
     return results;
+  }
+
+  async checkUserActivity(phone, since) {
+    // Busca usuário pelo telefone (precisamos do ID do usuário para buscar transações)
+    // Assumindo que o telefone está na tabela profiles ou que podemos buscar transações pelo telefone se houver join
+    // Mas o onboarding_progress tem o telefone. O profiles tem telefone.
+
+    // 1. Buscar ID do usuário
+    const { data: user } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('telefone', phone)
+      .single();
+
+    if (!user) return false;
+
+    // 2. Buscar transações criadas após 'since'
+    const { count } = await supabase
+      .from('transactions')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+      .gt('created_at', since);
+
+    return count > 0;
   }
 
   async fetchOnboardingStates() {
@@ -111,12 +150,13 @@ class NudgeService {
     } else if (state.completed_at) {
       const hoursSinceCompletion = (now - new Date(state.completed_at)) / 36e5;
 
-      if (hoursSinceCompletion <= HOURS.welcome) {
+      // Retention Nudge (24h after completion)
+      if (hoursSinceCompletion >= 24) {
         nudges.push({
-          type: 'phase3_welcome',
-          cooldownHours: HOURS.welcome,
+          type: 'retention_24h',
+          cooldownHours: 24, // Tenta a cada 24h se falhar? Ou só uma vez? O check de 'sent' impede repetição.
           metadata: { completed_at: state.completed_at },
-          message: this.buildWelcomeMessage(state)
+          message: this.buildRetentionMessage(state)
         });
       }
     }
@@ -130,7 +170,7 @@ class NudgeService {
   }
 
   buildPhase2FollowupMessage() {
-    return `Vamos cadastrar as taxas da sua maquininha e deixar os cálculos automáticos? 💳\n\nLeva menos de 3 min e você pode editar sempre que quiser.\n\nMe diz \"configurar agora\" que eu te guio passo a passo.`;
+    return `Vamos cadastrar as taxas da sua maquininha e deixar os cálculos automáticos? 💳\n\nLeva menos de 3 min e você pode editar sempre que quiser.\n\nMe diz "configurar agora" que eu te guio passo a passo.`;
   }
 
   buildPhase2PendingMessage() {
@@ -139,7 +179,12 @@ class NudgeService {
 
   buildWelcomeMessage(state) {
     const clinic = state.data?.phase1?.clinic_name || 'sua clínica';
-    return `🎉 Onboarding concluído!\n\n${clinic} já pode usar a Lumiz no WhatsApp!\n\nQuer uma dica do que fazer agora? Manda \"insights\" ou registra sua próxima venda 🙂`;
+    return `🎉 Onboarding concluído!\n\n${clinic} já pode usar a Lumiz no WhatsApp!\n\nQuer uma dica do que fazer agora? Manda "insights" ou registra sua próxima venda 🙂`;
+  }
+
+  buildRetentionMessage(state) {
+    const firstName = state.data?.nome_completo?.split(' ')[0] || 'Oi';
+    return `Oi ${firstName}! 👋 Como está o movimento na clínica hoje? Se tiver feito alguma venda, já me manda aqui pra não acumular!`;
   }
 
   async getExistingNudge(phone, type) {

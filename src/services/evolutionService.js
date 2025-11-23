@@ -10,7 +10,7 @@ class EvolutionService {
     this.baseUrl = process.env.EVOLUTION_API_URL;
     this.apiKey = process.env.EVOLUTION_API_KEY;
     this.instanceName = process.env.EVOLUTION_INSTANCE_NAME;
-    
+
     // Configura timeout padrão para axios
     this.axiosInstance = axios.create({
       timeout: EVOLUTION_TIMEOUT_MS

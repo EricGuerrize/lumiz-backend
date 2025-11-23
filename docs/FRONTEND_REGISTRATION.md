@@ -268,7 +268,7 @@ VITE_SUPABASE_ANON_KEY=sua-anon-key
 ## Notas
 
 - O token é válido por 48 horas
-- O link só pode ser usado uma vez
+- O link só pode ser usado uma vez (Backend deve invalidar o token imediatamente após o uso)
 - Se o token expirar, o usuário precisa pedir um novo link no WhatsApp
 - O backend cria automaticamente a role de "admin" para o usuário
 
