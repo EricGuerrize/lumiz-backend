@@ -1,6 +1,5 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const axios = require('axios');
-const sharp = require('sharp');
 const { withTimeout, retryWithBackoff } = require('../utils/timeout');
 require('dotenv').config();
 
@@ -94,20 +93,13 @@ class DocumentService {
         }
       }
 
-      // CONVERSÃO AUTOMÁTICA PARA JPEG se não for JPEG ou PNG
-      // Gemini tem problemas com WEBP e outros formatos
-      if (mimeType !== 'image/jpeg' && mimeType !== 'image/png') {
-        console.log('[DOC] 🔄 Convertendo', mimeType, 'para JPEG...');
-        try {
-          imageBuffer = await sharp(imageBuffer)
-            .jpeg({ quality: 90 })
-            .toBuffer();
-          mimeType = 'image/jpeg';
-          console.log('[DOC] ✅ Imagem convertida para JPEG com sucesso');
-        } catch (conversionError) {
-          console.error('[DOC] ❌ Erro ao converter imagem:', conversionError.message);
-          throw new Error('Não foi possível converter a imagem para um formato compatível');
-        }
+      // Gemini suporta: image/jpeg, image/png, image/webp, image/heic, image/heif
+      // Validação: aceita apenas formatos suportados
+      const supportedFormats = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'image/gif'];
+
+      if (!supportedFormats.includes(mimeType)) {
+        console.log('[DOC] ⚠️ Formato não suportado:', mimeType, '- Forçando image/jpeg');
+        mimeType = 'image/jpeg';
       }
 
       console.log('[DOC] ===== MIME TYPE FINAL: ' + mimeType + ' =====');
