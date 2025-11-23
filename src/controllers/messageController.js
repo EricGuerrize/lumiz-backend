@@ -49,10 +49,10 @@ class MessageController {
         }
       }
 
-      // Se não encontrou usuário e não é mensagem de teste, inicia onboarding antigo (fallback)
+      // Se não encontrou usuário e não é mensagem de teste, inicia novo onboarding streamlined
       if (!user) {
-        await onboardingFlowService.startOnboarding(phone);
-        return `Olá! Sou a *Lumiz* 💜\n\nSua assistente para gestão de clínica estética!\n\nParece que você ainda não tem cadastro.\nVou te ajudar a configurar!\n\n*Qual o seu nome completo?*`;
+        await onboardingFlowService.startNewOnboarding(phone);
+        return `Oi, prazer! Sou a Lumiz 👋\n\nSou a IA que vai organizar o financeiro da sua clínica — direto pelo WhatsApp.\n\nAntes de começarmos, veja este vídeo rapidinho para entender como eu te ajudo a controlar tudo sem planilhas.\n\nVou te ajudar a cuidar das finanças da sua clínica de forma simples, automática e sem complicação.\n\nPara começar seu teste, qual é o nome da sua clínica?`;
       }
 
       // Verifica se existe uma transação pendente de confirmação
