@@ -15,9 +15,12 @@ class DocumentService {
 
   async processImage(imageUrl) {
     try {
+      console.log('[DOC] ========================================');
       console.log('[DOC] Processando imagem:', imageUrl);
+      console.log('[DOC] ========================================');
 
       // Baixa a imagem com timeout
+      console.log('[DOC] Baixando imagem...');
       const imageResponse = await withTimeout(
         axios.get(imageUrl, {
           responseType: 'arraybuffer',
@@ -30,7 +33,18 @@ class DocumentService {
         'Timeout ao baixar imagem (30s)'
       );
 
+      console.log('[DOC] ✅ Imagem baixada com sucesso');
+      console.log('[DOC] Status HTTP:', imageResponse.status);
+      console.log('[DOC] Content-Type:', imageResponse.headers['content-type']);
+      console.log('[DOC] Content-Length:', imageResponse.headers['content-length']);
+
       let imageBuffer = Buffer.from(imageResponse.data);
+      console.log('[DOC] Buffer criado, tamanho:', imageBuffer.length, 'bytes');
+
+      // Validação: buffer não pode estar vazio
+      if (!imageBuffer || imageBuffer.length === 0) {
+        throw new Error('Buffer de imagem vazio - a URL pode estar inválida ou a imagem corrompida');
+      }
 
       // DETECÇÃO DE MIME TYPE usando magic numbers (método confiável e compatível)
       console.log('[DOC] ===== INÍCIO DETECÇÃO MIME TYPE =====');
