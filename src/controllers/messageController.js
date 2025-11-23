@@ -1206,13 +1206,14 @@ class MessageController {
 
   async handleImageMessage(phone, mediaUrl, caption) {
     try {
+      const documentService = require('../services/documentService');
+
       // Verifica se está em onboarding
-      if (userController.isOnboarding(phone)) {
-        const step = userController.getOnboardingStep(phone);
+      if (onboardingFlowService.isOnboarding(phone)) {
+        const step = onboardingFlowService.getOnboardingStep(phone);
 
         // Se está no step de primeira venda ou custos, processa a imagem
         if (step === 'primeira_venda' || step === 'primeiro_custo' || step === 'segundo_custo') {
-          const documentService = require('../services/documentService');
           const result = await documentService.processImage(mediaUrl);
 
           if (result.tipo_documento === 'erro' || result.tipo_documento === 'nao_identificado') {
@@ -1231,7 +1232,9 @@ class MessageController {
           let mensagemSimulada = '';
           if (transacao.tipo === 'entrada') {
             mensagemSimulada = `${transacao.categoria || 'Venda'} ${transacao.valor}`;
-            if (transacao.descricao) {
+            if (transacao.cliente) {
+              mensagemSimulada += ` cliente ${transacao.cliente}`;
+            } else if (transacao.descricao) {
               mensagemSimulada += ` ${transacao.descricao}`;
             }
           } else {
@@ -1239,7 +1242,7 @@ class MessageController {
           }
 
           // Retorna para o processamento do onboarding
-          return await userController.processOnboarding(phone, mensagemSimulada);
+          return await onboardingFlowService.processOnboarding(phone, mensagemSimulada);
         }
 
         return 'Complete seu cadastro primeiro! 😊';
@@ -1247,8 +1250,8 @@ class MessageController {
 
       const user = await userController.findUserByPhone(phone);
       if (!user) {
-        await userController.startOnboarding(phone);
-        return `Olá! Sou a *Lumiz* 💜\n\nParece que você ainda não tem cadastro.\nVou te ajudar a configurar!\n\n*Qual o seu nome completo?*`;
+        await onboardingFlowService.startNewOnboarding(phone);
+        return `Oi, prazer! Sou a Lumiz 👋\n\nSou a IA que vai organizar o financeiro da sua clínica — direto pelo WhatsApp.\n\nAntes de começarmos, veja este vídeo rapidinho para entender como eu te ajudo a controlar tudo sem planilhas.\n\nVou te ajudar a cuidar das finanças da sua clínica de forma simples, automática e sem complicação.\n\nPara começar seu teste, qual é o nome da sua clínica?`;
       }
 
       // Processa a imagem com Gemini Vision
