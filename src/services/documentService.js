@@ -10,30 +10,32 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 class DocumentService {
   constructor() {
-    this.model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
+    // Usando modelo stable 1.5 flash que tem melhor suporte a documentos
+    this.model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
   }
 
   async processImage(imageUrl) {
     try {
       console.log('[DOC] ========================================');
-      console.log('[DOC] Processando imagem:', imageUrl);
+      console.log('[DOC] Processando documento:', imageUrl);
       console.log('[DOC] ========================================');
 
-      // Baixa a imagem com timeout
-      console.log('[DOC] Baixando imagem...');
+      // Baixa o arquivo com timeout
+      console.log('[DOC] Baixando arquivo...');
       const imageResponse = await withTimeout(
         axios.get(imageUrl, {
           responseType: 'arraybuffer',
           timeout: 30000, // 30 segundos para download
           headers: {
-            'apikey': process.env.EVOLUTION_API_KEY
+            'apikey': process.env.EVOLUTION_API_KEY,
+            'User-Agent': 'Lumiz-Backend/1.0'
           }
         }),
         30000,
-        'Timeout ao baixar imagem (30s)'
+        'Timeout ao baixar arquivo (30s)'
       );
 
-      console.log('[DOC] ✅ Imagem baixada com sucesso');
+      console.log('[DOC] ✅ Arquivo baixado com sucesso');
       console.log('[DOC] Status HTTP:', imageResponse.status);
       console.log('[DOC] Content-Type:', imageResponse.headers['content-type']);
       console.log('[DOC] Content-Length:', imageResponse.headers['content-length']);
@@ -43,7 +45,7 @@ class DocumentService {
 
       // Validação: buffer não pode estar vazio
       if (!imageBuffer || imageBuffer.length === 0) {
-        throw new Error('Buffer de imagem vazio - a URL pode estar inválida ou a imagem corrompida');
+        throw new Error('Buffer vazio - a URL pode estar inválida ou o arquivo corrompido');
       }
 
       // DETECÇÃO DE MIME TYPE usando magic numbers (método confiável e compatível)
@@ -65,8 +67,13 @@ class DocumentService {
       console.log('[DOC] Primeiros bytes (hex):', hexPreview);
       let mimeType = null;
 
+      // PDF: 25 50 44 46 (%PDF)
+      if (firstBytes[0] === 0x25 && firstBytes[1] === 0x50 && firstBytes[2] === 0x44 && firstBytes[3] === 0x46) {
+        mimeType = 'application/pdf';
+        console.log('[DOC] ✅ Detectado: PDF (%PDF)');
+      }
       // JPEG: FF D8 FF
-      if (firstBytes[0] === 0xFF && firstBytes[1] === 0xD8 && firstBytes[2] === 0xFF) {
+      else if (firstBytes[0] === 0xFF && firstBytes[1] === 0xD8 && firstBytes[2] === 0xFF) {
         mimeType = 'image/jpeg';
         console.log('[DOC] ✅ Detectado: JPEG (FF D8 FF)');
       }
@@ -96,23 +103,23 @@ class DocumentService {
       }
 
       // Fallback: usa header HTTP se válido
-      if (!mimeType || !mimeType.startsWith('image/')) {
-        if (headerMimeType && headerMimeType.startsWith('image/') && headerMimeType !== 'application/octet-stream') {
+      if (!mimeType) {
+        if (headerMimeType && (headerMimeType.startsWith('image/') || headerMimeType === 'application/pdf')) {
           mimeType = headerMimeType;
           console.log('[DOC] ✅ Usando MIME type do header HTTP:', mimeType);
         } else {
-          // Último recurso: força JPEG (formato mais comum e suportado)
+          // Último recurso: força JPEG se parecer imagem, ou erro
           mimeType = 'image/jpeg';
           console.log('[DOC] ⚠️ Forçando JPEG como padrão seguro');
         }
       }
 
-      // Gemini suporta: image/jpeg, image/png, image/webp, image/heic, image/heif
+      // Gemini suporta: PDF, JPEG, PNG, WEBP, HEIC, HEIF
       // Validação: aceita apenas formatos suportados
-      const supportedFormats = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'image/gif'];
+      const supportedFormats = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'image/gif'];
 
       if (!supportedFormats.includes(mimeType)) {
-        console.log('[DOC] ⚠️ Formato não suportado:', mimeType, '- Forçando image/jpeg');
+        console.log('[DOC] ⚠️ Formato não suportado:', mimeType, '- Tentando processar como image/jpeg');
         mimeType = 'image/jpeg';
       }
 
