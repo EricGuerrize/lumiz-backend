@@ -207,7 +207,35 @@ REGRAS IMPORTANTES:
     - Extraia o nome completo do remetente/destinatário na categoria ou descrição
   * Extraia SEMPRE: valor, data/hora, nome do remetente (De), nome do destinatário (Para)
   * Use o nome do destinatário na categoria se for entrada, ou nome do remetente se for saída
-- Para NOTA FISCAL: procure por "NF", "NFe", "Nota Fiscal", CNPJ, valor total, fornecedor
+- Para NOTA FISCAL (incluindo DANFE, NFe, NF-e, DANFE):
+  * SEMPRE é tipo "saida" (custo/despesa - você comprou algo)
+  * Procure por: "NOTA FISCAL", "NF", "NFe", "NF-e", "DANFE", "Emitente", "Fornecedor", "CNPJ", "RECEBEMOS DE"
+  * Extraia SEMPRE:
+    - Nome do fornecedor/emitente (procure por "Emitente", "RECEBEMOS DE", nome da empresa no topo)
+      Exemplo: "ELFA MEDICAMENTOS SA", "RECEBEMOS DE ELFA MEDICAMENTOS SA"
+    - Valor total da nota (procure por "VALOR TOTAL", "TOTAL", "Valor a pagar", "TOTAL DA NOTA", números grandes com R$)
+    - Data de emissão (procure por "Data de emissão", "Data", "Emissão", formato DD/MM/YYYY)
+    - Número da nota fiscal (procure por "N. 000738765", "Número", "NF", "N.")
+    - Série da nota (se disponível: "SÉRIE 5")
+  * Use o nome do fornecedor na categoria (ex: "ELFA MEDICAMENTOS SA")
+  * Inclua número da NF na descrição (ex: "NF 000738765 Série 5 - ELFA MEDICAMENTOS SA")
+  * Se não encontrar valor total, procure por valores individuais e some, ou use o maior valor encontrado
+- Para COMPROVANTE PIX MERCADO PAGO especificamente:
+  * Procure por: "Mercado Pago", "Comprovante de transferência", "De", "Para", "mercado pago" (logo)
+  * Identifique seções "De" (remetente) e "Para" (destinatário)
+  * IMPORTANTE: O comprovante mostra quem ENVIOU (De) e quem RECEBEU (Para)
+  * Como não sabemos o nome do usuário, assuma que quem está enviando o comprovante é quem FEZ a transferência
+  * Portanto, SEMPRE será tipo "saida" (custo/pagamento) e use o nome de "Para" na categoria
+  * Se no futuro soubermos o nome do usuário, podemos ajustar:
+    - Se seu nome está em "De" = tipo "saida" (você enviou)
+    - Se seu nome está em "Para" = tipo "entrada" (você recebeu)
+  * Extraia: valor (procure por "R$" seguido de número grande), data/hora completa, nomes completos de ambas as partes
+  * Use o nome da OUTRA pessoa (não o seu) na categoria
+  * Formato de data: "Sábado, 1 de novembro de 2025, às 18:25:31" → "2025-11-01"
+  * Exemplo: Se "De: Eric de Sousa Guerrize" e "Para: Romulo Franzoi Bovolon", e você é o Eric:
+    - tipo: "saida" (você enviou)
+    - categoria: "Romulo Franzoi Bovolon"
+    - descricao: "Pix enviado para Romulo Franzoi Bovolon via Mercado Pago"
 - Para EXTRATO: analise cada linha (crédito=entrada, débito=saída)
 - Para COMPROVANTE genérico: analise o contexto (pagamento=saída, recebimento=entrada)
 - Se não conseguir identificar, retorne tipo_documento: "nao_identificado"
@@ -298,7 +326,19 @@ Comprovante PIX genérico (enviado/pago):
   }]
 }
 
-Nota Fiscal:
+Nota Fiscal (exemplo ELFA MEDICAMENTOS):
+{
+  "tipo_documento": "nota_fiscal",
+  "transacoes": [{
+    "tipo": "saida",
+    "valor": 3200.00,
+    "categoria": "ELFA MEDICAMENTOS SA",
+    "data": "2025-11-24",
+    "descricao": "NF 000738765 - ELFA MEDICAMENTOS SA"
+  }]
+}
+
+Nota Fiscal genérica:
 {
   "tipo_documento": "nota_fiscal",
   "transacoes": [{
