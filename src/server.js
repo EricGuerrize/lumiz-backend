@@ -53,6 +53,9 @@ try {
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Configura trust proxy para funcionar corretamente com rate limiting atrás de proxies/load balancers
+app.set('trust proxy', true);
+
 // Configuração CORS para permitir o frontend
 const allowedOrigins = [
   'https://lumiz-financeiro.vercel.app',

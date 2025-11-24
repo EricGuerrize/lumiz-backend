@@ -1292,18 +1292,29 @@ class MessageController {
         return `Oi, prazer! Sou a Lumiz 👋\n\nSou a IA que vai organizar o financeiro da sua clínica — direto pelo WhatsApp.\n\nAntes de começarmos, veja este vídeo rapidinho para entender como eu te ajudo a controlar tudo sem planilhas.\n\nVou te ajudar a cuidar das finanças da sua clínica de forma simples, automática e sem complicação.\n\nPara começar seu teste, qual é o nome da sua clínica?`;
       }
 
-      // Por enquanto, só processamos imagens
-      // PDFs podem ser convertidos em imagens ou processados de outra forma
-      if (fileName.toLowerCase().endsWith('.pdf')) {
-        return `📄 *PDF RECEBIDO*\n\n` +
-          `Recebi o arquivo: ${fileName}\n\n` +
-          `Por enquanto, prefiro *fotos* ou *screenshots* dos documentos.\n\n` +
-          `📸 Tira uma foto do boleto/extrato e me envia!\n\n` +
-          `Ou registre manualmente:\n"Insumos 3200"`;
+      // Processa PDFs e imagens usando o documentService
+      // O Gemini suporta PDFs diretamente
+      const documentService = require('../services/documentService');
+      
+      // Processa o documento (PDF ou imagem)
+      const result = await documentService.processImage(mediaUrl, messageKey);
+
+      if (result.tipo_documento === 'erro' || result.tipo_documento === 'nao_identificado') {
+        return documentService.formatDocumentSummary(result);
       }
 
-      // Tenta processar como imagem
-      return await this.handleImageMessage(phone, mediaUrl, '', messageKey);
+      if (result.transacoes.length === 0) {
+        return documentService.formatDocumentSummary(result);
+      }
+
+      // Armazena transações pendentes de confirmação
+      this.pendingDocumentTransactions.set(phone, {
+        user,
+        transacoes: result.transacoes,
+        timestamp: Date.now()
+      });
+
+      return documentService.formatDocumentSummary(result);
     } catch (error) {
       console.error('Erro ao processar documento:', error);
       return 'Erro ao analisar documento 😢\n\nTente enviar uma foto ou registre manualmente.';
