@@ -13,6 +13,20 @@ class DocumentService {
     // Usando modelo estável - gemini-1.5-flash ou gemini-2.0-flash-exp
     // gemini-1.5-flash-latest não está disponível na API v1beta
     this.model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    
+    // Tenta carregar OpenAI se disponível (para usar como fallback ou opção preferencial)
+    this.openaiService = null;
+    try {
+      this.openaiService = require('./openaiService');
+      if (this.openaiService.client) {
+        console.log('[DOC] ✅ OpenAI disponível - será usado para processamento de imagens');
+      }
+    } catch (error) {
+      console.log('[DOC] OpenAI não disponível - usando apenas Gemini');
+    }
+    
+    // Configura qual IA usar (OPENAI_PREFERRED=true para usar OpenAI quando disponível)
+    this.useOpenAI = process.env.OPENAI_PREFERRED === 'true' && this.openaiService?.client;
   }
 
   async processImage(imageUrl, messageKey = null) {
@@ -207,7 +221,35 @@ REGRAS IMPORTANTES:
     - Extraia o nome completo do remetente/destinatário na categoria ou descrição
   * Extraia SEMPRE: valor, data/hora, nome do remetente (De), nome do destinatário (Para)
   * Use o nome do destinatário na categoria se for entrada, ou nome do remetente se for saída
-- Para NOTA FISCAL: procure por "NF", "NFe", "Nota Fiscal", CNPJ, valor total, fornecedor
+- Para NOTA FISCAL (incluindo DANFE, NFe, NF-e, DANFE):
+  * SEMPRE é tipo "saida" (custo/despesa - você comprou algo)
+  * Procure por: "NOTA FISCAL", "NF", "NFe", "NF-e", "DANFE", "Emitente", "Fornecedor", "CNPJ", "RECEBEMOS DE"
+  * Extraia SEMPRE:
+    - Nome do fornecedor/emitente (procure por "Emitente", "RECEBEMOS DE", nome da empresa no topo)
+      Exemplo: "ELFA MEDICAMENTOS SA", "RECEBEMOS DE ELFA MEDICAMENTOS SA"
+    - Valor total da nota (procure por "VALOR TOTAL", "TOTAL", "Valor a pagar", "TOTAL DA NOTA", números grandes com R$)
+    - Data de emissão (procure por "Data de emissão", "Data", "Emissão", formato DD/MM/YYYY)
+    - Número da nota fiscal (procure por "N. 000738765", "Número", "NF", "N.")
+    - Série da nota (se disponível: "SÉRIE 5")
+  * Use o nome do fornecedor na categoria (ex: "ELFA MEDICAMENTOS SA")
+  * Inclua número da NF na descrição (ex: "NF 000738765 Série 5 - ELFA MEDICAMENTOS SA")
+  * Se não encontrar valor total, procure por valores individuais e some, ou use o maior valor encontrado
+- Para COMPROVANTE PIX MERCADO PAGO especificamente:
+  * Procure por: "Mercado Pago", "Comprovante de transferência", "De", "Para", "mercado pago" (logo)
+  * Identifique seções "De" (remetente) e "Para" (destinatário)
+  * IMPORTANTE: O comprovante mostra quem ENVIOU (De) e quem RECEBEU (Para)
+  * Como não sabemos o nome do usuário, assuma que quem está enviando o comprovante é quem FEZ a transferência
+  * Portanto, SEMPRE será tipo "saida" (custo/pagamento) e use o nome de "Para" na categoria
+  * Se no futuro soubermos o nome do usuário, podemos ajustar:
+    - Se seu nome está em "De" = tipo "saida" (você enviou)
+    - Se seu nome está em "Para" = tipo "entrada" (você recebeu)
+  * Extraia: valor (procure por "R$" seguido de número grande), data/hora completa, nomes completos de ambas as partes
+  * Use o nome da OUTRA pessoa (não o seu) na categoria
+  * Formato de data: "Sábado, 1 de novembro de 2025, às 18:25:31" → "2025-11-01"
+  * Exemplo: Se "De: Eric de Sousa Guerrize" e "Para: Romulo Franzoi Bovolon", e você é o Eric:
+    - tipo: "saida" (você enviou)
+    - categoria: "Romulo Franzoi Bovolon"
+    - descricao: "Pix enviado para Romulo Franzoi Bovolon via Mercado Pago"
 - Para EXTRATO: analise cada linha (crédito=entrada, débito=saída)
 - Para COMPROVANTE genérico: analise o contexto (pagamento=saída, recebimento=entrada)
 - Se não conseguir identificar, retorne tipo_documento: "nao_identificado"
@@ -298,7 +340,19 @@ Comprovante PIX genérico (enviado/pago):
   }]
 }
 
-Nota Fiscal:
+Nota Fiscal (exemplo ELFA MEDICAMENTOS):
+{
+  "tipo_documento": "nota_fiscal",
+  "transacoes": [{
+    "tipo": "saida",
+    "valor": 3200.00,
+    "categoria": "ELFA MEDICAMENTOS SA",
+    "data": "2025-11-24",
+    "descricao": "NF 000738765 - ELFA MEDICAMENTOS SA"
+  }]
+}
+
+Nota Fiscal genérica:
 {
   "tipo_documento": "nota_fiscal",
   "transacoes": [{
@@ -319,11 +373,23 @@ Não identificado:
 RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
 `;
 
-      // VALIDAÇÃO CRÍTICA FINAL - nunca permite application/octet-stream
-      if (!mimeType || mimeType === 'application/octet-stream' || !mimeType.startsWith('image/')) {
+      // VALIDAÇÃO CRÍTICA FINAL - aceita imagens e PDFs, bloqueia apenas octet-stream
+      const supportedMimeTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/bmp', 'image/heic', 'image/heif'];
+      
+      if (!mimeType || mimeType === 'application/octet-stream') {
         console.error('[DOC] ⚠️ ERRO CRÍTICO: mimeType inválido detectado:', mimeType);
-        mimeType = 'image/jpeg'; // Força JPEG
+        // Tenta inferir pelo nome do arquivo ou força JPEG como último recurso
+        mimeType = 'image/jpeg';
         console.log('[DOC] ✅ MIME type corrigido para:', mimeType);
+      } else if (!supportedMimeTypes.includes(mimeType)) {
+        // Se não está na lista de suportados, mas parece ser imagem, tenta processar
+        if (mimeType.startsWith('image/')) {
+          console.log('[DOC] ⚠️ MIME type não testado, mas parece ser imagem:', mimeType);
+          // Mantém o mimeType original se for imagem
+        } else {
+          console.error('[DOC] ⚠️ MIME type não suportado:', mimeType);
+          throw new Error(`Tipo de arquivo não suportado: ${mimeType}. Use PDF, JPEG, PNG ou WEBP.`);
+        }
       }
 
       // Validação dupla antes de criar imagePart
@@ -358,8 +424,25 @@ RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
         throw new Error('MIME type ainda inválido no imagePart - abortando envio');
       }
 
+      // Decide qual IA usar: OpenAI (se preferido e disponível) ou Gemini
+      if (this.useOpenAI && this.openaiService?.client) {
+        try {
+          console.log('[DOC] Usando OpenAI GPT-4 Vision para processar...');
+          return await this.openaiService.processImage(imageBuffer, mimeType);
+        } catch (openaiError) {
+          console.error('[DOC] ⚠️ Erro com OpenAI, tentando Gemini como fallback...');
+          console.error('[DOC] Erro OpenAI:', openaiError.message);
+          // Fallback para Gemini se OpenAI falhar
+        }
+      }
+
+      // Usa Gemini (padrão ou fallback)
       try {
         console.log('[DOC] Chamando Gemini API...');
+        console.log('[DOC] Modelo:', 'gemini-1.5-flash');
+        console.log('[DOC] MIME Type:', mimeType);
+        console.log('[DOC] Tamanho base64:', base64Image.length, 'bytes');
+        
         // Adiciona timeout e retry para processamento de imagem
         const result = await retryWithBackoff(
           () => withTimeout(
@@ -373,25 +456,46 @@ RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
         const response = await result.response;
         const text = response.text();
         console.log('[DOC] ✅ Resposta do Gemini recebida, tamanho:', text.length, 'caracteres');
+        console.log('[DOC] Primeiros 200 caracteres da resposta:', text.substring(0, 200));
 
         // Remove markdown code blocks se houver
         const jsonText = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
 
-        return JSON.parse(jsonText);
+        try {
+          const parsed = JSON.parse(jsonText);
+          console.log('[DOC] ✅ JSON parseado com sucesso');
+          console.log('[DOC] Tipo documento:', parsed.tipo_documento);
+          console.log('[DOC] Número de transações:', parsed.transacoes?.length || 0);
+          return parsed;
+        } catch (parseError) {
+          console.error('[DOC] ❌ Erro ao fazer parse do JSON:', parseError.message);
+          console.error('[DOC] JSON recebido:', jsonText.substring(0, 500));
+          throw new Error(`Erro ao processar resposta do Gemini: ${parseError.message}`);
+        }
       } catch (geminiError) {
         console.error('[DOC] ❌ Erro ao chamar Gemini API:', geminiError.message);
-
+        console.error('[DOC] Erro completo:', JSON.stringify(geminiError, null, 2));
+        
         // Tratamento específico para erros conhecidos
         if (geminiError.message && geminiError.message.includes('Provided image is not valid')) {
-          throw new Error('A imagem enviada não é válida. Verifique se é uma imagem JPEG, PNG ou WEBP válida.');
+          throw new Error('A imagem enviada não é válida. Verifique se é uma imagem JPEG, PNG, WEBP ou PDF válida.');
         }
 
         if (geminiError.message && geminiError.message.includes('mimeType')) {
-          throw new Error(`Erro de MIME type: ${mimeType}. A imagem pode estar corrompida.`);
+          throw new Error(`Erro de MIME type: ${mimeType}. O arquivo pode estar corrompido ou em formato não suportado.`);
+        }
+
+        if (geminiError.message && geminiError.message.includes('PDF') || geminiError.message.includes('pdf')) {
+          console.error('[DOC] ⚠️ Erro relacionado a PDF - pode ser que o modelo não suporte PDFs diretamente');
+          throw new Error('Erro ao processar PDF. Tente converter para imagem (JPEG/PNG) ou enviar uma foto do documento.');
+        }
+
+        if (geminiError.message && geminiError.message.includes('size') || geminiError.message.includes('too large')) {
+          throw new Error('Arquivo muito grande. Tente enviar uma imagem menor ou comprimir o PDF.');
         }
 
         // Re-throw com contexto adicional
-        throw new Error(`Erro ao processar imagem com Gemini: ${geminiError.message}`);
+        throw new Error(`Erro ao processar documento com Gemini: ${geminiError.message}`);
       }
     } catch (error) {
       console.error('[DOC] ❌ Erro ao processar imagem:', error.message);

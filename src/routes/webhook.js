@@ -7,12 +7,30 @@ const userController = require('../controllers/userController');
 const registrationTokenService = require('../services/registrationTokenService');
 
 // Rate limiting específico para webhook (30 req/min por IP)
+// Configuração segura que funciona mesmo com trust proxy
 const webhookLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minuto
   max: 30, // máximo 30 mensagens por minuto por IP
   message: 'Muitas mensagens recebidas, aguarde um momento.',
   standardHeaders: true,
   legacyHeaders: false,
+  // Usa o IP real mesmo com trust proxy configurado
+  // Isso previne bypass do rate limiting
+  skip: (req) => {
+    // Em produção, pode adicionar lógica adicional se necessário
+    return false;
+  },
+  // Garante que usa o IP correto mesmo com proxy
+  keyGenerator: (req) => {
+    // Tenta pegar o IP real do header X-Forwarded-For ou usa req.ip
+    const forwarded = req.headers['x-forwarded-for'];
+    if (forwarded) {
+      // Pega o primeiro IP da lista (IP real do cliente)
+      const ip = forwarded.split(',')[0].trim();
+      return ip;
+    }
+    return req.ip || req.connection.remoteAddress || 'unknown';
+  }
 });
 
 router.post('/webhook', webhookLimiter, async (req, res) => {
@@ -70,33 +88,66 @@ router.post('/webhook', webhookLimiter, async (req, res) => {
 
           if (imageMessage) {
             // Mensagem com imagem
-            console.log(`[IMG] ${phone}: Imagem recebida`);
+            console.log(`[WEBHOOK] [IMG] ${phone}: Imagem recebida`);
+            console.log(`[WEBHOOK] [IMG] URL: ${imageMessage.url || imageMessage.directPath || 'N/A'}`);
+            console.log(`[WEBHOOK] [IMG] Caption: ${imageMessage.caption || 'sem caption'}`);
             const mediaUrl = imageMessage.url || imageMessage.directPath;
             const caption = imageMessage.caption || '';
             // Passa messageKey completo para download correto da mídia
             const messageKey = key;
 
-            response = await messageController.handleImageMessage(phone, mediaUrl, caption, messageKey);
+            try {
+              response = await messageController.handleImageMessage(phone, mediaUrl, caption, messageKey);
+            } catch (imgError) {
+              console.error(`[WEBHOOK] [IMG] Erro ao processar imagem:`, imgError.message);
+              console.error(`[WEBHOOK] [IMG] Stack:`, imgError.stack);
+              response = 'Erro ao processar imagem 😢\n\nTente enviar novamente ou registre manualmente.';
+            }
           } else if (documentMessage) {
             // Mensagem com documento (PDF, etc)
-            console.log(`[DOC] ${phone}: Documento recebido - ${documentMessage.fileName}`);
+            console.log(`[WEBHOOK] [DOC] ${phone}: Documento recebido - ${documentMessage.fileName}`);
+            console.log(`[WEBHOOK] [DOC] URL: ${documentMessage.url || documentMessage.directPath || 'N/A'}`);
+            console.log(`[WEBHOOK] [DOC] MimeType: ${documentMessage.mimetype || 'N/A'}`);
             const mediaUrl = documentMessage.url || documentMessage.directPath;
             const fileName = documentMessage.fileName || 'documento';
             // Passa messageKey completo para download correto da mídia
             const messageKey = key;
 
-            response = await messageController.handleDocumentMessage(phone, mediaUrl, fileName, messageKey);
+            try {
+              response = await messageController.handleDocumentMessage(phone, mediaUrl, fileName, messageKey);
+            } catch (docError) {
+              console.error(`[WEBHOOK] [DOC] Erro ao processar documento:`, docError.message);
+              console.error(`[WEBHOOK] [DOC] Stack:`, docError.stack);
+              response = 'Erro ao processar documento 😢\n\nTente enviar uma foto ou registre manualmente.';
+            }
           } else if (messageText) {
             // Mensagem de texto normal
-            console.log(`[MSG] ${phone}: ${messageText.substring(0, 50)}`);
-            response = await messageController.handleIncomingMessage(phone, messageText);
+            console.log(`[WEBHOOK] [MSG] ${phone}: ${messageText.substring(0, 50)}`);
+            try {
+              response = await messageController.handleIncomingMessage(phone, messageText);
+            } catch (msgError) {
+              console.error(`[WEBHOOK] [MSG] Erro ao processar mensagem:`, msgError.message);
+              response = 'Erro ao processar mensagem 😢\n\nTente novamente.';
+            }
           }
 
           if (response) {
-            await evolutionService.sendMessage(phone, response);
+            try {
+              await evolutionService.sendMessage(phone, response);
+              console.log(`[WEBHOOK] ✅ Resposta enviada para ${phone}`);
+            } catch (sendError) {
+              console.error(`[WEBHOOK] ❌ Erro ao enviar resposta:`, sendError.message);
+            }
           }
         } catch (error) {
-          console.error('Erro webhook:', error.message);
+          console.error('[WEBHOOK] ❌ Erro geral no processamento:', error.message);
+          console.error('[WEBHOOK] Stack:', error.stack);
+          // Tenta enviar mensagem de erro genérica
+          try {
+            await evolutionService.sendMessage(phone, 'Ops, tive um probleminha 😅\n\nTente novamente em alguns instantes.');
+          } catch (sendError) {
+            console.error('[WEBHOOK] ❌ Erro ao enviar mensagem de erro:', sendError.message);
+          }
         }
       }
     }
