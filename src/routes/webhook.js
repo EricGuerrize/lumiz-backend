@@ -73,15 +73,19 @@ router.post('/webhook', webhookLimiter, async (req, res) => {
             console.log(`[IMG] ${phone}: Imagem recebida`);
             const mediaUrl = imageMessage.url || imageMessage.directPath;
             const caption = imageMessage.caption || '';
+            // Passa messageKey completo para download correto da mídia
+            const messageKey = key;
 
-            response = await messageController.handleImageMessage(phone, mediaUrl, caption);
+            response = await messageController.handleImageMessage(phone, mediaUrl, caption, messageKey);
           } else if (documentMessage) {
             // Mensagem com documento (PDF, etc)
             console.log(`[DOC] ${phone}: Documento recebido - ${documentMessage.fileName}`);
             const mediaUrl = documentMessage.url || documentMessage.directPath;
             const fileName = documentMessage.fileName || 'documento';
+            // Passa messageKey completo para download correto da mídia
+            const messageKey = key;
 
-            response = await messageController.handleDocumentMessage(phone, mediaUrl, fileName);
+            response = await messageController.handleDocumentMessage(phone, mediaUrl, fileName, messageKey);
           } else if (messageText) {
             // Mensagem de texto normal
             console.log(`[MSG] ${phone}: ${messageText.substring(0, 50)}`);
