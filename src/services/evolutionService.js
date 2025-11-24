@@ -166,6 +166,10 @@ class EvolutionService {
 
   async downloadMedia(messageKey, mediaType = 'image') {
     try {
+      console.log('[EVOLUTION] Tentando baixar mídia...');
+      console.log('[EVOLUTION] MessageKey:', JSON.stringify(messageKey));
+      console.log('[EVOLUTION] MediaType:', mediaType);
+      
       // Evolution API pode usar diferentes endpoints
       // Tenta primeiro o endpoint mais comum
       let url = `${this.baseUrl}/chat/fetchMediaFromMessage/${this.instanceName}`;
@@ -178,6 +182,7 @@ class EvolutionService {
       // Timeout maior para download de mídia (30 segundos)
       let response;
       try {
+        console.log('[EVOLUTION] Tentando endpoint: /chat/fetchMediaFromMessage');
         response = await retryWithBackoff(
           () => withTimeout(
             this.axiosInstance.post(url, payload, {
@@ -193,8 +198,10 @@ class EvolutionService {
           2,
           1000
         );
+        console.log('[EVOLUTION] ✅ Mídia baixada via fetchMediaFromMessage');
       } catch (firstError) {
         // Se falhar, tenta endpoint alternativo
+        console.log('[EVOLUTION] ⚠️ Primeiro endpoint falhou:', firstError.message);
         console.log('[EVOLUTION] Tentando endpoint alternativo...');
         url = `${this.baseUrl}/media/download/${this.instanceName}`;
         
@@ -217,19 +224,30 @@ class EvolutionService {
             1, // Apenas 1 tentativa no fallback
             500
           );
+          console.log('[EVOLUTION] ✅ Mídia baixada via endpoint alternativo');
         } catch (secondError) {
-          console.error('[EVOLUTION] Ambos endpoints falharam');
+          console.error('[EVOLUTION] ❌ Ambos endpoints falharam');
+          console.error('[EVOLUTION] Erro 1:', firstError.message);
+          console.error('[EVOLUTION] Erro 2:', secondError.message);
           throw firstError; // Lança o primeiro erro
         }
       }
 
+      const buffer = Buffer.from(response.data);
+      const contentType = response.headers['content-type'] || 'image/jpeg';
+      
+      console.log('[EVOLUTION] ✅ Mídia baixada com sucesso');
+      console.log('[EVOLUTION] Tamanho:', buffer.length, 'bytes');
+      console.log('[EVOLUTION] Content-Type:', contentType);
+
       return {
-        data: Buffer.from(response.data),
-        contentType: response.headers['content-type'] || 'image/jpeg',
+        data: buffer,
+        contentType: contentType,
         status: response.status
       };
     } catch (error) {
-      console.error('[EVOLUTION] Erro ao baixar mídia:', error.response?.status, error.response?.statusText || error.message);
+      console.error('[EVOLUTION] ❌ Erro ao baixar mídia:', error.response?.status, error.response?.statusText || error.message);
+      console.error('[EVOLUTION] Response data:', error.response?.data?.toString?.()?.substring(0, 200) || 'N/A');
       
       // Fallback: tenta usar a URL direta se disponível
       if (error.response?.status === 404 || error.message.includes('not found')) {

@@ -53,8 +53,19 @@ try {
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Configura trust proxy para funcionar corretamente com rate limiting atrás de proxies/load balancers
-app.set('trust proxy', true);
+// Configura trust proxy de forma segura
+// Railway, Heroku, AWS ELB, Cloudflare usam proxies específicos
+// Em vez de confiar em todos (true), confiamos apenas em proxies conhecidos
+if (process.env.NODE_ENV === 'production') {
+  // Em produção, confia apenas no primeiro proxy (Railway, Heroku, etc)
+  // Isso previne bypass do rate limiting enquanto permite funcionar atrás de proxies legítimos
+  app.set('trust proxy', 1);
+  console.log('[SERVER] Trust proxy configurado: 1 (apenas primeiro proxy)');
+} else {
+  // Em desenvolvimento, pode confiar em todos se necessário
+  app.set('trust proxy', true);
+  console.log('[SERVER] Trust proxy configurado: true (desenvolvimento)');
+}
 
 // Configuração CORS para permitir o frontend
 const allowedOrigins = [
@@ -70,12 +81,24 @@ app.use(cors({
 }));
 
 // Rate limiting - proteção contra spam/abuse
+// Configuração segura que funciona mesmo com trust proxy
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos
   max: 100, // máximo 100 requisições por IP por janela
   message: 'Muitas requisições deste IP, tente novamente em alguns minutos.',
   standardHeaders: true,
   legacyHeaders: false,
+  // Garante que usa o IP correto mesmo com proxy
+  keyGenerator: (req) => {
+    // Tenta pegar o IP real do header X-Forwarded-For ou usa req.ip
+    const forwarded = req.headers['x-forwarded-for'];
+    if (forwarded) {
+      // Pega o primeiro IP da lista (IP real do cliente)
+      const ip = forwarded.split(',')[0].trim();
+      return ip;
+    }
+    return req.ip || req.connection.remoteAddress || 'unknown';
+  }
 });
 
 // Rate limiting mais restritivo para webhook (pode receber muitas mensagens)
