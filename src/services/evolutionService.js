@@ -164,6 +164,82 @@ class EvolutionService {
     }
   }
 
+  async downloadMedia(messageKey, mediaType = 'image') {
+    try {
+      // Evolution API pode usar diferentes endpoints
+      // Tenta primeiro o endpoint mais comum
+      let url = `${this.baseUrl}/chat/fetchMediaFromMessage/${this.instanceName}`;
+      
+      // Prepara payload - Evolution API pode esperar diferentes formatos
+      let payload = {
+        messageKey: messageKey
+      };
+
+      // Timeout maior para download de mídia (30 segundos)
+      let response;
+      try {
+        response = await retryWithBackoff(
+          () => withTimeout(
+            this.axiosInstance.post(url, payload, {
+              headers: {
+                'apikey': this.apiKey,
+                'Content-Type': 'application/json'
+              },
+              responseType: 'arraybuffer'
+            }),
+            30000, // 30 segundos para download
+            'Timeout ao baixar mídia via Evolution API (30s)'
+          ),
+          2,
+          1000
+        );
+      } catch (firstError) {
+        // Se falhar, tenta endpoint alternativo
+        console.log('[EVOLUTION] Tentando endpoint alternativo...');
+        url = `${this.baseUrl}/media/download/${this.instanceName}`;
+        
+        // Tenta com GET usando messageKey como query param
+        try {
+          response = await retryWithBackoff(
+            () => withTimeout(
+              this.axiosInstance.get(url, {
+                headers: {
+                  'apikey': this.apiKey
+                },
+                params: {
+                  messageKey: JSON.stringify(messageKey)
+                },
+                responseType: 'arraybuffer'
+              }),
+              30000,
+              'Timeout ao baixar mídia via Evolution API (30s)'
+            ),
+            1, // Apenas 1 tentativa no fallback
+            500
+          );
+        } catch (secondError) {
+          console.error('[EVOLUTION] Ambos endpoints falharam');
+          throw firstError; // Lança o primeiro erro
+        }
+      }
+
+      return {
+        data: Buffer.from(response.data),
+        contentType: response.headers['content-type'] || 'image/jpeg',
+        status: response.status
+      };
+    } catch (error) {
+      console.error('[EVOLUTION] Erro ao baixar mídia:', error.response?.status, error.response?.statusText || error.message);
+      
+      // Fallback: tenta usar a URL direta se disponível
+      if (error.response?.status === 404 || error.message.includes('not found')) {
+        throw new Error('Mídia não encontrada. Pode ter expirado ou sido removida.');
+      }
+      
+      throw error;
+    }
+  }
+
   async getInstanceStatus() {
     try {
       const url = `${this.baseUrl}/instance/connectionState/${this.instanceName}`;

@@ -10,37 +10,81 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 class DocumentService {
   constructor() {
-    // Usando modelo stable 1.5 flash latest
-    this.model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
+    // Usando modelo estável - gemini-1.5-flash ou gemini-2.0-flash-exp
+    // gemini-1.5-flash-latest não está disponível na API v1beta
+    this.model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
   }
 
-  async processImage(imageUrl) {
+  async processImage(imageUrl, messageKey = null) {
     try {
       console.log('[DOC] ========================================');
       console.log('[DOC] Processando documento:', imageUrl);
+      if (messageKey) {
+        console.log('[DOC] MessageKey fornecido:', JSON.stringify(messageKey));
+      }
       console.log('[DOC] ========================================');
 
-      // Baixa o arquivo com timeout
-      console.log('[DOC] Baixando arquivo...');
-      const imageResponse = await withTimeout(
-        axios.get(imageUrl, {
-          responseType: 'arraybuffer',
-          timeout: 30000, // 30 segundos para download
-          headers: {
-            'apikey': process.env.EVOLUTION_API_KEY,
-            'User-Agent': 'Lumiz-Backend/1.0'
-          }
-        }),
-        30000,
-        'Timeout ao baixar arquivo (30s)'
-      );
+      let imageBuffer;
+      let headerMimeType;
 
-      console.log('[DOC] ✅ Arquivo baixado com sucesso');
-      console.log('[DOC] Status HTTP:', imageResponse.status);
-      console.log('[DOC] Content-Type:', imageResponse.headers['content-type']);
-      console.log('[DOC] Content-Length:', imageResponse.headers['content-length']);
+      // Valida se tem URL
+      if (!imageUrl) {
+        throw new Error('URL da imagem não fornecida');
+      }
 
-      let imageBuffer = Buffer.from(imageResponse.data);
+      // Tenta primeiro URL direta (mais rápido e comum)
+      if (imageUrl && (imageUrl.startsWith('http://') || imageUrl.startsWith('https://'))) {
+        try {
+          console.log('[DOC] Baixando arquivo via URL direta...');
+          const imageResponse = await withTimeout(
+            axios.get(imageUrl, {
+              responseType: 'arraybuffer',
+              timeout: 30000, // 30 segundos para download
+              headers: {
+                'apikey': process.env.EVOLUTION_API_KEY,
+                'User-Agent': 'Lumiz-Backend/1.0',
+                'Accept': 'image/*,application/pdf,*/*'
+              }
+            }),
+            30000,
+            'Timeout ao baixar arquivo (30s)'
+          );
+
+          console.log('[DOC] ✅ Arquivo baixado via URL direta');
+          console.log('[DOC] Status HTTP:', imageResponse.status);
+          console.log('[DOC] Content-Type:', imageResponse.headers['content-type']);
+          console.log('[DOC] Content-Length:', imageResponse.headers['content-length']);
+
+          imageBuffer = Buffer.from(imageResponse.data);
+          headerMimeType = imageResponse.headers['content-type'];
+        } catch (urlError) {
+          console.log('[DOC] ⚠️ Erro ao baixar via URL direta:', urlError.message);
+          console.log('[DOC] Tentando via Evolution API com messageKey...');
+          // Fallback para Evolution API se URL falhar
+        }
+      }
+
+      // Se não conseguiu via URL direta e tem messageKey, tenta Evolution API
+      if (!imageBuffer && messageKey) {
+        try {
+          console.log('[DOC] Tentando baixar via Evolution API...');
+          const evolutionService = require('./evolutionService');
+          const mediaResponse = await evolutionService.downloadMedia(messageKey, 'image');
+          imageBuffer = mediaResponse.data;
+          headerMimeType = mediaResponse.contentType;
+          console.log('[DOC] ✅ Arquivo baixado via Evolution API');
+          console.log('[DOC] Content-Type:', headerMimeType);
+          console.log('[DOC] Tamanho:', imageBuffer.length, 'bytes');
+        } catch (evolutionError) {
+          console.log('[DOC] ❌ Erro ao baixar via Evolution API:', evolutionError.message);
+          throw new Error(`Não foi possível baixar a imagem. Erro: ${evolutionError.message}`);
+        }
+      }
+
+      // Se ainda não conseguiu, lança erro
+      if (!imageBuffer) {
+        throw new Error('Não foi possível baixar a imagem. URL inválida ou mídia não disponível.');
+      }
       console.log('[DOC] Buffer criado, tamanho:', imageBuffer.length, 'bytes');
 
       // Validação: buffer não pode estar vazio
@@ -51,7 +95,6 @@ class DocumentService {
       // DETECÇÃO DE MIME TYPE usando magic numbers (método confiável e compatível)
       console.log('[DOC] ===== INÍCIO DETECÇÃO MIME TYPE =====');
       console.log('[DOC] Tamanho do buffer:', imageBuffer.length, 'bytes');
-      const headerMimeType = imageResponse.headers['content-type'];
       console.log('[DOC] MIME type do header HTTP:', headerMimeType);
 
       // Validação básica do buffer
@@ -152,18 +195,25 @@ EXTRAÇÃO:
 
 REGRAS IMPORTANTES:
 - Para BOLETO/NOTA FISCAL/FATURA: sempre é SAÍDA (custo a pagar)
-- Para COMPROVANTE PIX: 
-  * Procure por: "PIX", "Transferência PIX", "Chave PIX", "Comprovante de Transferência"
-  * Se mostra "Você recebeu" / "Crédito" / seta apontando para você = tipo "entrada"
-  * Se mostra "Você enviou" / "Débito" / seta apontando para fora = tipo "saida"
-  * Identifique pela direção da seta, texto "recebido/enviado", ou contexto visual
-  * Extraia valor, data/hora, nome do remetente/destinatário
+- Para COMPROVANTE PIX (incluindo Mercado Pago, Nubank, etc): 
+  * Procure por: "PIX", "Transferência PIX", "Chave PIX", "Comprovante de Transferência", "Mercado Pago", "Nubank"
+  * IMPORTANTE: Identifique a perspectiva do documento:
+    - Se o documento mostra que VOCÊ RECEBEU (seção "Para" mostra seu nome/CPF, ou "Crédito", ou seta apontando para você) = tipo "entrada"
+    - Se o documento mostra que VOCÊ ENVIOU (seção "De" mostra seu nome/CPF, ou "Débito", ou seta apontando para fora) = tipo "saida"
+  * Para MERCADO PAGO especificamente:
+    - Procure por seções "De" (remetente) e "Para" (destinatário)
+    - Se "De" contém o nome do usuário/clínica = tipo "saida" (você enviou)
+    - Se "Para" contém o nome do usuário/clínica = tipo "entrada" (você recebeu)
+    - Extraia o nome completo do remetente/destinatário na categoria ou descrição
+  * Extraia SEMPRE: valor, data/hora, nome do remetente (De), nome do destinatário (Para)
+  * Use o nome do destinatário na categoria se for entrada, ou nome do remetente se for saída
 - Para NOTA FISCAL: procure por "NF", "NFe", "Nota Fiscal", CNPJ, valor total, fornecedor
 - Para EXTRATO: analise cada linha (crédito=entrada, débito=saída)
 - Para COMPROVANTE genérico: analise o contexto (pagamento=saída, recebimento=entrada)
 - Se não conseguir identificar, retorne tipo_documento: "nao_identificado"
 - SEMPRE extraia pelo menos uma transação se identificar o documento
 - Seja assertivo: se identificar qualquer documento financeiro, extraia os dados mesmo que incompletos
+- IMPORTANTE: Para comprovantes PIX, sempre inclua o nome da pessoa/empresa na categoria ou descrição
 
 EXEMPLOS DE RESPOSTA:
 
@@ -200,27 +250,51 @@ Extrato:
   ]
 }
 
-Comprovante PIX (recebido):
+Comprovante PIX Mercado Pago (recebido):
+{
+  "tipo_documento": "comprovante_pix",
+  "transacoes": [{
+    "tipo": "entrada",
+    "valor": 600.00,
+    "categoria": "Eric de Sousa Guerrize",
+    "data": "2025-11-01",
+    "descricao": "Pix recebido de Eric de Sousa Guerrize via Mercado Pago"
+  }]
+}
+
+Comprovante PIX Mercado Pago (enviado/pago):
+{
+  "tipo_documento": "comprovante_pix",
+  "transacoes": [{
+    "tipo": "saida",
+    "valor": 600.00,
+    "categoria": "Romulo Franzoi Bovolon",
+    "data": "2025-11-01",
+    "descricao": "Pix enviado para Romulo Franzoi Bovolon via Mercado Pago"
+  }]
+}
+
+Comprovante PIX genérico (recebido):
 {
   "tipo_documento": "comprovante_pix",
   "transacoes": [{
     "tipo": "entrada",
     "valor": 1500.00,
-    "categoria": "Pix Recebido",
+    "categoria": "João Silva",
     "data": "${dataHoje}",
-    "descricao": "Pix de João Silva"
+    "descricao": "Pix recebido de João Silva"
   }]
 }
 
-Comprovante PIX (enviado/pago):
+Comprovante PIX genérico (enviado/pago):
 {
   "tipo_documento": "comprovante_pix",
   "transacoes": [{
     "tipo": "saida",
     "valor": 500.00,
-    "categoria": "Pix Enviado",
+    "categoria": "Fornecedor ABC",
     "data": "${dataHoje}",
-    "descricao": "Pix para Fornecedor ABC"
+    "descricao": "Pix enviado para Fornecedor ABC"
   }]
 }
 

@@ -1204,7 +1204,7 @@ class MessageController {
     }
   }
 
-  async handleImageMessage(phone, mediaUrl, caption) {
+  async handleImageMessage(phone, mediaUrl, caption, messageKey = null) {
     try {
       const documentService = require('../services/documentService');
 
@@ -1214,7 +1214,7 @@ class MessageController {
 
         // Se está no step de primeira venda ou custos, processa a imagem
         if (step === 'primeira_venda' || step === 'primeiro_custo' || step === 'segundo_custo') {
-          const result = await documentService.processImage(mediaUrl);
+          const result = await documentService.processImage(mediaUrl, messageKey);
 
           if (result.tipo_documento === 'erro' || result.tipo_documento === 'nao_identificado') {
             return 'Não consegui identificar esse documento 🤔\n\nPode me enviar uma foto mais clara ou descrever a transação em texto?';
@@ -1255,7 +1255,7 @@ class MessageController {
       }
 
       // Processa a imagem com Gemini Vision
-      const result = await documentService.processImage(mediaUrl);
+      const result = await documentService.processImage(mediaUrl, messageKey);
 
       if (result.tipo_documento === 'erro' || result.tipo_documento === 'nao_identificado') {
         return documentService.formatDocumentSummary(result);
@@ -1279,7 +1279,7 @@ class MessageController {
     }
   }
 
-  async handleDocumentMessage(phone, mediaUrl, fileName) {
+  async handleDocumentMessage(phone, mediaUrl, fileName, messageKey = null) {
     try {
       // Verifica se usuário está cadastrado
       if (onboardingFlowService.isOnboarding(phone)) {
@@ -1303,7 +1303,7 @@ class MessageController {
       }
 
       // Tenta processar como imagem
-      return await this.handleImageMessage(phone, mediaUrl, '');
+      return await this.handleImageMessage(phone, mediaUrl, '', messageKey);
     } catch (error) {
       console.error('Erro ao processar documento:', error);
       return 'Erro ao analisar documento 😢\n\nTente enviar uma foto ou registre manualmente.';
