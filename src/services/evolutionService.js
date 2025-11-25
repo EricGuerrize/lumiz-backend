@@ -170,75 +170,52 @@ class EvolutionService {
       console.log('[EVOLUTION] MessageKey:', JSON.stringify(messageKey));
       console.log('[EVOLUTION] MediaType:', mediaType);
       
-      // Evolution API pode usar diferentes endpoints
-      // Tenta primeiro o endpoint mais comum
-      let url = `${this.baseUrl}/chat/fetchMediaFromMessage/${this.instanceName}`;
+      // Evolution API endpoint correto para baixar mídia
+      // Formato: POST /chat/fetchMediaFromMessage/{instance}
+      // Payload: { messageKey: { remoteJid, id, fromMe } }
+      const url = `${this.baseUrl}/chat/fetchMediaFromMessage/${this.instanceName}`;
       
-      // Prepara payload - Evolution API pode esperar diferentes formatos
-      let payload = {
-        messageKey: messageKey
+      // Prepara payload no formato correto
+      const payload = {
+        messageKey: {
+          remoteJid: messageKey.remoteJid,
+          id: messageKey.id,
+          fromMe: messageKey.fromMe || false
+        }
       };
 
+      console.log('[EVOLUTION] Endpoint:', url);
+      console.log('[EVOLUTION] Payload:', JSON.stringify(payload));
+
       // Timeout maior para download de mídia (30 segundos)
-      let response;
-      try {
-        console.log('[EVOLUTION] Tentando endpoint: /chat/fetchMediaFromMessage');
-        response = await retryWithBackoff(
-          () => withTimeout(
-            this.axiosInstance.post(url, payload, {
-              headers: {
-                'apikey': this.apiKey,
-                'Content-Type': 'application/json'
-              },
-              responseType: 'arraybuffer'
-            }),
-            30000, // 30 segundos para download
-            'Timeout ao baixar mídia via Evolution API (30s)'
-          ),
-          2,
-          1000
-        );
-        console.log('[EVOLUTION] ✅ Mídia baixada via fetchMediaFromMessage');
-      } catch (firstError) {
-        // Se falhar, tenta endpoint alternativo
-        console.log('[EVOLUTION] ⚠️ Primeiro endpoint falhou:', firstError.message);
-        console.log('[EVOLUTION] Tentando endpoint alternativo...');
-        url = `${this.baseUrl}/media/download/${this.instanceName}`;
-        
-        // Tenta com GET usando messageKey como query param
-        try {
-          response = await retryWithBackoff(
-            () => withTimeout(
-              this.axiosInstance.get(url, {
-                headers: {
-                  'apikey': this.apiKey
-                },
-                params: {
-                  messageKey: JSON.stringify(messageKey)
-                },
-                responseType: 'arraybuffer'
-              }),
-              30000,
-              'Timeout ao baixar mídia via Evolution API (30s)'
-            ),
-            1, // Apenas 1 tentativa no fallback
-            500
-          );
-          console.log('[EVOLUTION] ✅ Mídia baixada via endpoint alternativo');
-        } catch (secondError) {
-          console.error('[EVOLUTION] ❌ Ambos endpoints falharam');
-          console.error('[EVOLUTION] Erro 1:', firstError.message);
-          console.error('[EVOLUTION] Erro 2:', secondError.message);
-          throw firstError; // Lança o primeiro erro
-        }
-      }
+      const response = await retryWithBackoff(
+        () => withTimeout(
+          this.axiosInstance.post(url, payload, {
+            headers: {
+              'apikey': this.apiKey,
+              'Content-Type': 'application/json'
+            },
+            responseType: 'arraybuffer'
+          }),
+          30000, // 30 segundos para download
+          'Timeout ao baixar mídia via Evolution API (30s)'
+        ),
+        2, // 2 tentativas
+        1000 // delay inicial de 1s
+      );
 
       const buffer = Buffer.from(response.data);
       const contentType = response.headers['content-type'] || 'image/jpeg';
       
       console.log('[EVOLUTION] ✅ Mídia baixada com sucesso');
+      console.log('[EVOLUTION] Status:', response.status);
       console.log('[EVOLUTION] Tamanho:', buffer.length, 'bytes');
       console.log('[EVOLUTION] Content-Type:', contentType);
+
+      // Valida se o buffer não está vazio
+      if (!buffer || buffer.length === 0) {
+        throw new Error('Buffer vazio - mídia pode estar corrompida');
+      }
 
       return {
         data: buffer,
@@ -246,15 +223,30 @@ class EvolutionService {
         status: response.status
       };
     } catch (error) {
-      console.error('[EVOLUTION] ❌ Erro ao baixar mídia:', error.response?.status, error.response?.statusText || error.message);
-      console.error('[EVOLUTION] Response data:', error.response?.data?.toString?.()?.substring(0, 200) || 'N/A');
+      console.error('[EVOLUTION] ❌ Erro ao baixar mídia');
+      console.error('[EVOLUTION] Status:', error.response?.status);
+      console.error('[EVOLUTION] StatusText:', error.response?.statusText);
+      console.error('[EVOLUTION] Message:', error.message);
       
-      // Fallback: tenta usar a URL direta se disponível
-      if (error.response?.status === 404 || error.message.includes('not found')) {
+      if (error.response?.data) {
+        const errorData = error.response.data.toString ? error.response.data.toString().substring(0, 500) : JSON.stringify(error.response.data);
+        console.error('[EVOLUTION] Response data:', errorData);
+      }
+      
+      // Erros específicos
+      if (error.response?.status === 404) {
         throw new Error('Mídia não encontrada. Pode ter expirado ou sido removida.');
       }
       
-      throw error;
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        throw new Error('Erro de autenticação na Evolution API. Verifique a API key.');
+      }
+      
+      if (error.message.includes('Timeout')) {
+        throw new Error('Timeout ao baixar mídia. Tente novamente.');
+      }
+      
+      throw new Error(`Erro ao baixar mídia: ${error.message}`);
     }
   }
 
