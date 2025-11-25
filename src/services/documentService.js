@@ -46,8 +46,34 @@ class DocumentService {
         throw new Error('URL da imagem não fornecida');
       }
 
-      // Tenta primeiro URL direta (mais rápido e comum)
-      if (imageUrl && (imageUrl.startsWith('http://') || imageUrl.startsWith('https://'))) {
+      // Estratégia: Tenta Evolution API primeiro (mais confiável), depois URL direta
+      // Evolution API com messageKey é mais confiável que URL direta
+      let evolutionError = null;
+      let urlError = null;
+      
+      // PRIORIDADE 1: Evolution API com messageKey (mais confiável)
+      if (messageKey && messageKey.remoteJid && messageKey.id) {
+        try {
+          console.log('[DOC] Tentando baixar via Evolution API (método preferido)...');
+          const evolutionService = require('./evolutionService');
+          const mediaResponse = await evolutionService.downloadMedia(messageKey, 'image');
+          imageBuffer = mediaResponse.data;
+          headerMimeType = mediaResponse.contentType;
+          console.log('[DOC] ✅ Arquivo baixado via Evolution API');
+          console.log('[DOC] Content-Type:', headerMimeType);
+          console.log('[DOC] Tamanho:', imageBuffer.length, 'bytes');
+        } catch (err) {
+          evolutionError = err;
+          console.log('[DOC] ⚠️ Erro ao baixar via Evolution API:', err.message);
+          console.log('[DOC] Tentando via URL direta como fallback...');
+          // Fallback para URL direta se Evolution API falhar
+        }
+      } else if (messageKey) {
+        console.log('[DOC] ⚠️ MessageKey fornecido mas sem remoteJid ou id, tentando URL direta...');
+      }
+
+      // PRIORIDADE 2: URL direta (fallback se Evolution API falhar ou não tiver messageKey)
+      if (!imageBuffer && imageUrl && (imageUrl.startsWith('http://') || imageUrl.startsWith('https://'))) {
         try {
           console.log('[DOC] Baixando arquivo via URL direta...');
           const imageResponse = await withTimeout(
@@ -71,33 +97,27 @@ class DocumentService {
 
           imageBuffer = Buffer.from(imageResponse.data);
           headerMimeType = imageResponse.headers['content-type'];
-        } catch (urlError) {
-          console.log('[DOC] ⚠️ Erro ao baixar via URL direta:', urlError.message);
-          console.log('[DOC] Tentando via Evolution API com messageKey...');
-          // Fallback para Evolution API se URL falhar
+        } catch (err) {
+          urlError = err;
+          console.log('[DOC] ⚠️ Erro ao baixar via URL direta:', err.message);
         }
       }
 
-      // Se não conseguiu via URL direta e tem messageKey, tenta Evolution API
-      if (!imageBuffer && messageKey) {
-        try {
-          console.log('[DOC] Tentando baixar via Evolution API...');
-          const evolutionService = require('./evolutionService');
-          const mediaResponse = await evolutionService.downloadMedia(messageKey, 'image');
-          imageBuffer = mediaResponse.data;
-          headerMimeType = mediaResponse.contentType;
-          console.log('[DOC] ✅ Arquivo baixado via Evolution API');
-          console.log('[DOC] Content-Type:', headerMimeType);
-          console.log('[DOC] Tamanho:', imageBuffer.length, 'bytes');
-        } catch (evolutionError) {
-          console.log('[DOC] ❌ Erro ao baixar via Evolution API:', evolutionError.message);
-          throw new Error(`Não foi possível baixar a imagem. Erro: ${evolutionError.message}`);
-        }
-      }
-
-      // Se ainda não conseguiu, lança erro
+      // Se ambos métodos falharam, lança erro detalhado
       if (!imageBuffer) {
-        throw new Error('Não foi possível baixar a imagem. URL inválida ou mídia não disponível.');
+        let errorMsg = 'Não foi possível baixar a imagem.';
+        if (evolutionError && urlError) {
+          errorMsg += `\nEvolution API: ${evolutionError.message}\nURL direta: ${urlError.message}`;
+        } else if (evolutionError) {
+          errorMsg += `\nEvolution API: ${evolutionError.message}`;
+        } else if (urlError) {
+          errorMsg += `\nURL direta: ${urlError.message}`;
+        } else if (!imageUrl && !messageKey) {
+          errorMsg += '\nURL e messageKey não fornecidos.';
+        } else if (!imageUrl) {
+          errorMsg += '\nURL não fornecida pela Evolution API.';
+        }
+        throw new Error(errorMsg);
       }
       console.log('[DOC] Buffer criado, tamanho:', imageBuffer.length, 'bytes');
 

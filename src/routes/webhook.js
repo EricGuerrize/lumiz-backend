@@ -90,18 +90,33 @@ router.post('/webhook', webhookLimiter, async (req, res) => {
             // Mensagem com imagem
             console.log(`[WEBHOOK] [IMG] ${phone}: Imagem recebida`);
             console.log(`[WEBHOOK] [IMG] URL: ${imageMessage.url || imageMessage.directPath || 'N/A'}`);
+            console.log(`[WEBHOOK] [IMG] directPath: ${imageMessage.directPath || 'N/A'}`);
+            console.log(`[WEBHOOK] [IMG] mimetype: ${imageMessage.mimetype || 'N/A'}`);
+            console.log(`[WEBHOOK] [IMG] fileLength: ${imageMessage.fileLength || 'N/A'}`);
+            console.log(`[WEBHOOK] [IMG] mediaKey: ${imageMessage.mediaKey ? 'SIM' : 'NÃO'}`);
             console.log(`[WEBHOOK] [IMG] Caption: ${imageMessage.caption || 'sem caption'}`);
+            console.log(`[WEBHOOK] [IMG] imageMessage completo:`, JSON.stringify(imageMessage, null, 2).substring(0, 500));
+            
             const mediaUrl = imageMessage.url || imageMessage.directPath;
             const caption = imageMessage.caption || '';
-            // Passa messageKey completo para download correto da mídia
-            const messageKey = key;
+            
+            // Valida se tem URL ou directPath
+            if (!mediaUrl) {
+              console.error('[WEBHOOK] [IMG] ❌ Erro: URL e directPath estão vazios!');
+              console.error('[WEBHOOK] [IMG] imageMessage completo:', JSON.stringify(imageMessage, null, 2));
+              response = 'Não consegui acessar a imagem 😢\n\nA Evolution API não forneceu a URL da imagem.\n\nTente enviar novamente ou registre manualmente.';
+            } else {
+              // Passa messageKey completo para download correto da mídia
+              const messageKey = key;
+              console.log('[WEBHOOK] [IMG] MessageKey:', JSON.stringify(messageKey));
 
-            try {
-              response = await messageController.handleImageMessage(phone, mediaUrl, caption, messageKey);
-            } catch (imgError) {
-              console.error(`[WEBHOOK] [IMG] Erro ao processar imagem:`, imgError.message);
-              console.error(`[WEBHOOK] [IMG] Stack:`, imgError.stack);
-              response = 'Erro ao processar imagem 😢\n\nTente enviar novamente ou registre manualmente.';
+              try {
+                response = await messageController.handleImageMessage(phone, mediaUrl, caption, messageKey);
+              } catch (imgError) {
+                console.error(`[WEBHOOK] [IMG] ❌ Erro ao processar imagem:`, imgError.message);
+                console.error(`[WEBHOOK] [IMG] Stack:`, imgError.stack);
+                response = 'Erro ao processar imagem 😢\n\nTente enviar novamente ou registre manualmente.';
+              }
             }
           } else if (documentMessage) {
             // Mensagem com documento (PDF, etc)

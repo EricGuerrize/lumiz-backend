@@ -106,11 +106,22 @@ class MessageController {
           break;
 
         case 'exportar_dados':
+          // Verifica se usuário quer Excel/CSV ou PDF
+          const formato = intent.dados?.formato || (message.toLowerCase().includes('excel') || message.toLowerCase().includes('planilha') || message.toLowerCase().includes('csv') ? 'excel' : 'pdf');
+          if (formato === 'excel' || formato === 'csv') {
+            await this.handleExportDataExcel(user, phone, intent.dados, formato);
+            return null; // Arquivo será enviado diretamente
+          }
           await this.handleExportData(user, phone, intent.dados);
           return null; // PDF será enviado diretamente
 
         case 'comparar_meses':
-          response = await this.handleCompareMonths(user);
+          // Verifica se tem períodos customizados na mensagem
+          if (intent.dados?.periodo1 || intent.dados?.periodo2) {
+            response = await this.handleCompareCustomPeriods(user, intent.dados);
+          } else {
+            response = await this.handleCompareMonths(user);
+          }
           break;
 
         case 'consultar_parcelas':
@@ -634,6 +645,151 @@ class MessageController {
         '❌ Não consegui gerar o relatório agora.\n\nTente novamente em alguns instantes.'
       );
     }
+  }
+
+  async handleExportDataExcel(user, phone, dados, formato = 'excel') {
+    try {
+      const excelService = require('../services/excelService');
+      const now = new Date();
+      let year = now.getFullYear();
+      let month = now.getMonth() + 1;
+
+      // Tenta extrair mês/ano da mensagem se fornecido
+      if (dados?.mes) {
+        month = parseInt(dados.mes);
+      }
+      if (dados?.ano) {
+        year = parseInt(dados.ano);
+      }
+
+      await evolutionService.sendMessage(
+        phone,
+        `📊 Gerando sua planilha ${formato.toUpperCase()}...\n\nIsso pode levar alguns segundos! ⏳`
+      );
+
+      let fileBuffer;
+      let fileName;
+      let mimeType;
+
+      if (formato === 'csv') {
+        fileBuffer = await excelService.generateCSVReport(user.id, year, month);
+        const mesNome = new Date(year, month - 1, 1).toLocaleDateString('pt-BR', { month: 'long' });
+        fileName = `Relatorio_${mesNome}_${year}.csv`;
+        mimeType = 'text/csv';
+      } else {
+        fileBuffer = await excelService.generateExcelReport(user.id, year, month);
+        const mesNome = new Date(year, month - 1, 1).toLocaleDateString('pt-BR', { month: 'long' });
+        fileName = `Relatorio_${mesNome}_${year}.xlsx`;
+        mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      }
+
+      const base64File = fileBuffer.toString('base64');
+      await evolutionService.sendDocument(phone, base64File, fileName, mimeType);
+
+      await evolutionService.sendMessage(
+        phone,
+        `✅ *Planilha exportada com sucesso!*\n\nSeu arquivo ${formato.toUpperCase()} está pronto acima 📊`
+      );
+    } catch (error) {
+      console.error('[EXPORT] Erro ao exportar planilha:', error);
+      await evolutionService.sendMessage(
+        phone,
+        '❌ Não consegui gerar a planilha agora.\n\nTente novamente em alguns instantes.'
+      );
+    }
+  }
+
+  async handleCompareCustomPeriods(user, dados) {
+    try {
+      // Extrai períodos da mensagem (ex: "janeiro" e "fevereiro")
+      const periodo1 = dados.periodo1 || {};
+      const periodo2 = dados.periodo2 || {};
+
+      // Se não tem períodos específicos, usa mês atual vs anterior
+      if (!periodo1.mes || !periodo2.mes) {
+        return await this.handleCompareMonths(user);
+      }
+
+      const year1 = periodo1.ano || new Date().getFullYear();
+      const month1 = this.parseMonthName(periodo1.mes);
+      const year2 = periodo2.ano || new Date().getFullYear();
+      const month2 = this.parseMonthName(periodo2.mes);
+
+      if (!month1 || !month2) {
+        return 'Não consegui entender os períodos. Tente: "comparar janeiro com fevereiro"';
+      }
+
+      const report1 = await transactionController.getMonthlyReport(user.id, year1, month1);
+      const report2 = await transactionController.getMonthlyReport(user.id, year2, month2);
+
+      const lucro1 = report1.entradas - report1.saidas;
+      const lucro2 = report2.entradas - report2.saidas;
+
+      const month1Name = new Date(year1, month1 - 1, 1).toLocaleDateString('pt-BR', { month: 'long' });
+      const month2Name = new Date(year2, month2 - 1, 1).toLocaleDateString('pt-BR', { month: 'long' });
+
+      // Calcula variações
+      const variacaoEntradas = report1.entradas > 0
+        ? (((report2.entradas - report1.entradas) / report1.entradas) * 100).toFixed(1)
+        : report2.entradas > 0 ? 100 : 0;
+
+      const variacaoSaidas = report1.saidas > 0
+        ? (((report2.saidas - report1.saidas) / report1.saidas) * 100).toFixed(1)
+        : report2.saidas > 0 ? 100 : 0;
+
+      const variacaoLucro = lucro1 !== 0
+        ? (((lucro2 - lucro1) / Math.abs(lucro1)) * 100).toFixed(1)
+        : lucro2 > 0 ? 100 : 0;
+
+      let response = `📊 *COMPARATIVO DE PERÍODOS*\n\n`;
+
+      // Período 1
+      response += `*${month1Name.toUpperCase()} ${year1}*\n`;
+      response += `💰 Vendas: R$ ${report1.entradas.toFixed(2)}\n`;
+      response += `💸 Custos: R$ ${report1.saidas.toFixed(2)}\n`;
+      response += `📈 Lucro: R$ ${lucro1.toFixed(2)}\n\n`;
+
+      // Período 2
+      response += `*${month2Name.toUpperCase()} ${year2}*\n`;
+      response += `💰 Vendas: R$ ${report2.entradas.toFixed(2)}\n`;
+      response += `💸 Custos: R$ ${report2.saidas.toFixed(2)}\n`;
+      response += `📈 Lucro: R$ ${lucro2.toFixed(2)}\n\n`;
+
+      // Variações
+      response += `*VARIAÇÃO*\n`;
+
+      const setaEntradas = variacaoEntradas >= 0 ? '📈' : '📉';
+      const setaSaidas = variacaoSaidas >= 0 ? '📈' : '📉';
+      const setaLucro = variacaoLucro >= 0 ? '📈' : '📉';
+
+      response += `${setaEntradas} Vendas: ${variacaoEntradas >= 0 ? '+' : ''}${variacaoEntradas}%\n`;
+      response += `${setaSaidas} Custos: ${variacaoSaidas >= 0 ? '+' : ''}${variacaoSaidas}%\n`;
+      response += `${setaLucro} Lucro: ${variacaoLucro >= 0 ? '+' : ''}${variacaoLucro}%\n\n`;
+
+      // Análise
+      if (lucro2 > lucro1) {
+        response += `Tá crescendo! 🎉 Seu lucro aumentou R$ ${(lucro2 - lucro1).toFixed(2)}`;
+      } else if (lucro2 < lucro1) {
+        response += `Lucro caiu R$ ${(lucro1 - lucro2).toFixed(2)} 😬\nBora focar em aumentar as vendas!`;
+      } else {
+        response += `Lucro estável! 🤝`;
+      }
+
+      return response;
+    } catch (error) {
+      console.error('Erro ao comparar períodos:', error);
+      return 'Erro ao comparar períodos. Tente novamente.';
+    }
+  }
+
+  parseMonthName(monthName) {
+    const months = {
+      'janeiro': 1, 'fevereiro': 2, 'março': 3, 'marco': 3,
+      'abril': 4, 'maio': 5, 'junho': 6,
+      'julho': 7, 'agosto': 8, 'setembro': 9,
+      'outubro': 10, 'novembro': 11, 'dezembro': 12
+    };
+    return months[monthName?.toLowerCase()] || parseInt(monthName);
   }
 
   async handleCompareMonths(user) {
