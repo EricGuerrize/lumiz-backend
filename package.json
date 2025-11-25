@@ -10,8 +10,8 @@
     "build": "npm install --include=optional"
   },
   "dependencies": {
+    "@google-cloud/vision": "^4.3.3",
     "@google/generative-ai": "^0.21.0",
-    "@google-cloud/vision": "^4.0.0",
     "@sentry/node": "^10.26.0",
     "@supabase/supabase-js": "^2.45.4",
     "axios": "^1.7.7",
