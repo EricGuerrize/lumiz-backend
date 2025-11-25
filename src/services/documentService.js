@@ -478,15 +478,20 @@ RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
         throw new Error('MIME type ainda inválido no imagePart - abortando envio');
       }
 
-      // Decide qual IA usar: OpenAI (se preferido e disponível) ou Gemini
+      // PRIORIDADE 1: OpenAI GPT-4 Vision (mais confiável para documentos/imagens)
       if (this.useOpenAI && this.openaiService?.client) {
         try {
-          console.log('[DOC] Usando OpenAI GPT-4 Vision para processar...');
+          console.log('[DOC] 🚀 Usando OpenAI GPT-4 Vision (método preferido)...');
           return await this.openaiService.processImage(imageBuffer, mimeType);
         } catch (openaiError) {
-          console.error('[DOC] ⚠️ Erro com OpenAI, tentando Gemini como fallback...');
-          console.error('[DOC] Erro OpenAI:', openaiError.message);
+          console.error('[DOC] ⚠️ Erro com OpenAI:', openaiError.message);
+          console.error('[DOC] Tentando Gemini como fallback...');
           // Fallback para Gemini se OpenAI falhar
+        }
+      } else {
+        console.log('[DOC] ⚠️ OpenAI não disponível - usando Gemini');
+        if (!process.env.OPENAI_API_KEY) {
+          console.log('[DOC] 💡 Dica: Configure OPENAI_API_KEY para melhor precisão na análise de documentos');
         }
       }
 
