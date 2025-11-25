@@ -75,7 +75,13 @@ class GoogleVisionService {
 
       // Agora precisa processar o texto com Gemini para extrair dados estruturados
       // (Google Vision só faz OCR, não entende contexto)
-      const geminiService = require('./geminiService');
+      if (!process.env.GEMINI_API_KEY) {
+        throw new Error('GEMINI_API_KEY não configurada. Necessária para processar texto extraído pelo Google Vision.');
+      }
+      
+      const { GoogleGenerativeAI } = require('@google/generative-ai');
+      const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+      const geminiModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
       
       // Cria um prompt para o Gemini processar o texto extraído
       const dataHoje = new Date().toISOString().split('T')[0];
@@ -116,7 +122,7 @@ RETORNE APENAS JSON NO SEGUINTE FORMATO:
 `;
 
       console.log('[VISION] Processando texto com Gemini para extrair dados...');
-      const geminiResult = await geminiService.model.generateContent(prompt);
+      const geminiResult = await geminiModel.generateContent(prompt);
       const response = await geminiResult.response;
       const text = response.text();
 
