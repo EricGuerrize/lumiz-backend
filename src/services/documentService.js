@@ -50,8 +50,17 @@ class DocumentService {
       console.log('[DOC] OpenAI não disponível - usando apenas Gemini');
     }
     
-    // Configura qual IA usar (OPENAI_PREFERRED=true para usar OpenAI quando disponível)
-    this.useOpenAI = process.env.OPENAI_PREFERRED === 'true' && this.openaiService?.client;
+    // Configura qual IA usar
+    // PRIORIDADE: OpenAI (se disponível) > Gemini (fallback)
+    // OpenAI é mais confiável para análise de documentos/imagens
+    this.useOpenAI = this.openaiService?.client !== null && this.openaiService?.client !== undefined;
+    
+    if (this.useOpenAI) {
+      console.log('[DOC] ✅ OpenAI disponível - será usado como PRIMÁRIO para processamento de imagens');
+    } else {
+      console.log('[DOC] ⚠️ OpenAI não disponível - usando Gemini como fallback');
+      console.log('[DOC] 💡 Dica: Configure OPENAI_API_KEY para melhor precisão na análise de documentos');
+    }
   }
 
   async processImage(imageUrl, messageKey = null) {
