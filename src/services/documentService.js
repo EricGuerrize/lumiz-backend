@@ -39,27 +39,43 @@ class DocumentService {
       throw new Error(`Erro ao inicializar modelo Gemini: ${error.message}`);
     }
     
-    // Tenta carregar OpenAI se disponível (para usar como fallback ou opção preferencial)
+    // Tenta carregar serviços de IA (em ordem de prioridade)
+    // PRIORIDADE: Google Vision (grátis 1000/mês) > OpenAI > Gemini
+    
+    // 1. Google Vision API (melhor opção GRATUITA - 1000 requisições/mês)
+    this.googleVisionService = null;
+    try {
+      this.googleVisionService = require('./googleVisionService');
+      if (this.googleVisionService.client) {
+        console.log('[DOC] ✅ Google Vision disponível - será usado como PRIMÁRIO (grátis até 1000/mês)');
+      }
+    } catch (error) {
+      console.log('[DOC] Google Vision não disponível:', error.message);
+    }
+    
+    // 2. OpenAI (se disponível)
     this.openaiService = null;
     try {
       this.openaiService = require('./openaiService');
       if (this.openaiService.client) {
-        console.log('[DOC] ✅ OpenAI disponível - será usado para processamento de imagens');
+        console.log('[DOC] ✅ OpenAI disponível - será usado como fallback');
       }
     } catch (error) {
-      console.log('[DOC] OpenAI não disponível - usando apenas Gemini');
+      console.log('[DOC] OpenAI não disponível');
     }
     
     // Configura qual IA usar
-    // PRIORIDADE: OpenAI (se disponível) > Gemini (fallback)
-    // OpenAI é mais confiável para análise de documentos/imagens
+    this.useGoogleVision = this.googleVisionService?.client !== null && this.googleVisionService?.client !== undefined;
     this.useOpenAI = this.openaiService?.client !== null && this.openaiService?.client !== undefined;
     
-    if (this.useOpenAI) {
-      console.log('[DOC] ✅ OpenAI disponível - será usado como PRIMÁRIO para processamento de imagens');
+    if (this.useGoogleVision) {
+      console.log('[DOC] 🎯 Estratégia: Google Vision (grátis) > OpenAI > Gemini');
+    } else if (this.useOpenAI) {
+      console.log('[DOC] 🎯 Estratégia: OpenAI > Gemini');
+      console.log('[DOC] 💡 Dica: Configure GOOGLE_APPLICATION_CREDENTIALS para 1000 requisições/mês grátis');
     } else {
-      console.log('[DOC] ⚠️ OpenAI não disponível - usando Gemini como fallback');
-      console.log('[DOC] 💡 Dica: Configure OPENAI_API_KEY para melhor precisão na análise de documentos');
+      console.log('[DOC] ⚠️ Apenas Gemini disponível');
+      console.log('[DOC] 💡 Dica: Configure GOOGLE_APPLICATION_CREDENTIALS para melhor precisão (grátis até 1000/mês)');
     }
   }
 
@@ -478,20 +494,37 @@ RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
         throw new Error('MIME type ainda inválido no imagePart - abortando envio');
       }
 
-      // PRIORIDADE 1: OpenAI GPT-4 Vision (mais confiável para documentos/imagens)
+      // PRIORIDADE 1: Google Vision API (GRATUITO até 1000/mês, melhor precisão)
+      if (this.useGoogleVision && this.googleVisionService?.client) {
+        try {
+          console.log('[DOC] 🚀 Usando Google Vision API (método preferido - GRATUITO até 1000/mês)...');
+          return await this.googleVisionService.processImage(imageBuffer, mimeType);
+        } catch (visionError) {
+          console.error('[DOC] ⚠️ Erro com Google Vision:', visionError.message);
+          // Verifica se é erro de quota (passou de 1000/mês)
+          if (visionError.message.includes('quota') || visionError.message.includes('limit')) {
+            console.log('[DOC] 💡 Limite gratuito do Google Vision atingido, tentando OpenAI...');
+          } else {
+            console.log('[DOC] Tentando OpenAI como fallback...');
+          }
+          // Fallback para OpenAI se Google Vision falhar
+        }
+      }
+      
+      // PRIORIDADE 2: OpenAI GPT-4 Vision (se Google Vision não disponível ou falhou)
       if (this.useOpenAI && this.openaiService?.client) {
         try {
-          console.log('[DOC] 🚀 Usando OpenAI GPT-4 Vision (método preferido)...');
+          console.log('[DOC] 🚀 Usando OpenAI GPT-4 Vision...');
           return await this.openaiService.processImage(imageBuffer, mimeType);
         } catch (openaiError) {
           console.error('[DOC] ⚠️ Erro com OpenAI:', openaiError.message);
           console.error('[DOC] Tentando Gemini como fallback...');
           // Fallback para Gemini se OpenAI falhar
         }
-      } else {
-        console.log('[DOC] ⚠️ OpenAI não disponível - usando Gemini');
-        if (!process.env.OPENAI_API_KEY) {
-          console.log('[DOC] 💡 Dica: Configure OPENAI_API_KEY para melhor precisão na análise de documentos');
+      } else if (!this.useGoogleVision) {
+        console.log('[DOC] ⚠️ Google Vision e OpenAI não disponíveis - usando Gemini');
+        if (!process.env.GOOGLE_APPLICATION_CREDENTIALS && !process.env.OPENAI_API_KEY) {
+          console.log('[DOC] 💡 Dica: Configure GOOGLE_APPLICATION_CREDENTIALS para 1000 requisições/mês GRÁTIS');
         }
       }
 
