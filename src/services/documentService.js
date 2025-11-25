@@ -6,13 +6,30 @@ require('dotenv').config();
 // Timeout para processamento de imagens (60 segundos - imagens podem demorar)
 const IMAGE_PROCESSING_TIMEOUT_MS = 60000;
 
+// Valida API key antes de inicializar
+if (!process.env.GEMINI_API_KEY) {
+  console.error('[DOC] ❌ GEMINI_API_KEY não configurada!');
+  throw new Error('GEMINI_API_KEY não configurada no .env');
+}
+
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 class DocumentService {
   constructor() {
-    // Usando modelo estável - gemini-1.5-flash ou gemini-2.0-flash-exp
-    // gemini-1.5-flash-latest não está disponível na API v1beta
-    this.model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    // Usando modelo que funciona: gemini-2.0-flash-exp (mesmo usado em outros serviços)
+    // gemini-1.5-flash não está disponível na API v1beta
+    // gemini-2.0-flash-exp suporta visão (imagens) e está funcionando
+    console.log('[DOC] Inicializando modelo Gemini...');
+    console.log('[DOC] API Key presente:', process.env.GEMINI_API_KEY ? 'SIM' : 'NÃO');
+    console.log('[DOC] API Key (primeiros 10 chars):', process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.substring(0, 10) + '...' : 'N/A');
+    
+    try {
+      this.model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
+      console.log('[DOC] ✅ Modelo gemini-2.0-flash-exp inicializado com sucesso');
+    } catch (error) {
+      console.error('[DOC] ❌ Erro ao inicializar modelo:', error.message);
+      throw new Error(`Erro ao inicializar modelo Gemini: ${error.message}`);
+    }
     
     // Tenta carregar OpenAI se disponível (para usar como fallback ou opção preferencial)
     this.openaiService = null;
@@ -459,9 +476,15 @@ RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
       // Usa Gemini (padrão ou fallback)
       try {
         console.log('[DOC] Chamando Gemini API...');
-        console.log('[DOC] Modelo:', 'gemini-1.5-flash');
+        console.log('[DOC] Modelo: gemini-2.0-flash-exp');
         console.log('[DOC] MIME Type:', mimeType);
         console.log('[DOC] Tamanho base64:', base64Image.length, 'bytes');
+        console.log('[DOC] API Key presente:', process.env.GEMINI_API_KEY ? 'SIM' : 'NÃO');
+        
+        // Valida se o modelo foi inicializado corretamente
+        if (!this.model) {
+          throw new Error('Modelo Gemini não foi inicializado. Verifique GEMINI_API_KEY.');
+        }
         
         // Adiciona timeout e retry para processamento de imagem
         const result = await retryWithBackoff(
