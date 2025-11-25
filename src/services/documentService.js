@@ -12,6 +12,14 @@ if (!process.env.GEMINI_API_KEY) {
   throw new Error('GEMINI_API_KEY não configurada no .env');
 }
 
+// Valida formato da API key (deve começar com letras/números)
+if (process.env.GEMINI_API_KEY.trim().length < 20) {
+  console.error('[DOC] ❌ GEMINI_API_KEY parece inválida (muito curta)');
+  throw new Error('GEMINI_API_KEY parece inválida. Verifique se está correta no .env');
+}
+
+console.log('[DOC] ✅ GEMINI_API_KEY configurada (tamanho:', process.env.GEMINI_API_KEY.length, 'chars)');
+
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 class DocumentService {
