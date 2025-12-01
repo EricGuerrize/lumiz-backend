@@ -24,14 +24,14 @@ class GoogleVisionService {
             } else {
                 this.apiKey = key;
                 console.log('[VISION] Configurado para usar REST API com API Key');
+                // NÃO inicializa o client library se for apenas API Key, pois ele tenta usar ADC e falha
+                this.client = null;
             }
         } else {
             // Tenta usar credenciais padrão do ambiente (GOOGLE_APPLICATION_CREDENTIALS)
-            // A lib do Google tenta carregar automaticamente
             try {
                 this.client = new vision.ImageAnnotatorClient();
-                // Não temos como saber se deu certo até tentar usar, mas instanciou
-                console.log('[VISION] Cliente inicializado (tentando credenciais padrão)');
+                console.log('[VISION] Cliente inicializado (tentando credenciais padrão ADC)');
             } catch (e) {
                 console.log('[VISION] Nenhuma credencial configurada inicialmente');
             }
