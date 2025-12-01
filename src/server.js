@@ -54,7 +54,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Configura trust proxy para funcionar corretamente com rate limiting atrás de proxies/load balancers
-app.set('trust proxy', true);
+app.set('trust proxy', 1);
 
 // Configuração CORS para permitir o frontend
 const allowedOrigins = [
