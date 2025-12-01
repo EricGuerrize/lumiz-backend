@@ -1,6 +1,7 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const axios = require('axios');
 const { withTimeout, retryWithBackoff } = require('../utils/timeout');
+const googleVisionService = require('./googleVisionService');
 require('dotenv').config();
 
 // Timeout para processamento de imagens (60 segundos - imagens podem demorar)
@@ -172,7 +173,65 @@ class DocumentService {
 
       const dataHoje = new Date().toISOString().split('T')[0];
 
-      const prompt = `
+      // Tenta OCR com Google Vision se for imagem
+      let ocrText = '';
+      if (mimeType.startsWith('image/')) {
+        try {
+          ocrText = await googleVisionService.extractTextFromImage(imageBuffer);
+          if (ocrText) console.log('[DOC] ✅ Texto extraído via Google Vision (' + ocrText.length + ' chars)');
+        } catch (e) {
+          console.log('[DOC] ⚠️ Google Vision ignorado:', e.message);
+        }
+      }
+
+      let prompt = '';
+
+      if (ocrText) {
+        prompt = `
+TAREFA: Analisar este TEXTO extraído de um documento financeiro (via OCR) e estruturar as informações.
+DATA DE HOJE: ${dataHoje}
+
+TEXTO EXTRAÍDO:
+"""
+${ocrText}
+"""
+
+TIPOS DE DOCUMENTO:
+1. BOLETO: código de barras, valor, vencimento, beneficiário, linha digitável
+2. EXTRATO BANCÁRIO: lista de transações com datas e valores, créditos e débitos
+3. COMPROVANTE DE PAGAMENTO PIX: comprovante de transferência PIX, valor, data/hora, destinatário/remetente, chave PIX
+4. COMPROVANTE DE PAGAMENTO: valor pago, data, destinatário, qualquer comprovante de pagamento
+5. NOTA FISCAL: valor total, fornecedor, data, itens, CNPJ, número da nota
+6. FATURA DE CARTÃO: valor total, parcelas, data vencimento, bandeira
+7. RECIBO: valor, serviço prestado, data
+
+EXTRAÇÃO:
+- tipo_documento: tipo identificado (boleto, extrato, comprovante_pix, comprovante, nota_fiscal, fatura, recibo)
+- transacoes: array de transações encontradas, cada uma com:
+  - tipo: "entrada" ou "saida"
+  - valor: número (sempre positivo)
+  - categoria: nome/descrição (ex: "Fornecedor XYZ", "Cliente Maria", "Pix Recebido", "Pix Enviado")
+  - data: data da transação (formato YYYY-MM-DD)
+  - descricao: detalhes adicionais (ex: "Boleto vencimento 20/11", "Pix de João Silva")
+
+REGRAS IMPORTANTES:
+- Para BOLETO/NOTA FISCAL/FATURA: sempre é SAÍDA (custo a pagar)
+- Para COMPROVANTE PIX: 
+  * Procure por: "PIX", "Transferência PIX", "Chave PIX", "Comprovante de Transferência"
+  * Se mostra "Você recebeu" / "Crédito" / seta apontando para você = tipo "entrada"
+  * Se mostra "Você enviou" / "Débito" / seta apontando para fora = tipo "saida"
+  * Identifique pela direção da seta, texto "recebido/enviado", ou contexto visual
+  * Extraia valor, data/hora, nome do remetente/destinatário
+- Para NOTA FISCAL: procure por "NF", "NFe", "Nota Fiscal", CNPJ, valor total, fornecedor
+- Para EXTRATO: analise cada linha (crédito=entrada, débito=saída)
+- Para COMPROVANTE genérico: analise o contexto (pagamento=saída, recebimento=entrada)
+- Se não conseguir identificar, retorne tipo_documento: "nao_identificado"
+- SEMPRE extraia pelo menos uma transação se identificar o documento
+
+RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
+`;
+      } else {
+        prompt = `
 TAREFA: Analisar esta imagem de documento financeiro e extrair informações.
 
 TIPOS DE DOCUMENTO:
@@ -358,6 +417,7 @@ Não identificado:
 
 RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
 `;
+      }
 
       // VALIDAÇÃO CRÍTICA FINAL - nunca permite application/octet-stream
       if (!mimeType || mimeType === 'application/octet-stream' || !mimeType.startsWith('image/')) {
@@ -386,24 +446,31 @@ RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
 
       console.log('[DOC] ✅ Enviando para Gemini com mimeType:', mimeType);
 
-      const imagePart = {
-        inlineData: {
-          data: base64Image,
-          mimeType: mimeType
-        }
-      };
+      const requestParts = [prompt];
 
-      // Validação final do objeto antes de enviar
-      if (imagePart.inlineData.mimeType === 'application/octet-stream') {
-        throw new Error('MIME type ainda inválido no imagePart - abortando envio');
+      // Só anexa a imagem se NÃO tivermos usado OCR
+      if (!ocrText) {
+        const imagePart = {
+          inlineData: {
+            data: base64Image,
+            mimeType: mimeType
+          }
+        };
+
+        // Validação final do objeto antes de enviar
+        if (imagePart.inlineData.mimeType === 'application/octet-stream') {
+          throw new Error('MIME type ainda inválido no imagePart - abortando envio');
+        }
+
+        requestParts.push(imagePart);
       }
 
       try {
         console.log('[DOC] Chamando Gemini API...');
-        // Adiciona timeout e retry para processamento de imagem
+        // Adiciona timeout e retry para processamento
         const result = await retryWithBackoff(
           () => withTimeout(
-            this.model.generateContent([prompt, imagePart]),
+            this.model.generateContent(requestParts),
             IMAGE_PROCESSING_TIMEOUT_MS,
             'Timeout ao processar imagem com Gemini (60s)'
           ),
