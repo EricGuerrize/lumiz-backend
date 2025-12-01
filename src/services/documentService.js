@@ -11,8 +11,8 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 class DocumentService {
   constructor() {
-    // Usando modelo estável - gemini-1.5-flash-001
-    this.model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-001' });
+    // Usando modelo estável - gemini-1.5-flash (sem sufixo de versão)
+    this.model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
   }
 
   async processImage(imageUrl, messageKey = null) {
