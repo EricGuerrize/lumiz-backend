@@ -46,8 +46,14 @@ class DocumentService {
     this.googleVisionService = null;
     try {
       this.googleVisionService = require('./googleVisionService');
-      if (this.googleVisionService.client) {
+      // Verifica se está disponível usando a propriedade isAvailable
+      if (this.googleVisionService.isAvailable) {
         console.log('[DOC] ✅ Google Vision disponível - será usado como PRIMÁRIO (grátis até 1000/mês)');
+        if (this.googleVisionService.useRestAPI) {
+          console.log('[DOC] Usando REST API (mais confiável com API key)');
+        } else {
+          console.log('[DOC] Usando SDK (credentials JSON)');
+        }
       }
     } catch (error) {
       console.log('[DOC] Google Vision não disponível:', error.message);
@@ -65,7 +71,8 @@ class DocumentService {
     }
     
     // Configura qual IA usar
-    this.useGoogleVision = this.googleVisionService?.client !== null && this.googleVisionService?.client !== undefined;
+    // Google Vision está disponível se tem a propriedade isAvailable = true
+    this.useGoogleVision = this.googleVisionService?.isAvailable === true;
     this.useOpenAI = this.openaiService?.client !== null && this.openaiService?.client !== undefined;
     
     if (this.useGoogleVision) {
@@ -96,15 +103,18 @@ class DocumentService {
         throw new Error('URL da imagem não fornecida');
       }
 
-      // Estratégia: Tenta Evolution API primeiro (mais confiável), depois URL direta
-      // Evolution API com messageKey é mais confiável que URL direta
+      // Estratégia: SEMPRE usa Evolution API quando tem messageKey (arquivos podem estar criptografados)
+      // URLs do WhatsApp terminadas em .enc são criptografadas e só funcionam via Evolution API
       let evolutionError = null;
       let urlError = null;
       
-      // PRIORIDADE 1: Evolution API com messageKey (mais confiável)
+      // Detecta se URL está criptografada (.enc)
+      const isEncrypted = imageUrl && (imageUrl.includes('.enc') || imageUrl.includes('mmg.whatsapp.net'));
+      
+      // PRIORIDADE 1: Evolution API com messageKey (OBRIGATÓRIO para arquivos criptografados)
       if (messageKey && messageKey.remoteJid && messageKey.id) {
         try {
-          console.log('[DOC] Tentando baixar via Evolution API (método preferido)...');
+          console.log('[DOC] Tentando baixar via Evolution API (método preferido e obrigatório para arquivos criptografados)...');
           const evolutionService = require('./evolutionService');
           const mediaResponse = await evolutionService.downloadMedia(messageKey, 'image');
           imageBuffer = mediaResponse.data;
@@ -114,16 +124,27 @@ class DocumentService {
           console.log('[DOC] Tamanho:', imageBuffer.length, 'bytes');
         } catch (err) {
           evolutionError = err;
-          console.log('[DOC] ⚠️ Erro ao baixar via Evolution API:', err.message);
+          console.error('[DOC] ❌ Erro ao baixar via Evolution API:', err.message);
+          // Se é arquivo criptografado, não tenta URL direta (não vai funcionar)
+          if (isEncrypted) {
+            throw new Error(`Arquivo criptografado do WhatsApp precisa ser baixado via Evolution API. Erro: ${err.message}`);
+          }
           console.log('[DOC] Tentando via URL direta como fallback...');
-          // Fallback para URL direta se Evolution API falhar
         }
       } else if (messageKey) {
-        console.log('[DOC] ⚠️ MessageKey fornecido mas sem remoteJid ou id, tentando URL direta...');
+        console.log('[DOC] ⚠️ MessageKey fornecido mas sem remoteJid ou id');
+        if (isEncrypted) {
+          throw new Error('Arquivo criptografado do WhatsApp requer messageKey completo (remoteJid e id)');
+        }
       }
 
-      // PRIORIDADE 2: URL direta (fallback se Evolution API falhar ou não tiver messageKey)
+      // PRIORIDADE 2: URL direta (APENAS se não for arquivo criptografado e Evolution API falhou)
       if (!imageBuffer && imageUrl && (imageUrl.startsWith('http://') || imageUrl.startsWith('https://'))) {
+        // Se é arquivo criptografado, não tenta URL direta
+        if (isEncrypted) {
+          throw new Error('Arquivo criptografado do WhatsApp (.enc) só pode ser baixado via Evolution API. Verifique se messageKey está sendo passado corretamente.');
+        }
+        
         try {
           console.log('[DOC] Baixando arquivo via URL direta...');
           const imageResponse = await withTimeout(
@@ -149,24 +170,38 @@ class DocumentService {
           headerMimeType = imageResponse.headers['content-type'];
         } catch (err) {
           urlError = err;
-          console.log('[DOC] ⚠️ Erro ao baixar via URL direta:', err.message);
+          console.error('[DOC] ❌ Erro ao baixar via URL direta:', err.message);
         }
       }
 
       // Se ambos métodos falharam, lança erro detalhado
       if (!imageBuffer) {
         let errorMsg = 'Não foi possível baixar a imagem.';
-        if (evolutionError && urlError) {
-          errorMsg += `\nEvolution API: ${evolutionError.message}\nURL direta: ${urlError.message}`;
-        } else if (evolutionError) {
-          errorMsg += `\nEvolution API: ${evolutionError.message}`;
-        } else if (urlError) {
-          errorMsg += `\nURL direta: ${urlError.message}`;
-        } else if (!imageUrl && !messageKey) {
-          errorMsg += '\nURL e messageKey não fornecidos.';
-        } else if (!imageUrl) {
-          errorMsg += '\nURL não fornecida pela Evolution API.';
+        
+        if (isEncrypted) {
+          errorMsg += '\n\n⚠️ Arquivo criptografado do WhatsApp (.enc) detectado.';
+          errorMsg += '\nEste tipo de arquivo só pode ser baixado via Evolution API.';
+          if (!messageKey || !messageKey.remoteJid || !messageKey.id) {
+            errorMsg += '\n\n❌ MessageKey incompleto ou ausente.';
+            errorMsg += '\nVerifique se o webhook está passando messageKey corretamente.';
+          } else if (evolutionError) {
+            errorMsg += `\n\n❌ Erro ao baixar via Evolution API: ${evolutionError.message}`;
+            errorMsg += '\nVerifique se EVOLUTION_API_KEY está configurada corretamente.';
+          }
+        } else {
+          if (evolutionError && urlError) {
+            errorMsg += `\nEvolution API: ${evolutionError.message}\nURL direta: ${urlError.message}`;
+          } else if (evolutionError) {
+            errorMsg += `\nEvolution API: ${evolutionError.message}`;
+          } else if (urlError) {
+            errorMsg += `\nURL direta: ${urlError.message}`;
+          } else if (!imageUrl && !messageKey) {
+            errorMsg += '\nURL e messageKey não fornecidos.';
+          } else if (!imageUrl) {
+            errorMsg += '\nURL não fornecida pela Evolution API.';
+          }
         }
+        
         throw new Error(errorMsg);
       }
       console.log('[DOC] Buffer criado, tamanho:', imageBuffer.length, 'bytes');
@@ -495,15 +530,36 @@ RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
       }
 
       // PRIORIDADE 1: Google Vision API (GRATUITO até 1000/mês, melhor precisão)
-      if (this.useGoogleVision && this.googleVisionService?.client) {
+      if (this.useGoogleVision) {
         try {
           console.log('[DOC] 🚀 Usando Google Vision API (método preferido - GRATUITO até 1000/mês)...');
-          return await this.googleVisionService.processImage(imageBuffer, mimeType);
+          console.log('[DOC] Google Vision Service disponível:', !!this.googleVisionService);
+          console.log('[DOC] useRestAPI:', this.googleVisionService?.useRestAPI);
+          console.log('[DOC] isAvailable:', this.googleVisionService?.isAvailable);
+          
+          const startTime = Date.now();
+          const result = await this.googleVisionService.processImage(imageBuffer, mimeType);
+          const duration = Date.now() - startTime;
+          
+          console.log('[DOC] ✅ Google Vision processou com sucesso em', duration, 'ms');
+          console.log('[DOC] Resultado:', {
+            tipo_documento: result.tipo_documento,
+            num_transacoes: result.transacoes?.length || 0
+          });
+          
+          return result;
         } catch (visionError) {
-          console.error('[DOC] ⚠️ Erro com Google Vision:', visionError.message);
+          console.error('[DOC] ❌ Erro com Google Vision');
+          console.error('[DOC] Tipo do erro:', visionError.constructor.name);
+          console.error('[DOC] Mensagem:', visionError.message);
+          console.error('[DOC] Stack completo:', visionError.stack);
+          
           // Verifica se é erro de quota (passou de 1000/mês)
-          if (visionError.message.includes('quota') || visionError.message.includes('limit')) {
+          if (visionError.message.includes('quota') || visionError.message.includes('limit') || visionError.message.includes('429')) {
             console.log('[DOC] 💡 Limite gratuito do Google Vision atingido, tentando OpenAI...');
+          } else if (visionError.message.includes('403') || visionError.message.includes('permissões')) {
+            console.error('[DOC] ❌ Erro de permissão - verifique se Cloud Vision API está habilitada');
+            console.error('[DOC] Tentando OpenAI como fallback...');
           } else {
             console.log('[DOC] Tentando OpenAI como fallback...');
           }
@@ -573,7 +629,7 @@ RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
       } catch (geminiError) {
         console.error('[DOC] ❌ Erro ao chamar Gemini API:', geminiError.message);
         console.error('[DOC] Erro completo:', JSON.stringify(geminiError, null, 2));
-        
+
         // Tratamento específico para erros conhecidos
         if (geminiError.message && geminiError.message.includes('Provided image is not valid')) {
           throw new Error('A imagem enviada não é válida. Verifique se é uma imagem JPEG, PNG, WEBP ou PDF válida.');

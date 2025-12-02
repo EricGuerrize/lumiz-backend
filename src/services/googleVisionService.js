@@ -11,42 +11,59 @@ class GoogleVisionService {
     if (!process.env.GOOGLE_APPLICATION_CREDENTIALS && !process.env.GOOGLE_VISION_API_KEY) {
       console.warn('[VISION] Google Vision não configurado. Configure GOOGLE_APPLICATION_CREDENTIALS ou GOOGLE_VISION_API_KEY');
       this.client = null;
+      this.useRestAPI = false;
+      this.apiKey = null;
+      this.isAvailable = false;
       return;
     }
 
+    this.useRestAPI = false;
+    this.apiKey = null;
+    this.isAvailable = false;
+
     try {
-      // Prioridade 1: Credentials JSON (mais seguro, para produção)
+      // Prioridade 1: Credentials JSON (mais seguro, para produção) - usa SDK
       if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
         this.client = new vision.ImageAnnotatorClient({
           keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS
         });
-        console.log('[VISION] ✅ Google Vision inicializado com credentials JSON');
+        console.log('[VISION] ✅ Google Vision inicializado com credentials JSON (SDK)');
+        this.useRestAPI = false;
+        this.isAvailable = true;
       } 
-      // Prioridade 2: API Key direta (mais simples, para desenvolvimento)
+      // Prioridade 2: API Key direta - usa REST API (mais confiável)
       else if (process.env.GOOGLE_VISION_API_KEY) {
-        // Google Vision API aceita API key via variável de ambiente
-        // Ou podemos passar diretamente no cliente
-        process.env.GOOGLE_APPLICATION_CREDENTIALS = undefined; // Remove se existir
-        this.client = new vision.ImageAnnotatorClient({
-          apiKey: process.env.GOOGLE_VISION_API_KEY
-        });
-        console.log('[VISION] ✅ Google Vision inicializado com API key');
-        console.log('[VISION] API Key configurada (primeiros 10 chars):', process.env.GOOGLE_VISION_API_KEY.substring(0, 10) + '...');
+        // REST API funciona melhor com API key direta do que o SDK
+        this.apiKey = process.env.GOOGLE_VISION_API_KEY;
+        this.client = null; // Não usa SDK quando tem API key
+        this.useRestAPI = true;
+        this.isAvailable = true;
+        console.log('[VISION] ✅ Google Vision configurado para usar REST API (mais confiável com API key)');
+        console.log('[VISION] API Key configurada (primeiros 10 chars):', this.apiKey.substring(0, 10) + '...');
       }
     } catch (error) {
       console.error('[VISION] ❌ Erro ao inicializar Google Vision:', error.message);
       this.client = null;
+      this.useRestAPI = false;
+      this.apiKey = null;
+      this.isAvailable = false;
     }
   }
 
   async processImage(imageBuffer, mimeType) {
+    // Se tem API key, usa REST API (mais confiável)
+    if (this.useRestAPI && this.apiKey) {
+      return await this.processImageWithRestAPI(imageBuffer, mimeType);
+    }
+
+    // Se tem credentials JSON, usa SDK
     if (!this.client) {
       throw new Error('Google Vision não configurado. Configure GOOGLE_APPLICATION_CREDENTIALS ou GOOGLE_VISION_API_KEY');
     }
 
     try {
       console.log('[VISION] ========================================');
-      console.log('[VISION] Processando imagem com Google Vision...');
+      console.log('[VISION] Processando imagem com Google Vision SDK...');
       console.log('[VISION] MIME Type:', mimeType);
       console.log('[VISION] Tamanho:', imageBuffer.length, 'bytes');
       console.log('[VISION] ========================================');
@@ -56,15 +73,8 @@ class GoogleVisionService {
         content: imageBuffer
       };
 
-      // Configura opções da requisição (inclui API key se necessário)
-      const requestOptions = {};
-      if (process.env.GOOGLE_VISION_API_KEY && !process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-        // Se usando API key direta, pode precisar passar no request
-        requestOptions.apiKey = process.env.GOOGLE_VISION_API_KEY;
-      }
-
       // Extrai texto da imagem (OCR)
-      console.log('[VISION] Extraindo texto (OCR) com Google Vision API...');
+      console.log('[VISION] Extraindo texto (OCR) com Google Vision SDK...');
       const [textResult] = await retryWithBackoff(
         () => withTimeout(
           this.client.textDetection(image),
@@ -86,73 +96,8 @@ class GoogleVisionService {
       console.log('[VISION] ✅ Texto extraído:', fullText.length, 'caracteres');
       console.log('[VISION] Primeiros 200 caracteres:', fullText.substring(0, 200));
 
-      // Agora precisa processar o texto com Gemini para extrair dados estruturados
-      // (Google Vision só faz OCR, não entende contexto)
-      if (!process.env.GEMINI_API_KEY) {
-        throw new Error('GEMINI_API_KEY não configurada. Necessária para processar texto extraído pelo Google Vision.');
-      }
-      
-      const { GoogleGenerativeAI } = require('@google/generative-ai');
-      const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-      const geminiModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
-      
-      // Cria um prompt para o Gemini processar o texto extraído
-      const dataHoje = new Date().toISOString().split('T')[0];
-      
-      const prompt = `
-TAREFA: Analisar este texto extraído de um documento financeiro e extrair informações estruturadas.
-
-TEXTO EXTRAÍDO DO DOCUMENTO:
-${fullText}
-
-DATA DE HOJE: ${dataHoje}
-
-INSTRUÇÕES:
-- Analise o texto e identifique o tipo de documento (boleto, extrato, comprovante PIX, nota fiscal, etc)
-- Extraia todas as transações encontradas
-- Para cada transação, identifique: tipo (entrada/saída), valor, categoria, data, descrição
-- Siga as mesmas regras do prompt de análise de imagens para identificar tipo de documento e transações
-
-REGRAS IMPORTANTES:
-- Para BOLETO/NOTA FISCAL/FATURA: sempre é SAÍDA (custo a pagar)
-- Para COMPROVANTE PIX: identifique se é entrada ou saída baseado no contexto
-- Para NOTA FISCAL: extraia fornecedor, valor total, data, número da NF
-- Para COMPROVANTE PIX MERCADO PAGO: procure por seções "De" e "Para", assuma que quem enviou o comprovante fez a transferência (tipo "saida")
-
-RETORNE APENAS JSON NO SEGUINTE FORMATO:
-{
-  "tipo_documento": "boleto" | "extrato" | "comprovante_pix" | "comprovante" | "nota_fiscal" | "fatura" | "recibo" | "nao_identificado",
-  "transacoes": [
-    {
-      "tipo": "entrada" | "saida",
-      "valor": 1234.56,
-      "categoria": "Nome da categoria",
-      "data": "YYYY-MM-DD",
-      "descricao": "Descrição detalhada"
-    }
-  ]
-}
-`;
-
-      console.log('[VISION] Processando texto com Gemini para extrair dados...');
-      const geminiResult = await geminiModel.generateContent(prompt);
-      const response = await geminiResult.response;
-      const text = response.text();
-
-      // Remove markdown code blocks se houver
-      const jsonText = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-
-      try {
-        const parsed = JSON.parse(jsonText);
-        console.log('[VISION] ✅ Dados extraídos com sucesso');
-        console.log('[VISION] Tipo documento:', parsed.tipo_documento);
-        console.log('[VISION] Número de transações:', parsed.transacoes?.length || 0);
-        return parsed;
-      } catch (parseError) {
-        console.error('[VISION] ❌ Erro ao fazer parse do JSON:', parseError.message);
-        console.error('[VISION] JSON recebido:', jsonText.substring(0, 500));
-        throw new Error(`Erro ao processar resposta do Gemini: ${parseError.message}`);
-      }
+      // Processa texto com Gemini
+      return await this.processTextWithGemini(fullText);
     } catch (error) {
       console.error('[VISION] ❌ Erro ao processar imagem:', error.message);
       
@@ -169,11 +114,25 @@ RETORNE APENAS JSON NO SEGUINTE FORMATO:
   }
 
   async processImageWithRestAPI(imageBuffer, mimeType) {
+    if (!this.apiKey) {
+      throw new Error('GOOGLE_VISION_API_KEY não configurada');
+    }
+
     try {
+      console.log('[VISION] ========================================');
+      console.log('[VISION] Processando imagem com Google Vision REST API...');
+      console.log('[VISION] MIME Type:', mimeType);
+      console.log('[VISION] Tamanho:', imageBuffer.length, 'bytes');
+      console.log('[VISION] API Key presente:', this.apiKey ? 'SIM' : 'NÃO');
+      console.log('[VISION] API Key (primeiros 10 chars):', this.apiKey.substring(0, 10) + '...');
+      console.log('[VISION] ========================================');
+
       const base64Image = imageBuffer.toString('base64');
+      console.log('[VISION] Base64 gerado, tamanho:', base64Image.length, 'caracteres');
       
       // Google Vision REST API endpoint
-      const url = `https://vision.googleapis.com/v1/images:annotate?key=${process.env.GOOGLE_VISION_API_KEY}`;
+      const url = `https://vision.googleapis.com/v1/images:annotate?key=${this.apiKey}`;
+      console.log('[VISION] URL da API:', url.replace(this.apiKey, 'API_KEY_HIDDEN'));
       
       const requestBody = {
         requests: [
@@ -191,7 +150,12 @@ RETORNE APENAS JSON NO SEGUINTE FORMATO:
         ]
       };
 
+      console.log('[VISION] Request body preparado');
+      console.log('[VISION] Número de requests:', requestBody.requests.length);
+      console.log('[VISION] Feature type:', requestBody.requests[0].features[0].type);
       console.log('[VISION] Chamando Google Vision REST API...');
+      
+      const startTime = Date.now();
       const response = await retryWithBackoff(
         () => withTimeout(
           axios.post(url, requestBody, {
@@ -205,31 +169,89 @@ RETORNE APENAS JSON NO SEGUINTE FORMATO:
         2,
         1000
       );
+      const duration = Date.now() - startTime;
+      console.log('[VISION] ✅ Resposta recebida em', duration, 'ms');
+      console.log('[VISION] Status HTTP:', response.status);
+      console.log('[VISION] Headers:', JSON.stringify(response.headers).substring(0, 200));
 
+      // Verifica erros na resposta
+      if (response.data.error) {
+        console.error('[VISION] ❌ Erro na resposta da API:', JSON.stringify(response.data.error));
+        throw new Error(`Google Vision API Error: ${response.data.error.message || JSON.stringify(response.data.error)}`);
+      }
+
+      console.log('[VISION] Response data keys:', Object.keys(response.data));
       const responses = response.data.responses;
-      if (!responses || responses.length === 0 || !responses[0].textAnnotations) {
+      console.log('[VISION] Número de responses:', responses ? responses.length : 0);
+      
+      if (!responses || responses.length === 0) {
+        console.error('[VISION] ❌ Resposta vazia do Google Vision API');
+        console.error('[VISION] Response data completo:', JSON.stringify(response.data).substring(0, 1000));
+        throw new Error('Resposta vazia do Google Vision API');
+      }
+
+      // Verifica se tem erro na resposta individual
+      if (responses[0].error) {
+        console.error('[VISION] ❌ Erro na response individual:', JSON.stringify(responses[0].error));
+        throw new Error(`Google Vision API Error: ${responses[0].error.message || JSON.stringify(responses[0].error)}`);
+      }
+
+      console.log('[VISION] Response[0] keys:', Object.keys(responses[0]));
+      console.log('[VISION] Tem textAnnotations?', !!responses[0].textAnnotations);
+      console.log('[VISION] Número de textAnnotations:', responses[0].textAnnotations ? responses[0].textAnnotations.length : 0);
+
+      if (!responses[0].textAnnotations || responses[0].textAnnotations.length === 0) {
+        console.error('[VISION] ❌ Nenhum texto encontrado na imagem');
+        console.error('[VISION] Response[0] completo:', JSON.stringify(responses[0]).substring(0, 500));
         throw new Error('Nenhum texto encontrado na imagem');
       }
 
       const textAnnotations = responses[0].textAnnotations;
       const fullText = textAnnotations[0].description || '';
       
-      console.log('[VISION] ✅ Texto extraído:', fullText.length, 'caracteres');
+      console.log('[VISION] ✅ Texto extraído com sucesso!');
+      console.log('[VISION] Tamanho do texto:', fullText.length, 'caracteres');
+      console.log('[VISION] Número de palavras:', fullText.split(/\s+/).length);
       console.log('[VISION] Primeiros 200 caracteres:', fullText.substring(0, 200));
+      console.log('[VISION] Últimos 200 caracteres:', fullText.substring(Math.max(0, fullText.length - 200)));
 
-      // Processa texto com Gemini (mesmo código do método anterior)
-      return await this.processTextWithGemini(fullText);
+      // Processa texto com Gemini
+      console.log('[VISION] Iniciando processamento do texto com Gemini...');
+      const geminiResult = await this.processTextWithGemini(fullText);
+      console.log('[VISION] ✅ Processamento completo com Gemini');
+      return geminiResult;
     } catch (error) {
-      console.error('[VISION] ❌ Erro ao processar com REST API:', error.message);
+      console.error('[VISION] ❌ Erro ao processar com REST API');
+      console.error('[VISION] Tipo do erro:', error.constructor.name);
+      console.error('[VISION] Mensagem:', error.message);
+      console.error('[VISION] Stack:', error.stack);
       
-      if (error.response?.status === 403) {
-        throw new Error('API key inválida ou sem permissões. Verifique GOOGLE_VISION_API_KEY.');
+      if (error.response) {
+        console.error('[VISION] Status HTTP:', error.response.status);
+        console.error('[VISION] Status Text:', error.response.statusText);
+        console.error('[VISION] Response headers:', JSON.stringify(error.response.headers).substring(0, 300));
+        console.error('[VISION] Response data:', JSON.stringify(error.response.data).substring(0, 1000));
+        
+        if (error.response.status === 400) {
+          const errorMsg = error.response.data?.error?.message || 'Erro na requisição ao Google Vision. Verifique se a imagem é válida.';
+          throw new Error(`Erro 400: ${errorMsg}`);
+        }
+        
+        if (error.response.status === 403) {
+          const errorMsg = error.response.data?.error?.message || 'API key inválida ou sem permissões';
+          console.error('[VISION] ❌ Erro 403 - Verifique:');
+          console.error('[VISION] 1. Se GOOGLE_VISION_API_KEY está correta');
+          console.error('[VISION] 2. Se Cloud Vision API está habilitada no Google Cloud Console');
+          console.error('[VISION] 3. Se a API key tem permissões para Cloud Vision API');
+          throw new Error(`API key inválida ou sem permissões: ${errorMsg}`);
+        }
+        
+        if (error.response.status === 429) {
+          throw new Error('Limite de requisições do Google Vision atingido. Tente novamente em alguns instantes.');
+        }
       }
       
-      if (error.response?.status === 429) {
-        throw new Error('Limite de requisições do Google Vision atingido. Tente novamente em alguns instantes.');
-      }
-      
+      // Re-throw o erro original com contexto
       throw error;
     }
   }
@@ -245,6 +267,7 @@ RETORNE APENAS JSON NO SEGUINTE FORMATO:
     
     const dataHoje = new Date().toISOString().split('T')[0];
     
+    // Prompt detalhado igual ao do documentService para consistência
     const prompt = `
 TAREFA: Analisar este texto extraído de um documento financeiro e extrair informações estruturadas.
 
@@ -253,17 +276,66 @@ ${fullText}
 
 DATA DE HOJE: ${dataHoje}
 
-INSTRUÇÕES:
-- Analise o texto e identifique o tipo de documento (boleto, extrato, comprovante PIX, nota fiscal, etc)
-- Extraia todas as transações encontradas
-- Para cada transação, identifique: tipo (entrada/saída), valor, categoria, data, descrição
-- Siga as mesmas regras do prompt de análise de imagens para identificar tipo de documento e transações
+TIPOS DE DOCUMENTO:
+1. BOLETO: código de barras, valor, vencimento, beneficiário, linha digitável
+2. EXTRATO BANCÁRIO: lista de transações com datas e valores, créditos e débitos
+3. COMPROVANTE DE PAGAMENTO PIX: comprovante de transferência PIX, valor, data/hora, destinatário/remetente, chave PIX
+4. COMPROVANTE DE PAGAMENTO: valor pago, data, destinatário, qualquer comprovante de pagamento
+5. NOTA FISCAL: valor total, fornecedor, data, itens, CNPJ, número da nota
+6. FATURA DE CARTÃO: valor total, parcelas, data vencimento, bandeira
+7. RECIBO: valor, serviço prestado, data
+
+EXTRAÇÃO:
+- tipo_documento: tipo identificado (boleto, extrato, comprovante_pix, comprovante, nota_fiscal, fatura, recibo)
+- transacoes: array de transações encontradas, cada uma com:
+  - tipo: "entrada" ou "saida"
+  - valor: número (sempre positivo)
+  - categoria: nome/descrição (ex: "Fornecedor XYZ", "Cliente Maria", "Pix Recebido", "Pix Enviado")
+  - data: data da transação (formato YYYY-MM-DD)
+  - descricao: detalhes adicionais (ex: "Boleto vencimento 20/11", "Pix de João Silva")
 
 REGRAS IMPORTANTES:
 - Para BOLETO/NOTA FISCAL/FATURA: sempre é SAÍDA (custo a pagar)
-- Para COMPROVANTE PIX: identifique se é entrada ou saída baseado no contexto
-- Para NOTA FISCAL: extraia fornecedor, valor total, data, número da NF
-- Para COMPROVANTE PIX MERCADO PAGO: procure por seções "De" e "Para", assuma que quem enviou o comprovante fez a transferência (tipo "saida")
+- Para COMPROVANTE PIX (incluindo Mercado Pago, Nubank, etc): 
+  * Procure por: "PIX", "Transferência PIX", "Chave PIX", "Comprovante de Transferência", "Mercado Pago", "Nubank"
+  * IMPORTANTE: Identifique a perspectiva do documento:
+    - Se o documento mostra que VOCÊ RECEBEU (seção "Para" mostra seu nome/CPF, ou "Crédito", ou seta apontando para você) = tipo "entrada"
+    - Se o documento mostra que VOCÊ ENVIOU (seção "De" mostra seu nome/CPF, ou "Débito", ou seta apontando para fora) = tipo "saida"
+  * Para MERCADO PAGO especificamente:
+    - Procure por seções "De" (remetente) e "Para" (destinatário)
+    - Se "De" contém o nome do usuário/clínica = tipo "saida" (você enviou)
+    - Se "Para" contém o nome do usuário/clínica = tipo "entrada" (você recebeu)
+    - Extraia o nome completo do remetente/destinatário na categoria ou descrição
+  * Extraia SEMPRE: valor, data/hora, nome do remetente (De), nome do destinatário (Para)
+  * Use o nome do destinatário na categoria se for entrada, ou nome do remetente se for saída
+- Para NOTA FISCAL (incluindo DANFE, NFe, NF-e, DANFE):
+  * SEMPRE é tipo "saida" (custo/despesa - você comprou algo)
+  * Procure por: "NOTA FISCAL", "NF", "NFe", "NF-e", "DANFE", "Emitente", "Fornecedor", "CNPJ", "RECEBEMOS DE"
+  * Extraia SEMPRE:
+    - Nome do fornecedor/emitente (procure por "Emitente", "RECEBEMOS DE", nome da empresa no topo)
+      Exemplo: "ELFA MEDICAMENTOS SA", "RECEBEMOS DE ELFA MEDICAMENTOS SA"
+    - Valor total da nota (procure por "VALOR TOTAL", "TOTAL", "Valor a pagar", "TOTAL DA NOTA", números grandes com R$)
+    - Data de emissão (procure por "Data de emissão", "Data", "Emissão", formato DD/MM/YYYY)
+    - Número da nota fiscal (procure por "N. 000738765", "Número", "NF", "N.")
+    - Série da nota (se disponível: "SÉRIE 5")
+  * Use o nome do fornecedor na categoria (ex: "ELFA MEDICAMENTOS SA")
+  * Inclua número da NF na descrição (ex: "NF 000738765 Série 5 - ELFA MEDICAMENTOS SA")
+  * Se não encontrar valor total, procure por valores individuais e some, ou use o maior valor encontrado
+- Para COMPROVANTE PIX MERCADO PAGO especificamente:
+  * Procure por: "Mercado Pago", "Comprovante de transferência", "De", "Para", "mercado pago" (logo)
+  * Identifique seções "De" (remetente) e "Para" (destinatário)
+  * IMPORTANTE: O comprovante mostra quem ENVIOU (De) e quem RECEBEU (Para)
+  * Como não sabemos o nome do usuário, assuma que quem está enviando o comprovante é quem FEZ a transferência
+  * Portanto, SEMPRE será tipo "saida" (custo/pagamento) e use o nome de "Para" na categoria
+  * Extraia: valor (procure por "R$" seguido de número grande), data/hora completa, nomes completos de ambas as partes
+  * Use o nome da OUTRA pessoa (não o seu) na categoria
+  * Formato de data: "Sábado, 1 de novembro de 2025, às 18:25:31" → "2025-11-01"
+- Para EXTRATO: analise cada linha (crédito=entrada, débito=saída)
+- Para COMPROVANTE genérico: analise o contexto (pagamento=saída, recebimento=entrada)
+- Se não conseguir identificar, retorne tipo_documento: "nao_identificado"
+- SEMPRE extraia pelo menos uma transação se identificar o documento
+- Seja assertivo: se identificar qualquer documento financeiro, extraia os dados mesmo que incompletos
+- IMPORTANTE: Para comprovantes PIX, sempre inclua o nome da pessoa/empresa na categoria ou descrição
 
 RETORNE APENAS JSON NO SEGUINTE FORMATO:
 {
@@ -281,22 +353,55 @@ RETORNE APENAS JSON NO SEGUINTE FORMATO:
 `;
 
     console.log('[VISION] Processando texto com Gemini para extrair dados...');
-    const geminiResult = await geminiModel.generateContent(prompt);
+    console.log('[VISION] Tamanho do prompt:', prompt.length, 'caracteres');
+    console.log('[VISION] Tamanho do texto extraído:', fullText.length, 'caracteres');
+    
+    const startTime = Date.now();
+    const geminiResult = await retryWithBackoff(
+      () => withTimeout(
+        geminiModel.generateContent(prompt),
+        IMAGE_PROCESSING_TIMEOUT_MS,
+        'Timeout ao processar texto com Gemini (60s)'
+      ),
+      2,
+      1000
+    );
+    const geminiDuration = Date.now() - startTime;
+    console.log('[VISION] ✅ Resposta do Gemini recebida em', geminiDuration, 'ms');
+    
     const response = await geminiResult.response;
     const text = response.text();
+    console.log('[VISION] Tamanho da resposta do Gemini:', text.length, 'caracteres');
+    console.log('[VISION] Primeiros 300 caracteres da resposta:', text.substring(0, 300));
 
     // Remove markdown code blocks se houver
     const jsonText = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    console.log('[VISION] JSON após limpeza:', jsonText.length, 'caracteres');
+    console.log('[VISION] Primeiros 500 caracteres do JSON:', jsonText.substring(0, 500));
 
     try {
       const parsed = JSON.parse(jsonText);
-      console.log('[VISION] ✅ Dados extraídos com sucesso');
+      console.log('[VISION] ✅ JSON parseado com sucesso!');
       console.log('[VISION] Tipo documento:', parsed.tipo_documento);
       console.log('[VISION] Número de transações:', parsed.transacoes?.length || 0);
+      
+      if (parsed.transacoes && parsed.transacoes.length > 0) {
+        parsed.transacoes.forEach((t, i) => {
+          console.log(`[VISION] Transação ${i + 1}:`, {
+            tipo: t.tipo,
+            valor: t.valor,
+            categoria: t.categoria,
+            data: t.data
+          });
+        });
+      }
+      
       return parsed;
     } catch (parseError) {
-      console.error('[VISION] ❌ Erro ao fazer parse do JSON:', parseError.message);
-      console.error('[VISION] JSON recebido:', jsonText.substring(0, 500));
+      console.error('[VISION] ❌ Erro ao fazer parse do JSON');
+      console.error('[VISION] Erro:', parseError.message);
+      console.error('[VISION] Stack:', parseError.stack);
+      console.error('[VISION] JSON completo recebido:', jsonText);
       throw new Error(`Erro ao processar resposta do Gemini: ${parseError.message}`);
     }
   }

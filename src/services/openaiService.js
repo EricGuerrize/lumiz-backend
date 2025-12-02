@@ -144,3 +144,6 @@ RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
 
 module.exports = new OpenAIService();
 
+
+
+

@@ -189,17 +189,17 @@ class EvolutionService {
 
       // Timeout maior para download de mídia (30 segundos)
       const response = await retryWithBackoff(
-        () => withTimeout(
-          this.axiosInstance.post(url, payload, {
-            headers: {
-              'apikey': this.apiKey,
-              'Content-Type': 'application/json'
-            },
-            responseType: 'arraybuffer'
-          }),
-          30000, // 30 segundos para download
-          'Timeout ao baixar mídia via Evolution API (30s)'
-        ),
+          () => withTimeout(
+            this.axiosInstance.post(url, payload, {
+              headers: {
+                'apikey': this.apiKey,
+                'Content-Type': 'application/json'
+              },
+              responseType: 'arraybuffer'
+            }),
+            30000, // 30 segundos para download
+            'Timeout ao baixar mídia via Evolution API (30s)'
+          ),
         2, // 2 tentativas
         1000 // delay inicial de 1s
       );

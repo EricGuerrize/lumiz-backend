@@ -141,3 +141,6 @@ Após configurar, reinicie o servidor e envie uma imagem. Você verá nos logs:
 [VISION] ✅ Dados extraídos com sucesso
 ```
 
+
+
+
