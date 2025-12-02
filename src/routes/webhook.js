@@ -94,22 +94,34 @@ router.post('/webhook', webhookLimiter, async (req, res) => {
             console.log(`[WEBHOOK] [IMG] mimetype: ${imageMessage.mimetype || 'N/A'}`);
             console.log(`[WEBHOOK] [IMG] fileLength: ${imageMessage.fileLength || 'N/A'}`);
             console.log(`[WEBHOOK] [IMG] mediaKey: ${imageMessage.mediaKey ? 'SIM' : 'NÃO'}`);
-            console.log(`[WEBHOOK] [IMG] Tem base64? ${imageMessage.media ? 'SIM' : 'NÃO'}`);
-            console.log(`[WEBHOOK] [IMG] Caption: ${imageMessage.caption || 'sem caption'}`);
+            
+            // Debug: verifica todos os campos possíveis de base64
+            console.log(`[WEBHOOK] [IMG] Tem 'media'? ${!!imageMessage.media}`);
+            console.log(`[WEBHOOK] [IMG] Tem 'base64'? ${!!imageMessage.base64}`);
+            console.log(`[WEBHOOK] [IMG] Tem 'mediaBase64'? ${!!imageMessage.mediaBase64}`);
+            console.log(`[WEBHOOK] [IMG] Keys disponíveis:`, Object.keys(imageMessage).join(', '));
             
             const caption = imageMessage.caption || '';
             const messageKey = key;
             
             // PRIORIDADE 1: Se tem base64 no webhook (Webhook Base64 ativado), usa diretamente
-            if (imageMessage.media) {
+            // Tenta diferentes nomes de campos que podem conter base64
+            let base64Data = imageMessage.media || imageMessage.base64 || imageMessage.mediaBase64 || imageMessage.data;
+            
+            if (base64Data) {
               console.log('[WEBHOOK] [IMG] ✅ Mídia base64 encontrada no webhook - processando diretamente');
+              console.log('[WEBHOOK] [IMG] Campo usado:', 
+                imageMessage.media ? 'media' : 
+                imageMessage.base64 ? 'base64' : 
+                imageMessage.mediaBase64 ? 'mediaBase64' : 'data');
+              console.log('[WEBHOOK] [IMG] Tamanho base64:', base64Data.length, 'caracteres');
+              
               try {
-                // Converte base64 para Buffer
-                let base64Data = imageMessage.media;
                 // Remove data URL prefix se existir (data:image/jpeg;base64,)
-                if (base64Data.includes(',')) {
+                if (typeof base64Data === 'string' && base64Data.includes(',')) {
                   base64Data = base64Data.split(',')[1];
                 }
+                
                 const imageBuffer = Buffer.from(base64Data, 'base64');
                 const mimeType = imageMessage.mimetype || 'image/jpeg';
                 
@@ -124,17 +136,17 @@ router.post('/webhook', webhookLimiter, async (req, res) => {
                 response = 'Erro ao processar imagem 😢\n\nTente enviar novamente ou registre manualmente.';
               }
             } else {
-              // PRIORIDADE 2: Tenta URL ou download via API
+              // PRIORIDADE 2: Tenta URL ou download via API (quando Webhook Base64 está desativado)
               const mediaUrl = imageMessage.url || imageMessage.directPath;
+              
+              console.log('[WEBHOOK] [IMG] Base64 não encontrado - usando URL/directPath');
+              console.log('[WEBHOOK] [IMG] MessageKey:', JSON.stringify(messageKey));
               
               if (!mediaUrl) {
                 console.error('[WEBHOOK] [IMG] ❌ Erro: URL, directPath e base64 estão vazios!');
-                console.error('[WEBHOOK] [IMG] imageMessage completo:', JSON.stringify(imageMessage, null, 2).substring(0, 500));
-                response = 'Não consegui acessar a imagem 😢\n\nA Evolution API não forneceu a mídia.\n\nVerifique se "Webhook Base64" está ativado na Evolution API.\n\nTente enviar novamente ou registre manualmente.';
+                console.error('[WEBHOOK] [IMG] imageMessage completo:', JSON.stringify(imageMessage, null, 2).substring(0, 1000));
+                response = 'Não consegui acessar a imagem 😢\n\nA Evolution API não forneceu a mídia.\n\nVerifique a configuração do webhook na Evolution API.\n\nTente enviar novamente ou registre manualmente.';
               } else {
-                console.log('[WEBHOOK] [IMG] Usando URL/directPath (fallback)');
-                console.log('[WEBHOOK] [IMG] MessageKey:', JSON.stringify(messageKey));
-
                 try {
                   response = await messageController.handleImageMessage(phone, mediaUrl, caption, messageKey);
                 } catch (imgError) {
