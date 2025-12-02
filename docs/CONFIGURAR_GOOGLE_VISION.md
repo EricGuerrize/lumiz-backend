@@ -21,7 +21,7 @@
 
 ```env
 # Google Vision API (para OCR - extração de texto)
-GOOGLE_VISION_API_KEY=AIzaSyDgoqVaiYdQPxlpK3o__6NVpdaBRcrpocM
+GOOGLE_VISION_API_KEY=sua_api_key_aqui
 
 # Gemini API (para processar o texto extraído - ainda necessário)
 GEMINI_API_KEY=sua-chave-gemini-aqui
@@ -78,7 +78,7 @@ GEMINI_API_KEY=sua-chave-gemini-aqui
    ↓
 2. Google Vision API (OCR)
    - Extrai TODO o texto da imagem
-   - Usa sua API key: AIzaSyDgoqVaiYdQPxlpK3o__6NVpdaBRcrpocM
+   - Usa sua API key configurada no .env
    ↓
 3. Gemini (Processamento)
    - Recebe o texto extraído
