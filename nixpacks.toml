@@ -1,25 +1,9 @@
 [phases.setup]
-# Node.js + dependências nativas para processamento de imagens
-nixPkgs = [
-  "nodejs_20",
-  "npm-9_x",
-  # Dependências para Sharp (processamento de imagens)
-  "vips",
-  "pkg-config",
-  # Dependências para Google Vision e imagens em geral
-  "cairo",
-  "pango",
-  "libpng",
-  "libjpeg",
-  "giflib",
-  "librsvg",
-  # Build tools
-  "python3",
-  "gcc"
-]
+# Node.js simples - OCR.space API não precisa de dependências nativas
+nixPkgs = ["nodejs_20", "npm-9_x"]
 
 [phases.install]
-cmds = ["npm ci --include=optional"]
+cmds = ["npm ci"]
 
 [phases.build]
 cmds = ["echo 'Build complete'"]
