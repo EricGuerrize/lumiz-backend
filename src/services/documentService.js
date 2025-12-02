@@ -102,28 +102,23 @@ class DocumentService {
       console.log('[DOC] Tipo detectado:', mimeType, '(' + fileExtension + ')');
 
       // Chama Google Vision Service
-      const extractedText = await withTimeout(
-        googleVisionService.extractTextFromImage(imageBuffer),
+      // O serviço já retorna o JSON estruturado processado pelo Gemini
+      const result = await withTimeout(
+        googleVisionService.processImage(imageBuffer, mimeType),
         IMAGE_PROCESSING_TIMEOUT_MS,
         'Timeout ao processar imagem com Google Vision'
       );
 
-      if (!extractedText || extractedText.trim().length === 0) {
-        throw new Error('Nenhum texto foi extraído da imagem');
-      }
-
-      console.log('[DOC] ✅ OCR concluído com sucesso');
-      console.log('[DOC] Texto extraído:', extractedText.substring(0, 200) + '...');
-
-      return {
-        text: extractedText.trim(),
-        confidence: 95, // Google Vision retorna confidence por bloco, simplificando aqui
-        processor: 'google-vision'
-      };
+      console.log('[DOC] ✅ Processamento concluído com sucesso');
+      return result;
 
     } catch (error) {
       console.error('[DOC] ❌ Erro no processamento de imagem:', error.message);
-      throw new Error(`Erro ao processar imagem: ${error.message}`);
+      return {
+        tipo_documento: 'erro',
+        transacoes: [],
+        erro: error.message || 'Erro desconhecido ao processar imagem'
+      };
     }
   }
 
@@ -133,10 +128,76 @@ class DocumentService {
    * @returns {string} - Mensagem formatada
    */
   formatDocumentSummary(result) {
-    if (result.processor === 'google-vision' || result.processor === 'ocrspace' || result.processor === 'tesseract') {
-      return `📄 *Texto Extraído (Google Vision)*\n\n"${result.text}"\n\n_Processado com sucesso ✅_`;
+    if (result.tipo_documento === 'erro') {
+      let errorMessage = `Erro ao analisar documento 😢\n\n`;
+
+      if (result.erro) {
+        if (result.erro.includes('não é válida')) {
+          errorMessage += `A imagem não é válida. Por favor, envie uma foto em formato JPEG ou PNG.\n\n`;
+        } else if (result.erro.includes('muito grande')) {
+          errorMessage += `A imagem é muito grande. Por favor, envie uma imagem menor.\n\n`;
+        } else {
+          errorMessage += `Detalhes: ${result.erro}\n\n`;
+        }
+      }
+
+      errorMessage += `Tente enviar novamente ou registre manualmente.`;
+      return errorMessage;
     }
-    return 'Documento processado.';
+
+    if (result.tipo_documento === 'nao_identificado') {
+      return `Não consegui identificar o documento 🤔\n\nTente enviar:\n- Foto mais nítida\n- PDF/imagem do boleto\n- Screenshot do extrato\n\nOu registre manualmente.`;
+    }
+
+    const tipoNome = {
+      'boleto': 'BOLETO',
+      'extrato': 'EXTRATO BANCÁRIO',
+      'comprovante_pix': 'COMPROVANTE PIX',
+      'comprovante': 'COMPROVANTE',
+      'nota_fiscal': 'NOTA FISCAL',
+      'fatura': 'FATURA DE CARTÃO',
+      'recibo': 'RECIBO'
+    };
+
+    let message = `📄 *${tipoNome[result.tipo_documento] || result.tipo_documento.toUpperCase()}*\n\n`;
+
+    if (!result.transacoes || result.transacoes.length === 0) {
+      message += `Não encontrei transações neste documento.\n\nRegistre manualmente.`;
+      return message;
+    }
+
+    message += `📋 Encontrei *${result.transacoes.length} transação(ões)*:\n\n`;
+
+    result.transacoes.forEach((t, index) => {
+      const emoji = t.tipo === 'entrada' ? '💰' : '💸';
+      const tipoTexto = t.tipo === 'entrada' ? 'RECEITA' : 'CUSTO';
+
+      let dataFormatada = t.data;
+      try {
+        if (t.data && t.data.includes('-')) {
+          const [ano, mes, dia] = t.data.split('-');
+          dataFormatada = `${dia}/${mes}`;
+        }
+      } catch (e) {
+        // Mantém original se falhar
+      }
+
+      message += `${index + 1}. ${emoji} *${tipoTexto}*\n`;
+      message += `   💵 R$ ${t.valor.toFixed(2)}\n`;
+      message += `   📂 ${t.categoria}\n`;
+      if (t.descricao) {
+        message += `   📝 ${t.descricao}\n`;
+      }
+      message += `   📅 ${dataFormatada}\n\n`;
+    });
+
+    if (result.transacoes.length === 1) {
+      message += `Responda *SIM* pra registrar ou *NÃO* pra cancelar`;
+    } else {
+      message += `Responda *SIM* pra registrar TODAS ou *NÃO* pra cancelar`;
+    }
+
+    return message;
   }
 }
 
