@@ -204,12 +204,51 @@ class DocumentService {
         
         throw new Error(errorMsg);
       }
-      console.log('[DOC] Buffer criado, tamanho:', imageBuffer.length, 'bytes');
+      
+      // Processa o buffer baixado
+      return await this.processImageBuffer(imageBuffer, headerMimeType);
+    } catch (error) {
+      console.error('[DOC] ❌ Erro ao processar imagem:', error.message);
+      console.error('[DOC] Stack trace:', error.stack);
+      return {
+        tipo_documento: 'erro',
+        transacoes: [],
+        erro: error.message || 'Erro desconhecido ao processar imagem'
+      };
+    }
+  }
 
-      // Validação: buffer não pode estar vazio
+  async processImageFromBuffer(imageBuffer, mimeType) {
+    try {
+      console.log('[DOC] ========================================');
+      console.log('[DOC] Processando imagem de buffer (base64 do webhook)');
+      console.log('[DOC] MIME Type:', mimeType);
+      console.log('[DOC] Tamanho:', imageBuffer.length, 'bytes');
+      console.log('[DOC] ========================================');
+
       if (!imageBuffer || imageBuffer.length === 0) {
-        throw new Error('Buffer vazio - a URL pode estar inválida ou o arquivo corrompido');
+        throw new Error('Buffer de imagem vazio ou inválido');
       }
+
+      return await this.processImageBuffer(imageBuffer, mimeType);
+    } catch (error) {
+      console.error('[DOC] ❌ Erro ao processar imagem do buffer:', error.message);
+      console.error('[DOC] Stack trace:', error.stack);
+      return {
+        tipo_documento: 'erro',
+        transacoes: [],
+        erro: error.message || 'Erro desconhecido ao processar imagem'
+      };
+    }
+  }
+
+  async processImageBuffer(imageBuffer, headerMimeType) {
+    try {
+      if (!imageBuffer || imageBuffer.length === 0) {
+        throw new Error('Buffer de imagem vazio ou inválido');
+      }
+
+      console.log('[DOC] Buffer recebido, tamanho:', imageBuffer.length, 'bytes');
 
       // DETECÇÃO DE MIME TYPE usando magic numbers (método confiável e compatível)
       console.log('[DOC] ===== INÍCIO DETECÇÃO MIME TYPE =====');
