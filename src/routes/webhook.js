@@ -33,7 +33,8 @@ const webhookLimiter = rateLimit({
   }
 });
 
-router.post('/webhook', webhookLimiter, async (req, res) => {
+// Handler comum para processar webhooks
+const webhookHandler = async (req, res) => {
   // LOG INICIAL - sempre executa para debug
   console.log('[WEBHOOK] ========================================');
   console.log('[WEBHOOK] 📥 Webhook recebido!');
@@ -239,7 +240,13 @@ router.post('/webhook', webhookLimiter, async (req, res) => {
     console.error('[WEBHOOK] Body que causou erro:', JSON.stringify(req.body).substring(0, 500));
     res.status(500).json({ error: 'Internal server error' });
   }
-});
+};
+
+// Rota padrão: /api/webhook (quando Webhook by Events está desativado)
+router.post('/webhook', webhookLimiter, webhookHandler);
+
+// Rota específica: /api/webhook/messages-upsert (quando Webhook by Events está ativado)
+router.post('/webhook/messages-upsert', webhookLimiter, webhookHandler);
 
 // POST /api/test/send-setup-email - Testa envio de email (apenas para desenvolvimento)
 router.post('/test/send-setup-email', async (req, res) => {
