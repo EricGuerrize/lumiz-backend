@@ -14,10 +14,6 @@ class DocumentService {
     try {
       console.log('[DOC] Iniciando OCR com Tesseract...');
 
-      // Converte buffer para base64 se necessário
-      const imageBase64 = imageBuffer.toString('base64');
-      const imageData = `data:image/png;base64,${imageBase64}`;
-
       // Configuração para economizar memória e usar dados locais
       const path = require('path');
       const worker = await Tesseract.createWorker('por+eng', 1, {
@@ -28,8 +24,8 @@ class DocumentService {
         logger: info => console.log(`[OCR] ${info.status}: ${info.progress}`)
       });
 
-      // Executa OCR
-      const { data: { text, confidence } } = await worker.recognize(imageData);
+      // Executa OCR passando o buffer diretamente
+      const { data: { text, confidence } } = await worker.recognize(imageBuffer);
 
       // Use o worker e depois termine
       await worker.terminate();
