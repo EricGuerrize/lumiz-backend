@@ -9,7 +9,7 @@ const GEMINI_TIMEOUT_MS = 30000;
 
 class GeminiService {
   constructor() {
-    this.model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
+    this.model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
   }
 
   async processMessage(message, context = {}) {
@@ -35,7 +35,7 @@ class GeminiService {
     // Contexto histórico (se fornecido)
     let contextSection = '';
     if (context.recentMessages && context.recentMessages.length > 0) {
-      contextSection = `\n\nCONTEXTO HISTÓRICO (últimas conversas do usuário):\n${context.recentMessages.map((m, i) => 
+      contextSection = `\n\nCONTEXTO HISTÓRICO (últimas conversas do usuário):\n${context.recentMessages.map((m, i) =>
         `${i + 1}. Usuário: "${m.user_message}"\n   Bot: "${m.bot_response}"`
       ).join('\n\n')}\n\nUse este contexto para entender melhor a intenção atual.`;
     }
@@ -43,7 +43,7 @@ class GeminiService {
     // Exemplos similares (RAG) - se fornecido
     let ragSection = '';
     if (context.similarExamples && context.similarExamples.length > 0) {
-      ragSection = `\n\nEXEMPLOS SIMILARES QUE FUNCIONARAM (use como referência):\n${context.similarExamples.map((ex, i) => 
+      ragSection = `\n\nEXEMPLOS SIMILARES QUE FUNCIONARAM (use como referência):\n${context.similarExamples.map((ex, i) =>
         `${i + 1}. Usuário: "${ex.user_message}"\n   Intenção: ${ex.intent}\n   Resposta do bot: "${ex.bot_response.substring(0, 100)}..."`
       ).join('\n\n')}\n\nUse estes exemplos para entender melhor a intenção da mensagem atual. Se a mensagem atual for similar a algum exemplo, use a mesma intenção.`;
     }
@@ -250,7 +250,7 @@ RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
         3, // 3 tentativas
         1000 // delay inicial de 1s
       );
-      
+
       const response = await result.response;
       const text = response.text();
 
