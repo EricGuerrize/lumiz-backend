@@ -163,3 +163,6 @@ Tenta Tesseract + Gemini (grátis)
 - Totalmente grátis
 - Precisão menor, mas funciona
 
+
+
+

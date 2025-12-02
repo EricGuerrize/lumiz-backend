@@ -106,12 +106,12 @@ router.post('/webhook', webhookLimiter, async (req, res) => {
               console.error('[WEBHOOK] [IMG] imageMessage completo:', JSON.stringify(imageMessage, null, 2));
               response = 'Não consegui acessar a imagem 😢\n\nA Evolution API não forneceu a URL da imagem.\n\nTente enviar novamente ou registre manualmente.';
             } else {
-              // Passa messageKey completo para download correto da mídia
-              const messageKey = key;
+            // Passa messageKey completo para download correto da mídia
+            const messageKey = key;
               console.log('[WEBHOOK] [IMG] MessageKey:', JSON.stringify(messageKey));
 
               try {
-                response = await messageController.handleImageMessage(phone, mediaUrl, caption, messageKey);
+            response = await messageController.handleImageMessage(phone, mediaUrl, caption, messageKey);
               } catch (imgError) {
                 console.error(`[WEBHOOK] [IMG] ❌ Erro ao processar imagem:`, imgError.message);
                 console.error(`[WEBHOOK] [IMG] Stack:`, imgError.stack);
@@ -129,7 +129,7 @@ router.post('/webhook', webhookLimiter, async (req, res) => {
             const messageKey = key;
 
             try {
-              response = await messageController.handleDocumentMessage(phone, mediaUrl, fileName, messageKey);
+            response = await messageController.handleDocumentMessage(phone, mediaUrl, fileName, messageKey);
             } catch (docError) {
               console.error(`[WEBHOOK] [DOC] Erro ao processar documento:`, docError.message);
               console.error(`[WEBHOOK] [DOC] Stack:`, docError.stack);
@@ -139,7 +139,7 @@ router.post('/webhook', webhookLimiter, async (req, res) => {
             // Mensagem de texto normal
             console.log(`[WEBHOOK] [MSG] ${phone}: ${messageText.substring(0, 50)}`);
             try {
-              response = await messageController.handleIncomingMessage(phone, messageText);
+            response = await messageController.handleIncomingMessage(phone, messageText);
             } catch (msgError) {
               console.error(`[WEBHOOK] [MSG] Erro ao processar mensagem:`, msgError.message);
               response = 'Erro ao processar mensagem 😢\n\nTente novamente.';
@@ -148,7 +148,7 @@ router.post('/webhook', webhookLimiter, async (req, res) => {
 
           if (response) {
             try {
-              await evolutionService.sendMessage(phone, response);
+            await evolutionService.sendMessage(phone, response);
               console.log(`[WEBHOOK] ✅ Resposta enviada para ${phone}`);
             } catch (sendError) {
               console.error(`[WEBHOOK] ❌ Erro ao enviar resposta:`, sendError.message);

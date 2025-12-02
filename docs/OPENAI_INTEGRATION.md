@@ -81,3 +81,6 @@ OPENAI_PREFERRED=true  # true = usa OpenAI para imagens, false = usa Gemini
 
 Se OpenAI falhar (rate limit, erro, etc), o sistema automaticamente tenta com Gemini. Isso garante que o bot sempre funcione, mesmo se uma IA estiver indisponível.
 
+
+
+

@@ -179,3 +179,6 @@ const { data: { text } } = await Tesseract.recognize(imageBuffer, 'por');
 
 Se o Gemini continuar com problemas, **use OpenAI como padrão**. O custo é baixo e a precisão é muito melhor, especialmente para documentos financeiros complexos.
 
+
+
+
