@@ -60,12 +60,43 @@ class DocumentService {
 
   /**
    * Processa imagem usando OCR.space API
-   * @param {Buffer} imageBuffer - Buffer da imagem
+   * @param {Buffer|string} imageBufferOrUrl - Buffer da imagem ou URL para download
+   * @param {Object} messageKey - Chave da mensagem (opcional, para Evolution API)
    * @returns {Promise<Object>} - Resultado do OCR com texto extraído
    */
-  async processImage(imageBuffer) {
+  async processImage(imageBufferOrUrl, messageKey = null) {
     try {
       console.log('[DOC] Iniciando OCR com OCR.space API...');
+
+      let imageBuffer;
+
+      // Se recebeu uma string (URL), faz o download
+      if (typeof imageBufferOrUrl === 'string') {
+        const imageUrl = imageBufferOrUrl;
+        console.log('[DOC] Baixando imagem da URL:', imageUrl.substring(0, 100) + '...');
+
+        try {
+          const response = await axios.get(imageUrl, {
+            responseType: 'arraybuffer',
+            timeout: 30000,
+            headers: {
+              'apikey': process.env.EVOLUTION_API_KEY || '',
+              'User-Agent': 'Lumiz-Backend/1.0',
+              'Accept': 'image/*,application/pdf,*/*'
+            }
+          });
+
+          imageBuffer = Buffer.from(response.data);
+          console.log('[DOC] ✅ Arquivo baixado via URL');
+        } catch (downloadError) {
+          console.error('[DOC] ❌ Erro ao baixar arquivo:', downloadError.message);
+          throw new Error(`Não foi possível baixar o arquivo: ${downloadError.message}`);
+        }
+      } else {
+        // Já é um buffer
+        imageBuffer = imageBufferOrUrl;
+      }
+
       console.log('[DOC] Tamanho do buffer:', imageBuffer.length, 'bytes');
 
       // Detecta o tipo da imagem
