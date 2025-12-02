@@ -308,6 +308,65 @@ class EvolutionService {
       throw error;
     }
   }
+
+  async testMediaEndpoints(messageKey) {
+    // Método para testar diferentes endpoints de download de mídia
+    const endpoints = [
+      { method: 'POST', path: `/message/fetchMediaFromMessage/${this.instanceName}`, payload: { messageKey } },
+      { method: 'POST', path: `/chat/fetchMediaFromMessage/${this.instanceName}`, payload: { messageKey } },
+      { method: 'POST', path: `/media/fetchMediaFromMessage/${this.instanceName}`, payload: { messageKey } },
+      { method: 'GET', path: `/message/getBase64FromMediaMessage/${this.instanceName}`, params: { messageKey: JSON.stringify(messageKey) } },
+      { method: 'GET', path: `/chat/getBase64FromMediaMessage/${this.instanceName}`, params: { messageKey: JSON.stringify(messageKey) } },
+      { method: 'GET', path: `/media/getBase64/${this.instanceName}`, params: { messageKey: JSON.stringify(messageKey) } }
+    ];
+
+    console.log('[EVOLUTION] Testando endpoints de mídia disponíveis...');
+    const results = [];
+
+    for (const endpoint of endpoints) {
+      try {
+        const url = `${this.baseUrl}${endpoint.path}`;
+        let response;
+        
+        if (endpoint.method === 'POST') {
+          response = await this.axiosInstance.post(url, endpoint.payload, {
+            headers: {
+              'apikey': this.apiKey,
+              'Content-Type': 'application/json'
+            },
+            timeout: 5000 // 5 segundos para teste
+          });
+        } else {
+          response = await this.axiosInstance.get(url, {
+            headers: {
+              'apikey': this.apiKey
+            },
+            params: endpoint.params,
+            timeout: 5000
+          });
+        }
+
+        results.push({
+          endpoint: endpoint.path,
+          method: endpoint.method,
+          status: '✅ Disponível',
+          statusCode: response.status
+        });
+        console.log(`[EVOLUTION] ✅ ${endpoint.method} ${endpoint.path} - Disponível (${response.status})`);
+      } catch (error) {
+        const status = error.response?.status || 'Erro';
+        results.push({
+          endpoint: endpoint.path,
+          method: endpoint.method,
+          status: `❌ ${status}`,
+          statusCode: error.response?.status
+        });
+        console.log(`[EVOLUTION] ❌ ${endpoint.method} ${endpoint.path} - ${status}`);
+      }
+    }
+
+    return results;
+  }
 }
 
 module.exports = new EvolutionService();
