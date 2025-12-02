@@ -10,7 +10,6 @@
     "build": "npm install --include=optional"
   },
   "dependencies": {
-    "@google-cloud/vision": "^5.3.4",
     "@google/generative-ai": "^0.21.0",
     "@sentry/node": "^10.26.0",
     "@supabase/supabase-js": "^2.45.4",
@@ -23,8 +22,6 @@
     "ioredis": "^5.8.2",
     "node-cron": "^4.2.1",
     "pdfkit": "^0.15.2",
-    "sharp": "^0.34.5",
-    "tesseract.js": "^6.0.1",
     "uuid": "^9.0.0",
     "zod": "^4.1.12"
   },
