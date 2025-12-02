@@ -21,6 +21,12 @@ class DocumentService {
   detectImageType(buffer) {
     const firstBytes = buffer.slice(0, 12);
 
+    // Log dos primeiros bytes para debug
+    const hexPreview = Array.from(firstBytes.slice(0, 8))
+      .map(b => b.toString(16).padStart(2, '0').toUpperCase())
+      .join(' ');
+    console.log('[DOC] Primeiros bytes (hex):', hexPreview);
+
     // JPEG: FF D8 FF
     if (firstBytes[0] === 0xFF && firstBytes[1] === 0xD8 && firstBytes[2] === 0xFF) {
       return { mimeType: 'image/jpeg', fileExtension: 'JPG' };
@@ -42,13 +48,13 @@ class DocumentService {
     else if (firstBytes[0] === 0x42 && firstBytes[1] === 0x4D) {
       return { mimeType: 'image/bmp', fileExtension: 'BMP' };
     }
-    // PDF: 25 50 44 46
+    // PDF: 25 50 44 46 (%PDF)
     else if (firstBytes[0] === 0x25 && firstBytes[1] === 0x50 && firstBytes[2] === 0x44 && firstBytes[3] === 0x46) {
       return { mimeType: 'application/pdf', fileExtension: 'PDF' };
     }
 
     // Padrão: assume JPEG
-    console.log('[DOC] ⚠️ Tipo não identificado, usando JPEG como padrão');
+    console.log('[DOC] ⚠️ Tipo não identificado pelos magic numbers, usando JPEG como padrão');
     return { mimeType: 'image/jpeg', fileExtension: 'JPG' };
   }
 
@@ -66,31 +72,37 @@ class DocumentService {
       const { mimeType, fileExtension } = this.detectImageType(imageBuffer);
       console.log('[DOC] Tipo detectado:', mimeType, '(' + fileExtension + ')');
 
-      // Converte buffer para base64 com o tipo correto
+      // Converte buffer para base64 SEM prefixo (OCR.space prefere assim)
       const base64Image = imageBuffer.toString('base64');
-      const base64WithPrefix = `data:${mimeType};base64,${base64Image}`;
 
       console.log('[DOC] Enviando para OCR.space API...');
+      console.log('[DOC] Tamanho base64:', base64Image.length, 'chars');
 
-      // Chama OCR.space API
+      // Prepara o payload como application/x-www-form-urlencoded
+      const FormData = require('form-data');
+      const form = new FormData();
+
+      // Cria um blob da imagem
+      form.append('base64Image', `data:${mimeType};base64,${base64Image}`);
+      form.append('language', 'por');
+      form.append('isOverlayRequired', 'false');
+      form.append('detectOrientation', 'true');
+      form.append('scale', 'true');
+      form.append('OCREngine', '2');
+
+      // Chama OCR.space API usando multipart/form-data
       const response = await withTimeout(
         axios.post(
           'https://api.ocr.space/parse/image',
-          {
-            base64Image: base64WithPrefix,
-            language: 'por', // Português
-            isOverlayRequired: false,
-            detectOrientation: true,
-            scale: true,
-            OCREngine: 2, // Engine 2 é melhor para documentos
-            filetype: fileExtension
-          },
+          form,
           {
             headers: {
               'apikey': OCR_SPACE_API_KEY,
-              'Content-Type': 'application/json'
+              ...form.getHeaders()
             },
-            timeout: 50000 // 50 segundos
+            timeout: 50000, // 50 segundos
+            maxBodyLength: Infinity,
+            maxContentLength: Infinity
           }
         ),
         IMAGE_PROCESSING_TIMEOUT_MS,
