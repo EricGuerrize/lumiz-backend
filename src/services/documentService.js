@@ -85,17 +85,57 @@ class DocumentService {
           });
 
           imageBuffer = Buffer.from(response.data);
-          console.log('[DOC] ✅ Arquivo baixado via URL');
+
+          // Verifica se o buffer baixado é válido
+          const { mimeType } = this.detectImageType(imageBuffer);
+          if (mimeType === 'image/jpeg' && imageBuffer.length > 0) {
+            // Se detectou JPEG mas os bytes não são FF D8 FF, pode ser falso positivo do default
+            // Mas detectImageType retorna JPEG como default, então precisamos checar os bytes
+            if (imageBuffer[0] !== 0xFF || imageBuffer[1] !== 0xD8) {
+              console.log('[DOC] ⚠️ Buffer baixado não parece ser um JPEG válido (magic numbers incorretos)');
+              imageBuffer = null; // Força fallback
+            } else {
+              console.log('[DOC] ✅ Arquivo baixado via URL e validado');
+            }
+          } else if (mimeType === 'application/pdf' || mimeType === 'image/png' || mimeType === 'image/webp') {
+            console.log('[DOC] ✅ Arquivo baixado via URL e validado:', mimeType);
+          } else {
+            console.log('[DOC] ⚠️ Tipo de arquivo suspeito:', mimeType);
+            // Não anula imageBuffer aqui para dar uma chance, mas o log avisa
+          }
+
         } catch (downloadError) {
-          console.error('[DOC] ❌ Erro ao baixar arquivo:', downloadError.message);
-          throw new Error(`Não foi possível baixar o arquivo: ${downloadError.message}`);
+          console.error('[DOC] ⚠️ Erro ao baixar via URL direta:', downloadError.message);
+          imageBuffer = null;
         }
       } else {
         // Já é um buffer
         imageBuffer = imageBufferOrUrl;
       }
 
-      console.log('[DOC] Tamanho do buffer:', imageBuffer.length, 'bytes');
+      // Fallback: Se não tem buffer válido e tem messageKey, tenta Evolution API
+      if ((!imageBuffer || imageBuffer.length === 0) && messageKey) {
+        try {
+          console.log('[DOC] Tentando baixar via Evolution API (fallback)...');
+          // Lazy load para evitar dependência circular se houver
+          const evolutionService = require('./evolutionService');
+          const mediaResponse = await evolutionService.downloadMedia(messageKey, 'image');
+
+          if (mediaResponse && mediaResponse.data) {
+            imageBuffer = mediaResponse.data;
+            console.log('[DOC] ✅ Arquivo baixado via Evolution API');
+            console.log('[DOC] Tamanho:', imageBuffer.length, 'bytes');
+          }
+        } catch (evolutionError) {
+          console.log('[DOC] ❌ Erro ao baixar via Evolution API:', evolutionError.message);
+        }
+      }
+
+      if (!imageBuffer || imageBuffer.length === 0) {
+        throw new Error('Não foi possível obter a imagem (URL falhou e fallback falhou)');
+      }
+
+      console.log('[DOC] Tamanho do buffer final:', imageBuffer.length, 'bytes');
 
       // Detecta o tipo da imagem (apenas para log)
       const { mimeType, fileExtension } = this.detectImageType(imageBuffer);
