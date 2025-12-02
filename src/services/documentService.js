@@ -14,6 +14,45 @@ class DocumentService {
   }
 
   /**
+   * Detecta o tipo de imagem pelos magic numbers (primeiros bytes)
+   * @param {Buffer} buffer - Buffer da imagem
+   * @returns {Object} - { mimeType, fileExtension }
+   */
+  detectImageType(buffer) {
+    const firstBytes = buffer.slice(0, 12);
+
+    // JPEG: FF D8 FF
+    if (firstBytes[0] === 0xFF && firstBytes[1] === 0xD8 && firstBytes[2] === 0xFF) {
+      return { mimeType: 'image/jpeg', fileExtension: 'JPG' };
+    }
+    // PNG: 89 50 4E 47
+    else if (firstBytes[0] === 0x89 && firstBytes[1] === 0x50 && firstBytes[2] === 0x4E && firstBytes[3] === 0x47) {
+      return { mimeType: 'image/png', fileExtension: 'PNG' };
+    }
+    // GIF: 47 49 46 38
+    else if (firstBytes[0] === 0x47 && firstBytes[1] === 0x49 && firstBytes[2] === 0x46 && firstBytes[3] === 0x38) {
+      return { mimeType: 'image/gif', fileExtension: 'GIF' };
+    }
+    // WEBP: RIFF...WEBP
+    else if (firstBytes[0] === 0x52 && firstBytes[1] === 0x49 && firstBytes[2] === 0x46 && firstBytes[3] === 0x46 &&
+             firstBytes[8] === 0x57 && firstBytes[9] === 0x45 && firstBytes[10] === 0x42 && firstBytes[11] === 0x50) {
+      return { mimeType: 'image/webp', fileExtension: 'WEBP' };
+    }
+    // BMP: 42 4D
+    else if (firstBytes[0] === 0x42 && firstBytes[1] === 0x4D) {
+      return { mimeType: 'image/bmp', fileExtension: 'BMP' };
+    }
+    // PDF: 25 50 44 46
+    else if (firstBytes[0] === 0x25 && firstBytes[1] === 0x50 && firstBytes[2] === 0x44 && firstBytes[3] === 0x46) {
+      return { mimeType: 'application/pdf', fileExtension: 'PDF' };
+    }
+
+    // Padrão: assume JPEG
+    console.log('[DOC] ⚠️ Tipo não identificado, usando JPEG como padrão');
+    return { mimeType: 'image/jpeg', fileExtension: 'JPG' };
+  }
+
+  /**
    * Processa imagem usando OCR.space API
    * @param {Buffer} imageBuffer - Buffer da imagem
    * @returns {Promise<Object>} - Resultado do OCR com texto extraído
@@ -23,9 +62,13 @@ class DocumentService {
       console.log('[DOC] Iniciando OCR com OCR.space API...');
       console.log('[DOC] Tamanho do buffer:', imageBuffer.length, 'bytes');
 
-      // Converte buffer para base64
+      // Detecta o tipo da imagem
+      const { mimeType, fileExtension } = this.detectImageType(imageBuffer);
+      console.log('[DOC] Tipo detectado:', mimeType, '(' + fileExtension + ')');
+
+      // Converte buffer para base64 com o tipo correto
       const base64Image = imageBuffer.toString('base64');
-      const base64WithPrefix = `data:image/jpeg;base64,${base64Image}`;
+      const base64WithPrefix = `data:${mimeType};base64,${base64Image}`;
 
       console.log('[DOC] Enviando para OCR.space API...');
 
@@ -40,7 +83,7 @@ class DocumentService {
             detectOrientation: true,
             scale: true,
             OCREngine: 2, // Engine 2 é melhor para documentos
-            filetype: 'JPG'
+            filetype: fileExtension
           },
           {
             headers: {
