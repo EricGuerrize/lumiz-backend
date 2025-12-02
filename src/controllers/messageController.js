@@ -1360,6 +1360,72 @@ class MessageController {
     }
   }
 
+  async handleImageMessageWithBuffer(phone, imageBuffer, mimeType, caption) {
+    try {
+      const documentService = require('../services/documentService');
+
+      // Verifica se está em onboarding
+      if (onboardingFlowService.isOnboarding(phone)) {
+        const step = onboardingFlowService.getOnboardingStep(phone);
+
+        // Se está no step de primeira venda ou custos, processa a imagem
+        if (step === 'primeira_venda' || step === 'primeiro_custo' || step === 'segundo_custo') {
+          const result = await documentService.processImageFromBuffer(imageBuffer, mimeType);
+
+          if (result.tipo_documento === 'erro' || result.tipo_documento === 'nao_identificado') {
+            return documentService.formatDocumentSummary(result);
+          }
+
+          if (result.transacoes.length === 0) {
+            return documentService.formatDocumentSummary(result);
+          }
+
+          // Processa a primeira transação encontrada
+          const transacao = result.transacoes[0];
+          let mensagemSimulada = '';
+          if (transacao.tipo === 'entrada') {
+            mensagemSimulada = `${transacao.categoria || 'Venda'} ${transacao.valor}`;
+          } else {
+            mensagemSimulada = `${transacao.categoria || transacao.descricao || 'Custo'} ${transacao.valor}`;
+          }
+
+          return await onboardingFlowService.processOnboarding(phone, mensagemSimulada);
+        }
+
+        return 'Complete seu cadastro primeiro! 😊';
+      }
+
+      const user = await userController.findUserByPhone(phone);
+      if (!user) {
+        await onboardingFlowService.startNewOnboarding(phone);
+        return `Oi, prazer! Sou a Lumiz 👋\n\nSou a IA que vai organizar o financeiro da sua clínica — direto pelo WhatsApp.\n\nAntes de começarmos, veja este vídeo rapidinho para entender como eu te ajudo a controlar tudo sem planilhas.\n\nVou te ajudar a cuidar das finanças da sua clínica de forma simples, automática e sem complicação.\n\nPara começar seu teste, qual é o nome da sua clínica?`;
+      }
+
+      // Processa a imagem diretamente do buffer
+      const result = await documentService.processImageFromBuffer(imageBuffer, mimeType);
+
+      if (result.tipo_documento === 'erro' || result.tipo_documento === 'nao_identificado') {
+        return documentService.formatDocumentSummary(result);
+      }
+
+      if (result.transacoes.length === 0) {
+        return documentService.formatDocumentSummary(result);
+      }
+
+      // Armazena transações pendentes de confirmação
+      this.pendingDocumentTransactions.set(phone, {
+        user,
+        transacoes: result.transacoes,
+        timestamp: Date.now()
+      });
+
+      return documentService.formatDocumentSummary(result);
+    } catch (error) {
+      console.error('Erro ao processar imagem:', error);
+      return 'Erro ao analisar imagem 😢\n\nTente enviar novamente ou registre manualmente.';
+    }
+  }
+
   async handleImageMessage(phone, mediaUrl, caption, messageKey = null) {
     try {
       const documentService = require('../services/documentService');
