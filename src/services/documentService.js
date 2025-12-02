@@ -18,11 +18,13 @@ class DocumentService {
       const imageBase64 = imageBuffer.toString('base64');
       const imageData = `data:image/png;base64,${imageBase64}`;
 
-      // Configuração para economizar memória
+      // Configuração para economizar memória e usar dados locais
+      const path = require('path');
       const worker = await Tesseract.createWorker('por+eng', 1, {
         cachePath: '/tmp',
         gzip: false,
         cacheMethod: 'refresh',
+        langPath: path.join(__dirname, '../../tessdata'), // Caminho para os dados locais
         logger: info => console.log(`[OCR] ${info.status}: ${info.progress}`)
       });
 
