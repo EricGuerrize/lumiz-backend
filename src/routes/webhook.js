@@ -34,13 +34,28 @@ const webhookLimiter = rateLimit({
 });
 
 router.post('/webhook', webhookLimiter, async (req, res) => {
+  // LOG INICIAL - sempre executa para debug
+  console.log('[WEBHOOK] ========================================');
+  console.log('[WEBHOOK] 📥 Webhook recebido!');
+  console.log('[WEBHOOK] Timestamp:', new Date().toISOString());
+  console.log('[WEBHOOK] IP:', req.ip || req.headers['x-forwarded-for'] || 'unknown');
+  console.log('[WEBHOOK] Method:', req.method);
+  console.log('[WEBHOOK] URL:', req.url);
+  console.log('[WEBHOOK] Headers:', JSON.stringify(req.headers).substring(0, 200));
+  console.log('[WEBHOOK] Body keys:', req.body ? Object.keys(req.body).join(', ') : 'NO BODY');
+  console.log('[WEBHOOK] Body completo (primeiros 500 chars):', JSON.stringify(req.body).substring(0, 500));
+  console.log('[WEBHOOK] ========================================');
+
   try {
     // Validação de entrada
     if (!req.body || typeof req.body !== 'object') {
+      console.error('[WEBHOOK] ❌ Body inválido ou vazio');
       return res.status(400).json({ status: 'error', reason: 'Invalid request body' });
     }
 
     const { event, data } = req.body;
+    console.log('[WEBHOOK] Event:', event);
+    console.log('[WEBHOOK] Data presente:', !!data);
 
     // Valida tamanho máximo do body (proteção adicional)
     const bodySize = JSON.stringify(req.body).length;
@@ -49,15 +64,23 @@ router.post('/webhook', webhookLimiter, async (req, res) => {
     }
 
     if (event === 'messages.upsert') {
+      console.log('[WEBHOOK] ✅ Evento messages.upsert detectado');
+      
       if (!data || typeof data !== 'object') {
+        console.error('[WEBHOOK] ❌ Data inválida ou ausente');
         return res.status(200).json({ status: 'ignored', reason: 'invalid data structure' });
       }
 
       const key = data?.key;
       const message = data?.message;
 
+      console.log('[WEBHOOK] Key presente:', !!key);
+      console.log('[WEBHOOK] Message presente:', !!message);
+      console.log('[WEBHOOK] Key completo:', JSON.stringify(key).substring(0, 300));
+      console.log('[WEBHOOK] Message keys:', message ? Object.keys(message).join(', ') : 'NO MESSAGE');
+
       if (!key || !message) {
-        console.log('[WEBHOOK] Mensagem sem estrutura válida');
+        console.error('[WEBHOOK] ❌ Mensagem sem estrutura válida (key ou message ausente)');
         return res.status(200).json({ status: 'ignored', reason: 'invalid structure' });
       }
 
@@ -109,12 +132,13 @@ router.post('/webhook', webhookLimiter, async (req, res) => {
             let base64Data = imageMessage.media || imageMessage.base64 || imageMessage.mediaBase64 || imageMessage.data;
             
             if (base64Data) {
-              console.log('[WEBHOOK] [IMG] ✅ Mídia base64 encontrada no webhook - processando diretamente');
+              console.log('[WEBHOOK] [IMG] ✅✅✅ BASE64 ENCONTRADO NO WEBHOOK! ✅✅✅');
               console.log('[WEBHOOK] [IMG] Campo usado:', 
                 imageMessage.media ? 'media' : 
                 imageMessage.base64 ? 'base64' : 
                 imageMessage.mediaBase64 ? 'mediaBase64' : 'data');
               console.log('[WEBHOOK] [IMG] Tamanho base64:', base64Data.length, 'caracteres');
+              console.log('[WEBHOOK] [IMG] Primeiros 100 chars do base64:', base64Data.substring(0, 100));
               
               try {
                 // Remove data URL prefix se existir (data:image/jpeg;base64,)
@@ -139,7 +163,8 @@ router.post('/webhook', webhookLimiter, async (req, res) => {
               // PRIORIDADE 2: Tenta URL ou download via API (quando Webhook Base64 está desativado)
               const mediaUrl = imageMessage.url || imageMessage.directPath;
               
-              console.log('[WEBHOOK] [IMG] Base64 não encontrado - usando URL/directPath');
+              console.log('[WEBHOOK] [IMG] ⚠️ Base64 NÃO encontrado - tentando baixar via Evolution API');
+              console.log('[WEBHOOK] [IMG] URL disponível:', mediaUrl || 'NENHUMA');
               console.log('[WEBHOOK] [IMG] MessageKey:', JSON.stringify(messageKey));
               
               if (!mediaUrl) {
@@ -205,9 +230,13 @@ router.post('/webhook', webhookLimiter, async (req, res) => {
       }
     }
 
+    console.log('[WEBHOOK] ✅ Webhook processado com sucesso');
     res.status(200).json({ status: 'received' });
   } catch (error) {
-    console.error('Erro no webhook:', error);
+    console.error('[WEBHOOK] ❌❌❌ ERRO CRÍTICO NO WEBHOOK ❌❌❌');
+    console.error('[WEBHOOK] Erro:', error.message);
+    console.error('[WEBHOOK] Stack:', error.stack);
+    console.error('[WEBHOOK] Body que causou erro:', JSON.stringify(req.body).substring(0, 500));
     res.status(500).json({ error: 'Internal server error' });
   }
 });
