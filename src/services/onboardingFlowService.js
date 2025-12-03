@@ -214,8 +214,8 @@ class OnboardingFlowService {
         switch (onboarding.step) {
             // ========== NOVO FLUXO DE ONBOARDING (TESTE GRATUITO) ==========
             case 'nome_clinica': {
-                // Verifica se é novo fluxo (tem primeira_venda no data)
-                if (onboarding.data.primeira_venda !== undefined && onboarding.data.primeira_venda !== null) {
+                // Verifica se é novo fluxo (tem primeira_venda no data, mesmo que null)
+                if (onboarding.data.primeira_venda !== undefined) {
                     // Novo fluxo
                     if (messageTrimmed.length < 2) {
                         return 'Por favor, digite o nome da sua clínica.';
@@ -497,8 +497,9 @@ class OnboardingFlowService {
 
                         let finalMsg = `Cadastro realizado com sucesso! 🎉\n\n`;
                         finalMsg += `Agora você já pode começar a usar.\n\n`;
-                        finalMsg += `Para acessar o painel completo e ver seus gráficos:\n${result.registrationLink}\n\n`;
-                        finalMsg += `Ou pode me mandar aqui mesmo:\n_"Vendi um botox por 1500"_\n_"Gastei 200 com luvas"_`;
+                        // Link removido temporariamente
+                        // finalMsg += `Para acessar o painel completo e ver seus gráficos:\n${result.registrationLink}\n\n`;
+                        finalMsg += `Pode me mandar aqui mesmo:\n_"Vendi um botox por 1500"_\n_"Gastei 200 com luvas"_`;
 
                         return finalMsg;
                     } catch (error) {
