@@ -81,7 +81,16 @@ class UserController {
             nome_clinica,
             telefone,
             is_active: true,
-            email: null // Email será preenchido quando usuário se cadastrar
+            id: tempId,
+            nome_completo,
+            nome_clinica,
+            telefone,
+            is_active: true,
+            email: data.email || null,
+            cidade: data.cidade,
+            tipo_clinica: data.tipo_clinica,
+            ticket_medio: data.ticket_medio,
+            procedimentos_mes: data.procedimentos_mes
           }])
           .select()
           .single();
