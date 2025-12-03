@@ -12,7 +12,7 @@ class TransactionController {
         return await this.createAtendimento(userId, { valor, categoria, descricao, data, forma_pagamento, parcelas, bandeira_cartao });
       } else {
         // CUSTO = Criar conta a pagar
-        return await this.createContaPagar(userId, { valor, categoria, descricao, data });
+        return await this.createContaPagar(userId, { valor, categoria, descricao, data, parcelas });
       }
     } catch (error) {
       console.error('Erro ao criar transação:', error);
