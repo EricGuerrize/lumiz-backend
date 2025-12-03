@@ -233,7 +233,7 @@ class MessageController {
   async handleTransactionRequest(user, intent, phone) {
     const { tipo, valor, categoria, descricao, data, forma_pagamento, parcelas, bandeira_cartao, nome_cliente } = intent.dados;
 
-    if (!valor || valor <= 0) {
+    if (!valor || Math.abs(valor) <= 0) {
       return 'Não consegui identificar o valor 🤔\n\nMe manda assim: "Botox 2800" ou "Insumos 3200"';
     }
 

@@ -215,7 +215,7 @@ class OnboardingFlowService {
             // ========== NOVO FLUXO DE ONBOARDING (TESTE GRATUITO) ==========
             case 'nome_clinica': {
                 // Verifica se é novo fluxo (tem primeira_venda no data)
-                if (onboarding.data.primeira_venda !== undefined) {
+                if (onboarding.data.primeira_venda !== undefined && onboarding.data.primeira_venda !== null) {
                     // Novo fluxo
                     if (messageTrimmed.length < 2) {
                         return 'Por favor, digite o nome da sua clínica.';
