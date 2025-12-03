@@ -49,10 +49,10 @@ class MessageController {
         }
       }
 
-      // Se não encontrou usuário e não é mensagem de teste, inicia novo onboarding streamlined
+      // Se não encontrou usuário e não é mensagem de teste, inicia novo onboarding
       if (!user) {
         await onboardingFlowService.startNewOnboarding(phone);
-        return `Oi, prazer! Sou a Lumiz 👋\n\nSou a IA que vai organizar o financeiro da sua clínica — direto pelo WhatsApp.\n\nAntes de começarmos, veja este vídeo rapidinho para entender como eu te ajudo a controlar tudo sem planilhas.\n\nVou te ajudar a cuidar das finanças da sua clínica de forma simples, automática e sem complicação.\n\nPara começar seu teste, qual é o nome da sua clínica?`;
+        return `Oi! Eu sou a Lumiz 💜\nSua assistente financeira para clínicas de estética\n\nOrganizo suas receitas, custos e lucro direto aqui no WhatsApp.\nSem planilhas, sem complicação.\n\nDigite:\n1 - Conhecer a Lumiz\n2 - Começar cadastro`;
       }
 
       // Verifica se existe uma transação pendente de confirmação
