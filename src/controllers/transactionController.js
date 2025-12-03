@@ -99,7 +99,7 @@ class TransactionController {
 
           listaParcelas.push({
             atendimento_id: atendimento.id,
-            user_id: userId, // Adicionando user_id para facilitar queries diretas se o schema permitir
+            // user_id removido pois pode não existir na tabela parcelas e já está vinculado via atendimento
             numero: i + 1,
             valor: valorParcela,
             data_vencimento: dataVencimento.toISOString().split('T')[0],
