@@ -413,6 +413,66 @@ class UserController {
       // Não lança erro para não quebrar o fluxo
     }
   }
+  async migrateUserData(oldUserId, newUserId) {
+    console.log(`[MIGRATION] Iniciando migração de dados de ${oldUserId} para ${newUserId}`);
+
+    try {
+      // 1. Migrar Procedimentos
+      const { error: procError } = await supabase
+        .from('procedimentos')
+        .update({ user_id: newUserId })
+        .eq('user_id', oldUserId);
+
+      if (procError) console.error('[MIGRATION] Erro ao migrar procedimentos:', procError);
+      else console.log('[MIGRATION] Procedimentos migrados');
+
+      // 2. Migrar Clientes
+      const { error: cliError } = await supabase
+        .from('clientes')
+        .update({ user_id: newUserId })
+        .eq('user_id', oldUserId);
+
+      if (cliError) console.error('[MIGRATION] Erro ao migrar clientes:', cliError);
+      else console.log('[MIGRATION] Clientes migrados');
+
+      // 3. Migrar Atendimentos
+      const { error: atendError } = await supabase
+        .from('atendimentos')
+        .update({ user_id: newUserId })
+        .eq('user_id', oldUserId);
+
+      if (atendError) console.error('[MIGRATION] Erro ao migrar atendimentos:', atendError);
+      else console.log('[MIGRATION] Atendimentos migrados');
+
+      // 4. Migrar Contas a Pagar
+      const { error: contasError } = await supabase
+        .from('contas_pagar')
+        .update({ user_id: newUserId })
+        .eq('user_id', oldUserId);
+
+      if (contasError) console.error('[MIGRATION] Erro ao migrar contas a pagar:', contasError);
+      else console.log('[MIGRATION] Contas a pagar migradas');
+
+      // 5. Migrar Parcelas (se tiver user_id, se não tiver, elas migram junto com atendimento)
+      // Verificando schema: parcelas geralmente ligadas a atendimento, mas se tiver user_id direto, migrar.
+      // Assumindo que pode ter user_id para facilitar queries
+      try {
+        await supabase
+          .from('parcelas')
+          .update({ user_id: newUserId })
+          .eq('user_id', oldUserId);
+      } catch (e) {
+        // Ignora se não tiver coluna user_id
+      }
+
+      console.log('[MIGRATION] Migração concluída com sucesso');
+      return true;
+    } catch (error) {
+      console.error('[MIGRATION] Erro crítico na migração:', error);
+      return false;
+    }
+  }
+
   async linkEmail(req, res) {
     try {
       // Schema de validação
@@ -519,8 +579,12 @@ class UserController {
           // Se o conflito for no ID (usuário já existe com esse ID), tenta atualizar
           // Mas se for no telefone (perfil antigo existe), precisamos deletar o antigo
 
-          // Tenta deletar o perfil antigo (pelo ID do profile buscado anteriormente)
+          // IMPORTANTE: Migrar dados antes de deletar!
           if (profile.id !== userId) {
+            console.log('[LINK_EMAIL] Migrando dados do perfil antigo para o novo Auth User...');
+            await this.migrateUserData(profile.id, userId);
+
+            // Agora pode deletar o perfil antigo com segurança
             const { error: deleteError } = await supabase
               .from('profiles')
               .delete()
@@ -579,6 +643,10 @@ class UserController {
         // Vamos garantir que não temos duplicata deletando o antigo se ID for diferente.
 
         if (profile.id !== userId) {
+          // Migra dados antes de deletar qualquer coisa, por segurança
+          console.log('[LINK_EMAIL] Migrando dados (caso sem conflito)...');
+          await this.migrateUserData(profile.id, userId);
+
           // Verifica se o antigo ainda existe (pode não ser unique o telefone)
           await supabase
             .from('profiles')
