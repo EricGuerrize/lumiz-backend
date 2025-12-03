@@ -86,6 +86,40 @@ class TransactionController {
         console.error('Erro ao criar procedimento do atendimento:', procError);
       }
 
+      // === GERAÇÃO DE PARCELAS (VENDAS) ===
+      if (formaPagto === 'parcelado' && parcelas > 1) {
+        console.log(`[FINANCEIRO] Gerando ${parcelas} parcelas para o atendimento ${atendimento.id}`);
+        const valorParcela = valor / parcelas;
+        const listaParcelas = [];
+        const dataBase = new Date(data || new Date());
+
+        for (let i = 0; i < parcelas; i++) {
+          const dataVencimento = new Date(dataBase);
+          dataVencimento.setMonth(dataVencimento.getMonth() + i);
+
+          listaParcelas.push({
+            atendimento_id: atendimento.id,
+            user_id: userId, // Adicionando user_id para facilitar queries diretas se o schema permitir
+            numero: i + 1,
+            valor: valorParcela,
+            data_vencimento: dataVencimento.toISOString().split('T')[0],
+            paga: false,
+            bandeira_cartao: bandeira_cartao || null
+          });
+        }
+
+        const { error: parcelasError } = await supabase
+          .from('parcelas')
+          .insert(listaParcelas);
+
+        if (parcelasError) {
+          console.error('[FINANCEIRO] Erro ao gerar parcelas:', parcelasError);
+          // Não lança erro fatal para não perder o atendimento, mas loga
+        } else {
+          console.log('[FINANCEIRO] Parcelas geradas com sucesso');
+        }
+      }
+
       return atendimento;
     } catch (error) {
       console.error('Erro ao criar atendimento:', error);
@@ -93,8 +127,50 @@ class TransactionController {
     }
   }
 
-  async createContaPagar(userId, { valor, categoria, descricao, data }) {
+  async createContaPagar(userId, { valor, categoria, descricao, data, parcelas }) {
     try {
+      // === GERAÇÃO DE PARCELAS (CUSTOS) ===
+      // Se for parcelado, cria múltiplas entradas em contas_pagar
+
+      if (parcelas && parcelas > 1) {
+        console.log(`[FINANCEIRO] Gerando ${parcelas} parcelas de custo`);
+        const valorParcela = valor / parcelas;
+        const dataBase = new Date(data || new Date());
+        const contasCriadas = [];
+
+        for (let i = 0; i < parcelas; i++) {
+          const dataVencimento = new Date(dataBase);
+          dataVencimento.setMonth(dataVencimento.getMonth() + i);
+
+          const descricaoParcela = `${descricao || categoria || 'Despesa'} (${i + 1}/${parcelas})`;
+
+          const { data: conta, error } = await supabase
+            .from('contas_pagar')
+            .insert([{
+              user_id: userId,
+              descricao: descricaoParcela,
+              valor: valorParcela,
+              data: dataVencimento.toISOString().split('T')[0],
+              tipo: 'fixa', // Mantém 'fixa' ou 'variavel' conforme lógica original, aqui padronizado
+              categoria: categoria || 'Outros',
+              status_pagamento: i === 0 ? 'pago' : 'pendente', // Primeira parcela paga, resto pendente? Ou tudo pago?
+              // Assumindo que se registrou "Gastei", já pagou a primeira ou tudo se for cartão.
+              // Mas para controle financeiro, cartão de crédito é dívida futura.
+              // Vamos marcar como 'pendente' as futuras para aparecerem no fluxo de caixa futuro.
+              observacoes: `Parcela ${i + 1} de ${parcelas}`
+            }])
+            .select()
+            .single();
+
+          if (error) throw error;
+          contasCriadas.push(conta);
+        }
+
+        console.log(`[FINANCEIRO] ${contasCriadas.length} contas a pagar criadas (parceladas)`);
+        return contasCriadas[0]; // Retorna a primeira para referência
+      }
+
+      // Custo à vista (padrão)
       const { data: conta, error } = await supabase
         .from('contas_pagar')
         .insert([{
@@ -118,6 +194,15 @@ class TransactionController {
       throw error;
     }
   }
+
+  // ... (getBalance e getRecentTransactions mantidos iguais) ...
+  // Precisamos pular essas funções para chegar no deleteTransaction
+  // Como o replace_file_content substitui um bloco contínuo, vou ter que incluir o meio ou fazer em 2 chamadas.
+  // Vou fazer em 2 chamadas para ser mais seguro e não reescrever código inalterado.
+  // Esta chamada termina aqui, cobrindo createAtendimento e createContaPagar.
+  // A próxima cobrirá deleteTransaction.
+
+  // ... (código omitido para a próxima chamada) ...
 
   async getBalance(userId) {
     try {
@@ -491,12 +576,21 @@ class TransactionController {
         .single();
 
       if (atendimento && !atendCheckError) {
-        // É um atendimento - deleta procedimentos relacionados primeiro
+        console.log(`[FINANCEIRO] Deletando atendimento ${transactionId} e dados relacionados`);
+
+        // 1. Deleta procedimentos relacionados
         await supabase
           .from('atendimento_procedimentos')
           .delete()
           .eq('atendimento_id', transactionId);
 
+        // 2. Deleta parcelas relacionadas
+        await supabase
+          .from('parcelas')
+          .delete()
+          .eq('atendimento_id', transactionId);
+
+        // 3. Deleta o atendimento
         const { error: deleteError } = await supabase
           .from('atendimentos')
           .delete()
@@ -516,6 +610,10 @@ class TransactionController {
         .single();
 
       if (conta && !contaCheckError) {
+        // Se for conta a pagar, deleta apenas ela
+        // (Se implementarmos parcelas de contas como múltiplas contas, o usuário terá que deletar uma por uma
+        // ou implementamos um "group_id" futuro para deletar todas. Por enquanto, deleta a individual)
+
         const { error: deleteError } = await supabase
           .from('contas_pagar')
           .delete()
