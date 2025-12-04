@@ -99,12 +99,16 @@ class MessageController {
         case 'relatorio_mensal':
           // Verifica se usuário quer PDF
           if (intent.dados?.formato === 'pdf' || message.toLowerCase().includes('pdf')) {
-            console.log('[CONTROLLER] Iniciando geração de relatório PDF em background...');
-            // Não await para não bloquear o webhook
-            this.handleMonthlyReportPDF(user, phone, intent.dados).catch(err =>
-              console.error('[CONTROLLER] Erro no background handleMonthlyReportPDF:', err)
-            );
-            return null; // PDF será enviado diretamente
+            const pdfQueueService = require('../services/pdfQueueService');
+            console.log('[CONTROLLER] Adicionando job de PDF à fila...');
+
+            await pdfQueueService.addJob('monthly_report_pdf', {
+              userId: user.id,
+              phone: phone,
+              params: intent.dados
+            });
+
+            return null; // PDF será enviado via fila
           }
           response = await this.handleMonthlyReport(user, intent.dados);
           break;
@@ -112,18 +116,25 @@ class MessageController {
         case 'exportar_dados':
           // Verifica se usuário quer Excel/CSV ou PDF
           const formato = intent.dados?.formato || (message.toLowerCase().includes('excel') || message.toLowerCase().includes('planilha') || message.toLowerCase().includes('csv') ? 'excel' : 'pdf');
+          const pdfQueueService = require('../services/pdfQueueService');
+
           if (formato === 'excel' || formato === 'csv') {
-            console.log(`[CONTROLLER] Iniciando exportação ${formato} em background...`);
-            this.handleExportDataExcel(user, phone, intent.dados, formato).catch(err =>
-              console.error('[CONTROLLER] Erro no background handleExportDataExcel:', err)
-            );
-            return null; // Arquivo será enviado diretamente
+            console.log(`[CONTROLLER] Adicionando job de ${formato} à fila...`);
+            await pdfQueueService.addJob('export_data_excel', {
+              userId: user.id,
+              phone: phone,
+              params: { ...intent.dados, formato }
+            });
+            return null; // Arquivo será enviado via fila
           }
-          console.log('[CONTROLLER] Iniciando exportação PDF em background...');
-          this.handleExportData(user, phone, intent.dados).catch(err =>
-            console.error('[CONTROLLER] Erro no background handleExportData:', err)
-          );
-          return null; // PDF será enviado diretamente
+
+          console.log('[CONTROLLER] Adicionando job de PDF à fila...');
+          await pdfQueueService.addJob('export_data_pdf', {
+            userId: user.id,
+            phone: phone,
+            params: intent.dados
+          });
+          return null; // PDF será enviado via fila
 
         case 'comparar_meses':
           // Verifica se tem períodos customizados na mensagem

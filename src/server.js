@@ -63,7 +63,7 @@ if (process.env.NODE_ENV === 'production') {
   console.log('[SERVER] Trust proxy configurado: 1 (apenas primeiro proxy)');
 } else {
   // Em desenvolvimento, pode confiar em todos se necessário
-app.set('trust proxy', true);
+  app.set('trust proxy', true);
   console.log('[SERVER] Trust proxy configurado: true (desenvolvimento)');
 }
 
