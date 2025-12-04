@@ -103,21 +103,21 @@ class OnboardingFlowService {
             }
 
             case 'reg_step_2': { // Nome da clínica
-                if (messageTrimmed.length < 2) return 'Por favor, digite um nome válido.';
+                if (messageTrimmed.length < 2) return 'O nome precisa ter pelo menos 2 letras. Por favor, digite novamente o nome da sua clínica:';
                 onboarding.data.nome_clinica = messageTrimmed;
                 onboarding.step = 'reg_step_3';
                 return `Ótimo! ${messageTrimmed} 💜\n\nEm qual cidade você atende?\n\nDigite cidade e estado (ex: Cuiabá - MT):`;
             }
 
             case 'reg_step_3': { // Cidade
-                if (messageTrimmed.length < 3) return 'Por favor, digite sua cidade e estado.';
+                if (messageTrimmed.length < 3) return 'Preciso que você digite a cidade e o estado. Exemplo: "São Paulo - SP". Tente novamente:';
                 onboarding.data.cidade = messageTrimmed;
                 onboarding.step = 'reg_step_4';
                 return `Quem é o responsável pelo financeiro?\n\nDigite seu nome completo:`;
             }
 
             case 'reg_step_4': { // Responsável (Nome Completo)
-                if (messageTrimmed.length < 3) return 'Por favor, digite seu nome completo.';
+                if (messageTrimmed.length < 3 || !messageTrimmed.includes(' ')) return 'Por favor, digite seu nome e sobrenome para que eu possa te identificar.';
                 onboarding.data.nome_completo = messageTrimmed; // Mapeia para nome_completo do profile
                 onboarding.step = 'reg_step_5_email';
                 return `Prazer, ${messageTrimmed.split(' ')[0]}! \n\nAgora seus dados de contato.\n\nDigite seu melhor email:`;
@@ -125,7 +125,7 @@ class OnboardingFlowService {
 
             case 'reg_step_5_email': { // Email
                 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-                if (!emailRegex.test(messageTrimmed)) return 'Por favor, digite um email válido.';
+                if (!emailRegex.test(messageTrimmed)) return 'Esse email não parece válido. Tente digitar no formato: nome@exemplo.com';
                 onboarding.data.email = messageTrimmed;
                 onboarding.step = 'reg_step_6_procedimentos';
                 return `Perfeito! E qual seu WhatsApp?\n\n(Pode confirmar este mesmo número digitando "este" ou digite outro)`;
@@ -373,7 +373,7 @@ class OnboardingFlowServiceCorrected {
                 if (messageLower.includes('este') || messageLower.includes('mesmo') || (phoneInput === '' && messageTrimmed.length < 5)) {
                     onboarding.data.whatsapp_contato = onboarding.data.telefone;
                 } else {
-                    if (phoneInput.length < 10) return 'Por favor, digite um número válido com DDD ou "este".';
+                    if (phoneInput.length < 10) return 'O número precisa ter o DDD. Exemplo: 11999999999. Digite novamente ou "este" para usar o atual.';
                     onboarding.data.whatsapp_contato = phoneInput;
                 }
                 onboarding.step = 'reg_step_6_procedimentos';
@@ -381,14 +381,14 @@ class OnboardingFlowServiceCorrected {
 
             case 'reg_step_6_procedimentos': // Procedimentos
                 const num = parseInt(messageTrimmed.replace(/\D/g, ''));
-                if (isNaN(num)) return 'Por favor, digite um número aproximado.';
+                if (isNaN(num)) return 'Preciso que você digite apenas o número aproximado. Exemplo: "50".';
                 onboarding.data.procedimentos_mes = num;
                 onboarding.step = 'reg_step_6_ticket';
                 return `E qual o ticket médio dos seus procedimentos?\n\nDigite o valor médio (ex: 800):`;
 
             case 'reg_step_6_ticket': // Ticket
                 const val = parseFloat(messageTrimmed.replace(',', '.').replace(/[^\d.]/g, ''));
-                if (isNaN(val)) return 'Por favor, digite um valor numérico.';
+                if (isNaN(val)) return 'Não entendi o valor. Digite algo como "150" ou "150,00".';
                 onboarding.data.ticket_medio = val;
                 onboarding.step = 'reg_step_7_confirm';
 
@@ -415,9 +415,11 @@ class OnboardingFlowServiceCorrected {
                         console.error(e);
                         return `Erro ao criar cadastro: ${e.message}. Tente novamente.`;
                     }
-                } else {
+                } else if (messageLower.includes('corrigir') || messageLower.includes('editar')) {
                     onboarding.step = 'reg_step_1';
                     return `Tudo bem, vamos corrigir. Qual o tipo da sua clínica?\n1 - Estética facial\n2 - Estética corporal\n3 - Estética facial e corporal\n4 - Odontologia estética\n5 - Outro tipo`;
+                } else {
+                    return `Não entendi. Se os dados estiverem certos, digite "confirmar". Se quiser mudar algo, digite "corrigir".`;
                 }
 
             case 'tutorial_welcome':
@@ -434,16 +436,30 @@ class OnboardingFlowServiceCorrected {
                 return `Entendi! Vou registrar:\n\n💉 Procedimento: Harmonização facial\n👤 Cliente: Maria\n💰 Valor: R$ 3.500\n💳 Pagamento: Cartão 2x\n📅 Data: Hoje\n\nDigite "confirmar" para salvar ou "editar" para corrigir`;
 
             case 'tutorial_step_2': // Confirma Venda
-                onboarding.step = 'tutorial_step_3';
-                return `Perfeito! Venda registrada ✅\n\nAgora vamos registrar um custo.\n\nMe envie:\n- Uma foto de boleto ou nota fiscal\n- Ou digite: "Paguei R$ 1.200 de Botox para estoque"\n\nComo preferir!`;
+                if (messageLower.includes('editar') || messageLower.includes('corrigir')) {
+                    onboarding.step = 'tutorial_step_1';
+                    return `Tudo bem! Vamos corrigir.\n\nDigite novamente a venda:\n_"Maria fez harmonização facial, pagou R$ 3.500 no cartão em 2x"_`;
+                } else if (messageLower.includes('confirm') || messageLower.includes('sim') || messageLower.includes('ok')) {
+                    onboarding.step = 'tutorial_step_3';
+                    return `Perfeito! Venda registrada ✅\n\nAgora vamos registrar um custo.\n\nMe envie:\n- Uma foto de boleto ou nota fiscal\n- Ou digite: "Paguei R$ 1.200 de Botox para estoque"\n\nComo preferir!`;
+                } else {
+                    return `Não entendi. Digite "confirmar" para salvar ou "editar" para corrigir.`;
+                }
 
             case 'tutorial_step_3': // Custo
                 onboarding.step = 'tutorial_step_4';
                 return `Registrei seu custo:\n\n📦 Descrição: Botox (estoque)\n💰 Valor: R$ 1.200\n📅 Data: Hoje\n🏷️ Categoria: Insumos\n\nDigite "confirmar" para salvar`;
 
             case 'tutorial_step_4': // Confirma Custo
-                onboarding.step = 'tutorial_finish';
-                return `Excelente! Agora veja como é fácil consultar.\n\nDigite: "resumo do dia" ou "como está meu mês"`;
+                if (messageLower.includes('editar') || messageLower.includes('corrigir')) {
+                    onboarding.step = 'tutorial_step_3';
+                    return `Sem problemas! Vamos corrigir.\n\nDigite novamente o custo:\n_"Paguei R$ 1.200 de Botox para estoque"_`;
+                } else if (messageLower.includes('confirm') || messageLower.includes('sim') || messageLower.includes('ok')) {
+                    onboarding.step = 'tutorial_finish';
+                    return `Excelente! Agora veja como é fácil consultar.\n\nDigite: "resumo do dia" ou "como está meu mês"`;
+                } else {
+                    return `Não entendi. Digite "confirmar" para salvar ou "editar" para corrigir.`;
+                }
 
             case 'tutorial_finish': // Relatório
                 this.onboardingData.delete(phone);
