@@ -99,7 +99,11 @@ class MessageController {
         case 'relatorio_mensal':
           // Verifica se usuário quer PDF
           if (intent.dados?.formato === 'pdf' || message.toLowerCase().includes('pdf')) {
-            await this.handleMonthlyReportPDF(user, phone, intent.dados);
+            console.log('[CONTROLLER] Iniciando geração de relatório PDF em background...');
+            // Não await para não bloquear o webhook
+            this.handleMonthlyReportPDF(user, phone, intent.dados).catch(err =>
+              console.error('[CONTROLLER] Erro no background handleMonthlyReportPDF:', err)
+            );
             return null; // PDF será enviado diretamente
           }
           response = await this.handleMonthlyReport(user, intent.dados);
@@ -109,10 +113,16 @@ class MessageController {
           // Verifica se usuário quer Excel/CSV ou PDF
           const formato = intent.dados?.formato || (message.toLowerCase().includes('excel') || message.toLowerCase().includes('planilha') || message.toLowerCase().includes('csv') ? 'excel' : 'pdf');
           if (formato === 'excel' || formato === 'csv') {
-            await this.handleExportDataExcel(user, phone, intent.dados, formato);
+            console.log(`[CONTROLLER] Iniciando exportação ${formato} em background...`);
+            this.handleExportDataExcel(user, phone, intent.dados, formato).catch(err =>
+              console.error('[CONTROLLER] Erro no background handleExportDataExcel:', err)
+            );
             return null; // Arquivo será enviado diretamente
           }
-          await this.handleExportData(user, phone, intent.dados);
+          console.log('[CONTROLLER] Iniciando exportação PDF em background...');
+          this.handleExportData(user, phone, intent.dados).catch(err =>
+            console.error('[CONTROLLER] Erro no background handleExportData:', err)
+          );
           return null; // PDF será enviado diretamente
 
         case 'comparar_meses':
