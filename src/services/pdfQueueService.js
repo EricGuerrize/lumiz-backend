@@ -81,7 +81,10 @@ class PdfQueueService {
      * Processa o job (executado pelo Worker)
      */
     async processJob(job) {
-        const { type, userId, phone, params } = job.data;
+        // BullMQ usa job.name como o tipo do job. 
+        // Fallback para job.data.type para suportar processamento inline.
+        const type = job.name || job.data.type;
+        const { userId, phone, params } = job.data;
         console.log(`[PDF_QUEUE] Processando job ${job.id} - Tipo: ${type}, User: ${userId}`);
 
         try {
