@@ -76,6 +76,11 @@ class MessageController {
       const recentHistory = await conversationHistoryService.getRecentHistory(user.id, 5);
       const similarExamples = await conversationHistoryService.findSimilarExamples(message, user.id, 3);
 
+      const intent = await geminiService.processMessage(message, {
+        recentMessages: recentHistory,
+        similarExamples: similarExamples
+      });
+
       // 2. Verifica se estamos aguardando dados (ex: valor)
       if (this.awaitingData.has(phone)) {
         const pendingData = this.awaitingData.get(phone);
@@ -86,28 +91,41 @@ class MessageController {
           return 'Entendido, cancelei o registro incompleto. 👍';
         }
 
-        // Tenta extrair número da mensagem
-        let valor = null;
-        const valorMatch = message.match(/(\d+[.,]?\d*)/);
-        if (valorMatch) {
-          valor = parseFloat(valorMatch[0].replace(',', '.'));
-        }
-
-        if (valor && !isNaN(valor)) {
-          const intent = pendingData.intent;
-          intent.dados.valor = valor;
+        // Cenário 1: Usuário mandou um comando completo agora (ex: "400 botox credito")
+        // O Gemini deve ter detectado como registrar_entrada/saida COM valor.
+        if ((intent.intencao === 'registrar_entrada' || intent.intencao === 'registrar_saida') && intent.dados.valor) {
+          console.log('[CONTROLLER] Novo comando completo detectado, descartando espera anterior');
           this.awaitingData.delete(phone);
-          console.log(`[CONTROLLER] Valor ${valor} recebido para completar intent ${intent.intencao}`);
+          // Deixa o switch abaixo processar normalmente esse novo intent completo
+        }
+        // Cenário 2: Usuário mandou só o valor (ou Gemini detectou como apenas_valor)
+        else if (intent.intencao === 'apenas_valor' && intent.dados.valor) {
+          // Completa o pending
+          pendingData.intent.dados.valor = intent.dados.valor;
+          this.awaitingData.delete(phone);
+          console.log(`[CONTROLLER] Valor ${intent.dados.valor} recebido via apenas_valor para completar intent`);
+          return await this.handleTransactionRequest(user, pendingData.intent, phone);
+        }
+        // Cenário 3: Gemini não entendeu bem, mas tem um número na mensagem (fallback regex)
+        else {
+          // Tenta extrair número da mensagem
+          let valor = null;
+          const valorMatch = message.match(/(\d+[.,]?\d*)/);
+          if (valorMatch) {
+            valor = parseFloat(valorMatch[0].replace(',', '.'));
+          }
 
-          // Chama handleTransactionRequest com o intent atualizado
-          return await this.handleTransactionRequest(user, intent, phone);
+          if (valor && !isNaN(valor)) {
+            const intent = pendingData.intent;
+            intent.dados.valor = valor;
+            this.awaitingData.delete(phone);
+            console.log(`[CONTROLLER] Valor ${valor} recebido via regex para completar intent ${intent.intencao}`);
+
+            // Chama handleTransactionRequest com o intent atualizado
+            return await this.handleTransactionRequest(user, intent, phone);
+          }
         }
       }
-
-      const intent = await geminiService.processMessage(message, {
-        recentMessages: recentHistory,
-        similarExamples: similarExamples
-      });
 
       let response = '';
 
