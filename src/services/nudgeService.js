@@ -84,9 +84,9 @@ class NudgeService {
 
     if (!user) return false;
 
-    // 2. Buscar transações criadas após 'since'
+    // 2. Buscar transações (atendimentos) criadas após 'since'
     const { count } = await supabase
-      .from('transactions')
+      .from('atendimentos')
       .select('*', { count: 'exact', head: true })
       .eq('user_id', user.id)
       .gt('created_at', since);

@@ -194,22 +194,18 @@ router.get('/user', async (req, res) => {
   try {
     const userId = req.user.id;
     const phone = req.user.telefone;
-    
+
     // Debug: verifica se há transações para este usuário
-    const { data: transactions, error: transError } = await supabase
-      .from('transactions')
-      .select('id, type, amount, description, date')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(5);
-    
+    // (Legacy transactions query removed)
+    const transactions = [];
+
     const { data: contasPagar, error: contasError } = await supabase
       .from('contas_pagar')
       .select('id, valor, descricao, data_vencimento')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(5);
-    
+
     res.json({
       id: userId,
       nome: req.user.nome_completo,

@@ -206,31 +206,23 @@ class TransactionController {
 
   async getBalance(userId) {
     try {
-      // Busca atendimentos (receitas)
-      const { data: atendimentos, error: atendError } = await supabase
-        .from('atendimentos')
-        .select('valor_total, custo_total')
-        .eq('user_id', userId);
+      // Usa a view otimizada para calcular saldo
+      const { data: balance, error } = await supabase
+        .from('view_finance_balance')
+        .select('*')
+        .eq('user_id', userId)
+        .single();
 
-      if (atendError) throw atendError;
+      if (error && error.code !== 'PGRST116') throw error;
 
-      // Busca contas a pagar (custos adicionais)
-      const { data: contas, error: contasError } = await supabase
-        .from('contas_pagar')
-        .select('valor')
-        .eq('user_id', userId);
-
-      if (contasError) throw contasError;
-
-      const entradas = (atendimentos || []).reduce((acc, a) => acc + parseFloat(a.valor_total || 0), 0);
-      const custosAtend = (atendimentos || []).reduce((acc, a) => acc + parseFloat(a.custo_total || 0), 0);
-      const custosContas = (contas || []).reduce((acc, c) => acc + parseFloat(c.valor || 0), 0);
-      const saidas = custosAtend + custosContas;
+      if (!balance) {
+        return { saldo: 0, entradas: 0, saidas: 0 };
+      }
 
       return {
-        saldo: entradas - saidas,
-        entradas,
-        saidas
+        saldo: parseFloat(balance.saldo),
+        entradas: parseFloat(balance.total_receitas),
+        saidas: parseFloat(balance.total_despesas)
       };
     } catch (error) {
       console.error('Erro ao calcular saldo:', error);
@@ -310,6 +302,18 @@ class TransactionController {
       const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
       const endDate = new Date(year, month, 0).toISOString().split('T')[0];
 
+      // 1. Busca totais na View (Rápido)
+      const { data: summary, error: summaryError } = await supabase
+        .from('view_monthly_report')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('ano', year)
+        .eq('mes', month)
+        .single();
+
+      if (summaryError && summaryError.code !== 'PGRST116') throw summaryError;
+
+      // 2. Busca detalhes para listagem (Ainda necessário para mostrar na tela)
       // Atendimentos do mês
       const { data: atendimentos, error: atendError } = await supabase
         .from('atendimentos')
@@ -337,12 +341,7 @@ class TransactionController {
 
       if (contasError) throw contasError;
 
-      const entradas = (atendimentos || []).reduce((acc, a) => acc + parseFloat(a.valor_total || 0), 0);
-      const custosAtend = (atendimentos || []).reduce((acc, a) => acc + parseFloat(a.custo_total || 0), 0);
-      const custosContas = (contas || []).reduce((acc, c) => acc + parseFloat(c.valor || 0), 0);
-      const saidas = custosAtend + custosContas;
-
-      // Agrupa por categoria (procedimento para entradas, categoria para saídas)
+      // Agrupa por categoria (mantido em JS pois é complexo fazer em SQL sem view específica)
       const porCategoria = {};
 
       (atendimentos || []).forEach(a => {
@@ -361,12 +360,15 @@ class TransactionController {
         porCategoria[catName].total += parseFloat(c.valor || 0);
       });
 
+      const entradas = summary ? parseFloat(summary.receitas) : 0;
+      const saidas = summary ? parseFloat(summary.despesas) : 0;
+
       return {
         periodo: `${month}/${year}`,
         entradas,
         saidas,
         saldo: entradas - saidas,
-        totalTransacoes: (atendimentos || []).length + (contas || []).length,
+        totalTransacoes: summary ? parseInt(summary.total_transacoes) : 0,
         porCategoria,
         transacoes: [...(atendimentos || []), ...(contas || [])]
       };
