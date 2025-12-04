@@ -13,7 +13,8 @@ class MessageController {
   constructor() {
     // Armazena transações pendentes de confirmação temporariamente
     this.pendingTransactions = new Map();
-    // Armazena transações de documentos pendentes
+    this.lastTransactions = new Map();
+    this.awaitingData = new Map(); // Armazena estado de espera por dados (ex: valor)de documentos pendentes
     this.pendingDocumentTransactions = new Map();
     // Armazena última transação registrada por usuário (para desfazer)
     this.lastTransactions = new Map();
@@ -75,6 +76,34 @@ class MessageController {
       const recentHistory = await conversationHistoryService.getRecentHistory(user.id, 5);
       const similarExamples = await conversationHistoryService.findSimilarExamples(message, user.id, 3);
 
+      // 2. Verifica se estamos aguardando dados (ex: valor)
+      if (this.awaitingData.has(phone)) {
+        const pendingData = this.awaitingData.get(phone);
+        const messageLower = message.toLowerCase().trim();
+
+        if (['cancelar', 'não', 'nao', 'desfazer'].includes(messageLower)) {
+          this.awaitingData.delete(phone);
+          return 'Entendido, cancelei o registro incompleto. 👍';
+        }
+
+        // Tenta extrair número da mensagem
+        let valor = null;
+        const valorMatch = message.match(/(\d+[.,]?\d*)/);
+        if (valorMatch) {
+          valor = parseFloat(valorMatch[0].replace(',', '.'));
+        }
+
+        if (valor && !isNaN(valor)) {
+          const intent = pendingData.intent;
+          intent.dados.valor = valor;
+          this.awaitingData.delete(phone);
+          console.log(`[CONTROLLER] Valor ${valor} recebido para completar intent ${intent.intencao}`);
+
+          // Chama handleTransactionRequest com o intent atualizado
+          return await this.handleTransactionRequest(user, intent, phone);
+        }
+      }
+
       const intent = await geminiService.processMessage(message, {
         recentMessages: recentHistory,
         similarExamples: similarExamples
@@ -85,7 +114,20 @@ class MessageController {
       switch (intent.intencao) {
         case 'registrar_entrada':
         case 'registrar_saida':
-          response = await this.handleTransactionRequest(user, intent, phone);
+          // Verifica se tem valor
+          if (!intent.dados.valor) {
+            // Salva estado para esperar valor
+            this.awaitingData.set(phone, {
+              intent: intent,
+              timestamp: Date.now()
+            });
+
+            const tipo = intent.intencao === 'registrar_entrada' ? 'venda' : 'custo';
+            const cat = intent.dados.categoria || 'esse item';
+            response = `Entendi que é ${tipo === 'venda' ? 'uma venda' : 'um custo'} de *${cat}*, mas qual o valor? 💰\n\nPode mandar só o número (ex: 500).`;
+          } else {
+            response = await this.handleTransactionRequest(user, intent, phone);
+          }
           break;
 
         case 'consultar_saldo':

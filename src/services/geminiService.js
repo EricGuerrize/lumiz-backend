@@ -70,8 +70,8 @@ REGRA PRINCIPAL DE CLASSIFICAÇÃO:
 MENSAGEM ATUAL: "${message}"
 
 INTENÇÕES:
-- registrar_entrada: tem VALOR + palavra de VENDA
-- registrar_saida: tem VALOR + palavra de CUSTO
+- registrar_entrada: tem palavra de VENDA (com ou sem valor)
+- registrar_saida: tem palavra de CUSTO (com ou sem valor)
 - consultar_saldo: saldo, resumo, lucro, quanto tenho
 - consultar_historico: histórico, últimas, movimentações
 - relatorio_mensal: relatório, mês, mensal
@@ -97,7 +97,7 @@ INTENÇÕES:
 - mensagem_ambigua: não conseguiu identificar
 
 EXTRAÇÃO:
-- VALOR: números (1500, 2.800, 3mil = 3000)
+- VALOR: números (1500, 2.800, 3mil = 3000). Se não houver valor, retorne null.
 - CATEGORIA: nome do procedimento ou tipo de custo
 - DESCRICAO: paciente, marca, forma de pagamento
 - DATA: "${dataHoje}" por padrão. Calcule datas relativas:
