@@ -9,7 +9,7 @@ const GEMINI_TIMEOUT_MS = 30000;
 
 class GeminiService {
   constructor() {
-    this.model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
+    this.model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
   }
 
   async processMessage(message, context = {}) {
