@@ -416,11 +416,72 @@ class OnboardingFlowServiceCorrected {
                         return `Erro ao criar cadastro: ${e.message}. Tente novamente.`;
                     }
                 } else if (messageLower.includes('corrigir') || messageLower.includes('editar')) {
-                    onboarding.step = 'reg_step_1';
-                    return `Tudo bem, vamos corrigir. Qual o tipo da sua clínica?\n1 - Estética facial\n2 - Estética corporal\n3 - Estética facial e corporal\n4 - Odontologia estética\n5 - Outro tipo`;
+                    onboarding.step = 'reg_correction_select';
+                    return `Tudo bem, vamos corrigir. Qual informação você deseja alterar?\n\n(Ex: nome, cidade, email, whatsapp, procedimentos, ticket)`;
                 } else {
                     return `Não entendi. Se os dados estiverem certos, digite "confirmar". Se quiser mudar algo, digite "corrigir".`;
                 }
+
+            case 'reg_correction_select': // Seleciona o campo
+                let field = null;
+                let prompt = '';
+
+                if (messageLower.includes('nome') && messageLower.includes('clinica')) { field = 'nome_clinica'; prompt = 'Qual o novo nome da clínica?'; }
+                else if (messageLower.includes('cidade')) { field = 'cidade'; prompt = 'Qual a nova cidade e estado?'; }
+                else if (messageLower.includes('responsavel') || (messageLower.includes('nome') && !messageLower.includes('clinica'))) { field = 'nome_completo'; prompt = 'Qual o nome do responsável?'; }
+                else if (messageLower.includes('email')) { field = 'email'; prompt = 'Qual o novo email?'; }
+                else if (messageLower.includes('whats') || messageLower.includes('telefone')) { field = 'whatsapp_contato'; prompt = 'Qual o novo número de WhatsApp?'; }
+                else if (messageLower.includes('procedimento')) { field = 'procedimentos_mes'; prompt = 'Qual a nova quantidade média de procedimentos por mês?'; }
+                else if (messageLower.includes('ticket') || messageLower.includes('valor')) { field = 'ticket_medio'; prompt = 'Qual o novo ticket médio?'; }
+                else {
+                    return `Não entendi qual campo você quer corrigir. Tente digitar: "email", "cidade", "procedimentos", etc.`;
+                }
+
+                onboarding.correctionField = field;
+                onboarding.step = 'reg_correction_input';
+                return `Certo, ${prompt}`;
+
+            case 'reg_correction_input': // Recebe o novo valor
+                const fieldToUpdate = onboarding.correctionField;
+
+                // Validações básicas (reutilizando lógica anterior simplificada)
+                if (fieldToUpdate === 'email') {
+                    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                    if (!emailRegex.test(messageTrimmed)) return 'Email inválido. Tente novamente:';
+                }
+                if (fieldToUpdate === 'procedimentos_mes') {
+                    const num = parseInt(messageTrimmed.replace(/\D/g, ''));
+                    if (isNaN(num)) return 'Digite um número válido.';
+                    onboarding.data[fieldToUpdate] = num;
+                } else if (fieldToUpdate === 'ticket_medio') {
+                    const val = parseFloat(messageTrimmed.replace(',', '.').replace(/[^\d.]/g, ''));
+                    if (isNaN(val)) return 'Digite um valor válido.';
+                    onboarding.data[fieldToUpdate] = val;
+                } else if (fieldToUpdate === 'whatsapp_contato') {
+                    let phoneInput = messageTrimmed.replace(/\D/g, '');
+                    if (phoneInput.length < 10) return 'Número inválido. Digite com DDD.';
+                    onboarding.data[fieldToUpdate] = phoneInput;
+                } else {
+                    // Texto livre (nome, cidade, etc)
+                    if (messageTrimmed.length < 2) return 'Muito curto. Tente novamente:';
+                    onboarding.data[fieldToUpdate] = messageTrimmed;
+                }
+
+                // Volta para confirmação
+                onboarding.step = 'reg_step_7_confirm';
+
+                // Mostra resumo atualizado
+                const d2 = onboarding.data;
+                let msg2 = `Atualizado! Vamos confirmar seus dados:\n\n`;
+                msg2 += `🏥 Clínica: ${d2.nome_clinica}\n`;
+                msg2 += `📍 Cidade: ${d2.cidade}\n`;
+                msg2 += `👤 Responsável: ${d2.nome_completo}\n`;
+                msg2 += `📧 Email: ${d2.email}\n`;
+                msg2 += `📱 WhatsApp: ${d2.whatsapp_contato || d2.telefone}\n`;
+                msg2 += `💉 Procedimentos/mês: ${d2.procedimentos_mes}\n`;
+                msg2 += `💰 Ticket médio: R$ ${d2.ticket_medio}\n\n`;
+                msg2 += `Digite "confirmar" para finalizar ou "corrigir" para ajustar mais algo`;
+                return msg2;
 
             case 'tutorial_welcome':
                 if (messageLower.includes('sim') || messageLower.includes('bora') || messageLower.includes('vamos')) {
