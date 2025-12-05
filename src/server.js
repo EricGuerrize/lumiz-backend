@@ -34,9 +34,22 @@ cron.schedule('0 0 * * *', async () => {
       .lt('expires_at', new Date().toISOString());
 
     if (error) throw error;
-    console.log(`[CRON] Limpeza concluída. ${count || 0} tokens removidos.`);
+    console.log(`[CRON] Limpeza de tokens concluída. ${count || 0} tokens removidos.`);
+
+    // Limpeza de histórico de conversas (mantém últimos 90 dias)
+    const ninetyDaysAgo = new Date();
+    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+
+    const { error: historyError, count: historyCount } = await supabase
+      .from('conversation_history')
+      .delete({ count: 'exact' })
+      .lt('created_at', ninetyDaysAgo.toISOString());
+
+    if (historyError) throw historyError;
+    console.log(`[CRON] Histórico limpo. ${historyCount || 0} mensagens antigas removidas.`);
+
   } catch (error) {
-    console.error('[CRON] Erro ao limpar tokens:', error);
+    console.error('[CRON] Erro na manutenção diária:', error);
     if (process.env.SENTRY_DSN) Sentry.captureException(error);
   }
 });
