@@ -1340,6 +1340,8 @@ class MessageController {
       const now = new Date();
       const currentMonth = now.getMonth() + 1;
       const currentYear = now.getFullYear();
+      const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+      const currentMonthName = monthNames[currentMonth - 1];
 
       const reportCurrent = await transactionController.getMonthlyReport(
         user.id,
