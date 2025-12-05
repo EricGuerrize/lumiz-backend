@@ -3,6 +3,8 @@ const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const cron = require('node-cron');
 const Sentry = require('@sentry/node');
+const helmet = require('helmet');
+const compression = require('compression');
 require('dotenv').config();
 
 const webhookRoutes = require('./routes/webhook');
@@ -53,6 +55,11 @@ try {
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Segurança e Performance
+app.use(helmet());
+app.use(compression());
+console.log('[SERVER] Middleware de segurança (Helmet) e compressão (Gzip) ativados');
 
 // Configura trust proxy de forma segura
 // Railway, Heroku, AWS ELB, Cloudflare usam proxies específicos
