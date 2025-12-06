@@ -33,7 +33,8 @@ class MessageController {
       const messageLower = message.toLowerCase().trim();
       const isTesteGratuitoMessage = messageLower.includes('quero organizar') ||
         messageLower.includes('teste gratuito') ||
-        messageLower.includes('convite para o teste');
+        messageLower.includes('convite para o teste') ||
+        messageLower.includes('começar meu cadastro');  // Adicionado novo gatilho
 
       // Busca usuário pelo telefone
       const user = await userController.findUserByPhone(phone);
@@ -44,9 +45,8 @@ class MessageController {
           // Usuário antigo
           return `Que bom que você voltou! Você já tá com o convite do teste gratuito, perfeito! Esse teste é o primeiro passo: ele vai mostrar como a Lumiz realiza a gestão do seu financeiro pelo WhatsApp em poucos minutos. Depois disso, pra continuar a gestão da sua clínica no dia a dia, aí só com o plano pago mesmo.`;
         } else {
-          // Usuário novo - inicia novo onboarding
-          await onboardingFlowService.startNewOnboarding(phone);
-          return `Oi, prazer! Sou a Lumiz 👋\n\nSou a IA que vai organizar o financeiro da sua clínica — direto pelo WhatsApp.\n\nAntes de começarmos, veja este vídeo rapidinho para entender como eu te ajudo a controlar tudo sem planilhas.\n\nVou te ajudar a cuidar das finanças da sua clínica de forma simples, automática e sem complicação.\n\nPara começar seu teste, qual é o nome da sua clínica?`;
+          // Usuário novo - inicia novo fluxo simplificado
+          return await onboardingFlowService.startIntroFlow(phone);
         }
       }
 

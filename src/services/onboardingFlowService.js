@@ -44,6 +44,19 @@ class OnboardingFlowService {
 
         switch (onboarding.step) {
             // =================================================================
+            // 0. CONFIRMAÇÃO DO INÍCIO (Fluxo Simplificado)
+            // =================================================================
+            case 'awaiting_start_confirmation': {
+                const intent = messageLower;
+                if (intent.includes('sim') || intent.includes('vamos') || intent.includes('quero') || intent.includes('começar') || intent.includes('bora')) {
+                    onboarding.step = 'reg_step_1';
+                    return `Ótimo! 🚀\n\nQual o tipo da sua clínica?\n\nDigite o número:\n1 - Estética facial\n2 - Estética corporal\n3 - Estética facial e corporal\n4 - Odontologia estética\n5 - Outro tipo`;
+                } else {
+                    return `Para começarmos a organizar seu financeiro, preciso criar seu cadastro rapidinho.\n\nVamos começar? (Sim / Não)`;
+                }
+            }
+
+            // =================================================================
             // 1. PRIMEIRA INTERAÇÃO & MENU
             // =================================================================
             case 'intro_menu': {
@@ -278,6 +291,33 @@ class OnboardingFlowServiceCorrected {
     getOnboardingStep(phone) {
         const data = this.onboardingData.get(phone);
         return data ? data.step : null;
+    }
+
+    // Inicia o fluxo simplificado de introdução (Vídeo + Convite)
+    async startIntroFlow(phone) {
+        // 1. Define estado inicial
+        this.onboardingStates.set(phone, {
+            step: 'awaiting_start_confirmation',
+            startTime: Date.now(),
+            data: {}
+        });
+
+        try {
+            // 2. Envia saudação inicial
+            const evolutionService = require('./evolutionService');
+            await evolutionService.sendMessage(phone, 'Oi, prazer! Sou a Lumiz 👋\n\nSou a IA que vai organizar o financeiro da sua clínica — direto pelo WhatsApp.');
+
+            // 3. Envia vídeo explicativo
+            // TODO: Substituir pela URL real do vídeo fornecida pelo usuário
+            const videoUrl = 'https://www.w3schools.com/html/mov_bbb.mp4';
+            await evolutionService.sendVideo(phone, videoUrl, 'Assista rapidinho para entender como facilito sua vida! 💜');
+
+            // 4. Retorna a pergunta final para ser enviada pelo controller (ou envia aqui mesmo)
+            return 'Vamos começar seu teste gratuito agora?';
+        } catch (error) {
+            console.error('[ONBOARDING] Erro ao enviar intro:', error);
+            return 'Oi! Sou a Lumiz. Vamos começar seu cadastro?';
+        }
     }
 
     async startOnboarding(phone) {
