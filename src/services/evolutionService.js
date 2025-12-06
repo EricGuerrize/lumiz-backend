@@ -265,6 +265,39 @@ class EvolutionService {
       throw error;
     }
   }
+
+  async sendVideo(phone, videoUrl, caption) {
+    try {
+      const url = `${this.baseUrl}/message/sendMedia/${this.instanceName}`;
+
+      const payload = {
+        number: phone,
+        media: videoUrl,
+        mediatype: 'video',
+        caption: caption
+      };
+
+      const response = await retryWithBackoff(
+        () => withTimeout(
+          this.axiosInstance.post(url, payload, {
+            headers: {
+              'apikey': this.apiKey,
+              'Content-Type': 'application/json'
+            }
+          }),
+          30000, // 30s timeout for media
+          'Timeout ao enviar vídeo via Evolution API (30s)'
+        ),
+        2,
+        1000
+      );
+
+      return response.data;
+    } catch (error) {
+      console.error('[EVOLUTION] Erro ao enviar vídeo:', error.response?.data || error.message);
+      throw error;
+    }
+  }
 }
 
 module.exports = new EvolutionService();
