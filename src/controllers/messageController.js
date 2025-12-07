@@ -52,8 +52,7 @@ class MessageController {
 
       // Se não encontrou usuário e não é mensagem de teste, inicia novo onboarding
       if (!user) {
-        await onboardingFlowService.startNewOnboarding(phone);
-        return `Oi! Eu sou a Lumiz 💜\nSua assistente financeira para clínicas de estética\n\nOrganizo suas receitas, custos e lucro direto aqui no WhatsApp.\nSem planilhas, sem complicação.\n\nDigite:\n1 - Conhecer a Lumiz\n2 - Começar cadastro`;
+        return await onboardingFlowService.startNewOnboarding(phone);
       }
 
       // Verifica se existe uma transação pendente de confirmação
