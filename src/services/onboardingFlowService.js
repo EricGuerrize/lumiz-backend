@@ -38,7 +38,7 @@ class OnboardingFlowService {
 
         // Nova Abordagem: Já manda o exemplo direto!
 
-        const msgExplicacao = `👀 *Vamos ver como funciona?*\n\nPara a Lumiz cuidar do seu financeiro é simples:\n1️⃣ Você envia o áudio, texto ou foto da venda.\n2️⃣ A IA entende e registra tudo sozinha.\n\n*Já criamos um TESTE, agora é só confirmar abaixo* 👇`;
+        const msgExplicacao = `👀 *Vamos ver como funciona?*\n\nPara a Lumiz cuidar do seu financeiro é simples:\n1️⃣ Você envia o texto ou foto da venda.\n2️⃣ A IA entende e registra tudo sozinha.\n\n*Já criamos um TESTE, agora é só confirmar abaixo* 👇`;
 
         await evolutionService.sendMessage(phone, msgExplicacao);
 
@@ -66,6 +66,7 @@ class OnboardingFlowService {
         const messageLower = messageTrimmed.toLowerCase();
         const userController = require('../controllers/userController');
         const evolutionService = require('./evolutionService');
+        const geminiService = require('./geminiService'); // Certifique-se de importar
 
         // Escape hatch global
         if (messageLower.includes('ajuda') || messageLower.includes('falar com') || messageLower.includes('humano')) {
@@ -109,7 +110,13 @@ class OnboardingFlowService {
                 return `Quem é o responsável pelas finanças da clínica? Pode ser você mesmo(a) 😊\n\n✏️ Me manda o nome completo e CPF/CNPJ.`;
 
             case 'reg_step_4_owner':
-                if (messageTrimmed.length < 5) return 'Preciso de um nome e documento válidos.';
+                // Validação de CPF/CNPJ (Básica: números suficientes)
+                const numeros = messageTrimmed.replace(/\D/g, '');
+                if (numeros.length < 11) {
+                    return 'Ops! Preciso que você digite também o CPF ou CNPJ (pelo menos os números) junto com o nome. Tente novamente:';
+                }
+                if (messageTrimmed.length < 5) return 'Preciso de um nome válido também.';
+
                 onboarding.data.responsavel_info = messageTrimmed;
                 // Tenta extrair nome para usar depois
                 onboarding.data.nome_completo = messageTrimmed.split(' ')[0];
@@ -158,11 +165,39 @@ class OnboardingFlowService {
             // 3. ONBOARDING GAMIFICADO
             // =================================================================
             case 'game_sim_venda':
-                // Simula "pensar"
                 onboarding.step = 'game_sim_confirm';
-                // Mock da interpretação (na real usaria o Gemini, mas aqui é tutorial scripted)
-                // Se o usuário mandou algo parecido com o exemplo
-                return `Entendi assim 👇\n\n• Paciente: Júlia\n• Procedimento: Full face – 10ml\n• Valor total: R$ 5.000,00\n• Forma de pagamento: Cartão – 6x\n\nEstá certo?\n\n1️⃣ Sim, pode registrar\n2️⃣ Corrigir`;
+
+                // MODO DINÂMICO USANDO GEMINI
+                try {
+                    // Chama o Gemini para extrair os dados da mensagem
+                    const geminiResponse = await geminiService.processMessage(messageTrimmed);
+
+                    // O geminiService retorna { intencao, dados: { ... } }
+                    // Vamos usar os dados extraídos se existirem
+                    const dados = geminiResponse.dados || {};
+
+                    // Defaults se falhar
+                    const cliente = dados.nome_cliente || dados.descricao || 'Cliente Identificado';
+                    const valor = dados.valor ? `R$ ${dados.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : 'R$ 0,00';
+                    const procedimento = dados.categoria || 'Procedimento';
+
+                    let pgto = 'À vista';
+                    if (dados.forma_pagamento === 'pix') pgto = 'PIX';
+                    else if (dados.forma_pagamento === 'parcelado') pgto = `Cartão ${dados.parcelas}x`;
+                    else if (dados.forma_pagamento === 'credito_avista') pgto = 'Crédito à vista';
+                    else if (dados.forma_pagamento === 'debito') pgto = 'Débito';
+                    else if (dados.forma_pagamento === 'dinheiro') pgto = 'Dinheiro';
+
+                    // Salva no contexto para uso posterior se precisar (embora aqui seja só visual)
+                    onboarding.data.simulacao = { cliente, valor, procedimento, pgto };
+
+                    return `Entendi assim 👇\n\n• Paciente: ${cliente}\n• Procedimento: ${procedimento}\n• Valor total: ${valor}\n• Forma de pagamento: ${pgto}\n\nEstá certo?\n\n1️⃣ Sim, pode registrar\n2️⃣ Corrigir`;
+
+                } catch (err) {
+                    console.error('Erro na simulacao Gemini:', err);
+                    // Fallback visual
+                    return `Entendi assim 👇\n\n• Paciente: Cliente Identificado\n• Valor total: R$ 0,00\n\nEstá certo?\n\n1️⃣ Sim, pode registrar\n2️⃣ Corrigir`;
+                }
 
             case 'game_sim_confirm':
                 if (messageLower.includes('sim') || messageLower.includes('pode') || messageLower.includes('1')) {

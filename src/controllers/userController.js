@@ -81,12 +81,8 @@ class UserController {
             nome_clinica,
             telefone,
             is_active: true,
-            id: tempId,
-            nome_completo,
-            nome_clinica,
-            telefone,
-            is_active: true,
             email: data.email || null,
+            whatsapp_contato: data.whatsapp || data.whatsapp_contato || telefone,
             cidade: data.cidade,
             tipo_clinica: data.tipo_clinica,
             ticket_medio: data.ticket_medio,
@@ -572,7 +568,11 @@ class UserController {
             nome_clinica: profile.nome_clinica,
             telefone: profile.telefone,
             email: email,
-            // cnpj: profile.cnpj, // Removido pois estava causando erro de schema
+            whatsapp_contato: profile.whatsapp_contato || profile.telefone,
+            cidade: profile.cidade,
+            tipo_clinica: profile.tipo_clinica,
+            ticket_medio: profile.ticket_medio,
+            procedimentos_mes: profile.procedimentos_mes,
             is_active: true
           }]);
         createError = error;
@@ -615,6 +615,11 @@ class UserController {
                 nome_clinica: profile.nome_clinica,
                 telefone: profile.telefone,
                 email: email,
+                whatsapp_contato: profile.whatsapp_contato || profile.telefone,
+                cidade: profile.cidade,
+                tipo_clinica: profile.tipo_clinica,
+                ticket_medio: profile.ticket_medio,
+                procedimentos_mes: profile.procedimentos_mes,
                 is_active: true
               }]);
 
