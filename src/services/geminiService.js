@@ -151,6 +151,10 @@ EXEMPLOS:
 
 "Atendimento preenchimento 1800" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":1800.00,"categoria":"Preenchimento","forma_pagamento":"avista","data":"${dataHoje}"}}
 
+"Romulo botox 5000 em 3x" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":5000.00,"categoria":"Botox","forma_pagamento":"parcelado","parcelas":3,"nome_cliente":"Romulo","data":"${dataHoje}"}}
+
+"Julia preenchimento 1200" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":1200.00,"categoria":"Preenchimento","forma_pagamento":"avista","nome_cliente":"Julia","data":"${dataHoje}"}}
+
 "Insumos 3200" → {"intencao":"registrar_saida","dados":{"tipo":"saida","valor":3200.00,"categoria":"Insumos","data":"${dataHoje}"}}
 
 "Marketing 800" → {"intencao":"registrar_saida","dados":{"tipo":"saida","valor":800.00,"categoria":"Marketing","data":"${dataHoje}"}}

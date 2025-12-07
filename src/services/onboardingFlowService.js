@@ -183,7 +183,19 @@ class OnboardingFlowService {
                     const dados = geminiResponse.dados || {};
 
                     // Defaults se falhar
-                    const cliente = dados.nome_cliente || dados.descricao || 'Cliente Identificado';
+                    let cliente = dados.nome_cliente || dados.descricao;
+
+                    // Fallback: Se não achou cliente mas a mensagem começa com nome (Ex: "Romulo botox...")
+                    if ((!cliente || cliente === 'Cliente Identificado') && messageTrimmed.length > 5) {
+                        const firstWord = messageTrimmed.split(' ')[0];
+                        // Se primeira letra maiuscula e não é um valor/comando
+                        if (firstWord[0] === firstWord[0].toUpperCase() && isNaN(parseInt(firstWord))) {
+                            cliente = firstWord;
+                        } else {
+                            cliente = 'Cliente Identificado';
+                        }
+                    }
+
                     const valor = dados.valor ? `R$ ${dados.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : 'R$ 0,00';
                     const procedimento = dados.categoria || 'Procedimento';
 
@@ -197,12 +209,12 @@ class OnboardingFlowService {
                     // Salva no contexto para uso posterior se precisar (embora aqui seja só visual)
                     onboarding.data.simulacao = { cliente, valor, procedimento, pgto };
 
-                    return `Entendi assim 👇\n\n• Paciente: ${cliente}\n• Procedimento: ${procedimento}\n• Valor total: ${valor}\n• Forma de pagamento: ${pgto}\n\nEstá certo?\n\n1️⃣ Sim, pode registrar\n2️⃣ Corrigir`;
+                    return `Entendi assim 👇\n\n👤 Paciente: ${cliente}\n💉 Procedimento: ${procedimento}\n💰 Valor total: ${valor}\n💳 Pagamento: ${pgto}\n\nEstá certo?\n\n1️⃣ Sim, pode registrar\n2️⃣ Corrigir`;
 
                 } catch (err) {
                     console.error('Erro na simulacao Gemini:', err);
                     // Fallback visual
-                    return `Entendi assim 👇\n\n• Paciente: Cliente Identificado\n• Valor total: R$ 0,00\n\nEstá certo?\n\n1️⃣ Sim, pode registrar\n2️⃣ Corrigir`;
+                    return `Entendi assim 👇\n\n👤 Paciente: Cliente Identificado\n💉 Procedimento: Procedimento\n💰 Valor total: R$ 0,00\n\nEstá certo?\n\n1️⃣ Sim, pode registrar\n2️⃣ Corrigir`;
                 }
 
             case 'game_sim_confirm':
@@ -216,12 +228,13 @@ class OnboardingFlowService {
                 }
 
             case 'game_mini_dash':
-                onboarding.step = 'game_finish';
+                // FIM DO ONBOARDING
+                this.onboardingStates.delete(phone);
                 return `A qualquer momento, você pode pedir:\n_"Lumiz, me dá um resumo financeiro do meu mês."_\n\nEu te devolvo tudo de forma simples e clara, em segundos. ✨\n\nAgora é com você! Pode começar a mandar suas vendas e custos reais. 😉`;
 
             case 'game_finish':
+                // Fallback caso alguém caia aqui
                 this.onboardingStates.delete(phone);
-                // Retorna algo genérico ou nada, pois o fluxo acabou
                 return 'Estou pronta para organizar seu financeiro! 💜';
 
             default:
