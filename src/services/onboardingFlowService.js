@@ -24,7 +24,9 @@ class OnboardingFlowService {
         this.onboardingStates.set(phone, {
             step: 'intro_test_confirmation',
             startTime: Date.now(),
-            data: {}
+            data: {
+                telefone: phone // CRITICAL: Salva o telefone para usar no cadastro
+            }
         });
 
         const evolutionService = require('./evolutionService');
@@ -150,7 +152,11 @@ class OnboardingFlowService {
                 return `Qual seu WhatsApp para contato?\n(Digite "este" para usar o atual)`;
 
             case 'reg_step_full_whatsapp':
-                onboarding.data.whatsapp = messageTrimmed;
+                if (messageLower.includes('este') || messageLower.includes('atual') || messageLower.includes('mesmo')) {
+                    onboarding.data.whatsapp = onboarding.data.telefone;
+                } else {
+                    onboarding.data.whatsapp = messageTrimmed;
+                }
                 try {
                     const result = await userController.createUserFromOnboarding(onboarding.data);
                     onboarding.data.userId = result.user.id;
