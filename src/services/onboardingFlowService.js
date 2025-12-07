@@ -20,9 +20,9 @@ class OnboardingFlowService {
 
     // Inicia o fluxo simplificado de introdução (Vídeo + Convite)
     async startIntroFlow(phone) {
-        // 1. Define estado inicial
+        // 1. Define estado inicial para esperar confirmação do teste
         this.onboardingStates.set(phone, {
-            step: 'intro_start',
+            step: 'intro_test_confirmation',
             startTime: Date.now(),
             data: {}
         });
@@ -36,7 +36,16 @@ class OnboardingFlowService {
         const videoUrl = 'https://www.w3schools.com/html/mov_bbb.mp4';
         await evolutionService.sendVideo(phone, videoUrl, 'Em poucos minutos te ajudo a organizar receitas, custos e lucro da sua clínica – direto aqui no WhatsApp.');
 
-        return 'O que você quer fazer agora?\n\n1️⃣ Entender como funciona\n2️⃣ Começar meu cadastro';
+        // Nova Abordagem: Já manda o exemplo direto!
+
+        const msgExplicacao = `👀 *Vamos ver como funciona?*\n\nPara a Lumiz cuidar do seu financeiro é simples:\n1️⃣ Você envia o áudio, texto ou foto da venda.\n2️⃣ A IA entende e registra tudo sozinha.\n\n*Já criamos um TESTE, agora é só confirmar abaixo* 👇`;
+
+        await evolutionService.sendMessage(phone, msgExplicacao);
+
+        // Manda o "Card" de teste
+        const msgTeste = `🧾 *Venda Teste:*\n\n👤 Cliente: Cliente Teste\n💉 Procedimento: Harmonização\n💰 Valor: R$ 300,00\n💳 Pagamento: PIX\n📅 Data: Hoje\n\n*Confirma a criação dessa venda?*\n👇 Digite *Confirmar*`;
+
+        return msgTeste;
     }
 
     async startOnboarding(phone) {
@@ -65,37 +74,18 @@ class OnboardingFlowService {
 
         switch (onboarding.step) {
             // =================================================================
-            // 0. INTRODUÇÃO
+            // 0. INTRODUÇÃO & TESTE (Novo Fluxo)
             // =================================================================
-            case 'intro_start':
-                if (messageLower.includes('1') || messageLower.includes('entender')) {
-                    onboarding.step = 'understand_1';
-                    return `Perfeito, vou te mostrar rapidinho como a Lumiz funciona 👇\n\n1️⃣ Você manda suas vendas, boletos e notas por aqui.\n2️⃣ A Lumiz lê tudo sozinha e organiza em receitas, custos e lucro.\n3️⃣ Você vê um resumo claro do financeiro da sua clínica – sem planilhas.\n\nDigite "próximo" para continuar`;
-                } else if (messageLower.includes('2') || messageLower.includes('começar') || messageLower.includes('cadastro')) {
+            case 'intro_test_confirmation':
+                if (messageLower.includes('confirm') || messageLower.includes('sim') || messageLower.includes('ok')) {
                     onboarding.step = 'reg_step_1_type';
-                    return `Pra te ajudar direitinho, me conta:\n\nQual é o tipo da sua clínica?\n\n1️⃣ Clínica de estética\n2️⃣ Clínica odontológica\n3️⃣ Outros procedimentos`;
+                    return `Show! Venda de teste registrada ✅\n\nViu como é fácil? Agora vamos criar sua conta de verdade.\n\nPra começar, me conta: Qual é o tipo da sua clínica?\n\n1️⃣ Clínica de estética\n2️⃣ Clínica odontológica\n3️⃣ Outros procedimentos`;
                 } else {
-                    return `O que você quer fazer agora?\n\n1️⃣ Entender como funciona\n2️⃣ Começar meu cadastro`;
+                    return `Pra avançar, preciso que você confirme o teste acima. 👇\n\nDigite *Confirmar* para ver a mágica acontecer!`;
                 }
 
             // =================================================================
-            // 1. ENTENDER COMO FUNCIONA
-            // =================================================================
-            case 'understand_1':
-                onboarding.step = 'reg_redirect';
-                return `Quer testar com um exemplo e já deixar sua conta pronta?\n\n1️⃣ Quero testar com exemplo\n2️⃣ Só olhar depois`;
-
-            case 'reg_redirect':
-                if (messageLower.includes('1') || messageLower.includes('testar') || messageLower.includes('quero')) {
-                    onboarding.step = 'reg_step_1_type';
-                    return `Vamos lá! 🚀\n\nQual é o tipo da sua clínica?\n\n1️⃣ Clínica de estética\n2️⃣ Clínica odontológica\n3️⃣ Outros procedimentos`;
-                } else {
-                    this.onboardingStates.delete(phone);
-                    return `Sem problemas 😊\nQuando quiser, é só mandar: "Começar com a Lumiz" que eu continuo de onde parei.`;
-                }
-
-            // =================================================================
-            // 2. CADASTRO DA CLÍNICA
+            // 2. CADASTRO DA CLÍNICA (Mantido, mas agora vem DEPOIS do teste)
             // =================================================================
             case 'reg_step_1_type':
                 let type = 'Outros';
