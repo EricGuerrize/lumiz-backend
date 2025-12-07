@@ -20,9 +20,9 @@ class OnboardingFlowService {
 
     // Inicia o fluxo simplificado de introdução (Vídeo + Convite)
     async startIntroFlow(phone) {
-        // 1. Define estado inicial para esperar confirmação do teste
+        // 1. Define estado inicial
         this.onboardingStates.set(phone, {
-            step: 'intro_test_confirmation',
+            step: 'reg_step_1_type', // Desta vez vai direto para cadastro
             startTime: Date.now(),
             data: {
                 telefone: phone // CRITICAL: Salva o telefone para usar no cadastro
@@ -31,23 +31,15 @@ class OnboardingFlowService {
 
         const evolutionService = require('./evolutionService');
 
-        // Envia sequencia inicial
+        // Envia sequencia inicial (Vídeo apenas)
         await evolutionService.sendMessage(phone, 'Oi! Eu sou a Lumiz, sua assistente financeira para clínicas de estética. 💜');
 
         // TODO: Substituir pela URL real do vídeo
         const videoUrl = 'https://www.w3schools.com/html/mov_bbb.mp4';
         await evolutionService.sendVideo(phone, videoUrl, 'Em poucos minutos te ajudo a organizar receitas, custos e lucro da sua clínica – direto aqui no WhatsApp.');
 
-        // Nova Abordagem: Já manda o exemplo direto!
-
-        const msgExplicacao = `👀 *Vamos ver como funciona?*\n\nPara a Lumiz cuidar do seu financeiro é simples:\n1️⃣ Você envia o texto ou foto da venda.\n2️⃣ A IA entende e registra tudo sozinha.\n\n*Já criamos um TESTE, agora é só confirmar abaixo* 👇`;
-
-        await evolutionService.sendMessage(phone, msgExplicacao);
-
-        // Manda o "Card" de teste
-        const msgTeste = `🧾 *Venda Teste:*\n\n👤 Cliente: Cliente Teste\n💉 Procedimento: Harmonização\n💰 Valor: R$ 300,00\n💳 Pagamento: PIX\n📅 Data: Hoje\n\n*Confirma a criação dessa venda?*\n👇 Digite *Confirmar*`;
-
-        return msgTeste;
+        // MENSAGEM DE TRANSIÇÃO DIRETA PARA CADASTRO
+        return `Pra começar, me conta: Qual é o tipo da sua clínica?\n\n1️⃣ Clínica de estética\n2️⃣ Clínica odontológica\n3️⃣ Outros procedimentos`;
     }
 
     async startOnboarding(phone) {
@@ -123,25 +115,9 @@ class OnboardingFlowService {
                 // Tenta extrair nome para usar depois
                 onboarding.data.nome_completo = messageTrimmed.split(' ')[0];
 
-                onboarding.step = 'reg_step_5_shortcut';
-                return `Quer preencher mais detalhes agora ou prefere ir direto pra parte de testar a Lumiz?\n\n1️⃣ Completar cadastro\n2️⃣ Pular e testar agora`;
-
-            case 'reg_step_5_shortcut':
-                if (messageLower.includes('1') || messageLower.includes('completar')) {
-                    onboarding.step = 'reg_step_full_email';
-                    return `Beleza! Digite seu melhor email:`;
-                } else {
-                    // PULA para Gamificação - Cria usuário temporário/simples
-                    try {
-                        const result = await userController.createUserFromOnboarding(onboarding.data);
-                        onboarding.data.userId = result.user.id;
-                        onboarding.step = 'game_sim_venda';
-                        return `Vamos fazer um teste rápido, combinado?\n\nMe manda uma venda fictícia nesse estilo:\n\n_"Júlia fez um full face com 10ml, pagou R$ 5.000, cartão em 6x."_`;
-                    } catch (e) {
-                        console.error(e);
-                        return `Erro ao criar cadastro. Tente novamente.`;
-                    }
-                }
+                // LINHA DIRETA: Pula a pergunta de "quer completar?"
+                onboarding.step = 'reg_step_full_email';
+                return `Beleza! Digite seu melhor email:`;
 
             // =================================================================
             // 2.1 CADASTRO COMPLETO (SÓ SE ESCOLHER COMPLETAR)
@@ -160,8 +136,11 @@ class OnboardingFlowService {
                 try {
                     const result = await userController.createUserFromOnboarding(onboarding.data);
                     onboarding.data.userId = result.user.id;
-                    onboarding.step = 'game_sim_venda';
-                    return `Cadastro completo! 🎉\n\nVamos fazer um teste rápido?\n\nMe manda uma venda fictícia nesse estilo:\n\n_"Júlia fez um full face com 10ml, pagou R$ 5.000, cartão em 6x."_`;
+
+                    // FIM CADASTRO -> TESTE ESTÁTICO (Substitui Julia Dinâmica)
+                    onboarding.step = 'game_test_offer';
+                    return `Cadastro completo! 🎉\n\n👀 *Vamos ver como funciona?*\n\nPara a Lumiz cuidar do seu financeiro é simples:\n1️⃣ Você envia o texto ou foto da venda.\n2️⃣ A IA entende e registra tudo sozinha.\n\n*Já criei um exemplo de venda TESTE, confirma pra mim?* 👇\n\n🧾 *Venda Teste:*\n\n👤 Cliente: Cliente Teste\n💉 Procedimento: Harmonização\n💰 Valor: R$ 300,00\n💳 Pagamento: PIX\n📅 Data: Hoje\n\n👇 Digite *Confirmar*`;
+
                 } catch (e) {
                     console.error(e);
                     return `Erro ao criar cadastro. Tente novamente.`;
@@ -170,64 +149,19 @@ class OnboardingFlowService {
             // =================================================================
             // 3. ONBOARDING GAMIFICADO
             // =================================================================
-            case 'game_sim_venda':
-                onboarding.step = 'game_sim_confirm';
-
-                // MODO DINÂMICO USANDO GEMINI
-                try {
-                    // Chama o Gemini para extrair os dados da mensagem
-                    const geminiResponse = await geminiService.processMessage(messageTrimmed);
-
-                    // O geminiService retorna { intencao, dados: { ... } }
-                    // Vamos usar os dados extraídos se existirem
-                    const dados = geminiResponse.dados || {};
-
-                    // Defaults se falhar
-                    let cliente = dados.nome_cliente || dados.descricao;
-
-                    // Fallback: Se não achou cliente mas a mensagem começa com nome (Ex: "Romulo botox...")
-                    if ((!cliente || cliente === 'Cliente Identificado') && messageTrimmed.length > 5) {
-                        const firstWord = messageTrimmed.split(' ')[0];
-                        // Se primeira letra maiuscula e não é um valor/comando
-                        if (firstWord[0] === firstWord[0].toUpperCase() && isNaN(parseInt(firstWord))) {
-                            cliente = firstWord;
-                        } else {
-                            cliente = 'Cliente Identificado';
-                        }
-                    }
-
-                    const valor = dados.valor ? `R$ ${dados.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : 'R$ 0,00';
-                    const procedimento = dados.categoria || 'Procedimento';
-
-                    let pgto = 'À vista';
-                    if (dados.forma_pagamento === 'pix') pgto = 'PIX';
-                    else if (dados.forma_pagamento === 'parcelado') pgto = `Cartão ${dados.parcelas}x`;
-                    else if (dados.forma_pagamento === 'credito_avista') pgto = 'Crédito à vista';
-                    else if (dados.forma_pagamento === 'debito') pgto = 'Débito';
-                    else if (dados.forma_pagamento === 'dinheiro') pgto = 'Dinheiro';
-
-                    // Salva no contexto para uso posterior se precisar (embora aqui seja só visual)
-                    onboarding.data.simulacao = { cliente, valor, procedimento, pgto };
-
-                    return `Entendi assim 👇\n\n👤 Paciente: ${cliente}\n💉 Procedimento: ${procedimento}\n💰 Valor total: ${valor}\n💳 Pagamento: ${pgto}\n\nEstá certo?\n\n1️⃣ Sim, pode registrar\n2️⃣ Corrigir`;
-
-                } catch (err) {
-                    console.error('Erro na simulacao Gemini:', err);
-                    // Fallback visual
-                    return `Entendi assim 👇\n\n👤 Paciente: Cliente Identificado\n💉 Procedimento: Procedimento\n💰 Valor total: R$ 0,00\n\nEstá certo?\n\n1️⃣ Sim, pode registrar\n2️⃣ Corrigir`;
-                }
-
-            case 'game_sim_confirm':
-                if (messageLower.includes('sim') || messageLower.includes('pode') || messageLower.includes('1')) {
-                    onboarding.step = 'game_mini_dash';
-                    // Simula envio de imagem (opcional) ou texto
+            // =================================================================
+            // 3. TESTE FINAL (Estático)
+            // =================================================================
+            case 'game_test_offer':
+                if (messageLower.includes('sim') || messageLower.includes('confirm') || messageLower.includes('ok')) {
+                    onboarding.step = 'game_test_dash';
+                    // Retorna mini dash
                     return `Pronto! Essa venda já entrou no seu financeiro.\n\nSe esse fosse seu mês de novembro, por exemplo, você veria algo assim:\n\n📊 *Resumo Financeiro*\n• Receitas: R$ 85.000\n• Custos: R$ 32.000\n• *Lucro: R$ 53.000 (62%)*\n\nTudo isso calculado automaticamente com base nas vendas e despesas que você manda pra mim.\n\nDigite "Uau" ou "Próximo" para continuar ✨`;
                 } else {
-                    onboarding.step = 'game_sim_venda';
-                    return `Sem problemas. Digite a venda novamente:`;
+                    return `Pra avançar, preciso que você confirme o teste acima. 👇\n\nDigite *Confirmar* para ver a mágica acontecer!`;
                 }
 
-            case 'game_mini_dash':
+            case 'game_test_dash':
                 // FIM DO ONBOARDING
                 this.onboardingStates.delete(phone);
                 return `A qualquer momento, você pode pedir:\n_"Lumiz, me dá um resumo financeiro do meu mês."_\n\nEu te devolvo tudo de forma simples e clara, em segundos. ✨\n\nAgora é com você! Pode começar a mandar suas vendas e custos reais. 😉`;
