@@ -173,8 +173,39 @@ class EvolutionService {
     }
   }
 
+  // Valida formato de número de telefone
+  validatePhoneNumber(phone) {
+    if (!phone || typeof phone !== 'string') {
+      return false;
+    }
+    
+    // Remove caracteres não numéricos
+    const cleaned = phone.replace(/\D/g, '');
+    
+    // Valida formato brasileiro (55 + DDD + número)
+    // Mínimo: 55 + 2 dígitos DDD + 8 dígitos número = 12 dígitos
+    // Máximo: 55 + 2 dígitos DDD + 9 dígitos número = 13 dígitos
+    if (cleaned.length < 12 || cleaned.length > 13) {
+      return false;
+    }
+    
+    // Deve começar com 55 (código do Brasil)
+    if (!cleaned.startsWith('55')) {
+      return false;
+    }
+    
+    return true;
+  }
+
   async sendMessage(phone, message) {
     try {
+      // Valida número de telefone antes de enviar
+      if (!this.validatePhoneNumber(phone)) {
+        const error = new Error(`Número de telefone inválido: ${phone}`);
+        error.code = 'INVALID_PHONE';
+        throw error;
+      }
+
       const url = `${this.baseUrl}/message/sendText/${this.instanceName}`;
 
       const payload = {
@@ -200,10 +231,23 @@ class EvolutionService {
 
       return response.data;
     } catch (error) {
-      console.error('[EVOLUTION] Erro ao enviar mensagem:', error.response?.data || error.message);
-      if (error.message.includes('Timeout')) {
-        console.error('[EVOLUTION] Timeout excedido ao enviar mensagem');
+      // Log mais detalhado do erro
+      if (error.response?.data) {
+        console.error('[EVOLUTION] Erro ao enviar mensagem:', JSON.stringify(error.response.data, null, 2));
+      } else {
+        console.error('[EVOLUTION] Erro ao enviar mensagem:', error.message);
       }
+      
+      if (error.code === 'INVALID_PHONE') {
+        console.error('[EVOLUTION] Número de telefone inválido:', phone);
+      } else if (error.message.includes('Timeout')) {
+        console.error('[EVOLUTION] Timeout excedido ao enviar mensagem');
+      } else if (error.response?.status === 400) {
+        console.error('[EVOLUTION] Bad Request - Verifique o formato do número e da mensagem');
+        console.error('[EVOLUTION] Número enviado:', phone);
+        console.error('[EVOLUTION] Tamanho da mensagem:', message?.length || 0);
+      }
+      
       throw error;
     }
   }
