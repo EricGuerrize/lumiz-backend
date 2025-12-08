@@ -273,6 +273,40 @@ RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
       };
     }
   }
+  async processDocument(buffer, mimeType, prompt) {
+    try {
+      console.log(`[GEMINI] Processando documento multimodal (${mimeType})...`);
+
+      const parts = [
+        { text: prompt },
+        {
+          inlineData: {
+            mimeType: mimeType,
+            data: buffer.toString('base64')
+          }
+        }
+      ];
+
+      const result = await retryWithBackoff(
+        () => withTimeout(
+          this.model.generateContent(parts),
+          GEMINI_TIMEOUT_MS,
+          'Timeout ao processar documento com Gemini (30s)'
+        ),
+        2,
+        1000
+      );
+
+      const response = await result.response;
+      const text = response.text();
+      const jsonText = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+
+      return JSON.parse(jsonText);
+    } catch (error) {
+      console.error('[GEMINI] Erro ao processar documento:', error.message);
+      throw error;
+    }
+  }
 }
 
 module.exports = new GeminiService();

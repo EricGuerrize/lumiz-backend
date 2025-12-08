@@ -162,6 +162,60 @@ class DocumentService {
     }
   }
 
+  async processDocumentFromBuffer(buffer, mimeType, fileName) {
+    console.log(`[DOC] Processando buffer de documento: ${mimeType}, ${buffer.length} bytes`);
+
+    const { fileExtension } = this.detectImageType(buffer);
+
+    // Se for PDF, processa direto com Gemini 2.0 (Multimodal)
+    if (mimeType === 'application/pdf' || fileExtension === 'PDF') {
+      console.log('[DOC] PDF detectado! Enviando direto para Gemini 2.0 Flash...');
+      const geminiService = require('./geminiService');
+
+      const dataHoje = new Date().toISOString().split('T')[0];
+      const prompt = `
+TAREFA: Analisar este documento financeiro (PDF) e extrair informações estruturadas.
+
+DATA DE HOJE: ${dataHoje}
+
+TIPOS DE DOCUMENTO:
+1. BOLETO
+2. EXTRATO BANCÁRIO
+3. COMPROVANTE DE PAGAMENTO PIX
+4. COMPROVANTE DE PAGAMENTO
+5. NOTA FISCAL
+6. FATURA DE CARTÃO
+7. RECIBO
+
+EXTRAÇÃO:
+- tipo_documento: tipo identificado (boleto, extrato, comprovante_pix, comprovante, nota_fiscal, fatura, recibo, nao_identificado)
+- transacoes: array de transações encontradas:
+  - tipo: "entrada" (recebi dinheiro) ou "saida" (paguei dinheiro)
+  - valor: número (positivo)
+  - categoria: nome da pessoa/empresa ou descrição curta
+  - data: YYYY-MM-DD
+  - descricao: detalhes adicionais
+
+REGRAS:
+- Boleto/NF/Fatura = SAÍDA
+- PIX: Verifique "De" e "Para". Se "Para" é o usuário (clínica), é ENTRADA. Se "De" é o usuário, é SAÍDA.
+- Na dúvida do PIX, se for Comprovante de Transferência que EUN enviei, é SAÍDA.
+- Tente extrair o máximo de transações possível (ex: várias linhas de um extrato).
+
+RETORNE APENAS JSON:
+{
+  "tipo_documento": "...",
+  "transacoes": [{ "tipo": "...", "valor": 0.0, "categoria": "...", "data": "...", "descricao": "..." }]
+}
+`;
+      return await geminiService.processDocument(buffer, 'application/pdf', prompt);
+    }
+
+    // Se for imagem, usa o fluxo padrão (Vision -> Gemini)
+    return this.processImage(buffer);
+  }
+
+
   /**
    * Formata o resultado do OCR para exibição ao usuário
    * @param {Object} result - Resultado do processamento
