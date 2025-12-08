@@ -215,17 +215,34 @@ const webhookHandler = async (req, res) => {
             await evolutionService.sendMessage(phone, response);
               console.log(`[WEBHOOK] ✅ Resposta enviada para ${phone}`);
             } catch (sendError) {
-              console.error(`[WEBHOOK] ❌ Erro ao enviar resposta:`, sendError.message);
+              // Não tenta enviar mensagem de erro se o número é inválido
+              if (sendError.code === 'INVALID_PHONE') {
+                console.error(`[WEBHOOK] ❌ Número de telefone inválido: ${phone}`);
+              } else {
+                console.error(`[WEBHOOK] ❌ Erro ao enviar resposta:`, sendError.message);
+                // Só tenta enviar mensagem de erro se o número é válido
+                if (evolutionService.validatePhoneNumber(phone)) {
+                  try {
+                    await evolutionService.sendMessage(phone, 'Ops, tive um probleminha 😅\n\nTente novamente em alguns instantes.');
+                  } catch (retryError) {
+                    console.error('[WEBHOOK] ❌ Erro ao enviar mensagem de erro:', retryError.message);
+                  }
+                }
+              }
             }
           }
         } catch (error) {
           console.error('[WEBHOOK] ❌ Erro geral no processamento:', error.message);
           console.error('[WEBHOOK] Stack:', error.stack);
-          // Tenta enviar mensagem de erro genérica
-          try {
-            await evolutionService.sendMessage(phone, 'Ops, tive um probleminha 😅\n\nTente novamente em alguns instantes.');
-          } catch (sendError) {
-            console.error('[WEBHOOK] ❌ Erro ao enviar mensagem de erro:', sendError.message);
+          // Tenta enviar mensagem de erro genérica apenas se o número é válido
+          if (phone && evolutionService.validatePhoneNumber(phone)) {
+            try {
+              await evolutionService.sendMessage(phone, 'Ops, tive um probleminha 😅\n\nTente novamente em alguns instantes.');
+            } catch (sendError) {
+              console.error('[WEBHOOK] ❌ Erro ao enviar mensagem de erro:', sendError.message);
+            }
+          } else {
+            console.error('[WEBHOOK] ❌ Número de telefone inválido, não é possível enviar mensagem de erro');
           }
         }
       }
