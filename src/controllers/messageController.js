@@ -1722,6 +1722,45 @@ class MessageController {
     }
   }
 
+  async handleDocumentMessageWithBuffer(phone, docBuffer, mimeType, fileName) {
+    try {
+      const documentService = require('../services/documentService');
+      const onboardingFlowService = require('../services/onboardingFlowService');
+      const userController = require('./userController');
+
+      // Verifica se usuário está cadastrado
+      if (onboardingFlowService.isOnboarding(phone)) {
+        return 'Complete seu cadastro primeiro! 😊\n\nQual o nome da sua clínica?';
+      }
+
+      const user = await userController.findUserByPhone(phone);
+      if (!user) {
+        await onboardingFlowService.startNewOnboarding(phone);
+        return null;
+      }
+
+      // Converte PDF buffer para string base64 legível pelo serviço (se necessário)
+      // O documentService.processPDFFromBuffer deve lidar com a extração
+
+      const result = await documentService.processDocumentFromBuffer(docBuffer, mimeType, fileName);
+
+      let response = documentService.formatDocumentSummary(result);
+
+      if (result.transacoes && result.transacoes.length > 0) {
+        this.pendingDocumentTransactions.set(phone, {
+          user,
+          transacoes: result.transacoes,
+          timestamp: Date.now()
+        });
+      }
+
+      return response;
+    } catch (error) {
+      console.error('Erro ao processar documento (Buffer):', error);
+      return 'Erro ao analisar documento 😢\n\nTente enviar uma foto ou registre manualmente.';
+    }
+  }
+
   async handleDocumentConfirmation(phone, message, user) {
     const pending = this.pendingDocumentTransactions.get(phone);
 

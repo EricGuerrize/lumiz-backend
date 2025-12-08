@@ -66,7 +66,7 @@ const webhookHandler = async (req, res) => {
 
     if (event === 'messages.upsert') {
       console.log('[WEBHOOK] ✅ Evento messages.upsert detectado');
-      
+
       if (!data || typeof data !== 'object') {
         console.error('[WEBHOOK] ❌ Data inválida ou ausente');
         return res.status(200).json({ status: 'ignored', reason: 'invalid data structure' });
@@ -118,41 +118,41 @@ const webhookHandler = async (req, res) => {
             console.log(`[WEBHOOK] [IMG] mimetype: ${imageMessage.mimetype || 'N/A'}`);
             console.log(`[WEBHOOK] [IMG] fileLength: ${imageMessage.fileLength || 'N/A'}`);
             console.log(`[WEBHOOK] [IMG] mediaKey: ${imageMessage.mediaKey ? 'SIM' : 'NÃO'}`);
-            
+
             // Debug: verifica todos os campos possíveis de base64
             console.log(`[WEBHOOK] [IMG] Tem 'media'? ${!!imageMessage.media}`);
             console.log(`[WEBHOOK] [IMG] Tem 'base64'? ${!!imageMessage.base64}`);
             console.log(`[WEBHOOK] [IMG] Tem 'mediaBase64'? ${!!imageMessage.mediaBase64}`);
             console.log(`[WEBHOOK] [IMG] Keys disponíveis:`, Object.keys(imageMessage).join(', '));
-            
+
             const caption = imageMessage.caption || '';
             const messageKey = key;
-            
+
             // PRIORIDADE 1: Se tem base64 no webhook (Webhook Base64 ativado), usa diretamente
             // Tenta diferentes nomes de campos que podem conter base64
             let base64Data = imageMessage.media || imageMessage.base64 || imageMessage.mediaBase64 || imageMessage.data;
-            
+
             if (base64Data) {
               console.log('[WEBHOOK] [IMG] ✅✅✅ BASE64 ENCONTRADO NO WEBHOOK! ✅✅✅');
-              console.log('[WEBHOOK] [IMG] Campo usado:', 
-                imageMessage.media ? 'media' : 
-                imageMessage.base64 ? 'base64' : 
-                imageMessage.mediaBase64 ? 'mediaBase64' : 'data');
+              console.log('[WEBHOOK] [IMG] Campo usado:',
+                imageMessage.media ? 'media' :
+                  imageMessage.base64 ? 'base64' :
+                    imageMessage.mediaBase64 ? 'mediaBase64' : 'data');
               console.log('[WEBHOOK] [IMG] Tamanho base64:', base64Data.length, 'caracteres');
               console.log('[WEBHOOK] [IMG] Primeiros 100 chars do base64:', base64Data.substring(0, 100));
-              
+
               try {
                 // Remove data URL prefix se existir (data:image/jpeg;base64,)
                 if (typeof base64Data === 'string' && base64Data.includes(',')) {
                   base64Data = base64Data.split(',')[1];
                 }
-                
+
                 const imageBuffer = Buffer.from(base64Data, 'base64');
                 const mimeType = imageMessage.mimetype || 'image/jpeg';
-                
+
                 console.log('[WEBHOOK] [IMG] Buffer criado do base64, tamanho:', imageBuffer.length, 'bytes');
                 console.log('[WEBHOOK] [IMG] MIME type:', mimeType);
-                
+
                 // Processa diretamente com o buffer
                 response = await messageController.handleImageMessageWithBuffer(phone, imageBuffer, mimeType, caption);
               } catch (imgError) {
@@ -163,11 +163,11 @@ const webhookHandler = async (req, res) => {
             } else {
               // PRIORIDADE 2: Tenta URL ou download via API (quando Webhook Base64 está desativado)
               const mediaUrl = imageMessage.url || imageMessage.directPath;
-              
+
               console.log('[WEBHOOK] [IMG] ⚠️ Base64 NÃO encontrado - tentando baixar via Evolution API');
               console.log('[WEBHOOK] [IMG] URL disponível:', mediaUrl || 'NENHUMA');
               console.log('[WEBHOOK] [IMG] MessageKey:', JSON.stringify(messageKey));
-              
+
               if (!mediaUrl) {
                 console.error('[WEBHOOK] [IMG] ❌ Erro: URL, directPath e base64 estão vazios!');
                 console.error('[WEBHOOK] [IMG] imageMessage completo:', JSON.stringify(imageMessage, null, 2).substring(0, 1000));
@@ -187,23 +187,47 @@ const webhookHandler = async (req, res) => {
             console.log(`[WEBHOOK] [DOC] ${phone}: Documento recebido - ${documentMessage.fileName}`);
             console.log(`[WEBHOOK] [DOC] URL: ${documentMessage.url || documentMessage.directPath || 'N/A'}`);
             console.log(`[WEBHOOK] [DOC] MimeType: ${documentMessage.mimetype || 'N/A'}`);
-            const mediaUrl = documentMessage.url || documentMessage.directPath;
+
+            const caption = documentMessage.caption || '';
             const fileName = documentMessage.fileName || 'documento';
-            // Passa messageKey completo para download correto da mídia
             const messageKey = key;
 
-            try {
-            response = await messageController.handleDocumentMessage(phone, mediaUrl, fileName, messageKey);
-            } catch (docError) {
-              console.error(`[WEBHOOK] [DOC] Erro ao processar documento:`, docError.message);
-              console.error(`[WEBHOOK] [DOC] Stack:`, docError.stack);
-              response = 'Erro ao processar documento 😢\n\nTente enviar uma foto ou registre manualmente.';
+            // Tenta obter Base64 (igual imagens)
+            let base64Data = documentMessage.media || documentMessage.base64 || documentMessage.mediaBase64 || documentMessage.data;
+
+            if (base64Data) {
+              console.log('[WEBHOOK] [DOC] ✅✅✅ BASE64 ENCONTRADO NO DOCUMENTO! ✅✅✅');
+              try {
+                // Remove data URL prefix
+                if (typeof base64Data === 'string' && base64Data.includes(',')) {
+                  base64Data = base64Data.split(',')[1];
+                }
+
+                const docBuffer = Buffer.from(base64Data, 'base64');
+                const mimeType = documentMessage.mimetype || 'application/pdf';
+
+                console.log('[WEBHOOK] [DOC] Buffer criado, tamanho:', docBuffer.length);
+
+                response = await messageController.handleDocumentMessageWithBuffer(phone, docBuffer, mimeType, fileName);
+              } catch (docError) {
+                console.error(`[WEBHOOK] [DOC] ❌ Erro ao processar base64:`, docError.message);
+                response = 'Erro ao processar documento 😢';
+              }
+            } else {
+              // Fallback URL
+              const mediaUrl = documentMessage.url || documentMessage.directPath;
+              try {
+                response = await messageController.handleDocumentMessage(phone, mediaUrl, fileName, messageKey);
+              } catch (docError) {
+                console.error(`[WEBHOOK] [DOC] Erro ao processar documento:`, docError.message);
+                response = 'Erro ao processar documento 😢\n\nTente enviar uma foto ou registre manualmente.';
+              }
             }
           } else if (messageText) {
             // Mensagem de texto normal
             console.log(`[WEBHOOK] [MSG] ${phone}: ${messageText.substring(0, 50)}`);
             try {
-            response = await messageController.handleIncomingMessage(phone, messageText);
+              response = await messageController.handleIncomingMessage(phone, messageText);
             } catch (msgError) {
               console.error(`[WEBHOOK] [MSG] Erro ao processar mensagem:`, msgError.message);
               response = 'Erro ao processar mensagem 😢\n\nTente novamente.';
@@ -212,7 +236,7 @@ const webhookHandler = async (req, res) => {
 
           if (response) {
             try {
-            await evolutionService.sendMessage(phone, response);
+              await evolutionService.sendMessage(phone, response);
               console.log(`[WEBHOOK] ✅ Resposta enviada para ${phone}`);
             } catch (sendError) {
               // Não tenta enviar mensagem de erro se o número é inválido
