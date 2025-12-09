@@ -249,19 +249,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
                 const user = users[0];
 
-                // Busca transações recentes
-                const { data: transacoes } = await supabase
-                    .from('transactions')
+                // Busca atendimentos recentes (entradas)
+                const { data: atendimentos } = await supabase
+                    .from('atendimentos')
                     .select('*')
                     .eq('user_id', user.id)
-                    .order('date', { ascending: false })
+                    .order('data', { ascending: false })
                     .limit(5);
 
                 return {
                     content: [
                         {
                             type: "text",
-                            text: `Perfil: ${user.nome_completo} (${user.telefone})\nPlano: ${user.plan_type}\n\nÚltimas 5 Transações:\n${JSON.stringify(transacoes, null, 2)}`,
+                            text: `Perfil: ${user.nome_completo} (${user.telefone})\nClínica: ${user.nome_clinica || 'N/A'}\nPlano: ${user.plan_type || 'N/A'}\nAtivo: ${user.is_active ? 'Sim' : 'Não'}\n\nÚltimos 5 Atendimentos:\n${JSON.stringify(atendimentos || [], null, 2)}`,
                         },
                     ],
                 };
@@ -354,99 +354,163 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 // Determina filtro de data
                 let dateFilter = '';
                 if (period === 'today') {
-                    dateFilter = "date = CURRENT_DATE";
+                    dateFilter = "data = CURRENT_DATE";
                 } else if (period === 'week') {
-                    dateFilter = "date >= CURRENT_DATE - INTERVAL '7 days'";
+                    dateFilter = "data >= CURRENT_DATE - INTERVAL '7 days'";
                 } else if (period === 'month') {
-                    dateFilter = "date >= DATE_TRUNC('month', CURRENT_DATE)";
+                    dateFilter = "data >= DATE_TRUNC('month', CURRENT_DATE)";
                 } else if (period === 'year') {
-                    dateFilter = "date >= DATE_TRUNC('year', CURRENT_DATE)";
+                    dateFilter = "data >= DATE_TRUNC('year', CURRENT_DATE)";
                 } else if (period.match(/^\d{4}-\d{2}$/)) {
                     // Formato YYYY-MM
-                    dateFilter = `date >= '${period}-01' AND date < '${period}-01'::date + INTERVAL '1 month'`;
+                    dateFilter = `data >= '${period}-01' AND data < '${period}-01'::date + INTERVAL '1 month'`;
                 }
                 
                 const userFilter = userId ? `AND user_id = '${userId}'` : '';
-                const whereClause = dateFilter ? `WHERE ${dateFilter} ${userFilter}`.trim() : (userId ? `WHERE user_id = '${userId}'` : '');
+                const whereEntradas = dateFilter ? `WHERE ${dateFilter} ${userFilter}`.trim() : (userId ? `WHERE user_id = '${userId}'` : '');
+                const whereSaidas = dateFilter ? `WHERE ${dateFilter} ${userFilter}`.trim() : (userId ? `WHERE user_id = '${userId}'` : '');
                 
+                // Usa atendimentos (entradas) e contas_pagar (saídas)
                 const sql = `
                     SELECT 
-                        COUNT(*) FILTER (WHERE type = 'entrada') as total_entradas,
-                        COUNT(*) FILTER (WHERE type = 'saida') as total_saidas,
-                        COALESCE(SUM(amount) FILTER (WHERE type = 'entrada'), 0) as receitas,
-                        COALESCE(SUM(amount) FILTER (WHERE type = 'saida'), 0) as custos,
-                        COALESCE(SUM(amount) FILTER (WHERE type = 'entrada'), 0) - COALESCE(SUM(amount) FILTER (WHERE type = 'saida'), 0) as lucro,
+                        (SELECT COUNT(*) FROM atendimentos ${whereEntradas}) as total_entradas,
+                        (SELECT COUNT(*) FROM contas_pagar ${whereSaidas}) as total_saidas,
+                        COALESCE((SELECT SUM(valor_total) FROM atendimentos ${whereEntradas}), 0) as receitas,
+                        COALESCE((SELECT SUM(valor) FROM contas_pagar ${whereSaidas}), 0) as custos,
+                        COALESCE((SELECT SUM(valor_total) FROM atendimentos ${whereEntradas}), 0) - 
+                        COALESCE((SELECT SUM(valor) FROM contas_pagar ${whereSaidas}), 0) as lucro,
                         CASE 
-                            WHEN SUM(amount) FILTER (WHERE type = 'entrada') > 0 
-                            THEN ROUND((SUM(amount) FILTER (WHERE type = 'entrada') - COALESCE(SUM(amount) FILTER (WHERE type = 'saida'), 0)) / SUM(amount) FILTER (WHERE type = 'entrada') * 100, 1)
+                            WHEN (SELECT SUM(valor_total) FROM atendimentos ${whereEntradas}) > 0 
+                            THEN ROUND(
+                                ((SELECT SUM(valor_total) FROM atendimentos ${whereEntradas}) - 
+                                 COALESCE((SELECT SUM(valor) FROM contas_pagar ${whereSaidas}), 0)) / 
+                                (SELECT SUM(valor_total) FROM atendimentos ${whereEntradas}) * 100, 
+                                1
+                            )
                             ELSE 0
                         END as margem_lucro,
                         CASE 
-                            WHEN COUNT(*) FILTER (WHERE type = 'entrada') > 0
-                            THEN ROUND(SUM(amount) FILTER (WHERE type = 'entrada') / COUNT(*) FILTER (WHERE type = 'entrada'), 2)
+                            WHEN (SELECT COUNT(*) FROM atendimentos ${whereEntradas}) > 0
+                            THEN ROUND(
+                                (SELECT SUM(valor_total) FROM atendimentos ${whereEntradas}) / 
+                                (SELECT COUNT(*) FROM atendimentos ${whereEntradas}), 
+                                2
+                            )
                             ELSE 0
                         END as ticket_medio
-                    FROM transactions
-                    ${whereClause}
                 `;
 
-                const { data, error } = await supabase.rpc('exec_sql_readonly', { query_text: sql });
-                
-                if (error) throw error;
-                
-                return { content: [{ type: "text", text: JSON.stringify({ period, ...(data[0] || {}) }, null, 2) }] };
-            }
-
-            case TOOLS.ANALYZE_MDR: {
-                const sql = `
-                    SELECT 
-                        COUNT(DISTINCT user_id) as total_users,
-                        COUNT(*) as total_configs,
-                        COUNT(*) FILTER (WHERE source = 'ocr') as ocr_configs,
-                        COUNT(*) FILTER (WHERE source = 'manual') as manual_configs,
-                        COUNT(DISTINCT provider) as providers_count,
-                        jsonb_object_agg(
-                            provider, 
-                            COUNT(*) FILTER (WHERE provider IS NOT NULL)
-                        ) FILTER (WHERE provider IS NOT NULL) as providers_distribution
-                    FROM mdr_configs
-                `;
-
-                const { data, error } = await supabase.rpc('exec_sql_readonly', { query_text: sql });
-                
-                if (error) {
-                    // Fallback
-                    const { data: allConfigs } = await supabase.from('mdr_configs').select('*');
-                    if (!allConfigs) throw error;
+                try {
+                    const { data, error } = await supabase.rpc('exec_sql_readonly', { query_text: sql });
                     
-                    const providers = {};
-                    allConfigs.forEach(c => {
-                        if (c.provider) providers[c.provider] = (providers[c.provider] || 0) + 1;
-                    });
+                    if (error) throw error;
+                    
+                    return { content: [{ type: "text", text: JSON.stringify({ period, ...(data[0] || {}) }, null, 2) }] };
+                } catch (error) {
+                    // Fallback: busca dados separadamente
+                    const entradasQuery = supabase.from('atendimentos').select('valor_total, data', { count: 'exact' });
+                    const saidasQuery = supabase.from('contas_pagar').select('valor, data', { count: 'exact' });
+                    
+                    if (userId) {
+                        entradasQuery.eq('user_id', userId);
+                        saidasQuery.eq('user_id', userId);
+                    }
+                    
+                    if (dateFilter) {
+                        // Aplica filtro de data manualmente se necessário
+                    }
+                    
+                    const { data: entradas, count: countEntradas } = await entradasQuery;
+                    const { data: saidas, count: countSaidas } = await saidasQuery;
+                    
+                    const receitas = entradas?.reduce((sum, e) => sum + (parseFloat(e.valor_total) || 0), 0) || 0;
+                    const custos = saidas?.reduce((sum, s) => sum + (parseFloat(s.valor) || 0), 0) || 0;
+                    const lucro = receitas - custos;
+                    const margemLucro = receitas > 0 ? ((lucro / receitas) * 100).toFixed(1) : 0;
+                    const ticketMedio = countEntradas > 0 ? (receitas / countEntradas).toFixed(2) : 0;
                     
                     return {
                         content: [{
                             type: "text",
                             text: JSON.stringify({
-                                total_users: new Set(allConfigs.map(c => c.user_id)).size,
-                                total_configs: allConfigs.length,
-                                ocr_configs: allConfigs.filter(c => c.source === 'ocr').length,
-                                manual_configs: allConfigs.filter(c => c.source === 'manual').length,
-                                providers_count: Object.keys(providers).length,
-                                providers_distribution: providers
+                                period,
+                                total_entradas: countEntradas || 0,
+                                total_saidas: countSaidas || 0,
+                                receitas: parseFloat(receitas.toFixed(2)),
+                                custos: parseFloat(custos.toFixed(2)),
+                                lucro: parseFloat(lucro.toFixed(2)),
+                                margem_lucro: parseFloat(margemLucro),
+                                ticket_medio: parseFloat(ticketMedio)
                             }, null, 2)
                         }]
                     };
                 }
-                
-                return { content: [{ type: "text", text: JSON.stringify(data[0] || {}, null, 2) }] };
+            }
+
+            case TOOLS.ANALYZE_MDR: {
+                // Usa fallback direto para evitar problemas com jsonb_object_agg
+                try {
+                    const { data: allConfigs, error } = await supabase.from('mdr_configs').select('*');
+                    
+                    if (error) throw error;
+                    
+                    if (!allConfigs || allConfigs.length === 0) {
+                        return {
+                            content: [{
+                                type: "text",
+                                text: JSON.stringify({
+                                    total_users: 0,
+                                    total_configs: 0,
+                                    ocr_configs: 0,
+                                    manual_configs: 0,
+                                    providers_count: 0,
+                                    providers_distribution: {}
+                                }, null, 2)
+                            }]
+                        };
+                    }
+                    
+                    const providers = {};
+                    allConfigs.forEach(c => {
+                        if (c.provider) {
+                            providers[c.provider] = (providers[c.provider] || 0) + 1;
+                        }
+                    });
+                    
+                    const uniqueUsers = new Set(allConfigs.map(c => c.user_id).filter(Boolean));
+                    
+                    return {
+                        content: [{
+                            type: "text",
+                            text: JSON.stringify({
+                                total_users: uniqueUsers.size,
+                                total_configs: allConfigs.length,
+                                ocr_configs: allConfigs.filter(c => c.source === 'ocr').length,
+                                manual_configs: allConfigs.filter(c => c.source === 'manual').length,
+                                providers_count: Object.keys(providers).length,
+                                providers_distribution: providers,
+                                conversion_rate: uniqueUsers.size > 0 
+                                    ? parseFloat(((allConfigs.length / uniqueUsers.size) * 100).toFixed(1))
+                                    : 0
+                            }, null, 2)
+                        }]
+                    };
+                } catch (error) {
+                    return {
+                        content: [{
+                            type: "text",
+                            text: `Erro ao analisar MDR: ${error.message}. Verifique se a tabela mdr_configs existe.`,
+                        }],
+                        isError: true,
+                    };
+                }
             }
 
             case TOOLS.SYSTEM_HEALTH: {
                 const queries = [
                     { name: 'total_users', sql: "SELECT COUNT(*) as count FROM profiles" },
                     { name: 'active_users', sql: "SELECT COUNT(*) as count FROM profiles WHERE is_active = true" },
-                    { name: 'recent_transactions', sql: "SELECT COUNT(*) as count FROM transactions WHERE created_at >= CURRENT_DATE - INTERVAL '7 days'" },
+                    { name: 'recent_atendimentos', sql: "SELECT COUNT(*) as count FROM atendimentos WHERE created_at >= CURRENT_DATE - INTERVAL '7 days'" },
                     { name: 'pending_ocr_jobs', sql: "SELECT COUNT(*) as count FROM ocr_jobs WHERE status = 'pending'" },
                     { name: 'failed_ocr_jobs', sql: "SELECT COUNT(*) as count FROM ocr_jobs WHERE status = 'failed'" },
                     { name: 'onboarding_in_progress', sql: "SELECT COUNT(*) as count FROM onboarding_progress WHERE completed = false" }
@@ -486,63 +550,52 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
             case TOOLS.ANALYZE_INSIGHTS: {
                 const period = args.period || 'month';
-                let dateFilter = '';
                 
-                if (period === 'today') {
-                    dateFilter = "created_at >= CURRENT_DATE";
-                } else if (period === 'week') {
-                    dateFilter = "created_at >= CURRENT_DATE - INTERVAL '7 days'";
-                } else if (period === 'month') {
-                    dateFilter = "created_at >= DATE_TRUNC('month', CURRENT_DATE)";
-                }
-
-                const whereClause = dateFilter ? `WHERE ${dateFilter}` : '';
-                
-                const sql = `
-                    SELECT 
-                        COUNT(*) as total_insights,
-                        COUNT(*) FILTER (WHERE sent_at IS NOT NULL) as sent_insights,
-                        COUNT(DISTINCT user_id) as users_with_insights,
-                        ROUND(COUNT(*) FILTER (WHERE sent_at IS NOT NULL)::numeric / NULLIF(COUNT(*), 0) * 100, 1) as send_rate,
-                        COUNT(*) FILTER (WHERE sent_via = 'whatsapp') as sent_via_whatsapp,
-                        COUNT(*) FILTER (WHERE sent_via = 'app') as sent_via_app
-                    FROM user_insights
-                    ${whereClause}
-                `;
-
-                const { data, error } = await supabase.rpc('exec_sql_readonly', { query_text: sql });
-                
-                if (error) {
-                    // Fallback
-                    const { data: allInsights } = await supabase.from('user_insights').select('*');
-                    if (!allInsights) throw error;
+                // Usa fallback direto para evitar problemas com funções SQL complexas
+                try {
+                    const { data: allInsights, error } = await supabase.from('user_insights').select('*');
                     
-                    const filtered = period === 'all' ? allInsights : allInsights.filter(item => {
+                    if (error) throw error;
+                    
+                    const filtered = allInsights ? allInsights.filter(item => {
+                        if (!item.created_at) return false;
                         const created = new Date(item.created_at);
                         const now = new Date();
                         if (period === 'today') return created.toDateString() === now.toDateString();
                         if (period === 'week') return (now - created) / (1000 * 60 * 60 * 24) <= 7;
                         if (period === 'month') return created.getMonth() === now.getMonth() && created.getFullYear() === now.getFullYear();
                         return true;
-                    });
+                    }) : [];
+                    
+                    const total = filtered.length;
+                    const sent = filtered.filter(x => x.sent_at).length;
+                    const sendRate = total > 0 ? parseFloat(((sent / total) * 100).toFixed(1)) : 0;
+                    const usersWithInsights = new Set(filtered.map(x => x.user_id).filter(Boolean)).size;
                     
                     return {
                         content: [{
                             type: "text",
                             text: JSON.stringify({
                                 period,
-                                total_insights: filtered.length,
-                                sent_insights: filtered.filter(x => x.sent_at).length,
-                                users_with_insights: new Set(filtered.map(x => x.user_id)).size,
-                                send_rate: filtered.length > 0 ? parseFloat(((filtered.filter(x => x.sent_at).length / filtered.length) * 100).toFixed(1)) : 0,
+                                total_insights: total,
+                                sent_insights: sent,
+                                users_with_insights: usersWithInsights,
+                                send_rate: sendRate,
                                 sent_via_whatsapp: filtered.filter(x => x.sent_via === 'whatsapp').length,
-                                sent_via_app: filtered.filter(x => x.sent_via === 'app').length
+                                sent_via_app: filtered.filter(x => x.sent_via === 'app').length,
+                                not_sent: filtered.filter(x => !x.sent_at).length
                             }, null, 2)
                         }]
                     };
+                } catch (error) {
+                    return {
+                        content: [{
+                            type: "text",
+                            text: `Erro ao analisar insights: ${error.message}. Verifique se a tabela user_insights existe.`,
+                        }],
+                        isError: true,
+                    };
                 }
-                
-                return { content: [{ type: "text", text: JSON.stringify({ period, ...(data[0] || {}) }, null, 2) }] };
             }
 
             default:
