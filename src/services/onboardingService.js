@@ -522,6 +522,86 @@ class OnboardingService {
 
     return summary;
   }
+
+  // ============================================================
+  // WhatsApp onboarding state (persistência para fluxo conversado)
+  // ============================================================
+  async getWhatsappState(phone) {
+    if (!phone) return null;
+    try {
+      // Normaliza telefone para garantir consistência
+      const { normalizePhone } = require('../utils/phone');
+      const normalizedPhone = normalizePhone(phone) || phone;
+      const state = await this.getRawState(normalizedPhone);
+      if (!state) return null;
+      
+      const whatsappState = state.data?.realtime?.whatsapp;
+      if (!whatsappState) return null;
+
+      // Retorna no formato esperado pelo onboardingFlowService
+      return {
+        step: whatsappState.step || null,
+        startTime: whatsappState.startTime || state.created_at,
+        data: whatsappState.data || { telefone: phone }
+      };
+    } catch (e) {
+      console.error('[ONBOARDING] Erro ao buscar estado WhatsApp:', e);
+      return null;
+    }
+  }
+
+  async upsertWhatsappState(phone, { step, data } = {}) {
+    if (!phone) return null;
+    
+    try {
+      // Normaliza telefone para garantir consistência
+      const { normalizePhone } = require('../utils/phone');
+      const normalizedPhone = normalizePhone(phone) || phone;
+      const state = await this.ensureState(normalizedPhone);
+      const whatsappPayload = {
+        step: step || null,
+        startTime: state.data?.realtime?.whatsapp?.startTime || new Date().toISOString(),
+        data: data || state.data?.realtime?.whatsapp?.data || { telefone: normalizedPhone },
+        updated_at: new Date().toISOString()
+      };
+
+      return await this.updateRecord(state.id, {
+        data: deepMerge(state.data, {
+          realtime: {
+            ...state.data?.realtime,
+            whatsapp: whatsappPayload
+          }
+        })
+      });
+    } catch (e) {
+      console.error('[ONBOARDING] Erro ao persistir estado WhatsApp:', e);
+      return null;
+    }
+  }
+
+  async clearWhatsappState(phone) {
+    if (!phone) return null;
+    
+    try {
+      // Normaliza telefone para garantir consistência
+      const { normalizePhone } = require('../utils/phone');
+      const normalizedPhone = normalizePhone(phone) || phone;
+      const state = await this.getRawState(normalizedPhone);
+      if (!state) return null;
+
+      const newData = { ...state.data };
+      if (newData.realtime) {
+        delete newData.realtime.whatsapp;
+      }
+
+      return await this.updateRecord(state.id, {
+        data: newData
+      });
+    } catch (e) {
+      console.error('[ONBOARDING] Erro ao limpar estado WhatsApp:', e);
+      return null;
+    }
+  }
 }
 
 module.exports = new OnboardingService();
