@@ -8,6 +8,8 @@ const documentService = require('../services/documentService');
 const insightService = require('../services/insightService');
 const pdfService = require('../services/pdfService');
 const supabase = require('../db/supabase');
+const { normalizePhone } = require('../utils/phone');
+const analyticsService = require('../services/analyticsService');
 
 class MessageController {
   constructor() {
@@ -24,9 +26,11 @@ class MessageController {
 
   async handleIncomingMessage(phone, message) {
     try {
+      const normalizedPhone = normalizePhone(phone) || phone;
+
       // Verifica se está em processo de onboarding
-      if (onboardingFlowService.isOnboarding(phone)) {
-        return await onboardingFlowService.processOnboarding(phone, message);
+      if (onboardingFlowService.isOnboarding(normalizedPhone)) {
+        return await onboardingFlowService.processOnboarding(normalizedPhone, message);
       }
 
       // Detecta mensagem inicial do teste gratuito
@@ -34,10 +38,14 @@ class MessageController {
       const isTesteGratuitoMessage = messageLower.includes('quero organizar') ||
         messageLower.includes('teste gratuito') ||
         messageLower.includes('convite para o teste') ||
-        messageLower.includes('começar meu cadastro');  // Adicionado novo gatilho
+        messageLower.includes('quero testar a lumiz') ||
+        messageLower.includes('começar meu cadastro') ||
+        messageLower.includes('comecar meu cadastro') ||
+        messageLower.includes('começar com a lumiz') ||
+        messageLower.includes('comecar com a lumiz');  // Adicionado novo gatilho
 
       // Busca usuário pelo telefone
-      const user = await userController.findUserByPhone(phone);
+      const user = await userController.findUserByPhone(normalizedPhone);
 
       // Se detectou mensagem de teste gratuito
       if (isTesteGratuitoMessage) {
@@ -46,28 +54,28 @@ class MessageController {
           return `Que bom que você voltou! Você já tá com o convite do teste gratuito, perfeito! Esse teste é o primeiro passo: ele vai mostrar como a Lumiz realiza a gestão do seu financeiro pelo WhatsApp em poucos minutos. Depois disso, pra continuar a gestão da sua clínica no dia a dia, aí só com o plano pago mesmo.`;
         } else {
           // Usuário novo - inicia novo fluxo simplificado
-          return await onboardingFlowService.startIntroFlow(phone);
+          return await onboardingFlowService.startIntroFlow(normalizedPhone);
         }
       }
 
       // Se não encontrou usuário e não é mensagem de teste, inicia novo onboarding
       if (!user) {
-        return await onboardingFlowService.startNewOnboarding(phone);
+        return await onboardingFlowService.startNewOnboarding(normalizedPhone);
       }
 
       // Verifica se existe uma transação pendente de confirmação
-      if (this.pendingTransactions.has(phone)) {
-        return await this.handleConfirmation(phone, message, user);
+      if (this.pendingTransactions.has(normalizedPhone)) {
+        return await this.handleConfirmation(normalizedPhone, message, user);
       }
 
       // Verifica se existe transações de documento pendentes
-      if (this.pendingDocumentTransactions.has(phone)) {
-        return await this.handleDocumentConfirmation(phone, message, user);
+      if (this.pendingDocumentTransactions.has(normalizedPhone)) {
+        return await this.handleDocumentConfirmation(normalizedPhone, message, user);
       }
 
       // Verifica se existe edição pendente
-      if (this.pendingEdits.has(phone)) {
-        return await this.handleEditConfirmation(phone, message, user);
+      if (this.pendingEdits.has(normalizedPhone)) {
+        return await this.handleEditConfirmation(normalizedPhone, message, user);
       }
 
       // Busca contexto histórico e exemplos similares (RAG) para melhorar entendimento
@@ -360,7 +368,7 @@ class MessageController {
     }
 
     message += `📅 ${dataFormatada}\n\n`;
-    message += `Responde *SIM* pra confirmar ou *NÃO* pra cancelar`;
+    message += `Responde:\n1️⃣ *Confirmar*\n2️⃣ *Cancelar*`;
 
     return message;
   }
@@ -402,6 +410,7 @@ class MessageController {
 
     // Confirmação positiva (inclui resposta dos botões)
     if (
+      messageLower === '1' ||
       messageLower === 'sim' ||
       messageLower === 's' ||
       messageLower === 'confirmar' ||
@@ -426,6 +435,15 @@ class MessageController {
           parcelas,
           bandeira_cartao
         });
+
+        try {
+          await analyticsService.track('transaction_confirmation_accepted', {
+            phone,
+            userId: user?.id || null,
+            source: 'whatsapp',
+            properties: { tipo, valor, categoria, forma_pagamento, parcelas, bandeira_cartao }
+          });
+        } catch (e) {}
 
         // Salva a última transação para possível desfazer
         this.lastTransactions.set(phone, {
@@ -476,6 +494,7 @@ class MessageController {
 
     // Confirmação negativa (inclui resposta dos botões)
     if (
+      messageLower === '2' ||
       messageLower === 'não' ||
       messageLower === 'nao' ||
       messageLower === 'n' ||
@@ -484,12 +503,19 @@ class MessageController {
       messageLower === '❌ cancelar' ||
       messageLower.includes('cancelar')
     ) {
+      try {
+        await analyticsService.track('transaction_confirmation_cancelled', {
+          phone,
+          userId: user?.id || null,
+          source: 'whatsapp'
+        });
+      } catch (e) {}
       this.pendingTransactions.delete(phone);
       return 'Registro cancelado ❌\n\nSe quiser registrar, é só me enviar novamente com os dados corretos!';
     }
 
     // Resposta inválida
-    return 'Não entendi... É *sim* pra confirmar ou *não* pra cancelar 😊';
+    return 'Não entendi... responde *1* pra confirmar ou *2* pra cancelar 😊';
   }
 
   async handleBalance(user) {
@@ -1774,6 +1800,7 @@ class MessageController {
 
     // Confirmação positiva
     if (
+      messageLower === '1' ||
       messageLower === 'sim' ||
       messageLower === 's' ||
       messageLower === 'confirmar' ||
@@ -1821,6 +1848,7 @@ class MessageController {
 
     // Confirmação negativa
     if (
+      messageLower === '2' ||
       messageLower === 'não' ||
       messageLower === 'nao' ||
       messageLower === 'n' ||
@@ -1831,7 +1859,7 @@ class MessageController {
       return 'Registro cancelado ❌\n\nSe quiser, envie o documento novamente ou registre manualmente.';
     }
 
-    return 'Não entendi 🤔\n\nResponde "sim" para registrar ou "não" para cancelar.';
+    return 'Não entendi 🤔\n\nResponde *1* para registrar ou *2* para cancelar.';
   }
 
   // ========== NOVOS HANDLERS ==========
