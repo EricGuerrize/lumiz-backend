@@ -1,157 +1,327 @@
 /**
  * Copy module para onboarding via WhatsApp
  * Centraliza todas as mensagens para facilitar iterações de UX sem mexer em lógica
+ * Versão: Novo Fluxo Onboarding WhatsApp - Lumiz
  */
 
 module.exports = {
-    introGreeting() {
+    // ============================================================
+    // 0) START - Entrada do lead
+    // ============================================================
+    startMessage() {
         return (
-            'Oi! Eu sou a Lumiz, sua assistente financeira para clínicas de estética. 💜\n' +
-            'Em poucos minutos te ajudo a organizar receitas, custos e lucro da sua clínica — direto aqui no WhatsApp.'
+            `Oi! Eu sou a Lumiz 👋\n` +
+            `Eu organizo o financeiro da sua clínica aqui no WhatsApp, sem planilhas.\n\n` +
+            `Pra te mostrar como a Lumiz vira seu organizador diário de caixa, vamos\n` +
+            `fazer um teste rápido de 3 minutos.\n\n` +
+            `Posso começar?\n\n` +
+            `1️⃣ Sim!\n` +
+            `2️⃣ Como a Lumiz funciona?`
         );
     },
 
-    entryMenu() {
+    startHowItWorks() {
         return (
-            `O que você quer fazer agora?\n\n` +
-            `1️⃣ Entender como funciona\n` +
-            `2️⃣ Começar meu cadastro\n\n` +
-            `Responde com *1* ou *2* (ou escreve "entender" / "cadastro").`
+            `Em 3 minutos você me manda 1 venda e 1 custo (texto, foto ou PDF).\n` +
+            `Eu organizo tudo e já te mostro quanto entrou e quanto saiu.\n\n` +
+            `Posso começar?\n\n` +
+            `1️⃣ Sim!\n` +
+            `2️⃣ Como a Lumiz funciona?`
         );
     },
 
-    explainAndStartCadastro() {
+    // ============================================================
+    // 1) CONSENT - Consentimento LGPD
+    // ============================================================
+    consentQuestion() {
         return (
-            `Perfeito, vou te mostrar rapidinho como a Lumiz funciona 👇\n` +
-            `1️⃣ Você manda suas *vendas, boletos e notas* por aqui.\n` +
-            `2️⃣ Eu leio tudo sozinha e organizo em *receitas, custos e lucro*.\n` +
-            `3️⃣ Você vê um resumo claro do financeiro da sua clínica — sem planilhas.\n\n` +
-            `Pronto pra começar? 😊\n\n` +
-            this.clinicTypeQuestion({ withProgress: true })
+            `Antes de começarmos: posso usar os dados que você me enviar aqui só pra organizar seu financeiro?\n` +
+            `Você pode parar quando quiser.\n\n` +
+            `1️⃣ Autorizo\n` +
+            `2️⃣ Não`
         );
     },
 
-    clinicTypeQuestion({ withProgress = false } = {}) {
-        const progress = withProgress ? `Etapa 1 de 4 ✅\n\n` : '';
+    consentDenied() {
         return (
-            `${progress}Pra te ajudar direitinho, me conta:\n` +
-            `Qual é o tipo da sua clínica?\n\n` +
-            `1️⃣ Clínica de estética\n` +
-            `2️⃣ Clínica odontológica\n` +
-            `3️⃣ Outros procedimentos`
+            `Sem problema. Posso te explicar como funciona, mas não consigo registrar dados sem autorização.\n` +
+            `Quer ver um exemplo de resumo?`
         );
     },
 
-    clinicNameQuestion() {
+    // ============================================================
+    // 2) PROFILE - Identificação rápida
+    // ============================================================
+    profileNameQuestion() {
+        return `Pra eu te chamar direitinho: qual seu nome?`;
+    },
+
+    profileClinicQuestion() {
+        return `E o nome da sua clínica?`;
+    },
+
+    profileRoleQuestion() {
         return (
-            `Etapa 2 de 4 ✅\n\n` +
-            `Ótimo! Agora, alguns dados rápidos:\n\n` +
-            `✏️ *Nome da clínica* (pode ser o nome fantasia)`
+            `Você é a dona/gestora ou alguém do time?\n\n` +
+            `1️⃣ 👑 Dona / gestora\n` +
+            `2️⃣ 🧾 Adm / financeiro\n` +
+            `3️⃣ 💬 Secretária\n` +
+            `4️⃣ ⚕️ Profissional (aplico)`
         );
     },
 
-    clinicCityQuestion() {
+    // ============================================================
+    // 3) CONTEXT_MIN - Contexto mínimo
+    // ============================================================
+    contextWhyQuestion() {
         return (
-            `Perfeito ✅\n\n` +
-            `Etapa 3 de 4\n\n` +
-            `E qual cidade/UF você atende?\n` +
-            `(Ex: Cuiabá – MT)`
+            `Hoje, você quer usar a Lumiz mais pra:\n\n` +
+            `1️⃣ Organizar o dia a dia\n` +
+            `2️⃣ Ter clareza do mês\n` +
+            `3️⃣ Controlar custos`
         );
     },
 
-    ownerQuestion() {
+    contextHowQuestion() {
         return (
-            `Etapa 4 de 4\n\n` +
-            `Quem é o responsável pelas finanças da clínica?\n` +
-            `Pode ser você mesmo(a) 😊\n\n` +
-            `✏️ Me manda o *nome completo* e o *CPF/CNPJ*.`
+            `Em média, sua clínica recebe mais por:\n\n` +
+            `1️⃣ Mais PIX\n` +
+            `2️⃣ Mais cartão\n` +
+            `3️⃣ Meio a meio`
         );
     },
 
-    emailQuestion() {
+    // ============================================================
+    // 4) AHA_REVENUE - Primeira venda
+    // ============================================================
+    ahaRevenuePrompt(nome) {
         return (
-            `Perfeito ✅\n\n` +
-            `Só mais 2 dados e já partimos pro teste 😊\n\n` +
-            `✉️ Qual seu melhor email?`
+            `Perfeito, ${nome}. ✅\n\n` +
+            `Etapa 1/3 — Primeira venda\n` +
+            `Me manda uma venda real, do jeito que você lembraria. Pode ser simples.\n\n` +
+            `Exemplos:\n` +
+            `• "Botox R$ 1.200 no pix hoje"\n` +
+            `• "Júlia fez full face, pagou R$ 15.600 / 3.000 pix + 6x cartão"`
         );
     },
 
-    whatsappQuestion() {
+    ahaRevenueMissingValue() {
+        return `Qual foi o valor total?`;
+    },
+
+    ahaRevenueMissingPayment() {
+        return `Foi PIX, cartão ou dinheiro?`;
+    },
+
+    ahaRevenueMissingInstallments() {
+        return `No cartão, foi parcelado em quantas vezes?`;
+    },
+
+    ahaRevenueMissingDate() {
+        return `Isso foi hoje ou em outra data?`;
+    },
+
+    ahaRevenueConfirmation({ procedimento, valor, pagamento, data }) {
+        const pagamentoLabel = (() => {
+            if (pagamento.includes('parcelado') || pagamento.includes('x')) {
+                const match = pagamento.match(/(\d+)x/i);
+                return match ? `Cartão ${match[1]}x` : pagamento;
+            }
+            const map = {
+                pix: 'PIX',
+                cartão: 'Cartão',
+                cartao: 'Cartão',
+                dinheiro: 'Dinheiro',
+                debito: 'Débito',
+                crédito: 'Crédito',
+                credito: 'Crédito'
+            };
+            const lower = pagamento.toLowerCase();
+            for (const [key, value] of Object.entries(map)) {
+                if (lower.includes(key)) return value;
+            }
+            return pagamento;
+        })();
+
         return (
-            `Qual seu WhatsApp para contato?\n` +
-            `(Digite *este* para usar o atual)`
+            `Vou registrar assim:\n` +
+            `Venda: ${procedimento || '—'} — R$ ${Number(valor).toFixed(2)} — ${pagamentoLabel} — ${data}\n\n` +
+            `Tá ok?\n\n` +
+            `1️⃣ Tá ok\n` +
+            `2️⃣ ✏️ Ajustar`
         );
     },
 
-    cadastroOkAskFakeSale() {
+    ahaRevenueRegistered() {
+        return `Venda registrada ✅`;
+    },
+
+    // ============================================================
+    // 5) AHA_COSTS_INTRO - Introdução de custos
+    // ============================================================
+    ahaCostsIntro() {
         return (
-            `Cadastro pronto! 🎉\n\n` +
-            `Agora vamos fazer um teste rapidinho pra você ver a "mágica" acontecer.\n\n` +
-            `Me manda uma *venda fictícia* nesse estilo:\n` +
-            `*"Júlia fez um full face com 10ml, pagou R$ 5.000, cartão em 6x."*`
+            `Show. Venda registrada ✅\n\n` +
+            `Agora vem a parte que dá clareza de verdade: custos.\n\n` +
+            `Etapa 2/3 — Primeiro custo\n` +
+            `Esse custo é mais:\n\n` +
+            `1️⃣ 🧱 Fixo (todo mês)\n` +
+            `2️⃣ 🧪 Variável (depende do mês)\n` +
+            `3️⃣ Não sei`
         );
     },
 
-    cadastroSoftFailAskFakeSale() {
+    ahaCostsDontKnow() {
+        return `Tranquilo. É aluguel, salário, internet, insumo, fornecedor…?`;
+    },
+
+    // ============================================================
+    // 6) AHA_COSTS_UPLOAD - Cadastro de custo
+    // ============================================================
+    ahaCostsUploadVariable() {
         return (
-            `Perfeito ✅\n\n` +
-            `Enquanto eu preparo sua conta por aqui, vamos fazer um teste rapidinho pra você ver como funciona.\n\n` +
-            `Me manda uma *venda fictícia* nesse estilo:\n` +
-            `*"Júlia fez um full face com 10ml, pagou R$ 5.000, cartão em 6x."*`
+            `Beleza — variável ✅\n` +
+            `Me manda um custo variável.\n` +
+            `Pode ser texto, foto ou PDF (boleto, NF, etc.).`
         );
     },
 
-    fakeSalePrompt() {
+    ahaCostsUploadFixed() {
         return (
-            `Perfeito — vamos pro teste rápido ✅\n\n` +
-            `Me manda uma *venda fictícia* nesse estilo:\n` +
-            `*"Júlia fez um full face com 10ml, pagou R$ 5.000, cartão em 6x."*\n\n` +
-            `Pode ser do seu jeito também. Eu só preciso entender: cliente, procedimento, valor e forma de pagamento.`
+            `Perfeito — fixo ✅\n` +
+            `Me manda um custo fixo.\n` +
+            `Pode ser texto ou documento.`
         );
     },
 
-    fakeSaleAskAgain() {
+    ahaCostsDocumentReceived({ valor, vencimento, fornecedor }) {
         return (
-            `Não consegui identificar o *valor* dessa venda 🤔\n\n` +
-            `Tenta nesse formato:\n` +
-            `*"Júlia fez um full face, pagou R$ 5000 no cartão em 6x"*`
+            `Recebi ✅ Vou organizar isso rapidinho.\n\n` +
+            `Encontrei: R$ ${Number(valor).toFixed(2)}, vencimento ${vencimento}, fornecedor ${fornecedor || '—'}.\n` +
+            `Isso é um custo fixo ou variável?\n\n` +
+            `1️⃣ Fixo\n` +
+            `2️⃣ Variável`
         );
     },
 
-    fakeSaleReview({ cliente, procedimento, valor, pagamentoLabel }) {
+    ahaCostsCategoryQuestion() {
         return (
-            `Entendi assim 👇\n` +
-            `• Cliente: ${cliente ? `*${cliente}*` : '*—*'}\n` +
-            `• Procedimento: ${procedimento ? `*${procedimento}*` : '*—*'}\n` +
-            `• Valor total: *R$ ${Number(valor).toFixed(2)}*\n` +
-            `• Pagamento: *${pagamentoLabel}*\n\n` +
-            `Está certo?\n\n` +
-            `1️⃣ Sim, pode registrar\n` +
-            `2️⃣ Corrigir`
+            `Pra eu organizar certinho, isso entra mais como:\n\n` +
+            `1️⃣ Insumos / materiais\n` +
+            `2️⃣ Aluguel\n` +
+            `3️⃣ Salários\n` +
+            `4️⃣ Marketing\n` +
+            `5️⃣ Impostos\n` +
+            `6️⃣ Outros`
         );
     },
 
-    fakeSaleCorrectionPrompt() {
+    ahaCostsConfirmation({ tipo, categoria, valor, data }) {
         return (
-            `Sem problema 😊\n\n` +
-            `Me manda a venda de novo, corrigida (cliente + procedimento + valor + pagamento).`
+            `Registrando: ${tipo} — ${categoria} — R$ ${Number(valor).toFixed(2)} — ${data}\n` +
+            `Confere?\n\n` +
+            `1️⃣ Confere\n` +
+            `2️⃣ Ajustar`
         );
     },
 
-    onboardingDoneMessage() {
+    ahaCostsRegistered() {
+        return `Custo registrado ✅`;
+    },
+
+    // ============================================================
+    // 7) AHA_SUMMARY - Resumo AHA
+    // ============================================================
+    ahaSummary({ entradas, custosFixos, custosVariaveis, saldoParcial }) {
         return (
-            `Pronto! Essa venda já entrou no seu financeiro ✅\n\n` +
-            `Se esse fosse seu mês de novembro, por exemplo, você veria algo assim:\n\n` +
-            `📊 *Resumo Financeiro*\n` +
-            `• *Receitas:* R$ 85.000\n` +
-            `• *Custos:* R$ 32.000\n` +
-            `• *Lucro:* R$ 53.000 (62%)\n\n` +
-            `A qualquer momento, você pode pedir:\n` +
-            `*"Lumiz, me dá um resumo financeiro do meu mês de novembro de 2025."*\n\n` +
-            `Agora é com você! Pode começar a mandar suas vendas e custos reais. 😉`
+            `Pronto ✅\n\n` +
+            `Etapa 3/3 — Seu resumo inicial:\n\n` +
+            `📌 Resumo parcial do mês\n` +
+            `• Entradas: R$ ${Number(entradas).toFixed(2)}\n` +
+            `• Custos fixos: R$ ${Number(custosFixos).toFixed(2)}\n` +
+            `• Custos variáveis: R$ ${Number(custosVariaveis).toFixed(2)}\n` +
+            `• Saldo parcial: R$ ${Number(saldoParcial).toFixed(2)}\n\n` +
+            `A partir de agora, a ideia é simples:\n` +
+            `tudo que entra ou sai do seu caixa, você me manda aqui.`
         );
     },
 
+    // ============================================================
+    // 8) HANDOFF_TO_DAILY_USE - Uso diário
+    // ============================================================
+    handoffToDailyUse() {
+        return (
+            `Onboarding feito ✅\n` +
+            `Agora é só me usar no dia a dia.\n\n` +
+            `Não tem regra nem formulário.\n` +
+            `Tudo que entrar ou sair da clínica, você me manda aqui.\n\n` +
+            `Exemplos:\n` +
+            `• "Recebi 1.500 no pix hoje"\n` +
+            `• "Paguei fornecedor 2.300"\n` +
+            `• "Quanto entrou esse mês?"\n` +
+            `• "O que ainda falta cair?"\n` +
+            `• "Hoje fizemos R$ 15.000 em vendas, atendemos 10 pacientes"\n\n` +
+            `Quanto mais você me usa, melhor eu entendo sua rotina —\n` +
+            `e mais claros ficam seus números.\n\n` +
+            `1️⃣ Registrar venda\n` +
+            `2️⃣ Registrar custo\n` +
+            `3️⃣ Ver resumo do mês`
+        );
+    },
+
+    // ============================================================
+    // 9) MDR_SETUP - Taxas da maquininha (opcional)
+    // ============================================================
+    mdrSetupIntro() {
+        return (
+            `Quer dar um próximo passo e deixar seu caixa ainda mais realista?\n` +
+            `Posso configurar as taxas do cartão pra entender:\n\n` +
+            `• quando o dinheiro cai, em uma compra parcelada\n` +
+            `• quanto R$ cai de verdade na sua conta\n\n` +
+            `1️⃣ Configurar agora\n` +
+            `2️⃣ Pular por enquanto`
+        );
+    },
+
+    mdrSetupSkip() {
+        return (
+            `Sem problema 👍\n` +
+            `Por enquanto, vou te mostrar uma visão mais bruta das vendas no cartão.\n\n` +
+            `Quando quiser configurar depois, é só dizer:\n` +
+            `"Lumiz, quero configurar minhas taxas."`
+        );
+    },
+
+    mdrSetupQuestion() {
+        return `Quantas maquininhas ou bancos você usa pra receber cartão?`;
+    },
+
+    mdrSetupUpload() {
+        return (
+            `Entra no app da maquininha, abre a tabela de taxas e tira um print.\n` +
+            `Pode me mandar aqui que registro automático.`
+        );
+    },
+
+    mdrSetupReinforcement() {
+        return (
+            `Assim eu consigo entender:\n\n` +
+            `• que parte do dinheiro entra na hora\n` +
+            `• que parte entra depois\n` +
+            `• e quanto realmente cai no caixa`
+        );
+    },
+
+    mdrSetupComplete() {
+        return (
+            `Pronto ✅\n` +
+            `Agora seu caixa reflete melhor a realidade do dia a dia.`
+        );
+    },
+
+    // ============================================================
+    // Utilitários e mensagens de erro
+    // ============================================================
     escalateToHuman() {
         return (
             'Sem problema, eu chamo alguém do time Lumiz pra falar com você aqui mesmo 😉\n\n' +
@@ -159,7 +329,92 @@ module.exports = {
         );
     },
 
-    invalidEntryChoice() {
-        return `Só pra eu seguir certinho: responde com *1* (entender) ou *2* (cadastro).`;
+    invalidChoice() {
+        return `Só pra eu seguir certinho: responde com uma das opções acima.`;
+    },
+
+    // ============================================================
+    // Mensagens de erro e validação
+    // ============================================================
+    nameTooShort() {
+        return 'Nome muito curto. Digite novamente:';
+    },
+
+    clinicNameTooShort() {
+        return 'Nome da clínica muito curto. Digite novamente:';
+    },
+
+    costValueNotFound() {
+        return 'Não consegui identificar o valor desse custo. Pode me mandar o valor? (ex: R$ 500)';
+    },
+
+    costErrorRetry() {
+        return 'Ops, algo deu errado. Pode me mandar o custo novamente?';
+    },
+
+    userCreationError() {
+        return 'Ops, tive um problema ao criar sua conta. Pode tentar novamente? Se o problema continuar, me avise que eu chamo alguém do time.';
+    },
+
+    mdrInvalidNumber() {
+        return 'Preciso de um número válido. Quantas maquininhas você usa?';
+    },
+
+    mdrNeedPhoto() {
+        return 'Preciso do print da tabela de taxas. Pode me mandar uma foto?';
+    },
+
+    lostState() {
+        return 'Ops, me perdi. Digite "Oi" para recomeçar.';
+    },
+
+    handoffRegisterSale() {
+        return 'Perfeito! Me manda a venda que eu registro. 😊';
+    },
+
+    handoffRegisterCost() {
+        return 'Beleza! Me manda o custo que eu registro. 😊';
+    },
+
+    handoffShowSummary() {
+        return 'Claro! Vou te mostrar o resumo do mês. 😊';
+    },
+
+    documentReceivedMessage({ valor, vencimento, fornecedor }) {
+        return (
+            `Recebi ✅ Vou organizar isso rapidinho.\n\n` +
+            `Encontrei: R$ ${Number(valor).toFixed(2)}, vencimento ${vencimento || '—'}, fornecedor ${fornecedor || '—'}.\n` +
+            `Isso é um custo fixo ou variável?\n\n` +
+            `1️⃣ Fixo\n` +
+            `2️⃣ Variável`
+        );
+    },
+
+    documentReceivedSimple({ valor }) {
+        return (
+            `Recebi ✅ Vou organizar isso rapidinho.\n\n` +
+            `Encontrei: R$ ${Number(valor).toFixed(2)}.\n` +
+            `Isso é um custo fixo ou variável?\n\n` +
+            `1️⃣ Fixo\n` +
+            `2️⃣ Variável`
+        );
+    },
+
+    mdrPrintReceived({ current, total }) {
+        return (
+            `Print ${current} recebido ✅\n\n` +
+            `Agora me manda o print da maquininha ${current + 1} de ${total}:`
+        );
+    },
+
+    // ============================================================
+    // Funções legadas (mantidas para compatibilidade)
+    // ============================================================
+    introGreeting() {
+        return this.startMessage();
+    },
+
+    entryMenu() {
+        return this.startMessage();
     }
 };

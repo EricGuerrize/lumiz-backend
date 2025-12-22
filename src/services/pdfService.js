@@ -132,47 +132,22 @@ class PdfService {
           .text('TRANSAÇÕES DETALHADAS', 50, yPos, { underline: true });
 
         yPos += 30;
-        
-        // Ordena transações por data (mais recentes primeiro)
-        const transacoesOrdenadas = [...report.transacoes].sort((a, b) => {
-          const dateA = new Date(a.data || a.date || 0);
-          const dateB = new Date(b.data || b.date || 0);
-          return dateB - dateA; // Mais recente primeiro
-        });
-        
-        transacoesOrdenadas.slice(0, 15).forEach(t => {
+        report.transacoes.slice(0, 15).forEach(t => {
           if (yPos > 700) {
             doc.addPage();
             yPos = 50;
           }
 
-          // Detecta se é atendimento (entrada) ou conta_pagar (saída)
-          const isAtendimento = !!t.valor_total; // Atendimentos têm valor_total
-          const tipo = isAtendimento ? 'RECEITA' : 'CUSTO';
-          const valor = isAtendimento 
-            ? parseFloat(t.valor_total || 0)
-            : parseFloat(t.valor || 0);
+          const tipo = t.type === 'entrada' ? 'RECEITA' : 'CUSTO';
+          const valor = parseFloat(t.amount || 0);
 
           // Validação de data para evitar "Invalid Date"
           let dataStr = '--/--/----';
-          const dataTransacao = t.data || t.date;
-          if (dataTransacao) {
-            const dateObj = new Date(dataTransacao);
+          if (t.date) {
+            const dateObj = new Date(t.date);
             if (!isNaN(dateObj.getTime())) {
               dataStr = dateObj.toLocaleDateString('pt-BR');
             }
-          }
-
-          // Determina categoria
-          let categoria = 'Sem categoria';
-          if (isAtendimento) {
-            // Para atendimentos, pega do procedimento
-            categoria = t.atendimento_procedimentos?.[0]?.procedimentos?.nome 
-              || t.observacoes?.substring(0, 30)
-              || 'Procedimento';
-          } else {
-            // Para contas a pagar, usa categoria ou descrição
-            categoria = t.categoria || t.descricao?.substring(0, 30) || 'Despesa';
           }
 
           doc.fontSize(9)
@@ -180,17 +155,15 @@ class PdfService {
             .text(dataStr, 50, yPos)
             .fillColor('#000')
             .text(tipo, 120, yPos)
-            .text(categoria.substring(0, 30), 200, yPos)
+            .text(t.categories?.name || 'Sem categoria', 200, yPos)
             .fillColor(tipo === 'RECEITA' ? '#10B981' : '#EF4444')
             .text(`R$ ${valor.toFixed(2)}`, 450, yPos, { align: 'right' });
 
-          // Descrição/observações
-          const descricao = t.observacoes || t.descricao || '';
-          if (descricao) {
+          if (t.description) {
             yPos += 12;
             doc.fontSize(8)
               .fillColor('#999')
-              .text(descricao.substring(0, 60), 200, yPos);
+              .text(t.description.substring(0, 60), 200, yPos);
           }
 
           yPos += 20;

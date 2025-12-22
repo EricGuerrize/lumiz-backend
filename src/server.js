@@ -7,6 +7,18 @@ const helmet = require('helmet');
 const compression = require('compression');
 require('dotenv').config();
 
+// Valida variáveis de ambiente na startup
+const { validate } = require('./config/env');
+try {
+  validate();
+  console.log('[SERVER] ✅ Variáveis de ambiente validadas');
+} catch (error) {
+  console.error('[SERVER] ❌ Erro na validação de variáveis de ambiente:', error.message);
+  if (process.env.NODE_ENV === 'production') {
+    process.exit(1);
+  }
+}
+
 const webhookRoutes = require('./routes/webhook');
 const dashboardRoutes = require('./routes/dashboard.routes');
 const onboardingRoutes = require('./routes/onboarding.routes');
@@ -119,7 +131,13 @@ const webhookLimiter = rateLimit({
 });
 
 app.use(limiter);
-console.log('[SERVER] Rate limiting configurado (100 req/15min por IP)');
+console.log('[SERVER] Rate limiting por IP configurado (100 req/15min por IP)');
+
+// Rate limiting por usuário (além de IP) para rotas autenticadas
+const userRateLimit = require('./middleware/userRateLimit');
+app.use('/api/dashboard', userRateLimit.middleware({ windowMs: 15 * 60 * 1000, max: 200 }));
+app.use('/api/onboarding', userRateLimit.middleware({ windowMs: 15 * 60 * 1000, max: 150 }));
+console.log('[SERVER] Rate limiting por usuário configurado (além de IP)');
 
 // Aumenta limite para aceitar imagens grandes no webhook
 const jsonLimit = '10mb';
@@ -127,9 +145,17 @@ app.use(express.json({ limit: jsonLimit }));
 app.use(express.urlencoded({ extended: true, limit: jsonLimit }));
 console.log(`[SERVER] Body parser configurado com limite de ${jsonLimit}`);
 
-// Logging de requisições
+// Logger estruturado
+const { logger, createLogger } = require('./config/logger');
+const appLogger = createLogger('HTTP');
+
+// Logging de requisições (estruturado)
 app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path} - IP: ${req.ip}`);
+  appLogger.info(`${req.method} ${req.path}`, {
+    ip: req.ip,
+    userAgent: req.get('user-agent'),
+    userId: req.user?.id || null
+  });
   next();
 });
 
@@ -139,42 +165,92 @@ app.use('/api/onboarding', onboardingRoutes);
 app.use('/api/user', userRoutes);
 
 app.get('/health', async (req, res) => {
+  const startTime = Date.now();
   const health = {
     status: 'ok',
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV,
+    uptime: process.uptime(),
     checks: {
-      database: 'unknown',
-      redis: 'unknown',
-      evolution: 'unknown'
-    }
+      database: { status: 'unknown', latency: null },
+      redis: { status: 'unknown', latency: null },
+      evolution: { status: 'unknown', latency: null },
+      cache: { status: 'unknown', latency: null }
+    },
+    version: require('../package.json').version
   };
 
+  let criticalFailures = 0;
+
+  // Verifica Supabase (crítico)
   try {
-    // Verifica Supabase
+    const dbStart = Date.now();
     const supabase = require('./db/supabase');
     const { error: dbError } = await supabase.from('profiles').select('id').limit(1);
-    health.checks.database = dbError ? 'error' : 'ok';
+    const dbLatency = Date.now() - dbStart;
+    
+    if (dbError) {
+      health.checks.database = { status: 'error', latency: dbLatency, error: dbError.message };
+      criticalFailures++;
+      health.status = 'degraded';
+    } else {
+      health.checks.database = { status: 'ok', latency: dbLatency };
+    }
   } catch (error) {
-    health.checks.database = 'error';
+    health.checks.database = { status: 'error', latency: null, error: error.message };
+    criticalFailures++;
     health.status = 'degraded';
   }
 
+  // Verifica Redis/Cache (opcional)
   try {
-    // Verifica Redis/BullMQ
-    const mdrService = require('./services/mdrService');
-    health.checks.redis = mdrService.queueEnabled ? 'ok' : 'not_configured';
+    const cacheStart = Date.now();
+    const cacheService = require('./services/cacheService');
+    if (cacheService.enabled) {
+      await cacheService.get('health_check_test');
+      const cacheLatency = Date.now() - cacheStart;
+      health.checks.cache = { status: 'ok', latency: cacheLatency };
+    } else {
+      health.checks.cache = { status: 'not_configured', latency: null };
+    }
   } catch (error) {
-    health.checks.redis = 'error';
+    health.checks.cache = { status: 'error', latency: null, error: error.message };
   }
 
+  // Verifica BullMQ/Redis (opcional)
   try {
-    // Verifica Evolution API
-    const evolutionService = require('./services/evolutionService');
-    await evolutionService.getInstanceStatus();
-    health.checks.evolution = 'ok';
+    const mdrService = require('./services/mdrService');
+    if (mdrService.queueEnabled) {
+      health.checks.redis = { status: 'ok', latency: null };
+    } else {
+      health.checks.redis = { status: 'not_configured', latency: null };
+    }
   } catch (error) {
-    health.checks.evolution = 'error';
+    health.checks.redis = { status: 'error', latency: null, error: error.message };
+  }
+
+  // Verifica Evolution API (crítico)
+  try {
+    const evolutionStart = Date.now();
+    const evolutionService = require('./services/evolutionService');
+    await Promise.race([
+      evolutionService.getInstanceStatus(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
+    ]);
+    const evolutionLatency = Date.now() - evolutionStart;
+    health.checks.evolution = { status: 'ok', latency: evolutionLatency };
+  } catch (error) {
+    const evolutionLatency = error.message === 'timeout' ? 5000 : null;
+    health.checks.evolution = { status: 'error', latency: evolutionLatency, error: error.message };
+    criticalFailures++;
+    health.status = 'degraded';
+  }
+
+  // Calcula latência total
+  health.totalLatency = Date.now() - startTime;
+
+  // Status final
+  if (criticalFailures > 0) {
     health.status = 'degraded';
   }
 
@@ -260,13 +336,9 @@ app.get('/', (req, res) => {
   });
 });
 
-app.use((err, req, res, next) => {
-  console.error('Erro não tratado:', err);
-  res.status(500).json({
-    error: 'Internal server error',
-    message: process.env.NODE_ENV === 'development' ? err.message : undefined
-  });
-});
+// Global error handler (must be last middleware)
+const errorHandler = require('./middleware/errorHandler');
+app.use(errorHandler);
 
 let server = null;
 if (process.env.NODE_ENV !== 'test') {

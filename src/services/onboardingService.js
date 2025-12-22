@@ -1,5 +1,6 @@
 const { v4: uuidv4 } = require('uuid');
 const supabase = require('../db/supabase');
+const cacheService = require('./cacheService');
 
 const STEP_BLUEPRINT = [
   { id: 'phase1_welcome', label: 'Boas-vindas', phase: 1, optional: false },
@@ -75,11 +76,19 @@ function deepMerge(target = {}, source = {}) {
   return output;
 }
 
+/**
+ * Serviço de gerenciamento de onboarding
+ * Gerencia estados, fases e progresso do processo de onboarding
+ */
 class OnboardingService {
   constructor() {
     this.stepBlueprint = STEP_BLUEPRINT;
   }
 
+  /**
+   * Retorna steps padrão do onboarding
+   * @returns {Array} Array de steps com status inicial
+   */
   getDefaultSteps() {
     return this.stepBlueprint.map((step, index) => ({
       ...step,
@@ -89,24 +98,50 @@ class OnboardingService {
     }));
   }
 
+  /**
+   * Retorna estrutura de dados padrão do onboarding
+   * @returns {Object} Objeto com estrutura de dados inicial
+   */
   getDefaultData() {
     return JSON.parse(JSON.stringify(DEFAULT_DATA));
   }
 
+  /**
+   * Garante que existe um estado de onboarding para o telefone
+   * Cria novo estado se não existir, retorna existente se já existe
+   * @param {string} phone - Número de telefone
+   * @param {string|null} userId - ID do usuário (opcional)
+   * @param {Object} options - Opções adicionais (stage, phase, abVariant, channel)
+   * @returns {Promise<Object>} Estado do onboarding
+   * @throws {Error} Se phone não for fornecido
+   */
   async ensureState(phone, userId = null, options = {}) {
     if (!phone) {
       throw new Error('PHONE_REQUIRED');
     }
 
+    // Try to get from cache first
+    const cacheKey = `phone:onboarding:${phone}`;
+    const cached = await cacheService.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     const existing = await this.getRawState(phone);
     if (existing) {
       if (userId && !existing.user_id) {
-        return await this.updateRecord(existing.id, {
+        const updated = await this.updateRecord(existing.id, {
           user_id: userId,
           updated_at: new Date().toISOString()
         });
+        // updateRecord já retorna decorado, então podemos cachear diretamente
+        await cacheService.set(cacheKey, updated, 1800); // 30 minutes
+        return updated;
       }
-      return this.decorate(existing);
+      const decorated = this.decorate(existing);
+      // Cache the state
+      await cacheService.set(cacheKey, decorated, 1800); // 30 minutes
+      return decorated;
     }
 
     const initialState = {
@@ -142,13 +177,34 @@ class OnboardingService {
       throw error;
     }
 
-    return this.decorate(data);
+    const decorated = this.decorate(data);
+    // Cache the new state (30 minutes TTL)
+    await cacheService.set(cacheKey, decorated, 1800);
+    return decorated;
   }
 
+  /**
+   * Busca estado atual do onboarding
+   * @param {string} phone - Número de telefone
+   * @returns {Promise<Object|null>} Estado do onboarding ou null se não encontrado
+   */
   async getState(phone) {
+    if (!phone) return null;
+
+    // Try cache first
+    const cacheKey = `phone:onboarding:${phone}`;
+    const cached = await cacheService.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     const existing = await this.getRawState(phone);
     if (!existing) return null;
-    return this.decorate(existing);
+    
+    const decorated = this.decorate(existing);
+    // Cache the state (30 minutes TTL)
+    await cacheService.set(cacheKey, decorated, 1800);
+    return decorated;
   }
 
   async getRawState(phone) {
@@ -257,7 +313,17 @@ class OnboardingService {
     return normalized;
   }
 
+  /**
+   * Atualiza status de um step específico
+   * @param {string} phone - Número de telefone
+   * @param {string} stepId - ID do step
+   * @param {string} status - Status ('pending', 'completed', 'skipped')
+   * @param {Object} metadata - Metadados adicionais
+   * @returns {Promise<Object>} Estado atualizado
+   */
   async updateStepStatus(phone, stepId, status = 'completed', metadata = {}) {
+    // Invalidate cache when step is updated
+    await cacheService.invalidatePhone(phone);
     const state = await this.ensureState(phone);
     const steps = this.normalizeSteps(state.steps);
 
@@ -289,6 +355,8 @@ class OnboardingService {
   }
 
   async savePhaseData(phone, phaseKey, payload = {}) {
+    // Invalidate cache when phase data is updated
+    await cacheService.invalidatePhone(phone);
     const state = await this.ensureState(phone);
     const newData = deepMerge(state.data, {
       [phaseKey]: payload
@@ -299,7 +367,15 @@ class OnboardingService {
     });
   }
 
+  /**
+   * Atualiza estado do onboarding
+   * @param {string} phone - Número de telefone
+   * @param {Object} updates - Dados para atualizar (stage, phase, data, steps, etc)
+   * @returns {Promise<Object>} Estado atualizado
+   */
   async updateState(phone, updates = {}) {
+    // Invalidate cache when state is updated
+    await cacheService.invalidatePhone(phone);
     const state = await this.ensureState(phone, updates.userId);
     const data = updates.data ? deepMerge(state.data, updates.data) : state.data;
     const steps = updates.steps ? updates.steps : state.steps;
@@ -604,5 +680,9 @@ class OnboardingService {
   }
 }
 
-module.exports = new OnboardingService();
+// Exporta tanto a classe quanto uma instância singleton
+// Permite injeção de dependências em testes
+const instance = new OnboardingService();
+module.exports = instance;
+module.exports.OnboardingService = OnboardingService;
 
