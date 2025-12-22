@@ -134,10 +134,16 @@ app.use(limiter);
 console.log('[SERVER] Rate limiting por IP configurado (100 req/15min por IP)');
 
 // Rate limiting por usuário (além de IP) para rotas autenticadas
-const userRateLimit = require('./middleware/userRateLimit');
-app.use('/api/dashboard', userRateLimit.middleware({ windowMs: 15 * 60 * 1000, max: 200 }));
-app.use('/api/onboarding', userRateLimit.middleware({ windowMs: 15 * 60 * 1000, max: 150 }));
-console.log('[SERVER] Rate limiting por usuário configurado (além de IP)');
+let userRateLimit;
+try {
+  userRateLimit = require('./middleware/userRateLimit');
+  app.use('/api/dashboard', userRateLimit.middleware({ windowMs: 15 * 60 * 1000, max: 200 }));
+  app.use('/api/onboarding', userRateLimit.middleware({ windowMs: 15 * 60 * 1000, max: 150 }));
+  console.log('[SERVER] Rate limiting por usuário configurado (além de IP)');
+} catch (error) {
+  console.warn('[SERVER] ⚠️ Rate limiting por usuário não disponível:', error.message);
+  console.warn('[SERVER] Continuando sem rate limiting por usuário (usando apenas por IP)');
+}
 
 // Aumenta limite para aceitar imagens grandes no webhook
 const jsonLimit = '10mb';
