@@ -5,6 +5,7 @@ const supabase = require('../db/supabase');
 const mdrOcrService = require('./mdrOcrService');
 const evolutionService = require('./evolutionService');
 const onboardingService = require('./onboardingService');
+const cacheService = require('./cacheService');
 
 class MdrService {
   constructor() {
@@ -49,6 +50,17 @@ class MdrService {
     }
   }
 
+  /**
+   * Salva configuração MDR manualmente
+   * @param {Object} config - Dados da configuração
+   * @param {string} config.phone - Número de telefone
+   * @param {string} config.userId - ID do usuário
+   * @param {Array<string>} config.bandeiras - Lista de bandeiras aceitas
+   * @param {Object} config.tiposVenda - Tipos de venda (débito, crédito, etc)
+   * @param {Object} config.parcelas - Configuração de parcelas
+   * @param {string} config.provider - Provedor (Stone, PagSeguro, etc)
+   * @returns {Promise<Object>} Configuração salva
+   */
   async saveManualConfig({ phone, userId, bandeiras, tiposVenda, parcelas, provider }) {
     const payload = {
       phone,
@@ -79,6 +91,15 @@ class MdrService {
     return data;
   }
 
+  /**
+   * Solicita processamento OCR de imagem para extrair taxas MDR
+   * @param {Object} params - Parâmetros
+   * @param {string} params.phone - Número de telefone
+   * @param {string} params.userId - ID do usuário
+   * @param {string} params.imageUrl - URL da imagem para processar
+   * @param {string} params.provider - Provedor (Stone, PagSeguro, etc)
+   * @returns {Promise<Object>} Resultado com jobId e status
+   */
   async requestOcr({ phone, userId, imageUrl, provider }) {
     const initialStatus = this.queueEnabled ? 'queued' : 'processing';
 
@@ -135,10 +156,28 @@ class MdrService {
       throw error;
     }
 
+    // Invalidate cache when config is updated
+    if (data) {
+      await cacheService.invalidateUser(data.user_id);
+      if (data.phone) {
+        await cacheService.invalidatePhone(data.phone);
+      }
+    }
+
     return data;
   }
 
   async getLatestConfig(phone, userId) {
+    // Try cache first
+    const cacheKey = userId 
+      ? `user:config:mdr:${userId}`
+      : `phone:config:mdr:${phone}`;
+    
+    const cached = await cacheService.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     let query = supabase
       .from('mdr_configs')
       .select('*')
@@ -155,6 +194,11 @@ class MdrService {
 
     if (error && error.code !== 'PGRST116') {
       throw error;
+    }
+
+    // Cache the result
+    if (data) {
+      await cacheService.set(cacheKey, data, 3600); // 1 hour
     }
 
     return data || null;
@@ -327,5 +371,9 @@ class MdrService {
   }
 }
 
-module.exports = new MdrService();
+// Exporta tanto a classe quanto uma instância singleton
+// Permite injeção de dependências em testes
+const instance = new MdrService();
+module.exports = instance;
+module.exports.MdrService = MdrService;
 

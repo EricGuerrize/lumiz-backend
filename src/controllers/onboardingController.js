@@ -1,12 +1,15 @@
 const onboardingService = require('../services/onboardingService');
 const mdrService = require('../services/mdrService');
+const { normalizePhone } = require('../utils/phone');
 
 const resolveContext = (req) => {
-  const phone =
+  const rawPhone =
     req.user?.telefone ||
     req.headers['x-user-phone'] ||
     req.body.phone ||
     req.query.phone;
+
+  const phone = normalizePhone(rawPhone) || rawPhone;
 
   if (!phone) {
     const error = new Error('PHONE_REQUIRED');

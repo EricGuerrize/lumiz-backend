@@ -12,14 +12,29 @@ class NudgeService {
   async checkAndSendNudges() {
     const now = new Date();
     const states = await this.fetchOnboardingStates();
+    
+    if (states.length === 0) {
+      return [];
+    }
+
     const results = [];
+
+    // BATCH: Busca todos os nudges existentes de uma vez
+    const phones = states.map(s => s.phone);
+    const existingNudges = await this.getExistingNudgesBatch(phones);
+
+    // BATCH: Busca todos os usuários de uma vez para verificar atividade
+    const phonesToCheckActivity = states
+      .filter(s => s.completed_at)
+      .map(s => s.phone);
+    const userActivities = await this.checkUserActivitiesBatch(phonesToCheckActivity, states);
 
     for (const state of states) {
       const nudges = this.evaluateState(state, now);
 
       for (const nudge of nudges) {
-        // Verifica se já foi enviado
-        const existing = await this.getExistingNudge(state.phone, nudge.type);
+        // Busca nudge existente do cache em memória
+        const existing = existingNudges.get(`${state.phone}:${nudge.type}`);
 
         if (existing && existing.status === 'sent') {
           continue;
@@ -33,13 +48,11 @@ class NudgeService {
           }
         }
 
-        // Lógica específica para retenção: verificar se houve atividade
+        // Lógica específica para retenção: verificar se houve atividade (do cache)
         if (nudge.type === 'retention_24h') {
-          const hasActivity = await this.checkUserActivity(state.phone, state.completed_at);
+          const hasActivity = userActivities.get(state.phone) || false;
           if (hasActivity) {
             console.log(`[NUDGE] Usuário ${state.phone} tem atividade, pulando retenção.`);
-            // Marca como "ignorado" ou "sent" para não verificar de novo?
-            // Vamos marcar como sent para não processar mais
             await this.recordAttempt(existing, state.phone, nudge.type, { skipped: true, reason: 'has_activity' });
             await this.markSent(state.phone, nudge.type);
             continue;
@@ -72,10 +85,6 @@ class NudgeService {
 
   async checkUserActivity(phone, since) {
     // Busca usuário pelo telefone (precisamos do ID do usuário para buscar transações)
-    // Assumindo que o telefone está na tabela profiles ou que podemos buscar transações pelo telefone se houver join
-    // Mas o onboarding_progress tem o telefone. O profiles tem telefone.
-
-    // 1. Buscar ID do usuário
     const { data: user } = await supabase
       .from('profiles')
       .select('id')
@@ -84,7 +93,7 @@ class NudgeService {
 
     if (!user) return false;
 
-    // 2. Buscar transações (atendimentos) criadas após 'since'
+    // Buscar transações (atendimentos) criadas após 'since'
     const { count } = await supabase
       .from('atendimentos')
       .select('*', { count: 'exact', head: true })
@@ -92,6 +101,100 @@ class NudgeService {
       .gt('created_at', since);
 
     return count > 0;
+  }
+
+  /**
+   * Busca todos os nudges existentes em batch (otimização N+1)
+   */
+  async getExistingNudgesBatch(phones) {
+    if (phones.length === 0) {
+      return new Map();
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('onboarding_nudges')
+        .select('*')
+        .in('phone', phones);
+
+      if (error) {
+        console.error('[NUDGE] Erro ao buscar nudges em batch:', error);
+        return new Map();
+      }
+
+      // Cria mapa: phone:type -> nudge
+      const nudgesMap = new Map();
+      (data || []).forEach(nudge => {
+        nudgesMap.set(`${nudge.phone}:${nudge.type}`, nudge);
+      });
+
+      return nudgesMap;
+    } catch (error) {
+      console.error('[NUDGE] Erro ao buscar nudges em batch:', error);
+      return new Map();
+    }
+  }
+
+  /**
+   * Verifica atividade de múltiplos usuários em batch (otimização N+1)
+   */
+  async checkUserActivitiesBatch(phones, states) {
+    if (phones.length === 0) {
+      return new Map();
+    }
+
+    try {
+      // Busca todos os usuários de uma vez
+      const { data: users, error: usersError } = await supabase
+        .from('profiles')
+        .select('id, telefone')
+        .in('telefone', phones);
+
+      if (usersError || !users || users.length === 0) {
+        return new Map();
+      }
+
+      // Cria mapa telefone -> user_id
+      const phoneToUserId = new Map();
+      users.forEach(user => {
+        phoneToUserId.set(user.telefone, user.id);
+      });
+
+      // Busca todas as transações de uma vez para todos os usuários
+      const userIds = Array.from(phoneToUserId.values());
+      const stateMap = new Map(states.map(s => [s.phone, s]));
+
+      // Para cada usuário, busca transações desde completed_at
+      const activityChecks = userIds.map(async (userId) => {
+        const user = users.find(u => u.id === userId);
+        const phone = user.telefone;
+        const state = stateMap.get(phone);
+        const since = state?.completed_at;
+
+        if (!since) {
+          return { phone, hasActivity: false };
+        }
+
+        const { count } = await supabase
+          .from('atendimentos')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', userId)
+          .gt('created_at', since);
+
+        return { phone, hasActivity: (count || 0) > 0 };
+      });
+
+      const activities = await Promise.all(activityChecks);
+      const activityMap = new Map();
+      activities.forEach(({ phone, hasActivity }) => {
+        activityMap.set(phone, hasActivity);
+      });
+
+      return activityMap;
+    } catch (error) {
+      console.error('[NUDGE] Erro ao verificar atividades em batch:', error);
+      return new Map();
+    }
   }
 
   async fetchOnboardingStates() {
@@ -251,5 +354,9 @@ class NudgeService {
   }
 }
 
-module.exports = new NudgeService();
+// Exporta tanto a classe quanto uma instância singleton
+// Permite injeção de dependências em testes
+const instance = new NudgeService();
+module.exports = instance;
+module.exports.NudgeService = NudgeService;
 

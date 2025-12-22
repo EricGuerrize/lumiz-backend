@@ -1,4 +1,5 @@
 const supabase = require('../db/supabase');
+const { normalizePhone, getPhoneVariants } = require('../utils/phone');
 
 // Middleware de autenticação usando Supabase JWT
 const authenticateToken = async (req, res, next) => {
@@ -43,7 +44,8 @@ const authenticateFlexible = async (req, res, next) => {
   try {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
-    const phone = req.headers['x-user-phone'];
+    const rawPhone = req.headers['x-user-phone'];
+    const phone = normalizePhone(rawPhone) || rawPhone;
 
     // Prioriza token se disponível
     if (token) {
@@ -66,11 +68,11 @@ const authenticateFlexible = async (req, res, next) => {
 
     // Fallback para telefone (retrocompatibilidade)
     if (phone) {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('telefone', phone)
-        .single();
+      const variants = getPhoneVariants(phone);
+      let query = supabase.from('profiles').select('*');
+      query = variants.length ? query.in('telefone', variants) : query.eq('telefone', phone);
+
+      const { data: profile } = await query.maybeSingle();
 
       if (profile) {
         req.user = profile;

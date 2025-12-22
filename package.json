@@ -7,11 +7,14 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "test": "NODE_ENV=test node tests/apiSmoke.test.js",
+    "test:unit": "jest tests/unit --coverage",
+    "test:all": "npm run test && npm run test:unit",
     "build": "npm install --include=optional"
   },
   "dependencies": {
     "@google-cloud/vision": "^5.3.4",
     "@google/generative-ai": "^0.21.0",
+    "@modelcontextprotocol/sdk": "^1.24.3",
     "@sentry/node": "^10.26.0",
     "@supabase/supabase-js": "^2.45.4",
     "axios": "^1.7.7",
@@ -25,13 +28,26 @@
     "ioredis": "^5.8.2",
     "node-cron": "^4.2.1",
     "pdfkit": "^0.15.2",
+    "pino": "^9.5.0",
+    "pino-pretty": "^11.2.2",
     "sharp": "^0.34.5",
     "uuid": "^9.0.0",
     "xlsx": "^0.18.5",
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "jest": "^29.7.0",
     "nodemon": "^3.1.7",
     "supertest": "^7.1.4"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "coveragePathIgnorePatterns": [
+      "/node_modules/",
+      "/tests/"
+    ],
+    "testMatch": [
+      "**/tests/unit/**/*.test.js"
+    ]
   }
 }

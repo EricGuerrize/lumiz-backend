@@ -4,6 +4,13 @@ const supabase = require('../db/supabase');
 const transactionController = require('../controllers/transactionController');
 const userController = require('../controllers/userController');
 const { authenticateFlexible } = require('../middleware/authMiddleware');
+const { validate } = require('../middleware/validationMiddleware');
+const {
+  monthlyReportSchema,
+  searchTransactionsSchema,
+  updateTransactionSchema,
+  deleteTransactionSchema
+} = require('../validators/dashboard.validators');
 
 // Aplica autenticação em todas as rotas (aceita JWT ou telefone)
 router.use(authenticateFlexible);
@@ -56,7 +63,7 @@ router.get('/transactions', async (req, res) => {
 });
 
 // GET /api/dashboard/monthly-report?year=2025&month=11 - Relatório mensal
-router.get('/monthly-report', async (req, res) => {
+router.get('/monthly-report', validate(monthlyReportSchema), async (req, res) => {
   try {
     const now = new Date();
     const year = parseInt(req.query.year) || now.getFullYear();
@@ -226,7 +233,7 @@ router.get('/user', async (req, res) => {
 });
 
 // GET /api/dashboard/transactions/search - Busca transações com filtros
-router.get('/transactions/search', async (req, res) => {
+router.get('/transactions/search', validate(searchTransactionsSchema), async (req, res) => {
   try {
     const {
       startDate,
@@ -260,7 +267,7 @@ router.get('/transactions/search', async (req, res) => {
 });
 
 // PUT /api/dashboard/transactions/:id - Atualizar transação
-router.put('/transactions/:id', async (req, res) => {
+router.put('/transactions/:id', validate(updateTransactionSchema), async (req, res) => {
   try {
     const transactionId = req.params.id;
     const updateData = req.body;
@@ -286,7 +293,7 @@ router.put('/transactions/:id', async (req, res) => {
 });
 
 // DELETE /api/dashboard/transactions/:id - Excluir transação
-router.delete('/transactions/:id', async (req, res) => {
+router.delete('/transactions/:id', validate(deleteTransactionSchema), async (req, res) => {
   try {
     const transactionId = req.params.id;
 
