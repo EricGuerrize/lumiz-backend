@@ -1,5 +1,4 @@
 const rateLimit = require('express-rate-limit');
-const { createClient } = require('redis');
 
 /**
  * Rate limiting por usuário (além de IP)
