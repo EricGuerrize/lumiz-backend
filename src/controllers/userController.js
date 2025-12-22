@@ -2,7 +2,9 @@ const supabase = require('../db/supabase');
 const onboardingService = require('../services/onboardingService');
 const emailService = require('../services/emailService');
 const registrationTokenService = require('../services/registrationTokenService');
+const cacheService = require('../services/cacheService');
 const { z } = require('zod');
+const { normalizePhone, getPhoneVariants } = require('../utils/phone');
 
 class UserController {
   constructor() {
@@ -12,16 +14,38 @@ class UserController {
 
   async findUserByPhone(phone) {
     try {
+      const normalized = normalizePhone(phone) || phone;
+      
+      // Try cache first
+      const cacheKey = `phone:profile:${normalized}`;
+      const cached = await cacheService.get(cacheKey);
+      if (cached) {
+        return cached;
+      }
+
+      const variants = getPhoneVariants(phone);
+
       // Busca na tabela profiles pelo telefone
-      const { data: existingUser, error: fetchError } = await supabase
+      let query = supabase
         .from('profiles')
-        .select('*')
-        .eq('telefone', phone)
-        .single();
+        .select('*');
+
+      if (variants.length) {
+        query = query.in('telefone', variants);
+      } else {
+        query = query.eq('telefone', normalized);
+      }
+
+      const { data: existingUser, error: fetchError } = await query.maybeSingle();
 
       if (fetchError && fetchError.code !== 'PGRST116') {
         // PGRST116 = não encontrado, outros erros são problemas reais
         throw fetchError;
+      }
+
+      // Cache the result (15 minutes TTL for user profiles)
+      if (existingUser) {
+        await cacheService.set(cacheKey, existingUser, 900);
       }
 
       return existingUser || null;
@@ -34,14 +58,18 @@ class UserController {
 
   async createUserFromOnboarding(data) {
     try {
-      const { nome_completo, nome_clinica, telefone } = data;
+      const { nome_completo, nome_clinica } = data;
+      const telefone = normalizePhone(data.telefone) || data.telefone;
+      const phoneVariants = getPhoneVariants(telefone);
 
       // Verifica se já existe um perfil com este telefone
-      const { data: existingProfile, error: lookupError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('telefone', telefone)
-        .single();
+      let lookupQuery = supabase.from('profiles').select('*');
+      if (phoneVariants.length) {
+        lookupQuery = lookupQuery.in('telefone', phoneVariants);
+      } else {
+        lookupQuery = lookupQuery.eq('telefone', telefone);
+      }
+      const { data: existingProfile, error: lookupError } = await lookupQuery.maybeSingle();
 
       let profile;
       let profileCreated = false;
@@ -79,7 +107,7 @@ class UserController {
             id: tempId,
             nome_completo,
             nome_clinica,
-            telefone,
+            telefone: telefone,
             is_active: true,
             email: data.email || null,
             whatsapp_contato: data.whatsapp || data.whatsapp_contato || telefone,
@@ -137,47 +165,79 @@ class UserController {
 
   async findOrCreateCliente(userId, nomeCliente) {
     try {
-      // Tenta encontrar cliente existente pelo nome
-      const { data: existingCliente } = await supabase
+      // UPSERT: 1 query ao invés de 2 (SELECT + INSERT)
+      // Usa constraint UNIQUE (user_id, nome) para detectar duplicatas
+      const { data, error } = await supabase
         .from('clientes')
-        .select('*')
-        .eq('user_id', userId)
-        .ilike('nome', `%${nomeCliente}%`)
-        .limit(1)
-        .single();
-
-      if (existingCliente) {
-        return existingCliente;
-      }
-
-      // Cria novo cliente
-      const { data: newCliente, error } = await supabase
-        .from('clientes')
-        .insert([{
+        .upsert({
           user_id: userId,
-          nome: nomeCliente
-        }])
+          nome: nomeCliente.trim()
+        }, {
+          onConflict: 'user_id,nome',
+          ignoreDuplicates: false
+        })
         .select()
         .single();
 
-      if (error) throw error;
-      return newCliente;
-    } catch (error) {
-      if (error.code === 'PGRST116') {
-        // Cliente não encontrado, criar novo
-        const { data: newCliente, error: createError } = await supabase
+      if (error) {
+        // Se UPSERT falhar (ex: constraint não existe ainda), faz fallback para SELECT+INSERT
+        if (error.code === '23505' || error.message?.includes('unique')) {
+          // Constraint existe mas deu conflito - busca o existente
+          const { data: existing } = await supabase
+            .from('clientes')
+            .select('*')
+            .eq('user_id', userId)
+            .eq('nome', nomeCliente.trim())
+            .single();
+          
+          if (existing) return existing;
+        }
+        
+        // Se não encontrou, tenta criar (fallback para método antigo)
+        const { data: newCliente, error: insertError } = await supabase
           .from('clientes')
           .insert([{
             user_id: userId,
-            nome: nomeCliente
+            nome: nomeCliente.trim()
           }])
           .select()
           .single();
 
-        if (createError) throw createError;
+        if (insertError) throw insertError;
         return newCliente;
       }
-      throw error;
+
+      return data;
+    } catch (error) {
+      // Fallback completo: método antigo (SELECT + INSERT)
+      try {
+        const { data: existingCliente } = await supabase
+          .from('clientes')
+          .select('*')
+          .eq('user_id', userId)
+          .ilike('nome', `%${nomeCliente.trim()}%`)
+          .limit(1)
+          .single();
+
+        if (existingCliente) {
+          return existingCliente;
+        }
+
+        const { data: newCliente, error: insertError } = await supabase
+          .from('clientes')
+          .insert([{
+            user_id: userId,
+            nome: nomeCliente.trim()
+          }])
+          .select()
+          .single();
+
+        if (insertError) throw insertError;
+        return newCliente;
+      } catch (fallbackError) {
+        console.error('[USER] Erro ao criar/buscar cliente:', fallbackError);
+        throw fallbackError;
+      }
     }
   }
 
@@ -185,19 +245,6 @@ class UserController {
     try {
       // Normaliza o nome do procedimento
       const nomeNormalizado = this.normalizeProcedimentoName(nomeProcedimento);
-
-      // Tenta encontrar procedimento existente
-      const { data: existingProc } = await supabase
-        .from('procedimentos')
-        .select('*')
-        .eq('user_id', userId)
-        .ilike('nome', `%${nomeNormalizado}%`)
-        .limit(1)
-        .single();
-
-      if (existingProc) {
-        return existingProc;
-      }
 
       // Define tipo baseado no nome
       let tipo = 'outros';
@@ -208,45 +255,100 @@ class UserController {
         tipo = 'acido';
       }
 
-      // Cria novo procedimento
-      const { data: newProc, error } = await supabase
+      const custoMaterial = tipo === 'botox' ? 50 : tipo === 'acido' ? 200 : 100;
+
+      // UPSERT: 1 query ao invés de 2 (SELECT + INSERT)
+      // Usa constraint UNIQUE (user_id, nome) para detectar duplicatas
+      const { data, error } = await supabase
         .from('procedimentos')
-        .insert([{
+        .upsert({
           user_id: userId,
           nome: nomeNormalizado,
           tipo: tipo,
-          custo_material_ml: tipo === 'botox' ? 50 : tipo === 'acido' ? 200 : 100,
+          custo_material_ml: custoMaterial,
           valor_sugerido: 0
-        }])
+        }, {
+          onConflict: 'user_id,nome',
+          ignoreDuplicates: false
+        })
         .select()
         .single();
 
-      if (error) throw error;
-      return newProc;
-    } catch (error) {
-      if (error.code === 'PGRST116') {
-        // Não encontrado, criar
-        let tipo = 'outros';
-        const nomeLower = nomeProcedimento.toLowerCase();
-        if (nomeLower.includes('botox')) tipo = 'botox';
-        else if (nomeLower.includes('preench')) tipo = 'acido';
-
-        const { data: newProc, error: createError } = await supabase
+      if (error) {
+        // Se UPSERT falhar (ex: constraint não existe ainda), faz fallback para SELECT+INSERT
+        if (error.code === '23505' || error.message?.includes('unique')) {
+          // Constraint existe mas deu conflito - busca o existente
+          const { data: existing } = await supabase
+            .from('procedimentos')
+            .select('*')
+            .eq('user_id', userId)
+            .eq('nome', nomeNormalizado)
+            .single();
+          
+          if (existing) return existing;
+        }
+        
+        // Se não encontrou, tenta criar (fallback para método antigo)
+        const { data: newProc, error: insertError } = await supabase
           .from('procedimentos')
           .insert([{
             user_id: userId,
-            nome: this.normalizeProcedimentoName(nomeProcedimento),
+            nome: nomeNormalizado,
             tipo: tipo,
-            custo_material_ml: tipo === 'botox' ? 50 : 200,
+            custo_material_ml: custoMaterial,
             valor_sugerido: 0
           }])
           .select()
           .single();
 
-        if (createError) throw createError;
+        if (insertError) throw insertError;
         return newProc;
       }
-      throw error;
+
+      return data;
+    } catch (error) {
+      // Fallback completo: método antigo (SELECT + INSERT)
+      try {
+        const nomeNormalizado = this.normalizeProcedimentoName(nomeProcedimento);
+        
+        const { data: existingProc } = await supabase
+          .from('procedimentos')
+          .select('*')
+          .eq('user_id', userId)
+          .ilike('nome', `%${nomeNormalizado}%`)
+          .limit(1)
+          .single();
+
+        if (existingProc) {
+          return existingProc;
+        }
+
+        let tipo = 'outros';
+        const nomeLower = nomeNormalizado.toLowerCase();
+        if (nomeLower.includes('botox') || nomeLower.includes('toxina')) {
+          tipo = 'botox';
+        } else if (nomeLower.includes('preench') || nomeLower.includes('acido') || nomeLower.includes('ácido')) {
+          tipo = 'acido';
+        }
+
+        const { data: newProc, error: insertError } = await supabase
+          .from('procedimentos')
+          .insert([{
+            user_id: userId,
+            nome: nomeNormalizado,
+            tipo: tipo,
+            custo_material_ml: tipo === 'botox' ? 50 : tipo === 'acido' ? 200 : 100,
+            valor_sugerido: 0
+          }])
+          .select()
+          .single();
+
+        if (insertError) throw insertError;
+        return newProc;
+      } catch (fallbackError) {
+        console.error('[USER] Erro ao criar/buscar procedimento:', fallbackError);
+        throw fallbackError;
+      }
     }
   }
 
