@@ -20,11 +20,11 @@ class TransactionController {
     }
   }
 
-  async createAtendimento(userId, { valor, categoria, descricao, data, forma_pagamento, parcelas, bandeira_cartao }) {
+  async createAtendimento(userId, { valor, categoria, descricao, data, forma_pagamento, parcelas, bandeira_cartao, nome_cliente }) {
     try {
-      // Extrai nome do cliente da descrição se houver
-      let nomeCliente = 'Cliente WhatsApp';
-      if (descricao) {
+      // Usa nome_cliente se fornecido, senão extrai da descrição
+      let nomeCliente = nome_cliente || 'Cliente WhatsApp';
+      if (!nome_cliente && descricao) {
         // Procura por padrões como "paciente Maria", "cliente João", etc
         const matchPaciente = descricao.match(/(?:paciente|cliente|pra|para)\s+([A-Za-zÀ-ú]+)/i);
         if (matchPaciente) {

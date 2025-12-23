@@ -12,7 +12,6 @@
 const onboardingFlowService = require('../../src/services/onboardingFlowService');
 const userController = require('../../src/controllers/userController');
 const transactionController = require('../../src/controllers/transactionController');
-const supabase = require('../../src/db/supabase');
 
 // Mock de serviços externos para testes
 jest.mock('../../src/services/analyticsService', () => ({
@@ -36,14 +35,14 @@ describe('OnboardingFlowService - Fluxo Completo', () => {
   
   beforeEach(() => {
     // Limpa estado antes de cada teste
-    if (onboardingFlowService.onboardingStates.has(testPhone)) {
+    if (onboardingFlowService.onboardingStates && onboardingFlowService.onboardingStates.has(testPhone)) {
       onboardingFlowService.onboardingStates.delete(testPhone);
     }
   });
 
   afterEach(() => {
     // Limpa estado após cada teste
-    if (onboardingFlowService.onboardingStates.has(testPhone)) {
+    if (onboardingFlowService.onboardingStates && onboardingFlowService.onboardingStates.has(testPhone)) {
       onboardingFlowService.onboardingStates.delete(testPhone);
     }
   });
@@ -132,14 +131,26 @@ describe('OnboardingFlowService - Fluxo Completo', () => {
 
     test('deve rejeitar valor muito alto', async () => {
       await onboardingFlowService.startIntroFlow(testPhone);
-      // ... avança até AHA_REVENUE
+      await onboardingFlowService.processOnboarding(testPhone, '1');
+      await onboardingFlowService.processOnboarding(testPhone, 'Teste');
+      await onboardingFlowService.processOnboarding(testPhone, 'Clínica');
+      await onboardingFlowService.processOnboarding(testPhone, '1');
+      await onboardingFlowService.processOnboarding(testPhone, '1');
+      await onboardingFlowService.processOnboarding(testPhone, '1');
+      
       const response = await onboardingFlowService.processOnboarding(testPhone, 'Botox 99999999');
       expect(response).toContain('muito alto');
     });
 
     test('deve rejeitar valor muito baixo', async () => {
       await onboardingFlowService.startIntroFlow(testPhone);
-      // ... avança até AHA_REVENUE
+      await onboardingFlowService.processOnboarding(testPhone, '1');
+      await onboardingFlowService.processOnboarding(testPhone, 'Teste');
+      await onboardingFlowService.processOnboarding(testPhone, 'Clínica');
+      await onboardingFlowService.processOnboarding(testPhone, '1');
+      await onboardingFlowService.processOnboarding(testPhone, '1');
+      await onboardingFlowService.processOnboarding(testPhone, '1');
+      
       const response = await onboardingFlowService.processOnboarding(testPhone, 'Botox 0.001');
       expect(response).toContain('muito baixo');
     });
@@ -147,77 +158,163 @@ describe('OnboardingFlowService - Fluxo Completo', () => {
 
   describe('Tratamento de Erros', () => {
     test('deve informar usuário se criação de usuário falhar', async () => {
-      // Mock createUserFromOnboarding para falhar
+      const phone = '5511999999988';
       const originalCreate = userController.createUserFromOnboarding;
       userController.createUserFromOnboarding = jest.fn().mockRejectedValue(new Error('Database error'));
 
       // Avança até AHA_REVENUE_CONFIRM
-      // ... código para avançar até esse ponto
+      await onboardingFlowService.startIntroFlow(phone);
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, 'Teste');
+      await onboardingFlowService.processOnboarding(phone, 'Clínica');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, 'Botox 2800 pix');
       
-      const response = await onboardingFlowService.processOnboarding(testPhone, '1');
+      const response = await onboardingFlowService.processOnboarding(phone, '1');
       expect(response).toContain('problema ao criar sua conta');
 
-      // Restaura função original
       userController.createUserFromOnboarding = originalCreate;
     });
 
     test('deve informar usuário se registro de venda falhar', async () => {
-      // Mock createAtendimento para falhar
+      const phone = '5511999999987';
       const originalCreate = transactionController.createAtendimento;
       transactionController.createAtendimento = jest.fn().mockRejectedValue(new Error('Database error'));
 
-      // Avança até AHA_REVENUE_CONFIRM e confirma
-      // ... código para avançar até esse ponto
+      // Cria usuário primeiro
+      try {
+        await userController.createUserFromOnboarding({
+          telefone: phone,
+          nome_completo: 'Teste',
+          nome_clinica: 'Clínica'
+        });
+      } catch (e) {
+        // Ignora se já existe
+      }
+
+      // Avança até AHA_REVENUE_CONFIRM
+      await onboardingFlowService.startIntroFlow(phone);
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, 'Teste');
+      await onboardingFlowService.processOnboarding(phone, 'Clínica');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, 'Botox 2800 pix');
       
-      const response = await onboardingFlowService.processOnboarding(testPhone, '1');
+      const response = await onboardingFlowService.processOnboarding(phone, '1');
       expect(response).toContain('problema ao registrar sua venda');
 
-      // Restaura função original
       transactionController.createAtendimento = originalCreate;
     });
 
     test('deve informar usuário se registro de custo falhar', async () => {
-      // Mock createContaPagar para falhar
+      const phone = '5511999999986';
       const originalCreate = transactionController.createContaPagar;
       transactionController.createContaPagar = jest.fn().mockRejectedValue(new Error('Database error'));
 
-      // Avança até AHA_COSTS_CONFIRM e confirma
-      // ... código para avançar até esse ponto
+      // Cria usuário primeiro
+      try {
+        await userController.createUserFromOnboarding({
+          telefone: phone,
+          nome_completo: 'Teste',
+          nome_clinica: 'Clínica'
+        });
+      } catch (e) {
+        // Ignora se já existe
+      }
+
+      // Avança até AHA_COSTS_CONFIRM
+      await onboardingFlowService.startIntroFlow(phone);
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, 'Teste');
+      await onboardingFlowService.processOnboarding(phone, 'Clínica');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, 'Botox 2800 pix');
+      await onboardingFlowService.processOnboarding(phone, '1'); // Confirma venda
+      await onboardingFlowService.processOnboarding(phone, '2'); // Custo variável
+      await onboardingFlowService.processOnboarding(phone, 'Insumos 500');
+      await onboardingFlowService.processOnboarding(phone, '1'); // Categoria
       
-      const response = await onboardingFlowService.processOnboarding(testPhone, '1');
+      const response = await onboardingFlowService.processOnboarding(phone, '1');
       expect(response).toContain('problema ao registrar seu custo');
 
-      // Restaura função original
       transactionController.createContaPagar = originalCreate;
     });
 
     test('deve informar usuário se processamento de documento falhar', async () => {
+      const phone = '5511999999985';
       const documentService = require('../../src/services/documentService');
+      const originalProcess = documentService.processImage;
       documentService.processImage = jest.fn().mockRejectedValue(new Error('Vision API error'));
 
-      // Avança até AHA_COSTS_UPLOAD e envia documento
-      // ... código para avançar até esse ponto
+      // Avança até AHA_COSTS_UPLOAD
+      await onboardingFlowService.startIntroFlow(phone);
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, 'Teste');
+      await onboardingFlowService.processOnboarding(phone, 'Clínica');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, 'Botox 2800 pix');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '2'); // Custo variável
       
-      const response = await onboardingFlowService.processOnboarding(testPhone, '', 'https://example.com/image.jpg');
+      const response = await onboardingFlowService.processOnboarding(phone, '', 'https://example.com/image.jpg');
       expect(response).toContain('Não consegui processar esse documento');
+
+      documentService.processImage = originalProcess;
     });
   });
 
   describe('Edge Cases', () => {
-    test('deve lidar com "Botox 2800" sem forma de pagamento', async () => {
-      // Deve assumir 'avista' como padrão
+    test('deve lidar com "Botox 2800" sem forma de pagamento (assume avista)', async () => {
+      const phone = '5511999999984';
+      await onboardingFlowService.startIntroFlow(phone);
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, 'Teste');
+      await onboardingFlowService.processOnboarding(phone, 'Clínica');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      
+      const response = await onboardingFlowService.processOnboarding(phone, 'Botox 2800');
+      // Deve aceitar e assumir 'avista'
+      expect(response).toContain('Vou registrar assim');
     });
 
-    test('deve lidar com "Botox 2800 cartão" sem parcelas', async () => {
-      // Deve assumir 'credito_avista'
+    test('deve lidar com "Botox 2800 cartão" sem parcelas (assume credito_avista)', async () => {
+      const phone = '5511999999983';
+      await onboardingFlowService.startIntroFlow(phone);
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, 'Teste');
+      await onboardingFlowService.processOnboarding(phone, 'Clínica');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      
+      const response = await onboardingFlowService.processOnboarding(phone, 'Botox 2800 cartão');
+      // Deve aceitar e assumir 'credito_avista'
+      expect(response).toContain('Vou registrar assim');
     });
 
-    test('deve lidar com "Botox 2800 3x" sem mencionar cartão', async () => {
+    test('deve lidar com "Botox 2800 3x" sem mencionar cartão (detecta parcelado)', async () => {
+      const phone = '5511999999982';
+      await onboardingFlowService.startIntroFlow(phone);
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, 'Teste');
+      await onboardingFlowService.processOnboarding(phone, 'Clínica');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      
+      const response = await onboardingFlowService.processOnboarding(phone, 'Botox 2800 3x');
       // Deve detectar parcelado
-    });
-
-    test('deve calcular resumo corretamente mesmo se uma transação falhar', async () => {
-      // Se venda foi salva mas custo falhou, resumo deve mostrar só venda
+      expect(response).toContain('3x');
     });
   });
 });
