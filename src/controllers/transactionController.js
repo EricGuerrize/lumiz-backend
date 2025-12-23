@@ -127,7 +127,7 @@ class TransactionController {
     }
   }
 
-  async createContaPagar(userId, { valor, categoria, descricao, data, parcelas }) {
+  async createContaPagar(userId, { valor, categoria, descricao, data, tipo, parcelas }) {
     try {
       // === GERAÇÃO DE PARCELAS (CUSTOS) ===
       // Se for parcelado, cria múltiplas entradas em contas_pagar
@@ -151,7 +151,7 @@ class TransactionController {
               descricao: descricaoParcela,
               valor: valorParcela,
               data: dataVencimento.toISOString().split('T')[0],
-              tipo: 'fixa', // Mantém 'fixa' ou 'variavel' conforme lógica original, aqui padronizado
+              tipo: tipo || 'fixa', // Usa tipo passado ou 'fixa' como padrão
               categoria: categoria || 'Outros',
               status_pagamento: i === 0 ? 'pago' : 'pendente', // Primeira parcela paga, resto pendente? Ou tudo pago?
               // Assumindo que se registrou "Gastei", já pagou a primeira ou tudo se for cartão.
@@ -178,7 +178,7 @@ class TransactionController {
           descricao: categoria || 'Despesa',
           valor: valor,
           data: data || new Date().toISOString().split('T')[0],
-          tipo: 'fixa',
+          tipo: tipo || 'fixa', // Usa tipo passado ou 'fixa' como padrão
           categoria: categoria || 'Outros',
           status_pagamento: 'pago',
           observacoes: descricao || null
