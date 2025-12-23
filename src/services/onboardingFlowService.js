@@ -79,11 +79,25 @@ function extractBestAmountFromText(text = '') {
 }
 
 // Correção #13: Validação de valor unificada
+// Correção #7: Adiciona validação de limites
 function validateAndExtractValue(text, errorMessage = null) {
     const valor = extractBestAmountFromText(text);
     if (!valor || Number.isNaN(valor) || valor <= 0) {
         return { valid: false, error: errorMessage || onboardingCopy.ahaRevenueMissingValue() };
     }
+    
+    // Validação de limites
+    const MAX_VALUE = 10000000; // R$ 10 milhões
+    const MIN_VALUE = 0.01; // R$ 0,01
+    
+    if (valor > MAX_VALUE) {
+        return { valid: false, error: onboardingCopy.valueTooHigh() };
+    }
+    
+    if (valor < MIN_VALUE) {
+        return { valid: false, error: onboardingCopy.valueTooLow() };
+    }
+    
     return { valid: true, valor };
 }
 
@@ -156,13 +170,15 @@ function validateChoice(message, options) {
 }
 
 // Correção #10: Calcular resumo em memória ao invés de query
+// Correção #2: Cálculo de resumo usando apenas dados salvos
 function calculateSummaryFromOnboardingData(onboarding) {
     const sale = onboarding.data?.pending_sale;
     const cost = onboarding.data?.pending_cost;
     
-    const entradas = sale?.valor || 0;
-    const custosFixos = (cost?.tipo === 'fixa' ? cost.valor : 0) || 0;
-    const custosVariaveis = (cost?.tipo === 'variavel' ? cost.valor : 0) || 0;
+    // Só conta se foi salvo com sucesso (tem flag saved)
+    const entradas = (sale?.saved && sale?.valor) ? sale.valor : 0;
+    const custosFixos = (cost?.saved && cost?.tipo === 'fixa' && cost?.valor) ? cost.valor : 0;
+    const custosVariaveis = (cost?.saved && cost?.tipo === 'variavel' && cost?.valor) ? cost.valor : 0;
     const saldoParcial = entradas - custosFixos - custosVariaveis;
 
     return {
@@ -269,19 +285,43 @@ class OnboardingStateHandlers {
     }
 
     async handleProfileName(onboarding, messageTrimmed, respond) {
+        // Correção #6: Validação melhorada de nome
         if (messageTrimmed.length < MIN_NAME_LENGTH) {
             return await respond(onboardingCopy.nameTooShort());
         }
-        onboarding.data.nome = messageTrimmed;
+        
+        // Valida que tem pelo menos uma letra (não só números ou símbolos)
+        if (!/[a-zA-ZÀ-ÿ]/.test(messageTrimmed)) {
+            return await respond(onboardingCopy.invalidName());
+        }
+        
+        // Valida comprimento máximo
+        if (messageTrimmed.length > 100) {
+            return await respond('Nome muito longo. Por favor, use até 100 caracteres.');
+        }
+        
+        onboarding.data.nome = messageTrimmed.trim();
         onboarding.step = 'PROFILE_CLINIC';
         return await respond(onboardingCopy.profileClinicQuestion());
     }
 
     async handleProfileClinic(onboarding, messageTrimmed, respond) {
+        // Correção #6: Validação melhorada de nome da clínica
         if (messageTrimmed.length < MIN_CLINIC_NAME_LENGTH) {
             return await respond(onboardingCopy.clinicNameTooShort());
         }
-        onboarding.data.clinica = messageTrimmed;
+        
+        // Valida que tem pelo menos uma letra (não só números ou símbolos)
+        if (!/[a-zA-ZÀ-ÿ]/.test(messageTrimmed)) {
+            return await respond(onboardingCopy.invalidClinicName());
+        }
+        
+        // Valida comprimento máximo
+        if (messageTrimmed.length > 100) {
+            return await respond('Nome da clínica muito longo. Por favor, use até 100 caracteres.');
+        }
+        
+        onboarding.data.clinica = messageTrimmed.trim();
         onboarding.step = 'PROFILE_ROLE';
         return await respond(onboardingCopy.profileRoleQuestion());
     }
@@ -360,13 +400,22 @@ class OnboardingStateHandlers {
             data: new Date().toISOString().split('T')[0]
         };
 
-        // Valida campos obrigatórios
+        // Correção #4: Validação melhorada de forma_pagamento
+        // Normaliza forma_pagamento
         if (!sale.forma_pagamento) {
-            return await respond(onboardingCopy.ahaRevenueMissingPayment());
+            // Se não detectou, assume 'avista' como padrão seguro
+            sale.forma_pagamento = 'avista';
         }
-
-        if ((sale.forma_pagamento === 'parcelado' || sale.forma_pagamento.includes('cartão') || sale.forma_pagamento.includes('cartao')) && !sale.parcelas) {
-            return await respond(onboardingCopy.ahaRevenueMissingInstallments());
+        
+        // Se mencionou cartão mas não tem parcelas, assume à vista
+        if ((sale.forma_pagamento === 'parcelado' || 
+             sale.forma_pagamento.includes('cartão') || 
+             sale.forma_pagamento.includes('cartao') || 
+             sale.forma_pagamento.includes('credito') ||
+             sale.forma_pagamento.includes('crédito')) && !sale.parcelas) {
+            // Se mencionou cartão mas não tem número de parcelas, assume crédito à vista
+            sale.forma_pagamento = 'credito_avista';
+            sale.parcelas = null;
         }
 
         onboarding.data.pending_sale = sale;
@@ -420,10 +469,11 @@ class OnboardingStateHandlers {
                 }
             }
 
-            // Registra venda real
+            // Correção #1: Tratamento de erro ao registrar venda
             if (userId) {
+                let saleSaved = false;
                 try {
-                    await transactionController.createAtendimento(userId, {
+                    const atendimento = await transactionController.createAtendimento(userId, {
                         valor: sale.valor,
                         categoria: sale.procedimento || 'Procedimento',
                         descricao: sale.procedimento || `Venda ${sale.paciente ? `para ${sale.paciente}` : ''}`,
@@ -434,15 +484,36 @@ class OnboardingStateHandlers {
                         nome_cliente: sale.paciente
                     });
 
-                    await analyticsService.track('onboarding_revenue_registered', {
-                        phone: normalizedPhone,
-                        userId,
-                        source: 'whatsapp',
-                        properties: { valor: sale.valor }
-                    });
+                    // Verifica se foi salva com sucesso (createAtendimento retorna o objeto diretamente)
+                    if (atendimento && atendimento.id) {
+                        saleSaved = true;
+                        sale.saved = true; // Marca como salva
+                        sale.savedId = atendimento.id; // Guarda ID para referência
+
+                        await analyticsService.track('onboarding_revenue_registered', {
+                            phone: normalizedPhone,
+                            userId,
+                            source: 'whatsapp',
+                            properties: { valor: sale.valor }
+                        });
+                    } else {
+                        // Se não retornou objeto com id, considera falha
+                        console.error('[ONBOARDING] createAtendimento não retornou objeto válido:', atendimento);
+                        return await respond(onboardingCopy.revenueSaveError());
+                    }
                 } catch (e) {
                     console.error('[ONBOARDING] Erro ao registrar venda:', e);
+                    // Informa usuário do erro
+                    return await respond(onboardingCopy.revenueSaveError());
                 }
+
+                // Se não salvou, não avança
+                if (!saleSaved) {
+                    return await respond(onboardingCopy.revenueSaveError());
+                }
+            } else {
+                // Se não tem userId, não pode salvar
+                return await respond(onboardingCopy.userCreationError());
             }
 
             onboarding.step = 'AHA_COSTS_INTRO';
@@ -493,10 +564,17 @@ class OnboardingStateHandlers {
             return await respond(onboardingCopy.ahaCostsCategoryQuestion());
         }
 
+        // Correção #3: Tratamento de erro em processamento de documento
         // Se recebeu documento E não tem valor no texto, processa documento
         if (mediaUrl) {
             try {
-                const result = await documentService.processImage(mediaUrl, null);
+                // Timeout para processamento de documento (30 segundos)
+                const processPromise = documentService.processImage(mediaUrl, null);
+                const timeoutPromise = new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('Timeout ao processar documento')), 30000)
+                );
+                
+                const result = await Promise.race([processPromise, timeoutPromise]);
                 
                 let transacao = null;
                 if (result.transacoes && result.transacoes.length > 0) {
@@ -517,9 +595,14 @@ class OnboardingStateHandlers {
                         vencimento: transacao.data ? formatDate(transacao.data) : '—',
                         fornecedor: transacao.categoria || '—'
                     }));
+                } else {
+                    // Documento processado mas não extraiu transação válida
+                    return await respond(onboardingCopy.documentProcessError());
                 }
             } catch (e) {
                 console.error('[ONBOARDING] Erro ao processar documento:', e);
+                // Informa usuário do erro e oferece alternativa
+                return await respond(onboardingCopy.documentProcessError());
             }
         }
 
@@ -605,10 +688,12 @@ class OnboardingStateHandlers {
                 return await respond(onboardingCopy.costErrorRetry());
             }
 
+            // Correção #1: Tratamento de erro ao registrar custo
             const userId = onboarding.data.userId;
             if (userId) {
+                let costSaved = false;
                 try {
-                    await transactionController.createContaPagar(userId, {
+                    const conta = await transactionController.createContaPagar(userId, {
                         valor: cost.valor,
                         categoria: cost.categoria,
                         descricao: cost.descricao,
@@ -616,19 +701,40 @@ class OnboardingStateHandlers {
                         tipo: cost.tipo
                     });
 
-                    await analyticsService.track('onboarding_cost_registered', {
-                        phone: normalizedPhone,
-                        userId,
-                        source: 'whatsapp',
-                        properties: { valor: cost.valor, tipo: cost.tipo }
-                    });
+                    // Verifica se foi salva com sucesso (createContaPagar retorna o objeto diretamente)
+                    if (conta && conta.id) {
+                        costSaved = true;
+                        cost.saved = true; // Marca como salva
+                        cost.savedId = conta.id; // Guarda ID para referência
+
+                        await analyticsService.track('onboarding_cost_registered', {
+                            phone: normalizedPhone,
+                            userId,
+                            source: 'whatsapp',
+                            properties: { valor: cost.valor, tipo: cost.tipo }
+                        });
+                    } else {
+                        // Se não retornou objeto com id, considera falha
+                        console.error('[ONBOARDING] createContaPagar não retornou objeto válido:', conta);
+                        return await respond(onboardingCopy.costSaveError());
+                    }
                 } catch (e) {
                     console.error('[ONBOARDING] Erro ao registrar custo:', e);
+                    // Informa usuário do erro
+                    return await respond(onboardingCopy.costSaveError());
                 }
+
+                // Se não salvou, não avança
+                if (!costSaved) {
+                    return await respond(onboardingCopy.costSaveError());
+                }
+            } else {
+                // Se não tem userId, não pode salvar
+                return await respond(onboardingCopy.userCreationError());
             }
 
             onboarding.step = 'AHA_SUMMARY';
-            // Correção #10: Usa dados em memória ao invés de query
+            // Correção #2: Usa dados salvos (com flag saved) para calcular resumo
             const summary = calculateSummaryFromOnboardingData(onboarding);
             return await respond(onboardingCopy.ahaCostsRegistered() + '\n\n' + onboardingCopy.ahaSummary(summary), true); // Persist imediato - custo registrado
         }
@@ -912,7 +1018,9 @@ class OnboardingFlowService {
             }
         };
 
+        // Correção #5: Sincronização de estado
         const respond = async (text, shouldPersistImmediate = false) => {
+            // Sempre persiste estado antes de responder
             await persistState(shouldPersistImmediate);
             return text;
         };

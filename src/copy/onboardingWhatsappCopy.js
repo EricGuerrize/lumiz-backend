@@ -408,6 +408,51 @@ module.exports = {
     },
 
     // ============================================================
+    // Mensagens de erro críticas
+    // ============================================================
+    revenueSaveError() {
+        return (
+            'Ops, tive um problema ao registrar sua venda 😔\n\n' +
+            'Pode tentar de novo? Se o problema continuar, me avise que eu chamo alguém do time.'
+        );
+    },
+
+    costSaveError() {
+        return (
+            'Ops, tive um problema ao registrar seu custo 😔\n\n' +
+            'Pode tentar de novo? Se o problema continuar, me avise que eu chamo alguém do time.'
+        );
+    },
+
+    documentProcessError() {
+        return (
+            'Não consegui processar esse documento 🤔\n\n' +
+            'Pode me mandar o valor e descrição em texto?\n\n' +
+            'Exemplo: _"Insumos R$ 500"_'
+        );
+    },
+
+    invalidName() {
+        return 'Nome inválido. Por favor, digite um nome real (com letras).';
+    },
+
+    invalidClinicName() {
+        return 'Nome da clínica inválido. Por favor, digite um nome real (com letras).';
+    },
+
+    valueTooHigh() {
+        return 'Valor muito alto. O máximo é R$ 10.000.000. Pode verificar e tentar novamente?';
+    },
+
+    valueTooLow() {
+        return 'Valor muito baixo. O mínimo é R$ 0,01. Pode verificar e tentar novamente?';
+    },
+
+    valueInvalid() {
+        return 'Valor inválido. Por favor, digite um valor válido (ex: R$ 500 ou 1500.50).';
+    },
+
+    // ============================================================
     // Funções legadas (mantidas para compatibilidade)
     // ============================================================
     introGreeting() {

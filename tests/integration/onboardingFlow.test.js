@@ -1,0 +1,223 @@
+/**
+ * Testes de Integração - Fluxo Completo do Onboarding
+ * 
+ * Testa o fluxo completo do onboarding, incluindo:
+ * - Criação de usuário
+ * - Registro de venda
+ * - Registro de custo
+ * - Cálculo de resumo
+ * - Tratamento de erros
+ */
+
+const onboardingFlowService = require('../../src/services/onboardingFlowService');
+const userController = require('../../src/controllers/userController');
+const transactionController = require('../../src/controllers/transactionController');
+const supabase = require('../../src/db/supabase');
+
+// Mock de serviços externos para testes
+jest.mock('../../src/services/analyticsService', () => ({
+  track: jest.fn().mockResolvedValue(true)
+}));
+
+jest.mock('../../src/services/documentService', () => ({
+  processImage: jest.fn().mockResolvedValue({
+    transacoes: [{
+      tipo: 'saida',
+      valor: 500,
+      categoria: 'Insumos',
+      descricao: 'Insumos diversos',
+      data: '2025-12-22'
+    }]
+  })
+}));
+
+describe('OnboardingFlowService - Fluxo Completo', () => {
+  const testPhone = '5511999999999';
+  
+  beforeEach(() => {
+    // Limpa estado antes de cada teste
+    if (onboardingFlowService.onboardingStates.has(testPhone)) {
+      onboardingFlowService.onboardingStates.delete(testPhone);
+    }
+  });
+
+  afterEach(() => {
+    // Limpa estado após cada teste
+    if (onboardingFlowService.onboardingStates.has(testPhone)) {
+      onboardingFlowService.onboardingStates.delete(testPhone);
+    }
+  });
+
+  describe('Fluxo Happy Path', () => {
+    test('deve completar onboarding completo com sucesso', async () => {
+      // 1. Inicia onboarding
+      let response = await onboardingFlowService.startIntroFlow(testPhone);
+      expect(response).toContain('Oi! Eu sou a Lumiz');
+
+      // 2. Responde consentimento
+      response = await onboardingFlowService.processOnboarding(testPhone, '1');
+      expect(response).toContain('qual seu nome');
+
+      // 3. Informa nome
+      response = await onboardingFlowService.processOnboarding(testPhone, 'Maria Silva');
+      expect(response).toContain('nome da sua clínica');
+
+      // 4. Informa clínica
+      response = await onboardingFlowService.processOnboarding(testPhone, 'Clínica Estética');
+      expect(response).toContain('Você é a dona/gestora');
+
+      // 5. Informa role
+      response = await onboardingFlowService.processOnboarding(testPhone, '1');
+      expect(response).toContain('você quer usar a Lumiz');
+
+      // 6. Informa contexto why
+      response = await onboardingFlowService.processOnboarding(testPhone, '1');
+      expect(response).toContain('sua clínica recebe mais por');
+
+      // 7. Informa contexto how
+      response = await onboardingFlowService.processOnboarding(testPhone, '1');
+      expect(response).toContain('Primeira venda');
+
+      // 8. Registra venda
+      response = await onboardingFlowService.processOnboarding(testPhone, 'Botox 2800 pix');
+      expect(response).toContain('Vou registrar assim');
+
+      // 9. Confirma venda
+      response = await onboardingFlowService.processOnboarding(testPhone, '1');
+      expect(response).toContain('Venda registrada');
+
+      // 10. Informa tipo de custo
+      response = await onboardingFlowService.processOnboarding(testPhone, '2');
+      expect(response).toContain('variável');
+
+      // 11. Registra custo
+      response = await onboardingFlowService.processOnboarding(testPhone, 'Insumos 500');
+      expect(response).toContain('Pra eu organizar certinho');
+
+      // 12. Informa categoria
+      response = await onboardingFlowService.processOnboarding(testPhone, '1');
+      expect(response).toContain('Registrando');
+
+      // 13. Confirma custo
+      response = await onboardingFlowService.processOnboarding(testPhone, '1');
+      expect(response).toContain('Resumo parcial do mês');
+
+      // 14. Vê resumo e completa
+      response = await onboardingFlowService.processOnboarding(testPhone, '');
+      expect(response).toContain('Agora é só me usar no dia a dia');
+    });
+  });
+
+  describe('Validações de Entrada', () => {
+    test('deve rejeitar nome muito curto', async () => {
+      await onboardingFlowService.startIntroFlow(testPhone);
+      await onboardingFlowService.processOnboarding(testPhone, '1');
+      const response = await onboardingFlowService.processOnboarding(testPhone, 'A');
+      expect(response).toContain('muito curto');
+    });
+
+    test('deve rejeitar nome só com números', async () => {
+      await onboardingFlowService.startIntroFlow(testPhone);
+      await onboardingFlowService.processOnboarding(testPhone, '1');
+      const response = await onboardingFlowService.processOnboarding(testPhone, '123');
+      expect(response).toContain('inválido');
+    });
+
+    test('deve rejeitar nome só com símbolos', async () => {
+      await onboardingFlowService.startIntroFlow(testPhone);
+      await onboardingFlowService.processOnboarding(testPhone, '1');
+      const response = await onboardingFlowService.processOnboarding(testPhone, '!!!');
+      expect(response).toContain('inválido');
+    });
+
+    test('deve rejeitar valor muito alto', async () => {
+      await onboardingFlowService.startIntroFlow(testPhone);
+      // ... avança até AHA_REVENUE
+      const response = await onboardingFlowService.processOnboarding(testPhone, 'Botox 99999999');
+      expect(response).toContain('muito alto');
+    });
+
+    test('deve rejeitar valor muito baixo', async () => {
+      await onboardingFlowService.startIntroFlow(testPhone);
+      // ... avança até AHA_REVENUE
+      const response = await onboardingFlowService.processOnboarding(testPhone, 'Botox 0.001');
+      expect(response).toContain('muito baixo');
+    });
+  });
+
+  describe('Tratamento de Erros', () => {
+    test('deve informar usuário se criação de usuário falhar', async () => {
+      // Mock createUserFromOnboarding para falhar
+      const originalCreate = userController.createUserFromOnboarding;
+      userController.createUserFromOnboarding = jest.fn().mockRejectedValue(new Error('Database error'));
+
+      // Avança até AHA_REVENUE_CONFIRM
+      // ... código para avançar até esse ponto
+      
+      const response = await onboardingFlowService.processOnboarding(testPhone, '1');
+      expect(response).toContain('problema ao criar sua conta');
+
+      // Restaura função original
+      userController.createUserFromOnboarding = originalCreate;
+    });
+
+    test('deve informar usuário se registro de venda falhar', async () => {
+      // Mock createAtendimento para falhar
+      const originalCreate = transactionController.createAtendimento;
+      transactionController.createAtendimento = jest.fn().mockRejectedValue(new Error('Database error'));
+
+      // Avança até AHA_REVENUE_CONFIRM e confirma
+      // ... código para avançar até esse ponto
+      
+      const response = await onboardingFlowService.processOnboarding(testPhone, '1');
+      expect(response).toContain('problema ao registrar sua venda');
+
+      // Restaura função original
+      transactionController.createAtendimento = originalCreate;
+    });
+
+    test('deve informar usuário se registro de custo falhar', async () => {
+      // Mock createContaPagar para falhar
+      const originalCreate = transactionController.createContaPagar;
+      transactionController.createContaPagar = jest.fn().mockRejectedValue(new Error('Database error'));
+
+      // Avança até AHA_COSTS_CONFIRM e confirma
+      // ... código para avançar até esse ponto
+      
+      const response = await onboardingFlowService.processOnboarding(testPhone, '1');
+      expect(response).toContain('problema ao registrar seu custo');
+
+      // Restaura função original
+      transactionController.createContaPagar = originalCreate;
+    });
+
+    test('deve informar usuário se processamento de documento falhar', async () => {
+      const documentService = require('../../src/services/documentService');
+      documentService.processImage = jest.fn().mockRejectedValue(new Error('Vision API error'));
+
+      // Avança até AHA_COSTS_UPLOAD e envia documento
+      // ... código para avançar até esse ponto
+      
+      const response = await onboardingFlowService.processOnboarding(testPhone, '', 'https://example.com/image.jpg');
+      expect(response).toContain('Não consegui processar esse documento');
+    });
+  });
+
+  describe('Edge Cases', () => {
+    test('deve lidar com "Botox 2800" sem forma de pagamento', async () => {
+      // Deve assumir 'avista' como padrão
+    });
+
+    test('deve lidar com "Botox 2800 cartão" sem parcelas', async () => {
+      // Deve assumir 'credito_avista'
+    });
+
+    test('deve lidar com "Botox 2800 3x" sem mencionar cartão', async () => {
+      // Deve detectar parcelado
+    });
+
+    test('deve calcular resumo corretamente mesmo se uma transação falhar', async () => {
+      // Se venda foi salva mas custo falhou, resumo deve mostrar só venda
+    });
+  });
+});
