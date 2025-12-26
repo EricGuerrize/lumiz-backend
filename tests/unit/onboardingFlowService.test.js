@@ -1,5 +1,16 @@
 const onboardingFlowService = require('../../src/services/onboardingFlowService');
 
+// Mock de serviços externos
+jest.mock('../../src/services/analyticsService', () => ({
+  track: jest.fn().mockResolvedValue(true)
+}));
+
+jest.mock('../../src/services/onboardingService', () => ({
+  getWhatsappState: jest.fn().mockResolvedValue(null),
+  upsertWhatsappState: jest.fn().mockResolvedValue(true),
+  clearWhatsappState: jest.fn().mockResolvedValue(true)
+}));
+
 // Funções utilitárias não exportadas - testamos indiretamente via comportamento
 // Mas podemos testar funções públicas e fluxos
 

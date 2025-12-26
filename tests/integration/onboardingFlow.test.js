@@ -316,5 +316,157 @@ describe('OnboardingFlowService - Fluxo Completo', () => {
       // Deve detectar parcelado
       expect(response).toContain('3x');
     });
+
+    test('deve extrair valor de "Insumos R$ 500,00"', async () => {
+      const phone = '5511999999981';
+      await onboardingFlowService.startIntroFlow(phone);
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, 'Teste');
+      await onboardingFlowService.processOnboarding(phone, 'Clínica');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, 'Botox 2800 pix');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '2');
+      
+      const response = await onboardingFlowService.processOnboarding(phone, 'Insumos R$ 500,00');
+      expect(response).toContain('500');
+    });
+
+    test('deve extrair valor de "Insumos 500.50"', async () => {
+      const phone = '5511999999980';
+      await onboardingFlowService.startIntroFlow(phone);
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, 'Teste');
+      await onboardingFlowService.processOnboarding(phone, 'Clínica');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, 'Botox 2800 pix');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '2');
+      
+      const response = await onboardingFlowService.processOnboarding(phone, 'Insumos 500.50');
+      expect(response).toContain('500.50');
+    });
+
+    test('deve extrair valor de "Insumos 1.500,50"', async () => {
+      const phone = '5511999999979';
+      await onboardingFlowService.startIntroFlow(phone);
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, 'Teste');
+      await onboardingFlowService.processOnboarding(phone, 'Clínica');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, 'Botox 2800 pix');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '2');
+      
+      const response = await onboardingFlowService.processOnboarding(phone, 'Insumos 1.500,50');
+      expect(response).toContain('1500.50');
+    });
+  });
+
+  describe('Estados Inconsistentes', () => {
+    test('deve retomar onboarding após reinício do servidor', async () => {
+      const phone = '5511999999978';
+      const onboardingService = require('../../src/services/onboardingService');
+      
+      // Simula estado persistido
+      onboardingService.getWhatsappState = jest.fn().mockResolvedValue({
+        step: 'AHA_REVENUE',
+        data: {
+          telefone: phone,
+          nome: 'Teste',
+          clinica: 'Clínica',
+          role: 'dona_gestora',
+          context_why: 'organizar_dia_a_dia',
+          context_how: 'mais_pix'
+        },
+        startTime: Date.now()
+      });
+
+      const response = await onboardingFlowService.startIntroFlow(phone);
+      // Deve retomar do passo AHA_REVENUE
+      expect(response).toContain('Primeira venda');
+    });
+
+    test('deve lidar com estado em memória diferente do banco', async () => {
+      const phone = '5511999999977';
+      const onboardingService = require('../../src/services/onboardingService');
+      
+      // Estado em memória
+      await onboardingFlowService.startIntroFlow(phone);
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, 'Teste');
+      
+      // Estado no banco diferente (mais avançado)
+      onboardingService.getWhatsappState = jest.fn().mockResolvedValue({
+        step: 'AHA_REVENUE',
+        data: {
+          telefone: phone,
+          nome: 'Teste',
+          clinica: 'Clínica'
+        }
+      });
+
+      // Ao reiniciar, deve usar estado do banco
+      const response = await onboardingFlowService.startIntroFlow(phone);
+      expect(response).toContain('Primeira venda');
+    });
+  });
+
+  describe('Cálculo de Resumo', () => {
+    test('deve calcular resumo corretamente após salvar venda e custo', async () => {
+      const phone = '5511999999976';
+      
+      // Completa onboarding
+      await onboardingFlowService.startIntroFlow(phone);
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, 'Teste');
+      await onboardingFlowService.processOnboarding(phone, 'Clínica');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, 'Botox 2800 pix');
+      await onboardingFlowService.processOnboarding(phone, '1'); // Confirma venda
+      await onboardingFlowService.processOnboarding(phone, '2'); // Custo variável
+      await onboardingFlowService.processOnboarding(phone, 'Insumos 500');
+      await onboardingFlowService.processOnboarding(phone, '1'); // Categoria
+      
+      const response = await onboardingFlowService.processOnboarding(phone, '1'); // Confirma custo
+      
+      // Deve mostrar resumo com valores corretos
+      expect(response).toContain('Resumo parcial do mês');
+      expect(response).toContain('2800'); // Entrada
+      expect(response).toContain('500'); // Custo variável
+      expect(response).toContain('2300'); // Saldo parcial (2800 - 500)
+    });
+
+    test('deve calcular resumo apenas com dados salvos (flag saved)', async () => {
+      const phone = '5511999999975';
+      const transactionController = require('../../src/controllers/transactionController');
+      const originalCreate = transactionController.createAtendimento;
+      
+      // Simula falha ao salvar venda
+      transactionController.createAtendimento = jest.fn().mockResolvedValue(null);
+      
+      await onboardingFlowService.startIntroFlow(phone);
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, 'Teste');
+      await onboardingFlowService.processOnboarding(phone, 'Clínica');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, 'Botox 2800 pix');
+      
+      // Deve informar erro e não avançar
+      const response = await onboardingFlowService.processOnboarding(phone, '1');
+      expect(response).toContain('problema ao registrar sua venda');
+      
+      transactionController.createAtendimento = originalCreate;
+    });
   });
 });
