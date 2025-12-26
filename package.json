@@ -8,7 +8,10 @@
     "dev": "nodemon src/server.js",
     "test": "NODE_ENV=test node tests/apiSmoke.test.js",
     "test:unit": "jest tests/unit --coverage",
-    "test:all": "npm run test && npm run test:unit",
+    "test:integration": "jest tests/integration --coverage",
+    "test:e2e": "jest tests/e2e --coverage",
+    "test:onboarding": "jest tests --testNamePattern=onboarding --coverage",
+    "test:all": "npm run test && npm run test:unit && npm run test:integration && npm run test:e2e",
     "build": "npm install --include=optional"
   },
   "dependencies": {
@@ -47,7 +50,7 @@
       "/tests/"
     ],
     "testMatch": [
-      "**/tests/unit/**/*.test.js"
+      "**/tests/**/*.test.js"
     ]
   }
 }
