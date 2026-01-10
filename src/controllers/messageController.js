@@ -58,7 +58,14 @@ class MessageController {
 
       // Verifica se está em processo de onboarding
       if (onboardingFlowService.isOnboarding(normalizedPhone)) {
-        return await onboardingFlowService.processOnboarding(normalizedPhone, message);
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'messageController.js:60',message:'Calling processOnboarding',data:{phone:normalizedPhone,message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
+        const result = await onboardingFlowService.processOnboarding(normalizedPhone, message);
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'messageController.js:62',message:'processOnboarding result',data:{result,resultType:typeof result,resultLength:result?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
+        return result;
       }
 
       // Detecta mensagem inicial do teste gratuito (link do site)
@@ -170,6 +177,18 @@ class MessageController {
       return response;
     } catch (error) {
       console.error('Erro ao processar mensagem:', error);
+      
+      // Detecta erros específicos de conexão com Supabase
+      if (error.message && (
+        error.message.includes('fetch failed') ||
+        error.message.includes('Erro de conexão com o banco de dados') ||
+        error.message.includes('ENOTFOUND') ||
+        error.message.includes('ECONNREFUSED')
+      )) {
+        console.error('[MESSAGE] Erro de conexão com Supabase detectado');
+        return 'Ops, estou com um probleminha de conexão agora 😅\n\nTenta de novo em alguns segundos. Se o problema continuar, pode ser que o servidor esteja temporariamente indisponível.';
+      }
+      
       return 'Eita, deu um erro aqui 😅\n\nTenta de novo! Se o problema continuar, me manda a mensagem de um jeito mais simples.\n\nExemplo: _"Botox 2800 cliente Maria"_';
     }
   }

@@ -50,6 +50,13 @@ class UserController {
 
       return existingUser || null;
     } catch (error) {
+      // Melhor tratamento de erros de conexão
+      if (error.message && error.message.includes('fetch failed')) {
+        console.error('[USER] Erro de conexão com Supabase ao buscar usuário:', error.message);
+        console.error('[USER] Código:', error.code || 'N/A');
+        // Relança o erro para que o caller possa tratar
+        throw new Error(`Erro de conexão com o banco de dados: ${error.message}`);
+      }
       console.error('Erro ao buscar usuário:', error);
       throw error;
     }
