@@ -3,6 +3,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const supabase = require('../db/supabase');
 const transactionController = require('../controllers/transactionController');
 const evolutionService = require('./evolutionService');
+const { formatarMoeda } = require('../utils/currency');
 
 class InsightService {
   constructor() {
@@ -125,7 +126,7 @@ Hoje:
 - Custos hoje: ${metrics.todayStats.custos.toFixed(2)}
 - Lucro hoje: ${metrics.todayStats.lucro.toFixed(2)}
 
-Top procedimentos: ${(metrics.ranking.ranking || []).slice(0, 3).map(item => `${item.nome} (${item.quantidade}x, R$ ${item.valor.toFixed(2)})`).join('; ') || 'sem dados'}
+Top procedimentos: ${(metrics.ranking.ranking || []).slice(0, 3).map(item => `${item.nome} (${item.quantidade}x, ${formatarMoeda(item.valor)})`).join('; ') || 'sem dados'}
 
 Escreva insights em tom positivo, prático, sempre sugerindo próximos passos.
 `;

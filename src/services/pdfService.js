@@ -1,6 +1,7 @@
 const PDFDocument = require('pdfkit');
 const supabase = require('../db/supabase');
 const transactionController = require('../controllers/transactionController');
+const { formatarMoeda } = require('../utils/currency');
 
 class PdfService {
   /**
@@ -74,13 +75,13 @@ class PdfService {
         .fillColor('#000')
         .text(`Faturamento:`, 50, yPos)
         .fillColor('#10B981')
-        .text(`R$ ${report.entradas.toFixed(2)}`, 200, yPos, { align: 'right' });
+        .text(formatarMoeda(report.entradas), 200, yPos, { align: 'right' });
 
       yPos += 25;
       doc.fillColor('#000')
         .text(`Custos:`, 50, yPos)
         .fillColor('#EF4444')
-        .text(`R$ ${report.saidas.toFixed(2)}`, 200, yPos, { align: 'right' });
+        .text(formatarMoeda(report.saidas), 200, yPos, { align: 'right' });
 
       yPos += 25;
       doc.fillColor('#000')
@@ -88,7 +89,7 @@ class PdfService {
         .text(`Lucro Líquido:`, 50, yPos)
         .fillColor(lucro >= 0 ? '#10B981' : '#EF4444')
         .fontSize(16)
-        .text(`R$ ${lucro.toFixed(2)} (${margemPercentual}%)`, 200, yPos, { align: 'right' });
+        .text(`${formatarMoeda(lucro)} (${margemPercentual}%)`, 200, yPos, { align: 'right' });
 
       yPos += 35;
       doc.fontSize(11)
@@ -118,7 +119,7 @@ class PdfService {
             .fillColor('#000')
             .text(`${data.tipo === 'entrada' ? '(+)' : '(-)'} ${cat}:`, 70, yPos)
             .fillColor(data.tipo === 'entrada' ? '#10B981' : '#EF4444')
-            .text(`R$ ${data.total.toFixed(2)}`, 450, yPos, { align: 'right' });
+            .text(formatarMoeda(data.total), 450, yPos, { align: 'right' });
 
           yPos += 20;
         });
@@ -157,7 +158,7 @@ class PdfService {
             .text(tipo, 120, yPos)
             .text(t.categories?.name || 'Sem categoria', 200, yPos)
             .fillColor(tipo === 'RECEITA' ? '#10B981' : '#EF4444')
-            .text(`R$ ${valor.toFixed(2)}`, 450, yPos, { align: 'right' });
+            .text(formatarMoeda(valor), 450, yPos, { align: 'right' });
 
           if (t.description) {
             yPos += 12;

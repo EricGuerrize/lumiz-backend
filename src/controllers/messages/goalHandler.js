@@ -1,5 +1,6 @@
 const supabase = require('../../db/supabase');
 const transactionController = require('../transactionController');
+const { formatarMoeda } = require('../../utils/currency');
 
 /**
  * Handler para metas e objetivos
@@ -30,7 +31,7 @@ class GoalHandler {
         return 'Erro ao definir meta. Tente novamente.';
       }
 
-      return `*Meta definida com sucesso!*\n\nMeta mensal: R$ ${parseFloat(valor).toFixed(2)}\n\nPara ver seu progresso, digite "meta".`;
+      return `*Meta definida com sucesso!*\n\nMeta mensal: ${formatarMoeda(parseFloat(valor))}\n\nPara ver seu progresso, digite "meta".`;
     } catch (error) {
       console.error('Erro ao definir meta:', error);
       return 'Erro ao definir meta. Tente novamente.';
@@ -63,8 +64,8 @@ class GoalHandler {
       const faltam = Math.max(0, meta - faturamentoAtual);
 
       let response = `*PROGRESSO DA META*\n\n`;
-      response += `Meta mensal: R$ ${meta.toFixed(2)}\n`;
-      response += `Faturamento atual: R$ ${faturamentoAtual.toFixed(2)}\n`;
+      response += `Meta mensal: ${formatarMoeda(meta)}\n`;
+      response += `Faturamento atual: ${formatarMoeda(faturamentoAtual)}\n`;
       response += `Progresso: ${progresso.toFixed(1)}%\n\n`;
 
       // Barra de progresso visual
@@ -73,7 +74,7 @@ class GoalHandler {
       response += `[${'▓'.repeat(barras)}${'░'.repeat(vazias)}]\n\n`;
 
       if (faltam > 0) {
-        response += `Faltam: R$ ${faltam.toFixed(2)} para atingir a meta! 💪`;
+        response += `Faltam: ${formatarMoeda(faltam)} para atingir a meta! 💪`;
       } else {
         response += `🎉 *Meta atingida!* Parabéns!`;
       }

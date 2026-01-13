@@ -1,5 +1,6 @@
 const supabase = require('../db/supabase');
 const evolutionService = require('./evolutionService');
+const { formatarMoeda } = require('../utils/currency');
 
 class ReminderService {
   async checkAndSendReminders() {
@@ -132,7 +133,7 @@ class ReminderService {
     const dataFormatada = new Date(dataVencimento).toLocaleDateString('pt-BR');
     let message = `*LEMBRETE DE CONTA A PAGAR*\n\n`;
     message += `Descrição: *${descricao}*\n`;
-    message += `Valor: *R$ ${valor.toFixed(2)}*\n`;
+    message += `Valor: *${formatarMoeda(valor)}*\n`;
     message += `Vencimento: *${dataFormatada}*\n\n`;
 
     if (diasParaVencimento === 0) {
@@ -152,7 +153,7 @@ class ReminderService {
     let message = `⏰ *LEMBRETE DE PARCELA*\n\n`;
     message += `📋 Cliente: *${clienteNome}*\n`;
     message += `💳 Parcela: *${parcelaAtual}/${totalParcelas}*\n`;
-    message += `💵 Valor: *R$ ${valorParcela.toFixed(2)}*\n`;
+    message += `💵 Valor: *${formatarMoeda(valorParcela)}*\n`;
 
     if (bandeira) {
       message += `🏷️ Bandeira: ${bandeira.toUpperCase()}\n`;

@@ -5,6 +5,7 @@ const registrationTokenService = require('../services/registrationTokenService')
 const cacheService = require('../services/cacheService');
 const { z } = require('zod');
 const { normalizePhone, getPhoneVariants } = require('../utils/phone');
+const { formatarMoeda } = require('../utils/currency');
 
 class UserController {
   constructor() {
@@ -393,11 +394,11 @@ class UserController {
     let resumo = `Perfeito! Já organizei suas três primeiras informações 🎉\n\n`;
     resumo += `Aqui vai um resumo inicial, só para você ver como tudo começa a tomar forma:\n\n`;
     resumo += `📊 *Primeiros dados da sua clínica*\n\n`;
-    resumo += `• Receita cadastrada: R$ ${receitaTotal.toFixed(2)}\n`;
+    resumo += `• Receita cadastrada: ${formatarMoeda(receitaTotal)}\n`;
     resumo += `• Custos do mês (parciais):\n`;
-    resumo += `  • Custos variáveis registrados: R$ ${custosVariaveis.toFixed(2)}\n`;
-    resumo += `  • Custos fixos registrados: R$ ${custosFixos.toFixed(2)}\n`;
-    resumo += `• Saldo inicial: R$ ${saldoInicial.toFixed(2)}\n\n`;
+    resumo += `  • Custos variáveis registrados: ${formatarMoeda(custosVariaveis)}\n`;
+    resumo += `  • Custos fixos registrados: ${formatarMoeda(custosFixos)}\n`;
+    resumo += `• Saldo inicial: ${formatarMoeda(saldoInicial)}\n\n`;
     resumo += `(esse saldo muda rápido conforme você registra suas vendas e custos reais)\n\n`;
     resumo += `Com mais dados, te mostro gráficos, histórico, totais, projeções e muito mais — tudo automaticamente 💜\n\n`;
 

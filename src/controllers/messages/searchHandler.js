@@ -1,4 +1,5 @@
 const supabase = require('../../db/supabase');
+const { formatarMoeda } = require('../../utils/currency');
 
 /**
  * Handler para buscas e pesquisas
@@ -97,7 +98,7 @@ class SearchHandler {
       uniqueResults.slice(0, 10).forEach((r, index) => {
         const tipo = r.tipo === 'entrada' ? 'Receita' : 'Custo';
         const data = new Date(r.data).toLocaleDateString('pt-BR');
-        response += `${index + 1}. ${tipo}: R$ ${r.valor.toFixed(2)}\n`;
+        response += `${index + 1}. ${tipo}: ${formatarMoeda(r.valor)}\n`;
         response += `   ${r.categoria}`;
         if (r.descricao) response += ` - ${r.descricao}`;
         response += `\n   Data: ${data}\n\n`;

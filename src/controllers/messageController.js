@@ -8,6 +8,7 @@ const analyticsService = require('../services/analyticsService');
 const pdfQueueService = require('../services/pdfQueueService');
 const intentHeuristicService = require('../services/intentHeuristicService');
 const { normalizePhone } = require('../utils/phone');
+const { formatarMoeda } = require('../utils/currency');
 
 // Handlers especializados
 const TransactionHandler = require('./messages/transactionHandler');
@@ -418,7 +419,7 @@ class MessageController {
    */
   async handleOnlyValue(intent, phone) {
     const valor = intent.dados.valor;
-    return `Entendi, *R$ ${valor.toFixed(2)}* 💰\n\nMas isso foi uma venda ou um gasto?\n\nMe conta mais, tipo:\n_"Botox R$ ${valor.toFixed(2)}"_ se foi uma venda\n_"Insumos R$ ${valor.toFixed(2)}"_ se foi um custo`;
+    return `Entendi, *${formatarMoeda(valor)}* 💰\n\nMas isso foi uma venda ou um gasto?\n\nMe conta mais, tipo:\n_"Botox ${formatarMoeda(valor)}"_ se foi uma venda\n_"Insumos ${formatarMoeda(valor)}"_ se foi um custo`;
   }
 
   async handleOnlyProcedure(intent, phone) {

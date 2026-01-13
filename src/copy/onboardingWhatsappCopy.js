@@ -4,6 +4,8 @@
  * Versão: Novo Fluxo Onboarding WhatsApp - Lumiz
  */
 
+const { formatarMoeda } = require('../utils/currency');
+
 module.exports = {
     // ============================================================
     // 0) START - Entrada do lead
@@ -145,7 +147,7 @@ module.exports = {
 
         return (
             `Vou registrar assim:\n` +
-            `Venda: ${procedimento || '—'} — R$ ${Number(valor).toFixed(2)} — ${pagamentoLabel} — ${data}\n\n` +
+            `Venda: ${procedimento || '—'} — ${formatarMoeda(Number(valor))} — ${pagamentoLabel} — ${data}\n\n` +
             `Tá ok?\n\n` +
             `1️⃣ Tá ok\n` +
             `2️⃣ ✏️ Ajustar`
@@ -197,7 +199,7 @@ module.exports = {
     ahaCostsDocumentReceived({ valor, vencimento, fornecedor }) {
         return (
             `Recebi ✅ Vou organizar isso rapidinho.\n\n` +
-            `Encontrei: R$ ${Number(valor).toFixed(2)}, vencimento ${vencimento}, fornecedor ${fornecedor || '—'}.\n` +
+            `Encontrei: ${formatarMoeda(Number(valor))}, vencimento ${vencimento}, fornecedor ${fornecedor || '—'}.\n` +
             `Isso é um custo fixo ou variável?\n\n` +
             `1️⃣ Fixo\n` +
             `2️⃣ Variável`
@@ -218,7 +220,7 @@ module.exports = {
 
     ahaCostsConfirmation({ tipo, categoria, valor, data }) {
         return (
-            `Registrando: ${tipo} — ${categoria} — R$ ${Number(valor).toFixed(2)} — ${data}\n` +
+            `Registrando: ${tipo} — ${categoria} — ${formatarMoeda(Number(valor))} — ${data}\n` +
             `Confere?\n\n` +
             `1️⃣ Confere\n` +
             `2️⃣ Ajustar`
@@ -254,10 +256,10 @@ module.exports = {
             `Pronto ✅\n\n` +
             `Etapa 3/3 — Seu resumo inicial:\n\n` +
             `📌 Resumo parcial do mês\n` +
-            `• Entradas: R$ ${Number(entradas).toFixed(2)}\n` +
-            `• Custos fixos: R$ ${Number(custosFixos).toFixed(2)}\n` +
-            `• Custos variáveis: R$ ${Number(custosVariaveis).toFixed(2)}\n` +
-            `• Saldo parcial: R$ ${Number(saldoParcial).toFixed(2)}\n\n` +
+            `• Entradas: ${formatarMoeda(Number(entradas))}\n` +
+            `• Custos fixos: ${formatarMoeda(Number(custosFixos))}\n` +
+            `• Custos variáveis: ${formatarMoeda(Number(custosVariaveis))}\n` +
+            `• Saldo parcial: ${formatarMoeda(Number(saldoParcial))}\n\n` +
             `A partir de agora, a ideia é simples:\n` +
             `tudo que entra ou sai do seu caixa, você me manda aqui.`
         );
@@ -400,7 +402,7 @@ module.exports = {
     documentReceivedMessage({ valor, vencimento, fornecedor }) {
         return (
             `Recebi ✅ Vou organizar isso rapidinho.\n\n` +
-            `Encontrei: R$ ${Number(valor).toFixed(2)}, vencimento ${vencimento || '—'}, fornecedor ${fornecedor || '—'}.\n` +
+            `Encontrei: ${formatarMoeda(Number(valor))}, vencimento ${vencimento || '—'}, fornecedor ${fornecedor || '—'}.\n` +
             `Isso é um custo fixo ou variável?\n\n` +
             `1️⃣ Fixo\n` +
             `2️⃣ Variável`
@@ -410,7 +412,7 @@ module.exports = {
     documentReceivedSimple({ valor }) {
         return (
             `Recebi ✅ Vou organizar isso rapidinho.\n\n` +
-            `Encontrei: R$ ${Number(valor).toFixed(2)}.\n` +
+            `Encontrei: ${formatarMoeda(Number(valor))}.\n` +
             `Isso é um custo fixo ou variável?\n\n` +
             `1️⃣ Fixo\n` +
             `2️⃣ Variável`
