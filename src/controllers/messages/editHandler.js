@@ -1,5 +1,6 @@
 const transactionController = require('../transactionController');
 const supabase = require('../../db/supabase');
+const { formatarMoeda } = require('../../utils/currency');
 
 /**
  * Handler para edição de transações
@@ -53,7 +54,7 @@ class EditHandler {
     });
 
     let response = `*EDITAR TRANSAÇÃO*\n\n`;
-    response += `Valor: R$ ${parseFloat(transacao.valor_total || transacao.valor).toFixed(2)}\n`;
+    response += `Valor: ${formatarMoeda(parseFloat(transacao.valor_total || transacao.valor))}\n`;
     response += `Data: ${new Date(transacao.data).toLocaleDateString('pt-BR')}\n`;
     if (transacao.descricao) {
       response += `Descrição: ${transacao.descricao}\n`;
@@ -171,7 +172,7 @@ class EditHandler {
         throw error;
       }
 
-      return `✅ *Última transação removida!*\n\n${ultima.type === 'entrada' ? 'Venda' : 'Custo'} de R$ ${parseFloat(ultima.amount).toFixed(2)} foi removida.`;
+      return `✅ *Última transação removida!*\n\n${ultima.type === 'entrada' ? 'Venda' : 'Custo'} de ${formatarMoeda(parseFloat(ultima.amount))} foi removida.`;
     } catch (error) {
       console.error('Erro ao desfazer transação:', error);
       return 'Erro ao desfazer transação. Tente novamente.';

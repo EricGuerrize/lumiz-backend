@@ -1,4 +1,5 @@
 const transactionController = require('../transactionController');
+const { formatarMoeda } = require('../../utils/currency');
 
 /**
  * Handler para consultas e relatórios
@@ -20,9 +21,9 @@ class QueryHandler {
     }
 
     let response = `Olha só como tá seu financeiro! 📊\n\n`;
-    response += `*Vendas:* R$ ${balance.entradas.toFixed(2)}\n`;
-    response += `*Custos:* R$ ${balance.saidas.toFixed(2)}\n`;
-    response += `*Lucro:* R$ ${lucro.toFixed(2)} _(${margemPercentual}% de margem)_\n\n`;
+    response += `*Vendas:* ${formatarMoeda(balance.entradas)}\n`;
+    response += `*Custos:* ${formatarMoeda(balance.saidas)}\n`;
+    response += `*Lucro:* ${formatarMoeda(lucro)} _(${margemPercentual}% de margem)_\n\n`;
 
     if (lucro > 0) {
       response += `Tá no positivo! 🎉\n`;
@@ -56,7 +57,7 @@ class QueryHandler {
         month: '2-digit'
       });
 
-      response += `${emoji} ${sinal}R$ ${parseFloat(t.amount).toFixed(2)} • ${categoria} • ${data}\n`;
+      response += `${emoji} ${sinal}${formatarMoeda(parseFloat(t.amount))} • ${categoria} • ${data}\n`;
     });
 
     response += `\nPra ver mais detalhes, manda _"relatório"_`;
@@ -123,9 +124,9 @@ class QueryHandler {
     }
 
     let response = `*RELATÓRIO - ${mesNome}*\n\n`;
-    response += `Faturamento: R$ ${report.entradas.toFixed(2)}\n`;
-    response += `Custos: R$ ${report.saidas.toFixed(2)}\n`;
-    response += `Lucro líquido: R$ ${lucro.toFixed(2)} (${margemPercentual}%)\n\n`;
+    response += `Faturamento: ${formatarMoeda(report.entradas)}\n`;
+    response += `Custos: ${formatarMoeda(report.saidas)}\n`;
+    response += `Lucro líquido: ${formatarMoeda(lucro)} (${margemPercentual}%)\n\n`;
     response += `Total: ${report.totalTransacoes} movimentações\n`;
 
     if (Object.keys(report.porCategoria).length > 0) {
@@ -135,7 +136,7 @@ class QueryHandler {
         .slice(0, 5)
         .forEach(([cat, data]) => {
           const tipo = data.tipo === 'entrada' ? 'Receita' : 'Custo';
-          response += `${tipo} - ${cat}: R$ ${data.total.toFixed(2)}\n`;
+          response += `${tipo} - ${cat}: ${formatarMoeda(data.total)}\n`;
         });
     }
 
@@ -180,15 +181,15 @@ class QueryHandler {
 
     let response = `*COMPARATIVO MENSAL*\n\n`;
     response += `*Mês Atual:*\n`;
-    response += `Faturamento: R$ ${current.entradas.toFixed(2)}\n`;
-    response += `Custos: R$ ${current.saidas.toFixed(2)}\n`;
-    response += `Lucro: R$ ${currentLucro.toFixed(2)}\n\n`;
+    response += `Faturamento: ${formatarMoeda(current.entradas)}\n`;
+    response += `Custos: ${formatarMoeda(current.saidas)}\n`;
+    response += `Lucro: ${formatarMoeda(currentLucro)}\n\n`;
     response += `*Mês Anterior:*\n`;
-    response += `Faturamento: R$ ${previous.entradas.toFixed(2)}\n`;
-    response += `Custos: R$ ${previous.saidas.toFixed(2)}\n`;
-    response += `Lucro: R$ ${previousLucro.toFixed(2)}\n\n`;
+    response += `Faturamento: ${formatarMoeda(previous.entradas)}\n`;
+    response += `Custos: ${formatarMoeda(previous.saidas)}\n`;
+    response += `Lucro: ${formatarMoeda(previousLucro)}\n\n`;
     response += `*Variação:*\n`;
-    response += `Lucro: ${variacaoLucro >= 0 ? '+' : ''}R$ ${variacaoLucro.toFixed(2)} (${variacaoPercentual}%)`;
+    response += `Lucro: ${variacaoLucro >= 0 ? '+' : ''}${formatarMoeda(variacaoLucro)} (${variacaoPercentual}%)`;
 
     return response;
   }
@@ -210,9 +211,9 @@ class QueryHandler {
     const lucro = entradas - saidas;
 
     let response = `*ESTATÍSTICAS DE HOJE*\n\n`;
-    response += `Vendas: R$ ${entradas.toFixed(2)}\n`;
-    response += `Custos: R$ ${saidas.toFixed(2)}\n`;
-    response += `Lucro: R$ ${lucro.toFixed(2)}\n`;
+    response += `Vendas: ${formatarMoeda(entradas)}\n`;
+    response += `Custos: ${formatarMoeda(saidas)}\n`;
+    response += `Lucro: ${formatarMoeda(lucro)}\n`;
     response += `Movimentações: ${hoje.length}`;
 
     return response;
@@ -235,7 +236,7 @@ class QueryHandler {
 
     let response = `*TOP 5 PROCEDIMENTOS DO MÊS*\n\n`;
     procedimentos.forEach(([nome, data], index) => {
-      response += `${index + 1}. ${nome}: R$ ${data.total.toFixed(2)}\n`;
+      response += `${index + 1}. ${nome}: ${formatarMoeda(data.total)}\n`;
     });
 
     return response;
@@ -286,13 +287,13 @@ class QueryHandler {
 
       let response = `📊 *COMPARATIVO DE PERÍODOS*\n\n`;
       response += `*${month1Name.toUpperCase()} ${year1}*\n`;
-      response += `💰 Vendas: R$ ${report1.entradas.toFixed(2)}\n`;
-      response += `💸 Custos: R$ ${report1.saidas.toFixed(2)}\n`;
-      response += `📈 Lucro: R$ ${lucro1.toFixed(2)}\n\n`;
+      response += `💰 Vendas: ${formatarMoeda(report1.entradas)}\n`;
+      response += `💸 Custos: ${formatarMoeda(report1.saidas)}\n`;
+      response += `📈 Lucro: ${formatarMoeda(lucro1)}\n\n`;
       response += `*${month2Name.toUpperCase()} ${year2}*\n`;
-      response += `💰 Vendas: R$ ${report2.entradas.toFixed(2)}\n`;
-      response += `💸 Custos: R$ ${report2.saidas.toFixed(2)}\n`;
-      response += `📈 Lucro: R$ ${lucro2.toFixed(2)}\n\n`;
+      response += `💰 Vendas: ${formatarMoeda(report2.entradas)}\n`;
+      response += `💸 Custos: ${formatarMoeda(report2.saidas)}\n`;
+      response += `📈 Lucro: ${formatarMoeda(lucro2)}\n\n`;
       response += `*VARIAÇÃO*\n`;
 
       const setaEntradas = variacaoEntradas >= 0 ? '📈' : '📉';
@@ -304,9 +305,9 @@ class QueryHandler {
       response += `${setaLucro} Lucro: ${variacaoLucro >= 0 ? '+' : ''}${variacaoLucro}%\n\n`;
 
       if (lucro2 > lucro1) {
-        response += `Tá crescendo! 🎉 Seu lucro aumentou R$ ${(lucro2 - lucro1).toFixed(2)}`;
+        response += `Tá crescendo! 🎉 Seu lucro aumentou ${formatarMoeda(lucro2 - lucro1)}`;
       } else if (lucro2 < lucro1) {
-        response += `Lucro caiu R$ ${(lucro1 - lucro2).toFixed(2)} 😬\nBora focar em aumentar as vendas!`;
+        response += `Lucro caiu ${formatarMoeda(lucro1 - lucro2)} 😬\nBora focar em aumentar as vendas!`;
       } else {
         response += `Lucro estável! 🤝`;
       }

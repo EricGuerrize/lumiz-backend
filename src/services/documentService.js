@@ -3,6 +3,7 @@ const axios = require('axios');
 const { withTimeout, retryWithBackoff } = require('../utils/timeout');
 const googleVisionService = require('./googleVisionService');
 const { validateImage, likelyDocument, LIMITS } = require('../utils/imageValidator');
+const { formatarMoeda } = require('../utils/currency');
 
 // Timeout para processamento de imagens (60 segundos - imagens podem demorar)
 const IMAGE_PROCESSING_TIMEOUT_MS = 60000;
@@ -283,7 +284,7 @@ class DocumentService {
       }
 
       message += `${index + 1}. ${emoji} *${tipoTexto}*\n`;
-      message += `   💵 R$ ${t.valor.toFixed(2)}\n`;
+      message += `   💵 ${formatarMoeda(t.valor)}\n`;
       message += `   📂 ${t.categoria}\n`;
       if (t.descricao) {
         message += `   📝 ${t.descricao}\n`;

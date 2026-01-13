@@ -47,6 +47,7 @@
 const supabase = require('../db/supabase');
 const evolutionService = require('./evolutionService');
 const documentService = require('./documentService');
+const { formatarMoeda } = require('../utils/currency');
 
 class DdaService {
   constructor() {
@@ -204,7 +205,7 @@ class DdaService {
     boletos.slice(0, 5).forEach((boleto, index) => {
       const vencimento = new Date(boleto.data_vencimento).toLocaleDateString('pt-BR');
       mensagem += `${index + 1}. ${boleto.descricao}\n`;
-      mensagem += `   💰 R$ ${parseFloat(boleto.valor).toFixed(2)}\n`;
+      mensagem += `   💰 ${formatarMoeda(parseFloat(boleto.valor))}\n`;
       mensagem += `   📅 Vence: ${vencimento}\n\n`;
     });
 

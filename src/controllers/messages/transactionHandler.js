@@ -1,5 +1,6 @@
 const transactionController = require('../transactionController');
 const analyticsService = require('../../services/analyticsService');
+const { formatarMoeda } = require('../../utils/currency');
 
 /**
  * Handler para transações (vendas e custos)
@@ -35,7 +36,7 @@ class TransactionHandler {
     });
 
     let message = `${emoji} *${tipoTexto}*\n\n`;
-    message += `💵 *R$ ${valor.toFixed(2)}*\n`;
+    message += `💵 *${formatarMoeda(valor)}*\n`;
     message += `📂 ${categoria || 'Sem categoria'}\n`;
 
     // Mostra nome do cliente se disponível
@@ -51,7 +52,7 @@ class TransactionHandler {
     // Adiciona informações de pagamento
     if (forma_pagamento === 'parcelado' && parcelas) {
       const valorParcela = valor / parcelas;
-      message += `💳 *${parcelas}x de R$ ${valorParcela.toFixed(2)}*\n`;
+      message += `💳 *${parcelas}x de ${formatarMoeda(valorParcela)}*\n`;
       if (bandeira_cartao) {
         message += `🏷️ ${bandeira_cartao.toUpperCase()}\n`;
       }
@@ -122,7 +123,7 @@ class TransactionHandler {
 
       const emoji = tipo === 'entrada' ? '💰' : '💸';
       const tipoTexto = tipo === 'entrada' ? 'Venda' : 'Custo';
-      return `${emoji} *${tipoTexto} registrada!*\n\nR$ ${valor.toFixed(2)} - ${categoria || descricao}\n\nQuer ver seu saldo? Digite "saldo"`;
+      return `${emoji} *${tipoTexto} registrada!*\n\n${formatarMoeda(valor)} - ${categoria || descricao}\n\nQuer ver seu saldo? Digite "saldo"`;
     }
 
     // Cancelamento

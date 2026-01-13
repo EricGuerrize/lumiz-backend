@@ -1,6 +1,7 @@
 const reminderService = require('../../services/reminderService');
 const transactionController = require('../transactionController');
 const supabase = require('../../db/supabase');
+const { formatarMoeda } = require('../../utils/currency');
 
 /**
  * Handler para parcelas e pagamentos
@@ -21,7 +22,7 @@ class InstallmentHandler {
 
       // Total a receber
       const totalReceber = installments.reduce((sum, i) => sum + i.valor_parcela, 0);
-      response += `💵 Total pendente: *R$ ${totalReceber.toFixed(2)}*\n`;
+      response += `💵 Total pendente: *${formatarMoeda(totalReceber)}*\n`;
       response += `📋 ${installments.length} parcela${installments.length > 1 ? 's' : ''} restante${installments.length > 1 ? 's' : ''}\n\n`;
 
       // Agrupa por mês
@@ -50,7 +51,7 @@ class InstallmentHandler {
           });
 
           // Formato: parcela • valor • cliente • procedimento
-          let linha = `  ${p.parcela_atual}/${p.total_parcelas} • R$ ${p.valor_parcela.toFixed(2)}`;
+          let linha = `  ${p.parcela_atual}/${p.total_parcelas} • ${formatarMoeda(p.valor_parcela)}`;
           linha += ` • ${p.cliente}`;
 
           // Adiciona procedimento se disponível
@@ -100,7 +101,7 @@ class InstallmentHandler {
 
       installments.slice(0, 5).forEach((p, index) => {
         const dataFormatada = p.data_vencimento.toLocaleDateString('pt-BR');
-        response += `${index + 1}. ${p.cliente} - R$ ${p.valor_parcela.toFixed(2)} (${dataFormatada})\n`;
+        response += `${index + 1}. ${p.cliente} - ${formatarMoeda(p.valor_parcela)} (${dataFormatada})\n`;
       });
 
       response += `\nDigite o número da parcela ou "cancelar".`;
