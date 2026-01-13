@@ -142,6 +142,13 @@ class DocumentService {
       const { mimeType, fileExtension } = this.detectImageType(imageBuffer);
       console.log('[DOC] Tipo detectado:', mimeType, '(' + fileExtension + ')');
 
+      // Se for PDF, usa processDocumentFromBuffer (que envia para Gemini)
+      // Google Vision API não aceita PDFs - só aceita imagens
+      if (mimeType === 'application/pdf' || fileExtension === 'PDF') {
+        console.log('[DOC] PDF detectado em processImage! Redirecionando para processDocumentFromBuffer...');
+        return this.processDocumentFromBuffer(imageBuffer, mimeType, null);
+      }
+
       // Valida qualidade da imagem antes de processar
       const validation = validateImage(imageBuffer, mimeType);
       
@@ -202,6 +209,16 @@ class DocumentService {
 
     // Se for imagem, usa o fluxo padrão (Vision -> Gemini)
     return this.processImage(buffer);
+  }
+
+  /**
+   * Alias para processDocumentFromBuffer - usado pelo documentHandler
+   * @param {Buffer} imageBuffer - Buffer da imagem/documento
+   * @param {string} mimeType - Tipo MIME do arquivo
+   * @returns {Promise<Object>} - Resultado do processamento
+   */
+  async processImageFromBuffer(imageBuffer, mimeType) {
+    return this.processDocumentFromBuffer(imageBuffer, mimeType, null);
   }
 
 
