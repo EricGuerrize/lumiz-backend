@@ -16,7 +16,7 @@ class TransactionHandler {
     const { tipo, valor, categoria, descricao, data, forma_pagamento, parcelas, bandeira_cartao, nome_cliente } = intent.dados;
 
     if (!valor || Math.abs(valor) <= 0) {
-      return 'Não consegui identificar o valor 🤔\n\nMe manda assim: "Botox 2800" ou "Insumos 3200"';
+      return 'Não consegui identificar o valor 🤔\n\nMe manda assim: "Botox R$ 2800" ou "Insumos R$ 3200"';
     }
 
     // Armazena a transação pendente
@@ -165,4 +165,5 @@ class TransactionHandler {
 }
 
 module.exports = TransactionHandler;
+
 

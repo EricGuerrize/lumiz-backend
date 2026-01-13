@@ -136,7 +136,7 @@ class MessageController {
       return response;
     } catch (error) {
       console.error('Erro ao processar mensagem:', error);
-      return 'Eita, deu um erro aqui 😅\n\nTenta de novo! Se o problema continuar, me manda a mensagem de um jeito mais simples.\n\nExemplo: _"Botox 2800 cliente Maria"_';
+      return 'Eita, deu um erro aqui 😅\n\nTenta de novo! Se o problema continuar, me manda a mensagem de um jeito mais simples.\n\nExemplo: _"Botox R$ 2800 cliente Maria"_';
     }
   }
 
@@ -154,7 +154,7 @@ class MessageController {
           });
           const tipo = intent.intencao === 'registrar_entrada' ? 'venda' : 'custo';
           const cat = intent.dados.categoria || 'esse item';
-          return `Entendi que é ${tipo === 'venda' ? 'uma venda' : 'um custo'} de *${cat}*, mas qual o valor? 💰\n\nPode mandar só o número (ex: 500).`;
+          return `Entendi que é ${tipo === 'venda' ? 'uma venda' : 'um custo'} de *${cat}*, mas qual o valor? 💰\n\nPode mandar só o número (ex: R$ 500).`;
         }
         return await this.transactionHandler.handleTransactionRequest(user, intent, phone);
 
@@ -253,10 +253,10 @@ class MessageController {
         return await this.helpHandler.handleAmbiguousMessage(user, message, transactionController);
 
       case 'erro':
-        return 'Ops, tive um probleminha técnico 🤔\n\nPode tentar de novo? Se continuar dando erro, tenta simplificar a mensagem.\n\nExemplo: _"Botox 2800"_';
+        return 'Ops, tive um probleminha técnico 🤔\n\nPode tentar de novo? Se continuar dando erro, tenta simplificar a mensagem.\n\nExemplo: _"Botox R$ 2800"_';
 
       default:
-        return 'Opa, não entendi essa 😅\n\nPode reformular? Tipo:\n_"Vendi um preenchimento por 1500"_\n_"Paguei conta de luz 450"_\n_"Como tá meu saldo?"_\n\nOu manda "ajuda" que te explico melhor!';
+        return 'Opa, não entendi essa 😅\n\nPode reformular? Tipo:\n_"Vendi um preenchimento por R$ 1500"_\n_"Paguei conta de luz R$ 450"_\n_"Como tá meu saldo?"_\n\nOu manda "ajuda" que te explico melhor!';
     }
   }
 
@@ -300,7 +300,7 @@ class MessageController {
       }
     }
 
-    return 'Não consegui identificar o valor 🤔\n\nMe manda só o número, tipo: _500_ ou _1500.50_';
+    return 'Não consegui identificar o valor 🤔\n\nMe manda só o número, tipo: _R$ 500_ ou _R$ 1500.50_';
   }
 
   /**
@@ -347,7 +347,7 @@ class MessageController {
     const codigo = intent.dados.codigo;
     let response = `Recebi o código do boleto! 🔢\n\n`;
     response += `Agora me diz: esse boleto é de quê e qual o valor?\n\n`;
-    response += `Por exemplo:\n_"Fornecedor 1500"_\n_"Conta de luz 450"_\n\n`;
+    response += `Por exemplo:\n_"Fornecedor R$ 1500"_\n_"Conta de luz R$ 450"_\n\n`;
     response += `Ou se preferir, manda uma foto do boleto que eu leio tudo automaticamente 📸`;
     return response;
   }
@@ -357,12 +357,12 @@ class MessageController {
    */
   async handleOnlyValue(intent, phone) {
     const valor = intent.dados.valor;
-    return `Entendi, *R$ ${valor.toFixed(2)}* 💰\n\nMas isso foi uma venda ou um gasto?\n\nMe conta mais, tipo:\n_"Botox ${valor}"_ se foi uma venda\n_"Insumos ${valor}"_ se foi um custo`;
+    return `Entendi, *R$ ${valor.toFixed(2)}* 💰\n\nMas isso foi uma venda ou um gasto?\n\nMe conta mais, tipo:\n_"Botox R$ ${valor.toFixed(2)}"_ se foi uma venda\n_"Insumos R$ ${valor.toFixed(2)}"_ se foi um custo`;
   }
 
   async handleOnlyProcedure(intent, phone) {
     const categoria = intent.dados.categoria;
-    return `Beleza, *${categoria}*! 💉\n\nE qual foi o valor?\n\nMe manda completo, tipo:\n_"${categoria} 2800"_`;
+    return `Beleza, *${categoria}*! 💉\n\nE qual foi o valor?\n\nMe manda completo, tipo:\n_"${categoria} R$ 2800"_`;
   }
 
   /**
@@ -390,4 +390,5 @@ class MessageController {
 }
 
 module.exports = new MessageController();
+
 

@@ -27,9 +27,13 @@ function normalizeText(value = '') {
 
 function isYes(value = '') {
     const v = normalizeText(value);
-    return v === '1' || v === 'sim' || v === 's' || v === 'ok' || v === 'confirmar' || 
+    const result = v === '1' || v === 'sim' || v === 's' || v === 'ok' || v === 'confirmar' || 
            v.includes('pode registrar') || v.includes('tá ok') || v.includes('ta ok') || 
            v.includes('confere') || v.includes('autorizo') || v.includes('autorizar');
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:28',message:'isYes function',data:{value,v,result},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+    // #endregion
+    return result;
 }
 
 function isNo(value = '') {
@@ -173,12 +177,37 @@ function validateChoice(message, options) {
 // Correção #2: Cálculo de resumo usando apenas dados salvos
 function calculateSummaryFromOnboardingData(onboarding) {
     const sale = onboarding.data?.pending_sale;
-    const cost = onboarding.data?.pending_cost;
     
+    // Suporte para múltiplos custos salvos
+    const savedCosts = onboarding.data?.saved_costs || [];
+    const pendingCost = onboarding.data?.pending_cost;
+
     // Só conta se foi salvo com sucesso (tem flag saved)
     const entradas = (sale?.saved && sale?.valor) ? sale.valor : 0;
-    const custosFixos = (cost?.saved && cost?.tipo === 'fixa' && cost?.valor) ? cost.valor : 0;
-    const custosVariaveis = (cost?.saved && cost?.tipo === 'variavel' && cost?.valor) ? cost.valor : 0;
+    
+    // Soma custos fixos e variáveis do array de custos salvos
+    let custosFixos = 0;
+    let custosVariaveis = 0;
+    
+    for (const cost of savedCosts) {
+        if (cost?.saved && cost?.valor) {
+            if (cost.tipo === 'fixa') {
+                custosFixos += cost.valor;
+            } else if (cost.tipo === 'variavel') {
+                custosVariaveis += cost.valor;
+            }
+        }
+    }
+    
+    // Também considera o pending_cost se foi salvo (para compatibilidade)
+    if (pendingCost?.saved && pendingCost?.valor) {
+        if (pendingCost.tipo === 'fixa') {
+            custosFixos += pendingCost.valor;
+        } else if (pendingCost.tipo === 'variavel') {
+            custosVariaveis += pendingCost.valor;
+        }
+    }
+    
     const saldoParcial = entradas - custosFixos - custosVariaveis;
 
     return {
@@ -265,11 +294,21 @@ class OnboardingStateHandlers {
 
     async handleConsent(onboarding, messageTrimmed, normalizedPhone, respond) {
         // Correção #7: Validação consistente
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:266',message:'handleConsent entry',data:{phone:normalizedPhone,messageTrimmed,step:onboarding.step},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
         const choseAuthorize = isYes(messageTrimmed);
         const choseDeny = isNo(messageTrimmed);
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:269',message:'isYes/isNo results',data:{choseAuthorize,choseDeny,messageTrimmed},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+        // #endregion
 
         if (choseDeny) {
-            return await respond(onboardingCopy.consentDenied());
+            const result = await respond(onboardingCopy.consentDenied());
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:272',message:'handleConsent deny path',data:{result,resultType:typeof result},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+            // #endregion
+            return result;
         }
 
         if (choseAuthorize) {
@@ -278,10 +317,22 @@ class OnboardingStateHandlers {
                 phone: normalizedPhone,
                 source: 'whatsapp'
             });
-            return await respond(onboardingCopy.profileNameQuestion(), true); // Persist imediato
+            const questionText = onboardingCopy.profileNameQuestion();
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:281',message:'Before respond with profileNameQuestion',data:{questionText,questionTextType:typeof questionText,questionTextLength:questionText?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+            // #endregion
+            const result = await respond(questionText, true); // Persist imediato
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:281',message:'handleConsent authorize path result',data:{result,resultType:typeof result,resultLength:result?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+            // #endregion
+            return result;
         }
 
-        return await respond(onboardingCopy.invalidChoice());
+        const result = await respond(onboardingCopy.invalidChoice());
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:284',message:'handleConsent invalidChoice path',data:{result,resultType:typeof result},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
+        return result;
     }
 
     async handleProfileName(onboarding, messageTrimmed, respond) {
@@ -517,7 +568,8 @@ class OnboardingStateHandlers {
             }
 
             onboarding.step = 'AHA_COSTS_INTRO';
-            return await respond(onboardingCopy.ahaRevenueRegistered() + '\n\n' + onboardingCopy.ahaCostsIntro(), true); // Persist imediato - venda registrada
+            // Persistência crítica após salvar transação
+            return await respond(onboardingCopy.ahaRevenueRegistered() + '\n\n' + onboardingCopy.ahaCostsIntro(), true, true);
         }
 
         return await respond(onboardingCopy.invalidChoice());
@@ -733,10 +785,42 @@ class OnboardingStateHandlers {
                 return await respond(onboardingCopy.userCreationError());
             }
 
+            // Guarda o custo salvo no array de custos confirmados
+            const currentCostType = cost.tipo; // 'fixa' ou 'variavel'
+            if (!onboarding.data.saved_costs) {
+                onboarding.data.saved_costs = [];
+            }
+            onboarding.data.saved_costs.push({ ...cost });
+            
+            // Verifica se já coletou ambos os tipos de custo
+            const hasFixedCost = onboarding.data.saved_costs.some(c => c.tipo === 'fixa');
+            const hasVariableCost = onboarding.data.saved_costs.some(c => c.tipo === 'variavel');
+            
+            // Se ainda falta um tipo de custo, pede o outro
+            if (!hasFixedCost || !hasVariableCost) {
+                // Limpa o custo pendente para o próximo
+                onboarding.data.pending_cost = null;
+                
+                // Define o próximo tipo de custo a ser coletado
+                if (currentCostType === 'variavel' && !hasFixedCost) {
+                    // Foi variável, agora pede fixo
+                    onboarding.data.cost_type = 'fixo';
+                    onboarding.step = 'AHA_COSTS_UPLOAD';
+                    return await respond(onboardingCopy.ahaCostsSecondIntroFixed(), true);
+                } else if (currentCostType === 'fixa' && !hasVariableCost) {
+                    // Foi fixo, agora pede variável
+                    onboarding.data.cost_type = 'variável';
+                    onboarding.step = 'AHA_COSTS_UPLOAD';
+                    return await respond(onboardingCopy.ahaCostsSecondIntroVariable(), true);
+                }
+            }
+
+            // Se já tem os dois tipos, vai para o resumo
             onboarding.step = 'AHA_SUMMARY';
             // Correção #2: Usa dados salvos (com flag saved) para calcular resumo
             const summary = calculateSummaryFromOnboardingData(onboarding);
-            return await respond(onboardingCopy.ahaCostsRegistered() + '\n\n' + onboardingCopy.ahaSummary(summary), true); // Persist imediato - custo registrado
+            // Persistência crítica após salvar transação
+            return await respond(onboardingCopy.ahaCostsRegistered() + '\n\n' + onboardingCopy.ahaSummary(summary), true, true);
         }
 
         return await respond(onboardingCopy.invalidChoice());
@@ -939,10 +1023,22 @@ class OnboardingFlowService {
             case 'AHA_COSTS_INTRO':
                 return onboardingCopy.ahaCostsIntro();
             case 'AHA_COSTS_UPLOAD':
-                const costType = onboarding.data?.cost_type;
-                if (costType === 'fixo') {
+                const costTypeResume = onboarding.data?.cost_type;
+                const savedCostsCount = onboarding.data?.saved_costs?.length || 0;
+                
+                // Se já tem um custo salvo, está pedindo o segundo
+                if (savedCostsCount > 0) {
+                    if (costTypeResume === 'fixo') {
+                        return onboardingCopy.ahaCostsSecondIntroFixed();
+                    } else if (costTypeResume === 'variável') {
+                        return onboardingCopy.ahaCostsSecondIntroVariable();
+                    }
+                }
+                
+                // Primeiro custo
+                if (costTypeResume === 'fixo') {
                     return onboardingCopy.ahaCostsUploadFixed();
-                } else if (costType === 'variável') {
+                } else if (costTypeResume === 'variável') {
                     return onboardingCopy.ahaCostsUploadVariable();
                 }
                 return onboardingCopy.ahaCostsIntro();
@@ -985,7 +1081,12 @@ class OnboardingFlowService {
     async processOnboarding(phone, message, mediaUrl = null, fileName = null) {
         const normalizedPhone = normalizePhone(phone) || phone;
         const onboarding = this.onboardingStates.get(normalizedPhone);
-        if (!onboarding) return null;
+        if (!onboarding) {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:1013',message:'No onboarding state found',data:{phone:normalizedPhone},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+            // #endregion
+            return null;
+        }
 
         // Correção #11: Normalizar texto uma vez no início
         const messageTrimmed = message?.trim() || '';
@@ -996,33 +1097,106 @@ class OnboardingFlowService {
             const existingTimer = this.persistTimers.get(normalizedPhone);
             if (existingTimer) {
                 clearTimeout(existingTimer);
+                this.persistTimers.delete(normalizedPhone);
             }
 
             const persist = async () => {
                 try {
-                    await onboardingService.upsertWhatsappState(normalizedPhone, {
+                    // #region agent log
+                    fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:1029',message:'persist function entry',data:{phone:normalizedPhone,step:onboarding.step},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+                    // #endregion
+                    const result = await onboardingService.upsertWhatsappState(normalizedPhone, {
                         step: onboarding.step,
                         data: onboarding.data
                     });
+                    // #region agent log
+                    fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:1034',message:'persist function success',data:{result:!!result},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+                    // #endregion
                     this.persistTimers.delete(normalizedPhone);
                 } catch (e) {
                     console.error('[ONBOARDING] Falha ao persistir estado:', e?.message || e);
+                    // #region agent log
+                    fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:1037',message:'persist function error',data:{error:e?.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+                    // #endregion
+                    // Não relança a exceção - falha silenciosamente
                 }
             };
 
             if (immediate) {
-                await persist();
+                // Para persistência imediata, aguarda conclusão
+                try {
+                    await persist();
+                } catch (e) {
+                    // Se persist lançar exceção (não deveria, mas por segurança)
+                    console.error('[ONBOARDING] Erro inesperado em persistState imediato:', e?.message || e);
+                    // Não relança - permite que a resposta continue
+                }
             } else {
-                const timer = setTimeout(persist, PERSIST_DEBOUNCE_MS);
+                // Para persistência com debounce, agenda sem aguardar
+                const timer = setTimeout(() => {
+                    persist().catch(e => {
+                        console.error('[ONBOARDING] Erro em persistState agendado:', e?.message || e);
+                    });
+                }, PERSIST_DEBOUNCE_MS);
                 this.persistTimers.set(normalizedPhone, timer);
             }
         };
 
         // Correção #5: Sincronização de estado
-        const respond = async (text, shouldPersistImmediate = false) => {
+        const respond = async (text, shouldPersistImmediate = false, criticalPersist = false) => {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:1050',message:'respond function entry',data:{textType:typeof text,textLength:text?.length,shouldPersistImmediate,criticalPersist},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+            // #endregion
+            
+            // Garante que text é válido
+            if (!text || typeof text !== 'string') {
+                console.error('[ONBOARDING] respond recebeu text inválido:', text);
+                text = onboardingCopy.lostState();
+            }
+            
             // Sempre persiste estado antes de responder
-            await persistState(shouldPersistImmediate);
-            return text;
+            try {
+                if (criticalPersist) {
+                    // Para persistências críticas (ex: após salvar transação), 
+                    // tenta persistir imediatamente e falha silenciosamente se não conseguir
+                    // (não bloqueia resposta ao usuário, mas loga erro)
+                    try {
+                        await persistState(true);
+                        // #region agent log
+                        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:1060',message:'persistState critical success',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+                        // #endregion
+                    } catch (e) {
+                        console.error('[ONBOARDING] Falha crítica ao persistir estado:', e?.message || e);
+                        // #region agent log
+                        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:1065',message:'persistState critical error',data:{error:e?.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+                        // #endregion
+                        // Não bloqueia resposta, mas estado pode ficar inconsistente
+                    }
+                } else {
+                    try {
+                        await persistState(shouldPersistImmediate);
+                        // #region agent log
+                        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:1073',message:'persistState normal success',data:{shouldPersistImmediate},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+                        // #endregion
+                    } catch (e) {
+                        console.error('[ONBOARDING] Falha ao persistir estado:', e?.message || e);
+                        // #region agent log
+                        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:1077',message:'persistState normal error',data:{error:e?.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+                        // #endregion
+                    }
+                }
+            } catch (e) {
+                // Catch geral para qualquer erro inesperado na persistência
+                console.error('[ONBOARDING] Erro inesperado na persistência:', e?.message || e);
+                // Não bloqueia resposta
+            }
+            
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:1087',message:'respond function exit',data:{textType:typeof text,textLength:text?.length,returningText:text?.substring?.(0,50)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+            // #endregion
+            
+            // Garante que sempre retorna uma string válida
+            return text || onboardingCopy.lostState();
         };
 
         const respondAndClear = async (text) => {
@@ -1062,11 +1236,21 @@ class OnboardingFlowService {
         const step = onboarding.step;
 
         try {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:1065',message:'processOnboarding switch entry',data:{step,messageTrimmed,normalizedPhone},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+            // #endregion
             switch (step) {
                 case 'START':
                     return await handlers.handleStart(onboarding, messageTrimmed, normalizedPhone, respond);
                 case 'CONSENT':
-                    return await handlers.handleConsent(onboarding, messageTrimmed, normalizedPhone, respond);
+                    // #region agent log
+                    fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:1083',message:'Calling handleConsent',data:{step,messageTrimmed},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+                    // #endregion
+                    const consentResult = await handlers.handleConsent(onboarding, messageTrimmed, normalizedPhone, respond);
+                    // #region agent log
+                    fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:1083',message:'handleConsent returned',data:{consentResult,resultType:typeof consentResult,resultLength:consentResult?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+                    // #endregion
+                    return consentResult;
                 case 'PROFILE_NAME':
                     return await handlers.handleProfileName(onboarding, messageTrimmed, respond);
                 case 'PROFILE_CLINIC':
@@ -1104,11 +1288,25 @@ class OnboardingFlowService {
                 case 'MDR_SETUP_COMPLETE':
                     return await handlers.handleMdrSetupComplete(respond, respondAndClear);
                 default:
-                    return await respond(onboardingCopy.lostState());
+                    const defaultResponse = await respond(onboardingCopy.lostState());
+                    // #region agent log
+                    fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:1121',message:'Default case response',data:{step,defaultResponse,defaultResponseType:typeof defaultResponse},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+                    // #endregion
+                    return defaultResponse;
             }
         } catch (error) {
             console.error('[ONBOARDING] Erro ao processar estado:', error);
-            return await respond(onboardingCopy.lostState());
+            console.error('[ONBOARDING] Stack:', error.stack);
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:1125',message:'Error in processOnboarding',data:{error:error.message,step},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+            // #endregion
+            try {
+                const errorResponse = await respond(onboardingCopy.lostState());
+                return errorResponse || 'Ops, me perdi. Digite "Oi" para recomeçar.';
+            } catch (respondError) {
+                console.error('[ONBOARDING] Erro ao gerar resposta de erro:', respondError);
+                return 'Ops, me perdi. Digite "Oi" para recomeçar.';
+            }
         }
     }
 }

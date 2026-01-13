@@ -102,7 +102,7 @@ class EditHandler {
     }
 
     if (!campo || !novoValor) {
-      return 'Não entendi o que você quer editar. Pode ser mais específico?\n\nExemplo: "valor 3000" ou "data 15/12"';
+      return 'Não entendi o que você quer editar. Pode ser mais específico?\n\nExemplo: "valor R$ 3000" ou "data 15/12"';
     }
 
     return await this.applyEdit(user, phone, transacao, campo, novoValor, tipo);
@@ -180,4 +180,5 @@ class EditHandler {
 }
 
 module.exports = EditHandler;
+
 

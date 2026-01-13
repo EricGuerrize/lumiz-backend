@@ -411,8 +411,8 @@ class UserController {
       resumo += `Seu cadastro foi realizado com sucesso.\n\n`;
       resumo += `Agora é só usar! Pode me mandar suas vendas e custos por aqui mesmo.\n\n`;
       resumo += `Exemplos:\n`;
-      resumo += `_"Vendi um botox por 1500"_\n`;
-      resumo += `_"Gastei 200 com luvas"_\n\n`;
+      resumo += `_"Vendi um botox por R$ 1500"_\n`;
+      resumo += `_"Gastei R$ 200 com luvas"_\n\n`;
       resumo += `Qualquer dúvida, é só mandar "ajuda"! 😊`;
     }
 
