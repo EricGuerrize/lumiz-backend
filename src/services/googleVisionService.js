@@ -262,95 +262,13 @@ class GoogleVisionService {
     }
     
     const { GoogleGenerativeAI } = require('@google/generative-ai');
+    const { buildDocumentExtractionPrompt } = require('../config/prompts');
+    
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const geminiModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
     
-    const dataHoje = new Date().toISOString().split('T')[0];
-    
-    // Prompt detalhado igual ao do documentService para consistência
-    const prompt = `
-TAREFA: Analisar este texto extraído de um documento financeiro e extrair informações estruturadas.
-
-TEXTO EXTRAÍDO DO DOCUMENTO:
-${fullText}
-
-DATA DE HOJE: ${dataHoje}
-
-TIPOS DE DOCUMENTO:
-1. BOLETO: código de barras, valor, vencimento, beneficiário, linha digitável
-2. EXTRATO BANCÁRIO: lista de transações com datas e valores, créditos e débitos
-3. COMPROVANTE DE PAGAMENTO PIX: comprovante de transferência PIX, valor, data/hora, destinatário/remetente, chave PIX
-4. COMPROVANTE DE PAGAMENTO: valor pago, data, destinatário, qualquer comprovante de pagamento
-5. NOTA FISCAL: valor total, fornecedor, data, itens, CNPJ, número da nota
-6. FATURA DE CARTÃO: valor total, parcelas, data vencimento, bandeira
-7. RECIBO: valor, serviço prestado, data
-
-EXTRAÇÃO:
-- tipo_documento: tipo identificado (boleto, extrato, comprovante_pix, comprovante, nota_fiscal, fatura, recibo)
-- transacoes: array de transações encontradas, cada uma com:
-  - tipo: "entrada" ou "saida"
-  - valor: número (sempre positivo)
-  - categoria: nome/descrição (ex: "Fornecedor XYZ", "Cliente Maria", "Pix Recebido", "Pix Enviado")
-  - data: data da transação (formato YYYY-MM-DD)
-  - descricao: detalhes adicionais (ex: "Boleto vencimento 20/11", "Pix de João Silva")
-
-REGRAS IMPORTANTES:
-- Para BOLETO/NOTA FISCAL/FATURA: sempre é SAÍDA (custo a pagar)
-- Para COMPROVANTE PIX (incluindo Mercado Pago, Nubank, etc): 
-  * Procure por: "PIX", "Transferência PIX", "Chave PIX", "Comprovante de Transferência", "Mercado Pago", "Nubank"
-  * IMPORTANTE: Identifique a perspectiva do documento:
-    - Se o documento mostra que VOCÊ RECEBEU (seção "Para" mostra seu nome/CPF, ou "Crédito", ou seta apontando para você) = tipo "entrada"
-    - Se o documento mostra que VOCÊ ENVIOU (seção "De" mostra seu nome/CPF, ou "Débito", ou seta apontando para fora) = tipo "saida"
-  * Para MERCADO PAGO especificamente:
-    - Procure por seções "De" (remetente) e "Para" (destinatário)
-    - Se "De" contém o nome do usuário/clínica = tipo "saida" (você enviou)
-    - Se "Para" contém o nome do usuário/clínica = tipo "entrada" (você recebeu)
-    - Extraia o nome completo do remetente/destinatário na categoria ou descrição
-  * Extraia SEMPRE: valor, data/hora, nome do remetente (De), nome do destinatário (Para)
-  * Use o nome do destinatário na categoria se for entrada, ou nome do remetente se for saída
-- Para NOTA FISCAL (incluindo DANFE, NFe, NF-e, DANFE):
-  * SEMPRE é tipo "saida" (custo/despesa - você comprou algo)
-  * Procure por: "NOTA FISCAL", "NF", "NFe", "NF-e", "DANFE", "Emitente", "Fornecedor", "CNPJ", "RECEBEMOS DE"
-  * Extraia SEMPRE:
-    - Nome do fornecedor/emitente (procure por "Emitente", "RECEBEMOS DE", nome da empresa no topo)
-      Exemplo: "ELFA MEDICAMENTOS SA", "RECEBEMOS DE ELFA MEDICAMENTOS SA"
-    - Valor total da nota (procure por "VALOR TOTAL", "TOTAL", "Valor a pagar", "TOTAL DA NOTA", números grandes com R$)
-    - Data de emissão (procure por "Data de emissão", "Data", "Emissão", formato DD/MM/YYYY)
-    - Número da nota fiscal (procure por "N. 000738765", "Número", "NF", "N.")
-    - Série da nota (se disponível: "SÉRIE 5")
-  * Use o nome do fornecedor na categoria (ex: "ELFA MEDICAMENTOS SA")
-  * Inclua número da NF na descrição (ex: "NF 000738765 Série 5 - ELFA MEDICAMENTOS SA")
-  * Se não encontrar valor total, procure por valores individuais e some, ou use o maior valor encontrado
-- Para COMPROVANTE PIX MERCADO PAGO especificamente:
-  * Procure por: "Mercado Pago", "Comprovante de transferência", "De", "Para", "mercado pago" (logo)
-  * Identifique seções "De" (remetente) e "Para" (destinatário)
-  * IMPORTANTE: O comprovante mostra quem ENVIOU (De) e quem RECEBEU (Para)
-  * Como não sabemos o nome do usuário, assuma que quem está enviando o comprovante é quem FEZ a transferência
-  * Portanto, SEMPRE será tipo "saida" (custo/pagamento) e use o nome de "Para" na categoria
-  * Extraia: valor (procure por "R$" seguido de número grande), data/hora completa, nomes completos de ambas as partes
-  * Use o nome da OUTRA pessoa (não o seu) na categoria
-  * Formato de data: "Sábado, 1 de novembro de 2025, às 18:25:31" → "2025-11-01"
-- Para EXTRATO: analise cada linha (crédito=entrada, débito=saída)
-- Para COMPROVANTE genérico: analise o contexto (pagamento=saída, recebimento=entrada)
-- Se não conseguir identificar, retorne tipo_documento: "nao_identificado"
-- SEMPRE extraia pelo menos uma transação se identificar o documento
-- Seja assertivo: se identificar qualquer documento financeiro, extraia os dados mesmo que incompletos
-- IMPORTANTE: Para comprovantes PIX, sempre inclua o nome da pessoa/empresa na categoria ou descrição
-
-RETORNE APENAS JSON NO SEGUINTE FORMATO:
-{
-  "tipo_documento": "boleto" | "extrato" | "comprovante_pix" | "comprovante" | "nota_fiscal" | "fatura" | "recibo" | "nao_identificado",
-  "transacoes": [
-    {
-      "tipo": "entrada" | "saida",
-      "valor": 1234.56,
-      "categoria": "Nome da categoria",
-      "data": "YYYY-MM-DD",
-      "descricao": "Descrição detalhada"
-    }
-  ]
-}
-`;
+    // Usa prompt centralizado para consistência
+    const prompt = buildDocumentExtractionPrompt(fullText);
 
     console.log('[VISION] Processando texto com Gemini para extrair dados...');
     console.log('[VISION] Tamanho do prompt:', prompt.length, 'caracteres');

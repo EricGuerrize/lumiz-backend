@@ -1,6 +1,7 @@
 const userController = require('../userController');
 const onboardingFlowService = require('../../services/onboardingFlowService');
 const documentService = require('../../services/documentService');
+const userRateLimit = require('../../middleware/userRateLimit');
 
 /**
  * Handler para documentos e imagens
@@ -11,10 +12,29 @@ class DocumentHandler {
   }
 
   /**
+   * Verifica rate limit para operações de OCR/documento
+   * @returns {string|null} Mensagem de erro ou null se permitido
+   */
+  async checkDocumentRateLimit(phone) {
+    const result = await userRateLimit.checkExpensiveOperationLimit(phone, 'document');
+    if (!result.allowed) {
+      const waitMinutes = Math.ceil((result.resetAt.getTime() - Date.now()) / 60000);
+      return `⏳ Você enviou muitos documentos em pouco tempo.\n\nPor favor, aguarde ${waitMinutes} minuto${waitMinutes > 1 ? 's' : ''} antes de enviar mais.\n\nDica: Você pode registrar manualmente digitando, por exemplo:\n_"Custo R$ 150 conta de luz"_`;
+    }
+    return null;
+  }
+
+  /**
    * Processa mensagem de documento (PDF/imagem)
    */
   async handleDocumentMessage(phone, mediaUrl, fileName, messageKey = null) {
     try {
+      // Verifica rate limit antes de processar
+      const rateLimitError = await this.checkDocumentRateLimit(phone);
+      if (rateLimitError) {
+        return rateLimitError;
+      }
+
       // Verifica se usuário está cadastrado
       if (onboardingFlowService.isOnboarding(phone)) {
         return 'Complete seu cadastro primeiro! 😊\n\nQual o nome da sua clínica?';
@@ -54,6 +74,12 @@ class DocumentHandler {
    */
   async handleImageMessage(phone, mediaUrl, caption, messageKey = null) {
     try {
+      // Verifica rate limit antes de processar
+      const rateLimitError = await this.checkDocumentRateLimit(phone);
+      if (rateLimitError) {
+        return rateLimitError;
+      }
+
       // Verifica se está em onboarding
       if (onboardingFlowService.isOnboarding(phone)) {
         const step = onboardingFlowService.getOnboardingStep(phone);

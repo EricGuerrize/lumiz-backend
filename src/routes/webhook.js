@@ -5,6 +5,7 @@ const messageController = require('../controllers/messageController');
 const evolutionService = require('../services/evolutionService');
 const userController = require('../controllers/userController');
 const registrationTokenService = require('../services/registrationTokenService');
+const userRateLimit = require('../middleware/userRateLimit');
 
 // Rate limiting específico para webhook (30 req/min por IP)
 // Configuração segura que funciona mesmo com trust proxy
@@ -14,23 +15,23 @@ const webhookLimiter = rateLimit({
   message: 'Muitas mensagens recebidas, aguarde um momento.',
   standardHeaders: true,
   legacyHeaders: false,
-  // Usa o IP real mesmo com trust proxy configurado
-  // Isso previne bypass do rate limiting
-  skip: (req) => {
-    // Em produção, pode adicionar lógica adicional se necessário
-    return false;
-  },
-  // Garante que usa o IP correto mesmo com proxy
+  skip: (req) => false,
   keyGenerator: (req) => {
-    // Tenta pegar o IP real do header X-Forwarded-For ou usa req.ip
     const forwarded = req.headers['x-forwarded-for'];
     if (forwarded) {
-      // Pega o primeiro IP da lista (IP real do cliente)
       const ip = forwarded.split(',')[0].trim();
       return ip;
     }
     return req.ip || req.connection.remoteAddress || 'unknown';
   }
+});
+
+// Rate limiting por telefone (30 req/min por número)
+// Protege contra abuse de um único usuário enviando muitas mensagens
+const phoneRateLimiter = userRateLimit.phoneRateLimitMiddleware({
+  windowMs: 60 * 1000, // 1 minuto
+  max: 30, // 30 mensagens por minuto por telefone
+  message: 'Muitas mensagens enviadas. Aguarde um momento antes de continuar.'
 });
 
 // Handler comum para processar webhooks
@@ -228,34 +229,18 @@ const webhookHandler = async (req, res) => {
             console.log(`[WEBHOOK] [MSG] ${phone}: ${messageText.substring(0, 50)}`);
             try {
               response = await messageController.handleIncomingMessage(phone, messageText);
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'webhook.js:230',message:'Response from handleIncomingMessage',data:{phone,messageText:messageText.substring(0,50),responseType:typeof response,responseLength:response?.length,responseTruthy:!!response,responsePreview:response?.substring?.(0,100)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-              // #endregion
             } catch (msgError) {
               console.error(`[WEBHOOK] [MSG] Erro ao processar mensagem:`, msgError.message);
               response = 'Erro ao processar mensagem 😢\n\nTente novamente.';
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'webhook.js:233',message:'Error in handleIncomingMessage',data:{phone,error:msgError.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-              // #endregion
             }
           }
-
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'webhook.js:237',message:'Before checking response',data:{phone,responseType:typeof response,responseValue:response,responseTruthy:!!response,responseLength:response?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-          // #endregion
 
           // Garante que response é uma string válida antes de enviar
           if (response && typeof response === 'string' && response.trim().length > 0) {
             try {
               await evolutionService.sendMessage(phone, response);
               console.log(`[WEBHOOK] ✅ Resposta enviada para ${phone}`);
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'webhook.js:240',message:'Message sent successfully',data:{phone,responseLength:response.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-              // #endregion
             } catch (sendError) {
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'webhook.js:242',message:'Error sending message',data:{phone,error:sendError.message,errorCode:sendError.code},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-              // #endregion
               // Não tenta enviar mensagem de erro se o número é inválido
               if (sendError.code === 'INVALID_PHONE') {
                 console.error(`[WEBHOOK] ❌ Número de telefone inválido: ${phone}`);
@@ -272,15 +257,9 @@ const webhookHandler = async (req, res) => {
               }
             }
           } else {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'webhook.js:257',message:'Response is empty or invalid',data:{phone,responseType:typeof response,responseValue:response,responseLength:response?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-            // #endregion
             console.warn(`[WEBHOOK] ⚠️ Resposta vazia ou inválida para ${phone}:`, typeof response, response);
           }
         } catch (error) {
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'webhook.js:259',message:'General error in webhook processing',data:{phone,error:error.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-          // #endregion
           console.error('[WEBHOOK] ❌ Erro geral no processamento:', error.message);
           console.error('[WEBHOOK] Stack:', error.stack);
           // Tenta enviar mensagem de erro genérica apenas se o número é válido
@@ -309,10 +288,11 @@ const webhookHandler = async (req, res) => {
 };
 
 // Rota padrão: /api/webhook (quando Webhook by Events está desativado)
-router.post('/webhook', webhookLimiter, webhookHandler);
+// Aplica rate limit por IP e por telefone (proteção dupla)
+router.post('/webhook', webhookLimiter, phoneRateLimiter, webhookHandler);
 
 // Rota específica: /api/webhook/messages-upsert (quando Webhook by Events está ativado)
-router.post('/webhook/messages-upsert', webhookLimiter, webhookHandler);
+router.post('/webhook/messages-upsert', webhookLimiter, phoneRateLimiter, webhookHandler);
 
 // POST /api/test/send-setup-email - Testa envio de email (apenas para desenvolvimento)
 router.post('/test/send-setup-email', async (req, res) => {
