@@ -34,7 +34,7 @@ class HelpHandler {
    * Mensagem de saudação
    */
   handleGreeting() {
-    return `Oi! Tudo bem? Sou a *Lumiz* 💜\n\nTo aqui pra te ajudar a organizar as finanças da sua clínica de um jeito simples!\n\nPode me mandar:\n• Uma venda que você fez hoje\n• Um custo que precisa registrar\n• Ou me perguntar como está o caixa\n\nÉ só escrever naturalmente, tipo:\n_"Fiz um botox hoje, 2800 reais"_\n_"Comprei insumos por 1500"_\n_"Como tá meu saldo?"_\n\nBora começar? 😊`;
+    return `Oi! Tudo bem? Sou a *Lumiz* 💜\n\nTo aqui pra te ajudar a organizar as finanças da sua clínica de um jeito simples!\n\nPode me mandar:\n• Uma venda que você fez hoje\n• Um custo que precisa registrar\n• Ou me perguntar como está o caixa\n\nÉ só escrever naturalmente, tipo:\n_"Fiz um botox hoje, R$ 2800"_\n_"Comprei insumos por R$ 1500"_\n_"Como tá meu saldo?"_\n\nBora começar? 😊`;
   }
 
   /**
@@ -93,10 +93,11 @@ class HelpHandler {
       return response;
     } catch (error) {
       console.error('Erro ao processar mensagem ambígua:', error);
-      return 'Não entendi essa mensagem 😅\n\nPode reformular? Tipo:\n_"Botox 2800"_ ou _"Insumos 1500"_\n\nOu digite "ajuda" para ver os comandos!';
+      return 'Não entendi essa mensagem 😅\n\nPode reformular? Tipo:\n_"Botox R$ 2800"_ ou _"Insumos R$ 1500"_\n\nOu digite "ajuda" para ver os comandos!';
     }
   }
 }
 
 module.exports = HelpHandler;
+
 

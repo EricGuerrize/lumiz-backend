@@ -13,7 +13,7 @@ class GoalHandler {
       const valor = intent.dados?.valor || intent.dados?.meta;
 
       if (!valor || valor <= 0) {
-        return 'Qual é a sua meta de faturamento?\n\nExemplos:\n• "minha meta é 50000"\n• "definir meta 50k"\n• "objetivo de 50000 reais"';
+        return 'Qual é a sua meta de faturamento?\n\nExemplos:\n• "minha meta é R$ 50000"\n• "definir meta R$ 50k"\n• "objetivo de R$ 50000"';
       }
 
       // Salva meta no perfil do usuário
@@ -50,7 +50,7 @@ class GoalHandler {
         .single();
 
       if (!profile || !profile.meta_mensal) {
-        return 'Você ainda não definiu uma meta mensal 📊\n\nPara definir, digite: "minha meta é 50000"';
+        return 'Você ainda não definiu uma meta mensal 📊\n\nPara definir, digite: "minha meta é R$ 50000"';
       }
 
       // Busca faturamento do mês atual
@@ -87,4 +87,5 @@ class GoalHandler {
 }
 
 module.exports = GoalHandler;
+
 

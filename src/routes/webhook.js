@@ -228,17 +228,34 @@ const webhookHandler = async (req, res) => {
             console.log(`[WEBHOOK] [MSG] ${phone}: ${messageText.substring(0, 50)}`);
             try {
               response = await messageController.handleIncomingMessage(phone, messageText);
+              // #region agent log
+              fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'webhook.js:230',message:'Response from handleIncomingMessage',data:{phone,messageText:messageText.substring(0,50),responseType:typeof response,responseLength:response?.length,responseTruthy:!!response,responsePreview:response?.substring?.(0,100)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+              // #endregion
             } catch (msgError) {
               console.error(`[WEBHOOK] [MSG] Erro ao processar mensagem:`, msgError.message);
               response = 'Erro ao processar mensagem 😢\n\nTente novamente.';
+              // #region agent log
+              fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'webhook.js:233',message:'Error in handleIncomingMessage',data:{phone,error:msgError.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+              // #endregion
             }
           }
 
-          if (response) {
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'webhook.js:237',message:'Before checking response',data:{phone,responseType:typeof response,responseValue:response,responseTruthy:!!response,responseLength:response?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+          // #endregion
+
+          // Garante que response é uma string válida antes de enviar
+          if (response && typeof response === 'string' && response.trim().length > 0) {
             try {
               await evolutionService.sendMessage(phone, response);
               console.log(`[WEBHOOK] ✅ Resposta enviada para ${phone}`);
+              // #region agent log
+              fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'webhook.js:240',message:'Message sent successfully',data:{phone,responseLength:response.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+              // #endregion
             } catch (sendError) {
+              // #region agent log
+              fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'webhook.js:242',message:'Error sending message',data:{phone,error:sendError.message,errorCode:sendError.code},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+              // #endregion
               // Não tenta enviar mensagem de erro se o número é inválido
               if (sendError.code === 'INVALID_PHONE') {
                 console.error(`[WEBHOOK] ❌ Número de telefone inválido: ${phone}`);
@@ -254,8 +271,16 @@ const webhookHandler = async (req, res) => {
                 }
               }
             }
+          } else {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'webhook.js:257',message:'Response is empty or invalid',data:{phone,responseType:typeof response,responseValue:response,responseLength:response?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+            // #endregion
+            console.warn(`[WEBHOOK] ⚠️ Resposta vazia ou inválida para ${phone}:`, typeof response, response);
           }
         } catch (error) {
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'webhook.js:259',message:'General error in webhook processing',data:{phone,error:error.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+          // #endregion
           console.error('[WEBHOOK] ❌ Erro geral no processamento:', error.message);
           console.error('[WEBHOOK] Stack:', error.stack);
           // Tenta enviar mensagem de erro genérica apenas se o número é válido

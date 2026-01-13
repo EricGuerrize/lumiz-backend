@@ -18,9 +18,8 @@
       "Bash(npm ls:*)",
       "Bash(rm:*)",
       "Bash(tree:*)",
-      "Bash(which is not supported\"\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
-      "Bash(node test-onboarding-completo.js:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(chmod:*)"
     ],
     "deny": [],
     "ask": []

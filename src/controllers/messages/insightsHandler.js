@@ -42,3 +42,4 @@ class InsightsHandler {
 
 module.exports = InsightsHandler;
 
+

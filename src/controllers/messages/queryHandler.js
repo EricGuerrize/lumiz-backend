@@ -16,7 +16,7 @@ class QueryHandler {
       : 0;
 
     if (balance.entradas === 0 && balance.saidas === 0) {
-      return `Ainda não tem nenhuma movimentação registrada 📋\n\nMe conta sua primeira venda!\nTipo: _"Botox 2800 da cliente Maria"_`;
+      return `Ainda não tem nenhuma movimentação registrada 📋\n\nMe conta sua primeira venda!\nTipo: _"Botox R$ 2800 da cliente Maria"_`;
     }
 
     let response = `Olha só como tá seu financeiro! 📊\n\n`;
@@ -42,7 +42,7 @@ class QueryHandler {
     const transactions = await transactionController.getRecentTransactions(user.id, 5);
 
     if (transactions.length === 0) {
-      return `Não achei nenhuma movimentação ainda 📋\n\nBora registrar a primeira?\nÉ só me mandar tipo: _"Botox 2800"_`;
+      return `Não achei nenhuma movimentação ainda 📋\n\nBora registrar a primeira?\nÉ só me mandar tipo: _"Botox R$ 2800"_`;
     }
 
     let response = `Suas últimas movimentações:\n\n`;
@@ -119,7 +119,7 @@ class QueryHandler {
     });
 
     if (report.totalTransacoes === 0) {
-      return `Ainda não tem movimentações em ${mesNome}.\n\nBora começar? Me manda sua primeira venda!`;
+      return `Ainda não tem movimentações em ${mesNome}.\n\nBora começar? Me manda sua primeira venda! (ex: "Botox R$ 2800")`;
     }
 
     let response = `*RELATÓRIO - ${mesNome}*\n\n`;
@@ -202,7 +202,7 @@ class QueryHandler {
     const hoje = atendimentos.filter(t => t.date === today);
 
     if (hoje.length === 0) {
-      return `Ainda não tem movimentações hoje 📅\n\nBora começar? Me manda sua primeira venda!`;
+      return `Ainda não tem movimentações hoje 📅\n\nBora começar? Me manda sua primeira venda! (ex: "Botox R$ 2800")`;
     }
 
     const entradas = hoje.filter(t => t.type === 'entrada').reduce((sum, t) => sum + parseFloat(t.amount), 0);
@@ -330,4 +330,5 @@ class QueryHandler {
 }
 
 module.exports = QueryHandler;
+
 

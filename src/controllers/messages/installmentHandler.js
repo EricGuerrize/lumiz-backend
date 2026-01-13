@@ -14,7 +14,7 @@ class InstallmentHandler {
       const installments = await reminderService.getPendingInstallments(user.id);
 
       if (installments.length === 0) {
-        return `Não tem parcelas pendentes! ✅\n\nPra registrar venda parcelada, é só me mandar:\n_"Botox 2800 3x cartão paciente Maria"_`;
+        return `Não tem parcelas pendentes! ✅\n\nPra registrar venda parcelada, é só me mandar:\n_"Botox R$ 2800 3x cartão paciente Maria"_`;
       }
 
       let response = `💳 *PARCELAS A RECEBER*\n\n`;
@@ -114,4 +114,5 @@ class InstallmentHandler {
 }
 
 module.exports = InstallmentHandler;
+
 

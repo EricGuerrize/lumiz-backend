@@ -63,7 +63,7 @@ class DocumentHandler {
           const result = await documentService.processImage(mediaUrl, messageKey);
 
           if (result.processor === 'tesseract') {
-            return `Li o seguinte texto:\n"${result.text}"\n\nMas não consegui identificar o valor automaticamente. Por favor, digite o valor e o nome (ex: "Venda 100").`;
+            return `Li o seguinte texto:\n"${result.text}"\n\nMas não consegui identificar o valor automaticamente. Por favor, digite o valor e o nome (ex: "Venda R$ 100").`;
           }
 
           if (result.transacoes && result.transacoes.length > 0) {
@@ -220,4 +220,5 @@ class DocumentHandler {
 }
 
 module.exports = DocumentHandler;
+
 

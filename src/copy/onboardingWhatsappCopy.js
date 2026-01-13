@@ -229,6 +229,23 @@ module.exports = {
         return `Custo registrado ✅`;
     },
 
+    // Mensagens para pedir o segundo tipo de custo (complementar)
+    ahaCostsSecondIntroFixed() {
+        return (
+            `Custo variável registrado ✅\n\n` +
+            `Agora me manda um custo fixo (ex: aluguel, salário, internet).\n` +
+            `Pode ser texto, foto ou PDF.`
+        );
+    },
+
+    ahaCostsSecondIntroVariable() {
+        return (
+            `Custo fixo registrado ✅\n\n` +
+            `Agora me manda um custo variável (ex: insumos, fornecedor).\n` +
+            `Pode ser texto, foto ou PDF.`
+        );
+    },
+
     // ============================================================
     // 7) AHA_SUMMARY - Resumo AHA
     // ============================================================
