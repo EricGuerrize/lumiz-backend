@@ -2,6 +2,7 @@ require('dotenv').config();
 const axios = require('axios');
 const { withTimeout, retryWithBackoff } = require('../utils/timeout');
 const googleVisionService = require('./googleVisionService');
+const { validateImage, likelyDocument, LIMITS } = require('../utils/imageValidator');
 
 // Timeout para processamento de imagens (60 segundos - imagens podem demorar)
 const IMAGE_PROCESSING_TIMEOUT_MS = 60000;
@@ -137,9 +138,30 @@ class DocumentService {
 
       console.log('[DOC] Tamanho do buffer final:', imageBuffer.length, 'bytes');
 
-      // Detecta o tipo da imagem (apenas para log)
+      // Detecta o tipo da imagem
       const { mimeType, fileExtension } = this.detectImageType(imageBuffer);
       console.log('[DOC] Tipo detectado:', mimeType, '(' + fileExtension + ')');
+
+      // Valida qualidade da imagem antes de processar
+      const validation = validateImage(imageBuffer, mimeType);
+      
+      if (!validation.valid) {
+        console.log('[DOC] ❌ Imagem reprovada na validação:', validation.error);
+        return {
+          tipo_documento: 'erro_validacao',
+          transacoes: [],
+          erro: validation.error,
+          sugestao: 'Tente enviar uma foto com melhor qualidade, mais iluminada e sem desfoque.'
+        };
+      }
+
+      if (validation.warning) {
+        console.log('[DOC] ⚠️ Aviso de validação:', validation.warning);
+      }
+
+      if (validation.dimensions) {
+        console.log('[DOC] Dimensões:', validation.dimensions.width, 'x', validation.dimensions.height);
+      }
 
       // Chama Google Vision Service
       // O serviço já retorna o JSON estruturado processado pelo Gemini
@@ -171,43 +193,10 @@ class DocumentService {
     if (mimeType === 'application/pdf' || fileExtension === 'PDF') {
       console.log('[DOC] PDF detectado! Enviando direto para Gemini 2.0 Flash...');
       const geminiService = require('./geminiService');
+      const { buildDocumentExtractionPrompt } = require('../config/prompts');
 
-      const dataHoje = new Date().toISOString().split('T')[0];
-      const prompt = `
-TAREFA: Analisar este documento financeiro (PDF) e extrair informações estruturadas.
-
-DATA DE HOJE: ${dataHoje}
-
-TIPOS DE DOCUMENTO:
-1. BOLETO
-2. EXTRATO BANCÁRIO
-3. COMPROVANTE DE PAGAMENTO PIX
-4. COMPROVANTE DE PAGAMENTO
-5. NOTA FISCAL
-6. FATURA DE CARTÃO
-7. RECIBO
-
-EXTRAÇÃO:
-- tipo_documento: tipo identificado (boleto, extrato, comprovante_pix, comprovante, nota_fiscal, fatura, recibo, nao_identificado)
-- transacoes: array de transações encontradas:
-  - tipo: "entrada" (recebi dinheiro) ou "saida" (paguei dinheiro)
-  - valor: número (positivo)
-  - categoria: nome da pessoa/empresa ou descrição curta
-  - data: YYYY-MM-DD
-  - descricao: detalhes adicionais
-
-REGRAS:
-- Boleto/NF/Fatura = SAÍDA
-- PIX: Verifique "De" e "Para". Se "Para" é o usuário (clínica), é ENTRADA. Se "De" é o usuário, é SAÍDA.
-- Na dúvida do PIX, se for Comprovante de Transferência que EUN enviei, é SAÍDA.
-- Tente extrair o máximo de transações possível (ex: várias linhas de um extrato).
-
-RETORNE APENAS JSON:
-{
-  "tipo_documento": "...",
-  "transacoes": [{ "tipo": "...", "valor": 0.0, "categoria": "...", "data": "...", "descricao": "..." }]
-}
-`;
+      // Usa prompt centralizado para consistência
+      const prompt = buildDocumentExtractionPrompt();
       return await geminiService.processDocument(buffer, 'application/pdf', prompt);
     }
 

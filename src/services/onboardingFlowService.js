@@ -30,9 +30,6 @@ function isYes(value = '') {
     const result = v === '1' || v === 'sim' || v === 's' || v === 'ok' || v === 'confirmar' || 
            v.includes('pode registrar') || v.includes('tá ok') || v.includes('ta ok') || 
            v.includes('confere') || v.includes('autorizo') || v.includes('autorizar');
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:28',message:'isYes function',data:{value,v,result},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-    // #endregion
     return result;
 }
 
@@ -293,22 +290,11 @@ class OnboardingStateHandlers {
     }
 
     async handleConsent(onboarding, messageTrimmed, normalizedPhone, respond) {
-        // Correção #7: Validação consistente
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:266',message:'handleConsent entry',data:{phone:normalizedPhone,messageTrimmed,step:onboarding.step},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-        // #endregion
         const choseAuthorize = isYes(messageTrimmed);
         const choseDeny = isNo(messageTrimmed);
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:269',message:'isYes/isNo results',data:{choseAuthorize,choseDeny,messageTrimmed},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-        // #endregion
 
         if (choseDeny) {
-            const result = await respond(onboardingCopy.consentDenied());
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:272',message:'handleConsent deny path',data:{result,resultType:typeof result},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-            // #endregion
-            return result;
+            return await respond(onboardingCopy.consentDenied());
         }
 
         if (choseAuthorize) {
@@ -318,21 +304,10 @@ class OnboardingStateHandlers {
                 source: 'whatsapp'
             });
             const questionText = onboardingCopy.profileNameQuestion();
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:281',message:'Before respond with profileNameQuestion',data:{questionText,questionTextType:typeof questionText,questionTextLength:questionText?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-            // #endregion
-            const result = await respond(questionText, true); // Persist imediato
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:281',message:'handleConsent authorize path result',data:{result,resultType:typeof result,resultLength:result?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-            // #endregion
-            return result;
+            return await respond(questionText, true);
         }
 
-        const result = await respond(onboardingCopy.invalidChoice());
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:284',message:'handleConsent invalidChoice path',data:{result,resultType:typeof result},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-        // #endregion
-        return result;
+        return await respond(onboardingCopy.invalidChoice());
     }
 
     async handleProfileName(onboarding, messageTrimmed, respond) {
@@ -1082,9 +1057,6 @@ class OnboardingFlowService {
         const normalizedPhone = normalizePhone(phone) || phone;
         const onboarding = this.onboardingStates.get(normalizedPhone);
         if (!onboarding) {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:1013',message:'No onboarding state found',data:{phone:normalizedPhone},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-            // #endregion
             return null;
         }
 
@@ -1102,23 +1074,13 @@ class OnboardingFlowService {
 
             const persist = async () => {
                 try {
-                    // #region agent log
-                    fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:1029',message:'persist function entry',data:{phone:normalizedPhone,step:onboarding.step},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-                    // #endregion
-                    const result = await onboardingService.upsertWhatsappState(normalizedPhone, {
+                    await onboardingService.upsertWhatsappState(normalizedPhone, {
                         step: onboarding.step,
                         data: onboarding.data
                     });
-                    // #region agent log
-                    fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:1034',message:'persist function success',data:{result:!!result},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-                    // #endregion
                     this.persistTimers.delete(normalizedPhone);
                 } catch (e) {
                     console.error('[ONBOARDING] Falha ao persistir estado:', e?.message || e);
-                    // #region agent log
-                    fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:1037',message:'persist function error',data:{error:e?.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-                    // #endregion
-                    // Não relança a exceção - falha silenciosamente
                 }
             };
 
@@ -1144,10 +1106,6 @@ class OnboardingFlowService {
 
         // Correção #5: Sincronização de estado
         const respond = async (text, shouldPersistImmediate = false, criticalPersist = false) => {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:1050',message:'respond function entry',data:{textType:typeof text,textLength:text?.length,shouldPersistImmediate,criticalPersist},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-            // #endregion
-            
             // Garante que text é válido
             if (!text || typeof text !== 'string') {
                 console.error('[ONBOARDING] respond recebeu text inválido:', text);
@@ -1162,27 +1120,14 @@ class OnboardingFlowService {
                     // (não bloqueia resposta ao usuário, mas loga erro)
                     try {
                         await persistState(true);
-                        // #region agent log
-                        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:1060',message:'persistState critical success',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-                        // #endregion
                     } catch (e) {
                         console.error('[ONBOARDING] Falha crítica ao persistir estado:', e?.message || e);
-                        // #region agent log
-                        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:1065',message:'persistState critical error',data:{error:e?.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-                        // #endregion
-                        // Não bloqueia resposta, mas estado pode ficar inconsistente
                     }
                 } else {
                     try {
                         await persistState(shouldPersistImmediate);
-                        // #region agent log
-                        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:1073',message:'persistState normal success',data:{shouldPersistImmediate},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-                        // #endregion
                     } catch (e) {
                         console.error('[ONBOARDING] Falha ao persistir estado:', e?.message || e);
-                        // #region agent log
-                        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:1077',message:'persistState normal error',data:{error:e?.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-                        // #endregion
                     }
                 }
             } catch (e) {
@@ -1190,10 +1135,6 @@ class OnboardingFlowService {
                 console.error('[ONBOARDING] Erro inesperado na persistência:', e?.message || e);
                 // Não bloqueia resposta
             }
-            
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:1087',message:'respond function exit',data:{textType:typeof text,textLength:text?.length,returningText:text?.substring?.(0,50)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-            // #endregion
             
             // Garante que sempre retorna uma string válida
             return text || onboardingCopy.lostState();
@@ -1236,21 +1177,11 @@ class OnboardingFlowService {
         const step = onboarding.step;
 
         try {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:1065',message:'processOnboarding switch entry',data:{step,messageTrimmed,normalizedPhone},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-            // #endregion
             switch (step) {
                 case 'START':
                     return await handlers.handleStart(onboarding, messageTrimmed, normalizedPhone, respond);
                 case 'CONSENT':
-                    // #region agent log
-                    fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:1083',message:'Calling handleConsent',data:{step,messageTrimmed},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-                    // #endregion
-                    const consentResult = await handlers.handleConsent(onboarding, messageTrimmed, normalizedPhone, respond);
-                    // #region agent log
-                    fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:1083',message:'handleConsent returned',data:{consentResult,resultType:typeof consentResult,resultLength:consentResult?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-                    // #endregion
-                    return consentResult;
+                    return await handlers.handleConsent(onboarding, messageTrimmed, normalizedPhone, respond);
                 case 'PROFILE_NAME':
                     return await handlers.handleProfileName(onboarding, messageTrimmed, respond);
                 case 'PROFILE_CLINIC':
@@ -1288,18 +1219,11 @@ class OnboardingFlowService {
                 case 'MDR_SETUP_COMPLETE':
                     return await handlers.handleMdrSetupComplete(respond, respondAndClear);
                 default:
-                    const defaultResponse = await respond(onboardingCopy.lostState());
-                    // #region agent log
-                    fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:1121',message:'Default case response',data:{step,defaultResponse,defaultResponseType:typeof defaultResponse},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-                    // #endregion
-                    return defaultResponse;
+                    return await respond(onboardingCopy.lostState());
             }
         } catch (error) {
             console.error('[ONBOARDING] Erro ao processar estado:', error);
             console.error('[ONBOARDING] Stack:', error.stack);
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:1125',message:'Error in processOnboarding',data:{error:error.message,step},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-            // #endregion
             try {
                 const errorResponse = await respond(onboardingCopy.lostState());
                 return errorResponse || 'Ops, me perdi. Digite "Oi" para recomeçar.';

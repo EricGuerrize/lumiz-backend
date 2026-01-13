@@ -19,7 +19,8 @@
       "Bash(rm:*)",
       "Bash(tree:*)",
       "Bash(find:*)",
-      "Bash(chmod:*)"
+      "Bash(chmod:*)",
+      "Bash(grep:*)"
     ],
     "deny": [],
     "ask": []

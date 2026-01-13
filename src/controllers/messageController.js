@@ -58,13 +58,7 @@ class MessageController {
 
       // Verifica se está em processo de onboarding
       if (onboardingFlowService.isOnboarding(normalizedPhone)) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'messageController.js:60',message:'Calling processOnboarding',data:{phone:normalizedPhone,message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-        // #endregion
         const result = await onboardingFlowService.processOnboarding(normalizedPhone, message);
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'messageController.js:62',message:'processOnboarding result',data:{result,resultType:typeof result,resultLength:result?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-        // #endregion
         return result;
       }
 

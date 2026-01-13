@@ -1,5 +1,6 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const axios = require('axios');
+const { buildMdrExtractionPrompt } = require('../config/prompts');
 require('dotenv').config();
 
 const MODEL_ID = 'gemini-2.0-flash-exp';
@@ -20,7 +21,8 @@ class MdrOcrService {
     }
 
     const buffer = await this.downloadImage(imageUrl);
-    const prompt = this.buildPrompt(provider);
+    // Usa prompt centralizado
+    const prompt = buildMdrExtractionPrompt(provider);
 
     const imagePart = {
       inlineData: {
@@ -52,62 +54,9 @@ class MdrOcrService {
     };
   }
 
+  // Método mantido por compatibilidade, mas usa prompt centralizado
   buildPrompt(provider) {
-    const providers = provider
-      ? [provider]
-      : ['Stone', 'PagSeguro', 'Rede', 'Cielo', 'GetNet', 'Mercado Pago'];
-
-    return `
-Você é um especialista em adquirência. Leia o print de taxas da maquininha e devolva APENAS um JSON com o seguinte formato:
-{
-  "provider": "nome encontrado ou sugerido",
-  "bandeiras": [
-    {
-      "nome": "Visa",
-      "debito_percent": 1.45,
-      "credito_avista_percent": 3.19,
-      "parcelado_percent": {
-        "2x": 4.29,
-        "3x": 4.99,
-        "...": 0
-      }
-    }
-  ],
-  "tiposVenda": {
-    "debito": {
-      "liquidacao": "D+1",
-      "taxa_media": 1.45
-    },
-    "credito_avista": {
-      "liquidacao": "D+30",
-      "taxa_media": 3.19
-    },
-    "parcelado": {
-      "liquidacao": "D+30",
-      "tabela": {
-        "2x": 4.29,
-        "3x": 4.99,
-        "4x": 5.69,
-        "5x": 6.39,
-        "6x": 6.99,
-        "7x": 7.59,
-        "8x": 8.19,
-        "9x": 8.79,
-        "10x": 9.39,
-        "11x": 9.99,
-        "12x": 10.59
-      }
-    }
-  },
-  "observacoes": "comentários importantes"
-}
-
-REGRAS:
-- Se algum campo não estiver no print, use null.
-- Valores sempre em porcentagem com duas casas decimais.
-- Informe o provider detectado ou o mais provável (entre ${providers.join(', ')}).
-- NÃO retorne texto fora do JSON.
-`;
+    return buildMdrExtractionPrompt(provider);
   }
 
   normalizeExtraction(data, fallbackProvider) {
