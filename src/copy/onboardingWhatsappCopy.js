@@ -73,6 +73,64 @@ module.exports = {
     },
 
     // ============================================================
+    // 2.5) PROFILE_ADD_MEMBER - Adicionar números da equipe
+    // ============================================================
+    profileAddMemberQuestion() {
+        return (
+            `Deseja cadastrar algum outro número da equipe pra acessar a Lumiz?\n` +
+            `(Ex: o celular da dona, secretária, etc.)\n\n` +
+            `1️⃣ Sim, quero adicionar\n` +
+            `2️⃣ Não, depois faço isso`
+        );
+    },
+
+    profileAddMemberRoleQuestion() {
+        return (
+            `Qual a função dessa pessoa?\n\n` +
+            `1️⃣ 👑 Dona / gestora\n` +
+            `2️⃣ 🧾 Adm / financeiro\n` +
+            `3️⃣ 💬 Secretária\n` +
+            `4️⃣ ⚕️ Profissional`
+        );
+    },
+
+    profileAddMemberNameQuestion() {
+        return `Qual o nome dessa pessoa?`;
+    },
+
+    profileAddMemberPhoneQuestion() {
+        return (
+            `Qual o número de WhatsApp?\n` +
+            `(Formato: 5511999999999)`
+        );
+    },
+
+    profileAddMemberSuccess(nome) {
+        return (
+            `✅ ${nome} cadastrado(a)!\n\n` +
+            `Deseja adicionar mais alguém?\n\n` +
+            `1️⃣ Sim, mais um\n` +
+            `2️⃣ Não, vamos continuar`
+        );
+    },
+
+    profileAddMemberInvalidPhone() {
+        return (
+            `Número inválido. Por favor, use o formato:\n` +
+            `5511999999999 (código do país + DDD + número)`
+        );
+    },
+
+    profileAddMemberAlreadyLinked(clinicName) {
+        return (
+            `⚠️ Este número já está vinculado à clínica "${clinicName}".\n` +
+            `Deseja adicionar outro número?\n\n` +
+            `1️⃣ Sim\n` +
+            `2️⃣ Não`
+        );
+    },
+
+    // ============================================================
     // 3) CONTEXT_MIN - Contexto mínimo
     // ============================================================
     contextWhyQuestion() {
@@ -469,6 +527,96 @@ module.exports = {
 
     valueInvalid() {
         return 'Valor inválido. Por favor, digite um valor válido (ex: R$ 500 ou 1500.50).';
+    },
+
+    // ============================================================
+    // Gerenciamento de Membros (pós-onboarding)
+    // ============================================================
+    addMemberStart() {
+        return (
+            `Vou te ajudar a cadastrar um novo número! 📱\n\n` +
+            `Qual a função dessa pessoa?\n\n` +
+            `1️⃣ 👑 Dona / gestora\n` +
+            `2️⃣ 🧾 Adm / financeiro\n` +
+            `3️⃣ 💬 Secretária\n` +
+            `4️⃣ ⚕️ Profissional`
+        );
+    },
+
+    addMemberNoPermission() {
+        return `⚠️ Apenas donos/gestoras podem adicionar novos números à clínica.`;
+    },
+
+    addMemberNameQuestion() {
+        return `Qual o nome dessa pessoa?`;
+    },
+
+    addMemberPhoneQuestion() {
+        return (
+            `Qual o número de WhatsApp dessa pessoa?\n` +
+            `(Formato: 5511999999999)`
+        );
+    },
+
+    addMemberSuccess(nome, funcao) {
+        return (
+            `✅ ${nome} foi cadastrado(a) como ${funcao}!\n\n` +
+            `Quando essa pessoa enviar uma mensagem, ela receberá uma confirmação ` +
+            `e terá acesso aos dados financeiros da clínica.`
+        );
+    },
+
+    addMemberPhoneAlreadyLinked(clinicName) {
+        return `⚠️ Este número já está vinculado à clínica "${clinicName}".`;
+    },
+
+    // ============================================================
+    // Confirmação de Número Secundário
+    // ============================================================
+    secondaryNumberConfirmation(clinicName, addedByName) {
+        return (
+            `Olá! 👋\n\n` +
+            `Você foi adicionado(a) à clínica *${clinicName}* por ${addedByName}.\n\n` +
+            `Confirma o vínculo para ter acesso aos dados financeiros?\n\n` +
+            `1️⃣ Sim, confirmo\n` +
+            `2️⃣ Não, não sou dessa clínica`
+        );
+    },
+
+    secondaryNumberConfirmed(clinicName) {
+        return (
+            `✅ Vínculo confirmado!\n\n` +
+            `Agora você tem acesso aos dados financeiros da clínica *${clinicName}*.\n\n` +
+            `Pode me mandar vendas, custos ou pedir resumos. 😊`
+        );
+    },
+
+    secondaryNumberRejected() {
+        return (
+            `Ok, vínculo cancelado.\n\n` +
+            `Se isso foi um engano, peça para a dona/gestora da clínica te adicionar novamente.`
+        );
+    },
+
+    // ============================================================
+    // Transferência de Número entre Clínicas
+    // ============================================================
+    transferConfirmationToOwner(phone, newClinicName) {
+        return (
+            `⚠️ Aviso importante!\n\n` +
+            `O número ${phone} está sendo transferido para a clínica "${newClinicName}".\n\n` +
+            `Confirma a remoção deste número da sua clínica?\n\n` +
+            `1️⃣ Sim, pode transferir\n` +
+            `2️⃣ Não, manter vinculado aqui`
+        );
+    },
+
+    transferApproved() {
+        return `✅ Transferência autorizada.`;
+    },
+
+    transferDenied() {
+        return `❌ Transferência negada. O número permanece vinculado à sua clínica.`;
     },
 
     // ============================================================

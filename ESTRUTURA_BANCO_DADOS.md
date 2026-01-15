@@ -1,6 +1,6 @@
 # 📊 Estrutura do Banco de Dados - Lumiz
 
-**Última atualização:** 13/01/2026
+**Última atualização:** 14/01/2026
 
 Esta documentação detalha a estrutura completa do banco de dados Supabase utilizado pelo sistema Lumiz.
 
@@ -145,6 +145,35 @@ Esta documentação detalha a estrutura completa do banco de dados Supabase util
 - `created_at`, `updated_at`
 
 **Uso:** Funcionalidade de agenda (em expansão)
+
+---
+
+### 9. `clinic_members`
+**Descrição:** Permite vincular múltiplos números WhatsApp a uma mesma clínica. Cada membro tem uma função (dona, gestora, adm, secretária, profissional) e pode acessar os dados financeiros.
+
+**Colunas Principais:**
+- `id` (PK, UUID)
+- `clinic_id` (FK → profiles) - Clínica à qual o membro pertence
+- `telefone` (VARCHAR, Unique quando ativo) - Número WhatsApp do membro
+- `nome` (VARCHAR) - Nome do membro
+- `funcao` (VARCHAR) - Função: 'dona', 'gestora', 'adm', 'financeiro', 'secretaria', 'profissional'
+- `is_primary` (BOOLEAN) - Se é o número que fez o onboarding original
+- `is_active` (BOOLEAN) - Se o vínculo está ativo
+- `confirmed` (BOOLEAN) - Se o membro confirmou o vínculo
+- `confirmed_at` (TIMESTAMP) - Data/hora da confirmação
+- `created_by` (FK → profiles) - Quem cadastrou este membro
+- `created_at`, `updated_at`
+
+**Índices:**
+- `idx_clinic_members_telefone` - Busca rápida por telefone
+- `idx_clinic_members_clinic_id` - Listar membros por clínica
+- `idx_clinic_members_active` - Filtro por membros ativos
+
+**Constraints:**
+- `UNIQUE(telefone)` quando `is_active = TRUE` - Telefone só pode estar em uma clínica
+- `CHECK funcao IN (...)` - Valida funções permitidas
+
+**Uso:** Multi-usuário por clínica, acesso via número pessoal da dona
 
 ---
 

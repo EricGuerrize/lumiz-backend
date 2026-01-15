@@ -26,7 +26,7 @@ class UserController {
 
       const variants = getPhoneVariants(phone);
 
-      // Busca na tabela profiles pelo telefone
+      // 1. Busca na tabela profiles pelo telefone (comportamento original)
       let query = supabase
         .from('profiles')
         .select('*');
@@ -44,12 +44,58 @@ class UserController {
         throw fetchError;
       }
 
-      // Cache the result (15 minutes TTL for user profiles)
+      // Se encontrou direto em profiles, retorna
       if (existingUser) {
         await cacheService.set(cacheKey, existingUser, 900);
+        return existingUser;
       }
 
-      return existingUser || null;
+      // 2. Se não encontrou em profiles, busca em clinic_members
+      let memberQuery = supabase
+        .from('clinic_members')
+        .select('clinic_id, nome, funcao, is_primary, confirmed')
+        .eq('is_active', true);
+
+      if (variants.length) {
+        memberQuery = memberQuery.in('telefone', variants);
+      } else {
+        memberQuery = memberQuery.eq('telefone', normalized);
+      }
+
+      const { data: member, error: memberError } = await memberQuery.maybeSingle();
+
+      if (memberError && memberError.code !== 'PGRST116') {
+        throw memberError;
+      }
+
+      // Se encontrou em clinic_members, busca o profile da clínica
+      if (member && member.clinic_id) {
+        const { data: clinicProfile, error: clinicError } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', member.clinic_id)
+          .single();
+
+        if (clinicError) {
+          console.error('[USER] Erro ao buscar profile da clínica:', clinicError);
+        }
+
+        if (clinicProfile) {
+          // Adiciona informação do membro ao profile retornado
+          clinicProfile._member = {
+            nome: member.nome,
+            funcao: member.funcao,
+            is_primary: member.is_primary,
+            confirmed: member.confirmed,
+            phone_used: normalized
+          };
+          
+          await cacheService.set(cacheKey, clinicProfile, 900);
+          return clinicProfile;
+        }
+      }
+
+      return null;
     } catch (error) {
       // Melhor tratamento de erros de conexão
       if (error.message && error.message.includes('fetch failed')) {

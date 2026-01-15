@@ -85,6 +85,8 @@ INTENÇÕES:
 - consultar_agenda: agenda, agendamentos, compromissos, consultas marcadas, ver agenda
 - consultar_meta: meta, minha meta, progresso, objetivo, quanto falta, atingir meta
 - insights: insights, dicas, sugestoes, sugestões, recomendacoes, recomendações
+- adicionar_numero: cadastrar número, adicionar número, novo número, registrar número, vincular número, adicionar celular, cadastrar celular, quero adicionar outro número, preciso cadastrar um número, adicionar membro, cadastrar membro, vincular outro whatsapp, adicionar outro whatsapp, quero adicionar alguém, preciso adicionar um número, cadastrar outro telefone
+- listar_numeros: meus números, números cadastrados, listar números, ver números, quem tem acesso
 - ajuda: ajuda, como usar, exemplos, o que você faz, como funciona
 - saudacao: oi, olá, bom dia, boa tarde, boa noite
 - desfazer: cancelar, desfazer, apagar última, errei, deletar última
@@ -216,6 +218,20 @@ EXEMPLOS:
 "Insights" → {"intencao":"insights","dados":{}}
 "Me dá dicas" → {"intencao":"insights","dados":{}}
 "Sugestões" → {"intencao":"insights","dados":{}}
+"Cadastrar número" → {"intencao":"adicionar_numero","dados":{}}
+"Adicionar número" → {"intencao":"adicionar_numero","dados":{}}
+"Quero cadastrar outro celular" → {"intencao":"adicionar_numero","dados":{}}
+"Vincular número da secretária" → {"intencao":"adicionar_numero","dados":{}}
+"Quero adicionar outro número" → {"intencao":"adicionar_numero","dados":{}}
+"Preciso cadastrar um número" → {"intencao":"adicionar_numero","dados":{}}
+"Adicionar membro" → {"intencao":"adicionar_numero","dados":{}}
+"Vincular outro whatsapp" → {"intencao":"adicionar_numero","dados":{}}
+"Quero adicionar alguém" → {"intencao":"adicionar_numero","dados":{}}
+"Preciso adicionar um número" → {"intencao":"adicionar_numero","dados":{}}
+"Adicionar outro telefone" → {"intencao":"adicionar_numero","dados":{}}
+"Números cadastrados" → {"intencao":"listar_numeros","dados":{}}
+"Quem tem acesso" → {"intencao":"listar_numeros","dados":{}}
+"Ver números" → {"intencao":"listar_numeros","dados":{}}
 "Ajuda" → {"intencao":"ajuda","dados":{}}
 "Oi" → {"intencao":"saudacao","dados":{}}
 

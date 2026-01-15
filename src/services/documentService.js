@@ -66,6 +66,9 @@ class DocumentService {
    */
   async processImage(imageBufferOrUrl, messageKey = null) {
     try {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'documentService.js:67',message:'processImage entry',data:{hasUrl:typeof imageBufferOrUrl==='string',urlPreview:typeof imageBufferOrUrl==='string'?imageBufferOrUrl.substring(0,50):'buffer',messageKey:messageKey?String(messageKey).substring(0,20):'null'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
       console.log('[DOC] Iniciando processamento com Google Vision...');
 
       let imageBuffer;
@@ -87,14 +90,23 @@ class DocumentService {
           });
 
           imageBuffer = Buffer.from(response.data);
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'documentService.js:89',message:'Buffer after URL download',data:{bufferLength:imageBuffer.length,firstBytes:Array.from(imageBuffer.slice(0,8)).map(b=>'0x'+b.toString(16).padStart(2,'0').toUpperCase()).join(' ')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+          // #endregion
 
           // Verifica se o buffer baixado é válido
           const { mimeType } = this.detectImageType(imageBuffer);
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'documentService.js:92',message:'MIME type detected',data:{mimeType:mimeType,willValidate:true},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+          // #endregion
           if (mimeType === 'image/jpeg' && imageBuffer.length > 0) {
             // Se detectou JPEG mas os bytes não são FF D8 FF, pode ser falso positivo do default
             // Mas detectImageType retorna JPEG como default, então precisamos checar os bytes
             if (imageBuffer[0] !== 0xFF || imageBuffer[1] !== 0xD8) {
               console.log('[DOC] ⚠️ Buffer baixado não parece ser um JPEG válido (magic numbers incorretos)');
+              // #region agent log
+              fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'documentService.js:96',message:'JPEG validation failed',data:{firstByte:'0x'+imageBuffer[0].toString(16),secondByte:'0x'+imageBuffer[1].toString(16),willSetNull:true},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+              // #endregion
               imageBuffer = null; // Força fallback
             } else {
               console.log('[DOC] ✅ Arquivo baixado via URL e validado');
@@ -116,6 +128,9 @@ class DocumentService {
       }
 
       // Fallback: Se não tem buffer válido e tem messageKey, tenta Evolution API
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'documentService.js:119',message:'Checking fallback condition',data:{hasBuffer:!!imageBuffer,bufferLength:imageBuffer?.length||0,hasMessageKey:!!messageKey,willTryFallback:(!imageBuffer||imageBuffer.length===0)&&!!messageKey},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
       if ((!imageBuffer || imageBuffer.length === 0) && messageKey) {
         try {
           console.log('[DOC] Tentando baixar via Evolution API (fallback)...');

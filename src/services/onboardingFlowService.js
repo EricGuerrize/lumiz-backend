@@ -365,8 +365,104 @@ class OnboardingStateHandlers {
         }
 
         onboarding.data.role = role;
-        onboarding.step = 'CONTEXT_WHY';
-        return await respond(onboardingCopy.contextWhyQuestion());
+        onboarding.step = 'PROFILE_ADD_MEMBER';
+        // Inicializa lista de membros a adicionar
+        onboarding.data.members_to_add = [];
+        // Garante que adding_member está false na primeira vez
+        onboarding.data.adding_member = false;
+        console.log('[ONBOARDING] PROFILE_ROLE → PROFILE_ADD_MEMBER, role:', role);
+        return await respond(onboardingCopy.profileAddMemberQuestion(), true); // Persist imediato
+    }
+
+    async handleProfileAddMember(onboarding, messageTrimmed, respond) {
+        const v = normalizeText(messageTrimmed);
+        
+        // Se está no início (primeira vez neste step)
+        // Se adding_member não existe ou é false, significa que acabou de entrar neste step
+        if (!onboarding.data.adding_member && !onboarding.data.current_member_step) {
+            console.log('[ONBOARDING] PROFILE_ADD_MEMBER - primeira vez, mensagem:', messageTrimmed);
+            // Pergunta se quer adicionar membro
+            const wantsToAdd = v === '1' || v === 'sim' || v.includes('adicionar');
+            const skip = v === '2' || v === 'não' || v === 'nao' || v.includes('depois');
+            
+            if (wantsToAdd) {
+                onboarding.data.adding_member = true;
+                onboarding.data.current_member_step = 'ROLE';
+                return await respond(onboardingCopy.profileAddMemberRoleQuestion());
+            }
+            
+            if (skip) {
+                // Prossegue para próximo passo
+                console.log('[ONBOARDING] PROFILE_ADD_MEMBER - pulando, indo para CONTEXT_WHY');
+                onboarding.step = 'CONTEXT_WHY';
+                delete onboarding.data.adding_member;
+                delete onboarding.data.current_member_step;
+                return await respond(onboardingCopy.contextWhyQuestion());
+            }
+            
+            // Se não é nem sim nem não, mostra a pergunta novamente
+            console.log('[ONBOARDING] PROFILE_ADD_MEMBER - resposta inválida, mostrando pergunta novamente');
+            return await respond(onboardingCopy.profileAddMemberQuestion());
+        }
+        
+        // Coletando função
+        if (onboarding.data.current_member_step === 'ROLE') {
+            const role = validateChoice(messageTrimmed, {
+                'dona': ['1', 'dona', 'gestora'],
+                'adm': ['2', 'adm', 'financeiro'],
+                'secretaria': ['3', 'secretária', 'secretaria'],
+                'profissional': ['4', 'profissional']
+            });
+            
+            if (!role) {
+                return await respond(onboardingCopy.invalidChoice());
+            }
+            
+            onboarding.data.current_member_function = role;
+            onboarding.data.current_member_step = 'NAME';
+            return await respond(onboardingCopy.profileAddMemberNameQuestion());
+        }
+        
+        // Coletando nome
+        if (onboarding.data.current_member_step === 'NAME') {
+            if (messageTrimmed.length < MIN_NAME_LENGTH) {
+                return await respond(onboardingCopy.nameTooShort());
+            }
+            
+            onboarding.data.current_member_name = messageTrimmed.trim();
+            onboarding.data.current_member_step = 'PHONE';
+            return await respond(onboardingCopy.profileAddMemberPhoneQuestion());
+        }
+        
+        // Coletando telefone
+        if (onboarding.data.current_member_step === 'PHONE') {
+            const phone = normalizePhone(messageTrimmed) || messageTrimmed;
+            
+            // Valida formato do telefone (mínimo 10 dígitos)
+            if (!/^\d{10,15}$/.test(phone.replace(/\D/g, ''))) {
+                return await respond(onboardingCopy.profileAddMemberInvalidPhone());
+            }
+            
+            // Adiciona à lista de membros
+            onboarding.data.members_to_add.push({
+                nome: onboarding.data.current_member_name,
+                telefone: phone,
+                funcao: onboarding.data.current_member_function
+            });
+            
+            // Limpa dados temporários do membro atual
+            delete onboarding.data.current_member_function;
+            delete onboarding.data.current_member_name;
+            delete onboarding.data.current_member_step;
+            delete onboarding.data.adding_member;
+            
+            // Pergunta se quer adicionar mais
+            return await respond(onboardingCopy.profileAddMemberSuccess(
+                onboarding.data.members_to_add[onboarding.data.members_to_add.length - 1].nome
+            ));
+        }
+        
+        return await respond(onboardingCopy.invalidChoice());
     }
 
     async handleContextWhy(onboarding, messageTrimmed, respond) {
@@ -472,6 +568,7 @@ class OnboardingStateHandlers {
 
             // Correção #6 e #8: Validar criação de usuário adequadamente
             let userId = onboarding.data.userId;
+            let profileJustCreated = false;
             if (!userId) {
                 try {
                     const result = await userController.createUserFromOnboarding({
@@ -481,6 +578,7 @@ class OnboardingStateHandlers {
                     });
                     userId = result.user.id;
                     onboarding.data.userId = userId;
+                    profileJustCreated = true;
                 } catch (e) {
                     console.error('[ONBOARDING] Erro ao criar usuário:', e);
                     // Correção #8: Não continuar silenciosamente
@@ -492,6 +590,47 @@ class OnboardingStateHandlers {
                         // Se não conseguiu criar E não existe, aborta onboarding
                         return await respond(onboardingCopy.userCreationError());
                     }
+                }
+            }
+
+            // Cria clinic_members (membro primário e adicionais)
+            if (userId && profileJustCreated) {
+                try {
+                    const clinicMemberService = require('./clinicMemberService');
+                    
+                    // Cria membro primário (quem fez o onboarding)
+                    const primaryRole = onboarding.data.role === 'dona_gestora' ? 'dona' : 
+                                       onboarding.data.role === 'adm_financeiro' ? 'adm' :
+                                       onboarding.data.role || 'dona';
+                    
+                    await clinicMemberService.addMember({
+                        clinicId: userId,
+                        telefone: normalizedPhone,
+                        nome: onboarding.data.nome,
+                        funcao: primaryRole,
+                        createdBy: userId,
+                        isPrimary: true
+                    });
+                    
+                    // Cria membros adicionais coletados no PROFILE_ADD_MEMBER
+                    const membersToAdd = onboarding.data.members_to_add || [];
+                    for (const member of membersToAdd) {
+                        await clinicMemberService.addMember({
+                            clinicId: userId,
+                            telefone: member.telefone,
+                            nome: member.nome,
+                            funcao: member.funcao,
+                            createdBy: userId,
+                            isPrimary: false
+                        });
+                    }
+                    
+                    if (membersToAdd.length > 0) {
+                        console.log(`[ONBOARDING] ${membersToAdd.length} membros adicionais cadastrados para clínica ${userId}`);
+                    }
+                } catch (memberError) {
+                    // Não falha o onboarding se erro em clinic_members
+                    console.error('[ONBOARDING] Erro ao criar clinic_members:', memberError);
                 }
             }
 
@@ -595,6 +734,9 @@ class OnboardingStateHandlers {
         // Se recebeu documento E não tem valor no texto, processa documento
         if (mediaUrl) {
             try {
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:596',message:'handleAhaCostsUpload calling processImage',data:{hasMediaUrl:!!mediaUrl,urlPreview:mediaUrl?.substring(0,50)||'none',messageKey:'null',step:onboarding.step},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+                // #endregion
                 // Timeout para processamento de documento (30 segundos)
                 const processPromise = documentService.processImage(mediaUrl, null);
                 const timeoutPromise = new Promise((_, reject) => 
@@ -978,6 +1120,17 @@ class OnboardingFlowService {
                 return onboardingCopy.profileClinicQuestion();
             case 'PROFILE_ROLE':
                 return onboardingCopy.profileRoleQuestion();
+            case 'PROFILE_ADD_MEMBER':
+                // Retorna mensagem apropriada baseada no sub-step
+                if (onboarding.data?.current_member_step === 'ROLE') {
+                    return onboardingCopy.profileAddMemberRoleQuestion();
+                } else if (onboarding.data?.current_member_step === 'NAME') {
+                    return onboardingCopy.profileAddMemberNameQuestion();
+                } else if (onboarding.data?.current_member_step === 'PHONE') {
+                    return onboardingCopy.profileAddMemberPhoneQuestion();
+                }
+                // Primeira vez neste step - mostra pergunta se quer adicionar
+                return onboardingCopy.profileAddMemberQuestion();
             case 'CONTEXT_WHY':
                 return onboardingCopy.contextWhyQuestion();
             case 'CONTEXT_HOW':
@@ -1188,6 +1341,8 @@ class OnboardingFlowService {
                     return await handlers.handleProfileClinic(onboarding, messageTrimmed, respond);
                 case 'PROFILE_ROLE':
                     return await handlers.handleProfileRole(onboarding, messageTrimmed, respond);
+                case 'PROFILE_ADD_MEMBER':
+                    return await handlers.handleProfileAddMember(onboarding, messageTrimmed, respond);
                 case 'CONTEXT_WHY':
                     return await handlers.handleContextWhy(onboarding, messageTrimmed, respond);
                 case 'CONTEXT_HOW':

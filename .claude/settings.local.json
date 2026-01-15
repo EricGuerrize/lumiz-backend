@@ -20,7 +20,8 @@
       "Bash(tree:*)",
       "Bash(find:*)",
       "Bash(chmod:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(node scripts/fix-debug-fetch.js:*)"
     ],
     "deny": [],
     "ask": []

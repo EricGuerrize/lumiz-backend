@@ -22,6 +22,7 @@ const InstallmentHandler = require('./messages/installmentHandler');
 const ExportHandler = require('./messages/exportHandler');
 const ScheduleHandler = require('./messages/scheduleHandler');
 const InsightsHandler = require('./messages/insightsHandler');
+const MemberHandler = require('./messages/memberHandler');
 
 /**
  * MessageController refatorado - Orquestrador principal
@@ -48,6 +49,7 @@ class MessageController {
     this.exportHandler = new ExportHandler();
     this.scheduleHandler = new ScheduleHandler();
     this.insightsHandler = new InsightsHandler();
+    this.memberHandler = new MemberHandler();
   }
 
   /**
@@ -94,6 +96,11 @@ class MessageController {
         return await onboardingFlowService.startNewOnboarding(normalizedPhone);
       }
 
+      // Verifica se é membro secundário não confirmado
+      if (user._member && !user._member.confirmed && !user._member.is_primary) {
+        return await this.handleSecondaryMemberConfirmation(user, normalizedPhone, message);
+      }
+
       // Verifica estados pendentes
       if (this.pendingTransactions.has(normalizedPhone)) {
         return await this.transactionHandler.handleConfirmation(normalizedPhone, message, user);
@@ -105,6 +112,22 @@ class MessageController {
 
       if (this.pendingEdits.has(normalizedPhone)) {
         return await this.editHandler.handleEditConfirmation(normalizedPhone, message, user);
+      }
+
+      // Verifica se está no fluxo de adicionar membro
+      if (this.memberHandler.isAddingMember(normalizedPhone)) {
+        const result = await this.memberHandler.processAddMember(normalizedPhone, message);
+        if (result) {
+          return result;
+        }
+      }
+
+      // Verifica se há transferência pendente aguardando resposta deste usuário
+      if (this.memberHandler.hasPendingTransfer(normalizedPhone)) {
+        const result = await this.memberHandler.processTransferResponse(normalizedPhone, message);
+        if (result) {
+          return result;
+        }
       }
 
       // Tenta heurística primeiro (economiza ~60% das chamadas Gemini)
@@ -267,6 +290,12 @@ class MessageController {
       case 'insights':
         return await this.insightsHandler.handleInsights(user);
 
+      case 'adicionar_numero':
+        return await this.memberHandler.handleAddMember(user, phone);
+
+      case 'listar_numeros':
+        return await this.memberHandler.handleListMembers(user);
+
       case 'enviar_documento':
         return this.helpHandler.handleDocumentPrompt();
 
@@ -352,6 +381,49 @@ class MessageController {
   }
 
   /**
+   * Processa confirmação de membro secundário
+   */
+  async handleSecondaryMemberConfirmation(user, phone, message) {
+    const onboardingCopy = require('../copy/onboardingWhatsappCopy');
+    const clinicMemberService = require('../services/clinicMemberService');
+    
+    const messageLower = message.toLowerCase().trim();
+    
+    // Verifica se é resposta à confirmação
+    const isYes = messageLower === '1' || messageLower === 'sim' || 
+                  messageLower.includes('confirmo') || messageLower.includes('aceito');
+    const isNo = messageLower === '2' || messageLower === 'não' || 
+                 messageLower === 'nao' || messageLower.includes('não sou');
+    
+    if (isYes) {
+      // Confirma o vínculo
+      await clinicMemberService.confirmMember(phone);
+      
+      // Invalida cache para que próxima consulta pegue confirmed=true
+      await cacheService.delete(`phone:profile:${phone}`);
+      
+      return onboardingCopy.secondaryNumberConfirmed(user.nome_clinica);
+    }
+    
+    if (isNo) {
+      // Rejeita o vínculo
+      await clinicMemberService.rejectMember(phone);
+      
+      // Invalida cache
+      await cacheService.delete(`phone:profile:${phone}`);
+      
+      return onboardingCopy.secondaryNumberRejected();
+    }
+    
+    // Se não é resposta clara, mostra a pergunta de confirmação
+    // Busca quem adicionou este membro para mostrar na mensagem
+    const member = await clinicMemberService.findMemberByPhone(phone);
+    const addedByName = member?.profiles?.nome_completo || 'alguém da clínica';
+    
+    return onboardingCopy.secondaryNumberConfirmation(user.nome_clinica, addedByName);
+  }
+
+  /**
    * Handlers de mensagens de mídia (delegam para documentHandler ou onboarding)
    */
   async handleImageMessage(phone, mediaUrl, caption, messageKey = null) {
@@ -359,6 +431,9 @@ class MessageController {
     
     // Se está em onboarding, processa no onboarding
     if (onboardingFlowService.isOnboarding(normalizedPhone)) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'messageController.js:361',message:'Onboarding detected, calling processOnboarding',data:{hasMessageKey:!!messageKey,messageKeyPreview:messageKey?String(messageKey).substring(0,20):'null',hasMediaUrl:!!mediaUrl},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
       return await onboardingFlowService.processOnboarding(normalizedPhone, caption || '', mediaUrl, null);
     }
     
