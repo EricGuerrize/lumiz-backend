@@ -429,6 +429,18 @@ class OnboardingStateHandlers {
         
         // Coletando nome
         if (onboarding.data.current_member_step === 'NAME') {
+            // Detecta se o usuário enviou um número (telefone) no lugar do nome
+            const phonePattern = /^\d{10,15}$/;
+            const digitsOnly = messageTrimmed.replace(/\D/g, '');
+            const looksLikePhone = phonePattern.test(digitsOnly) && digitsOnly.length >= 10;
+            
+            if (looksLikePhone) {
+                // Usuário enviou número no lugar do nome - oferece opção de corrigir
+                onboarding.data.temp_phone_entered = messageTrimmed.trim();
+                onboarding.data.current_member_step = 'NAME_CORRECTION';
+                return await respond(onboardingCopy.profileAddMemberNameCorrection());
+            }
+            
             if (messageTrimmed.length < MIN_NAME_LENGTH) {
                 return await respond(onboardingCopy.nameTooShort());
             }
@@ -438,13 +450,45 @@ class OnboardingStateHandlers {
             return await respond(onboardingCopy.profileAddMemberPhoneQuestion());
         }
         
+        // Opção de correção quando número foi enviado no lugar do nome
+        if (onboarding.data.current_member_step === 'NAME_CORRECTION') {
+            const v = normalizeText(messageTrimmed);
+            const wantsToCorrect = v === '1' || v === 'sim' || v.includes('corrigir') || v.includes('corrige');
+            const wantsToContinue = v === '2' || v === 'não' || v === 'nao' || v.includes('continuar');
+            
+            if (wantsToCorrect) {
+                // Volta para pedir o nome novamente
+                onboarding.data.current_member_step = 'NAME';
+                delete onboarding.data.temp_phone_entered;
+                return await respond(onboardingCopy.profileAddMemberNameQuestion());
+            }
+            
+            if (wantsToContinue) {
+                // Usa o número como nome (improvável, mas permite continuar)
+                // E usa o número temporário como telefone
+                onboarding.data.current_member_name = onboarding.data.temp_phone_entered || 'Sem nome';
+                onboarding.data.current_member_step = 'PHONE';
+                delete onboarding.data.temp_phone_entered;
+                return await respond(onboardingCopy.profileAddMemberPhoneQuestion());
+            }
+            
+            return await respond(onboardingCopy.profileAddMemberNameCorrection());
+        }
+        
         // Coletando telefone
         if (onboarding.data.current_member_step === 'PHONE') {
+            // Permite voltar para corrigir o nome digitando "corrigir" ou "voltar"
+            const v = normalizeText(messageTrimmed);
+            if (v === 'corrigir' || v === 'voltar' || v === 'corrige' || v.includes('corrigir nome') || v.includes('voltar nome')) {
+                onboarding.data.current_member_step = 'NAME';
+                return await respond(onboardingCopy.profileAddMemberNameQuestion() + '\n\n(Digite o nome correto)');
+            }
+            
             const phone = normalizePhone(messageTrimmed) || messageTrimmed;
             
             // Valida formato do telefone (mínimo 10 dígitos)
             if (!/^\d{10,15}$/.test(phone.replace(/\D/g, ''))) {
-                return await respond(onboardingCopy.profileAddMemberInvalidPhone());
+                return await respond(onboardingCopy.profileAddMemberInvalidPhone() + '\n\n💡 Dica: Se quiser corrigir o nome, digite "corrigir"');
             }
             
             // Adiciona à lista de membros
@@ -459,6 +503,7 @@ class OnboardingStateHandlers {
             delete onboarding.data.current_member_name;
             delete onboarding.data.current_member_step;
             delete onboarding.data.adding_member;
+            delete onboarding.data.temp_phone_entered;
             
             // Pergunta se quer adicionar mais
             return await respond(onboardingCopy.profileAddMemberSuccess(
@@ -1166,6 +1211,8 @@ class OnboardingFlowService {
                     return onboardingCopy.profileAddMemberRoleQuestion();
                 } else if (onboarding.data?.current_member_step === 'NAME') {
                     return onboardingCopy.profileAddMemberNameQuestion();
+                } else if (onboarding.data?.current_member_step === 'NAME_CORRECTION') {
+                    return onboardingCopy.profileAddMemberNameCorrection();
                 } else if (onboarding.data?.current_member_step === 'PHONE') {
                     return onboardingCopy.profileAddMemberPhoneQuestion();
                 }
