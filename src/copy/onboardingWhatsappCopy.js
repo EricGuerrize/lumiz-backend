@@ -98,10 +98,20 @@ module.exports = {
         return `Qual o nome dessa pessoa?`;
     },
 
+    profileAddMemberNameCorrection() {
+        return (
+            `Parece que você enviou um número de telefone no lugar do nome. 📱\n\n` +
+            `O que você prefere fazer?\n\n` +
+            `1️⃣ Corrigir e enviar o nome\n` +
+            `2️⃣ Continuar (usar o número como nome)`
+        );
+    },
+
     profileAddMemberPhoneQuestion() {
         return (
             `Qual o número de WhatsApp?\n` +
-            `(Formato: 5511999999999)`
+            `(Formato: 5511999999999)\n\n` +
+            `💡 Se quiser corrigir o nome, digite "corrigir"`
         );
     },
 
