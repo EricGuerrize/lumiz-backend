@@ -695,50 +695,25 @@ class OnboardingStateHandlers {
                 }
             }
 
-            // Correção #1: Tratamento de erro ao registrar venda
+            // Durante onboarding: transações são apenas de TESTE (não salvas no banco)
+            // Apenas simula o salvamento para cálculo do resumo
             if (userId) {
-                let saleSaved = false;
-                try {
-                    const atendimento = await transactionController.createAtendimento(userId, {
-                        valor: sale.valor,
-                        categoria: sale.procedimento || 'Procedimento',
-                        descricao: sale.procedimento || `Venda ${sale.paciente ? `para ${sale.paciente}` : ''}`,
-                        data: sale.data,
-                        forma_pagamento: sale.forma_pagamento === 'parcelado' ? 'parcelado' : sale.forma_pagamento,
-                        parcelas: sale.parcelas,
-                        bandeira_cartao: sale.bandeira_cartao,
-                        nome_cliente: sale.paciente
-                    });
+                // Simula salvamento (não salva no banco durante onboarding)
+                sale.saved = true; // Marca como salva para cálculo do resumo
+                sale.savedId = 'test_' + Date.now(); // ID temporário para referência
+                sale.isTest = true; // Flag indicando que é teste
 
-                    // Verifica se foi salva com sucesso (createAtendimento retorna o objeto diretamente)
-                    if (atendimento && atendimento.id) {
-                        saleSaved = true;
-                        sale.saved = true; // Marca como salva
-                        sale.savedId = atendimento.id; // Guarda ID para referência
+                // Track analytics mesmo sendo teste (para métricas)
+                await analyticsService.track('onboarding_revenue_registered', {
+                    phone: normalizedPhone,
+                    userId,
+                    source: 'whatsapp',
+                    properties: { valor: sale.valor, is_test: true }
+                });
 
-                        await analyticsService.track('onboarding_revenue_registered', {
-                            phone: normalizedPhone,
-                            userId,
-                            source: 'whatsapp',
-                            properties: { valor: sale.valor }
-                        });
-                    } else {
-                        // Se não retornou objeto com id, considera falha
-                        console.error('[ONBOARDING] createAtendimento não retornou objeto válido:', atendimento);
-                        return await respond(onboardingCopy.revenueSaveError());
-                    }
-                } catch (e) {
-                    console.error('[ONBOARDING] Erro ao registrar venda:', e);
-                    // Informa usuário do erro
-                    return await respond(onboardingCopy.revenueSaveError());
-                }
-
-                // Se não salvou, não avança
-                if (!saleSaved) {
-                    return await respond(onboardingCopy.revenueSaveError());
-                }
+                console.log('[ONBOARDING] Venda registrada como TESTE (não salva no banco):', sale);
             } else {
-                // Se não tem userId, não pode salvar
+                // Se não tem userId, não pode continuar
                 return await respond(onboardingCopy.userCreationError());
             }
 
@@ -918,48 +893,26 @@ class OnboardingStateHandlers {
                 return await respond(onboardingCopy.costErrorRetry());
             }
 
-            // Correção #1: Tratamento de erro ao registrar custo
+            // Durante onboarding: transações são apenas de TESTE (não salvas no banco)
+            // Apenas simula o salvamento para cálculo do resumo
             const userId = onboarding.data.userId;
             if (userId) {
-                let costSaved = false;
-                try {
-                    const conta = await transactionController.createContaPagar(userId, {
-                        valor: cost.valor,
-                        categoria: cost.categoria,
-                        descricao: cost.descricao,
-                        data: cost.data,
-                        tipo: cost.tipo
-                    });
+                // Simula salvamento (não salva no banco durante onboarding)
+                cost.saved = true; // Marca como salva para cálculo do resumo
+                cost.savedId = 'test_' + Date.now(); // ID temporário para referência
+                cost.isTest = true; // Flag indicando que é teste
 
-                    // Verifica se foi salva com sucesso (createContaPagar retorna o objeto diretamente)
-                    if (conta && conta.id) {
-                        costSaved = true;
-                        cost.saved = true; // Marca como salva
-                        cost.savedId = conta.id; // Guarda ID para referência
+                // Track analytics mesmo sendo teste (para métricas)
+                await analyticsService.track('onboarding_cost_registered', {
+                    phone: normalizedPhone,
+                    userId,
+                    source: 'whatsapp',
+                    properties: { valor: cost.valor, tipo: cost.tipo, is_test: true }
+                });
 
-                        await analyticsService.track('onboarding_cost_registered', {
-                            phone: normalizedPhone,
-                            userId,
-                            source: 'whatsapp',
-                            properties: { valor: cost.valor, tipo: cost.tipo }
-                        });
-                    } else {
-                        // Se não retornou objeto com id, considera falha
-                        console.error('[ONBOARDING] createContaPagar não retornou objeto válido:', conta);
-                        return await respond(onboardingCopy.costSaveError());
-                    }
-                } catch (e) {
-                    console.error('[ONBOARDING] Erro ao registrar custo:', e);
-                    // Informa usuário do erro
-                    return await respond(onboardingCopy.costSaveError());
-                }
-
-                // Se não salvou, não avança
-                if (!costSaved) {
-                    return await respond(onboardingCopy.costSaveError());
-                }
+                console.log('[ONBOARDING] Custo registrado como TESTE (não salva no banco):', cost);
             } else {
-                // Se não tem userId, não pode salvar
+                // Se não tem userId, não pode continuar
                 return await respond(onboardingCopy.userCreationError());
             }
 
