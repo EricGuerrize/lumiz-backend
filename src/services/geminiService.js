@@ -86,7 +86,7 @@ INTENÇÕES:
 - consultar_meta: meta, minha meta, progresso, objetivo, quanto falta, atingir meta
 - insights: insights, dicas, sugestoes, sugestões, recomendacoes, recomendações
 - adicionar_numero: cadastrar número, adicionar número, novo número, registrar número, vincular número, adicionar celular, cadastrar celular, quero adicionar outro número, preciso cadastrar um número, adicionar membro, cadastrar membro, vincular outro whatsapp, adicionar outro whatsapp, quero adicionar alguém, preciso adicionar um número, cadastrar outro telefone
-- listar_numeros: meus números, números cadastrados, listar números, ver números, quem tem acesso
+- listar_numeros: meus números, números cadastrados, listar números, ver números, quem tem acesso, quais números estão cadastrados, mostrar números, ver membros, listar membros
 - ajuda: ajuda, como usar, exemplos, o que você faz, como funciona
 - saudacao: oi, olá, bom dia, boa tarde, boa noite
 - desfazer: cancelar, desfazer, apagar última, errei, deletar última
