@@ -1,6 +1,7 @@
 const onboardingService = require('./onboardingService');
 const onboardingCopy = require('../copy/onboardingWhatsappCopy');
 const analyticsService = require('./analyticsService');
+const cacheService = require('./cacheService');
 const { normalizePhone } = require('../utils/phone');
 const supabase = require('../db/supabase');
 // Mover requires para topo (correção #5)
@@ -615,19 +616,31 @@ class OnboardingStateHandlers {
                     // Cria membros adicionais coletados no PROFILE_ADD_MEMBER
                     const membersToAdd = onboarding.data.members_to_add || [];
                     for (const member of membersToAdd) {
-                        await clinicMemberService.addMember({
+                        const normalizedMemberPhone = normalizePhone(member.telefone) || member.telefone;
+                        const result = await clinicMemberService.addMember({
                             clinicId: userId,
-                            telefone: member.telefone,
+                            telefone: normalizedMemberPhone,
                             nome: member.nome,
                             funcao: member.funcao,
                             createdBy: userId,
                             isPrimary: false
                         });
+                        
+                        // Invalida cache do telefone do membro adicionado para garantir que próxima busca encontre
+                        if (result.success) {
+                            const memberCacheKey = `phone:profile:${normalizedMemberPhone}`;
+                            await cacheService.delete(memberCacheKey);
+                            console.log(`[ONBOARDING] Cache invalidado para membro: ${normalizedMemberPhone}`);
+                        }
                     }
                     
                     if (membersToAdd.length > 0) {
                         console.log(`[ONBOARDING] ${membersToAdd.length} membros adicionais cadastrados para clínica ${userId}`);
                     }
+                    
+                    // Também invalida cache do telefone principal após criar membros
+                    const primaryCacheKey = `phone:profile:${normalizedPhone}`;
+                    await cacheService.delete(primaryCacheKey);
                 } catch (memberError) {
                     // Não falha o onboarding se erro em clinic_members
                     console.error('[ONBOARDING] Erro ao criar clinic_members:', memberError);

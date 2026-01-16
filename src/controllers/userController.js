@@ -56,7 +56,7 @@ class UserController {
         .select('clinic_id, nome, funcao, is_primary, confirmed')
         .eq('is_active', true);
 
-      if (variants.length) {
+      if (variants.length > 0) {
         memberQuery = memberQuery.in('telefone', variants);
       } else {
         memberQuery = memberQuery.eq('telefone', normalized);
@@ -65,7 +65,14 @@ class UserController {
       const { data: member, error: memberError } = await memberQuery.maybeSingle();
 
       if (memberError && memberError.code !== 'PGRST116') {
+        // PGRST116 = não encontrado, outros erros são problemas reais
+        console.error('[USER] Erro ao buscar membro em clinic_members:', memberError);
         throw memberError;
+      }
+      
+      // Log de debug quando não encontra membro (mas não é erro)
+      if (!member && process.env.NODE_ENV === 'development') {
+        console.log(`[USER] Nenhum membro encontrado em clinic_members para telefone: ${normalized}, variantes: ${variants.length}`);
       }
 
       // Se encontrou em clinic_members, busca o profile da clínica

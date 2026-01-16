@@ -4,7 +4,7 @@
  */
 
 const supabase = require('../db/supabase');
-const { normalizePhone } = require('../utils/phone');
+const { normalizePhone, getPhoneVariants } = require('../utils/phone');
 
 class ClinicMemberService {
   constructor() {
@@ -19,19 +19,29 @@ class ClinicMemberService {
    */
   async findMemberByPhone(phone) {
     const normalizedPhone = normalizePhone(phone) || phone;
+    const variants = getPhoneVariants(phone);
     
-    const { data, error } = await supabase
+    // Tenta busca com variantes primeiro (mais robusto)
+    let memberQuery = supabase
       .from('clinic_members')
       .select('*, profiles:clinic_id(*)')
-      .eq('telefone', normalizedPhone)
-      .eq('is_active', true)
-      .single();
+      .eq('is_active', true);
     
-    if (error || !data) {
+    if (variants.length > 0) {
+      memberQuery = memberQuery.in('telefone', variants);
+    } else {
+      memberQuery = memberQuery.eq('telefone', normalizedPhone);
+    }
+    
+    const { data, error } = await memberQuery.maybeSingle();
+    
+    if (error && error.code !== 'PGRST116') {
+      // PGRST116 = não encontrado, outros erros são problemas reais
+      console.error('[CLINIC_MEMBER] Erro ao buscar membro:', error);
       return null;
     }
     
-    return data;
+    return data || null;
   }
 
   /**
@@ -40,10 +50,8 @@ class ClinicMemberService {
    * @returns {Object|null} - { clinic, member } ou null
    */
   async findClinicByMemberPhone(phone) {
-    const normalizedPhone = normalizePhone(phone) || phone;
-    
-    // Primeiro tenta buscar em clinic_members
-    const member = await this.findMemberByPhone(normalizedPhone);
+    // Primeiro tenta buscar em clinic_members (usa variantes internamente)
+    const member = await this.findMemberByPhone(phone);
     
     if (member) {
       return {
@@ -59,12 +67,21 @@ class ClinicMemberService {
     }
     
     // Se não encontrou em clinic_members, busca diretamente em profiles
-    const { data: profile, error } = await supabase
+    const normalizedPhone = normalizePhone(phone) || phone;
+    const variants = getPhoneVariants(phone);
+    
+    let profileQuery = supabase
       .from('profiles')
       .select('*')
-      .eq('telefone', normalizedPhone)
-      .eq('is_active', true)
-      .single();
+      .eq('is_active', true);
+    
+    if (variants.length > 0) {
+      profileQuery = profileQuery.in('telefone', variants);
+    } else {
+      profileQuery = profileQuery.eq('telefone', normalizedPhone);
+    }
+    
+    const { data: profile, error } = await profileQuery.maybeSingle();
     
     if (error || !profile) {
       return null;

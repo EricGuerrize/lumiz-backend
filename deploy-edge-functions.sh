@@ -15,7 +15,7 @@ fi
 
 # Project Reference (do seu .env ou dashboard)
 PROJECT_REF="whmbyfnwnlbrfmgdwdfw"
-RESEND_API_KEY="re_Ltr1Bj3a_2wrqPbsZSWnG2gPx27qJhxW1"
+RESEND_API_KEY="${RESEND_API_KEY:-your_resend_api_key_here}"
 
 echo "🔗 Linkando ao projeto: $PROJECT_REF"
 supabase link --project-ref $PROJECT_REF

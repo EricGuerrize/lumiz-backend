@@ -7,6 +7,7 @@ const conversationHistoryService = require('../services/conversationHistoryServi
 const analyticsService = require('../services/analyticsService');
 const pdfQueueService = require('../services/pdfQueueService');
 const intentHeuristicService = require('../services/intentHeuristicService');
+const supabase = require('../db/supabase');
 const { normalizePhone } = require('../utils/phone');
 const { formatarMoeda } = require('../utils/currency');
 
@@ -91,9 +92,45 @@ class MessageController {
         }
       }
 
-      // Se não encontrou usuário e não é mensagem de teste, inicia novo onboarding
+      // Se não encontrou usuário e não é mensagem de teste, faz busca mais robusta
       if (!user) {
-        return await onboardingFlowService.startNewOnboarding(normalizedPhone);
+        // Busca adicional em clinic_members incluindo membros não confirmados
+        // Isso garante que encontramos membros recém-cadastrados que ainda não confirmaram
+        const clinicMemberService = require('../services/clinicMemberService');
+        const member = await clinicMemberService.findMemberByPhone(normalizedPhone);
+        
+        if (member && member.clinic_id) {
+          // Encontrou membro! Busca o profile da clínica
+          const { data: clinicProfile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', member.clinic_id)
+            .single();
+          
+          if (clinicProfile) {
+            // Adiciona informação do membro
+            clinicProfile._member = {
+              nome: member.nome,
+              funcao: member.funcao,
+              is_primary: member.is_primary,
+              confirmed: member.confirmed,
+              phone_used: normalizedPhone
+            };
+            
+            // Atualiza cache para próxima busca
+            const cacheService = require('../services/cacheService');
+            const cacheKey = `phone:profile:${normalizedPhone}`;
+            await cacheService.set(cacheKey, clinicProfile, 900);
+            
+            // Atribui ao user para continuar processamento normalmente
+            user = clinicProfile;
+          }
+        }
+        
+        // Se ainda não encontrou usuário, inicia novo onboarding
+        if (!user) {
+          return await onboardingFlowService.startNewOnboarding(normalizedPhone);
+        }
       }
 
       // Verifica se é membro secundário não confirmado

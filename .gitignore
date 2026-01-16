@@ -5,3 +5,17 @@ node_modules/
 .vscode/
 dist/
 coverage/
+
+# Arquivos de documentação (não versionar)
+*.md
+*.MD
+*.pdf
+*.PDF
+*.txt
+*.TXT
+claude_desktop_config_example.json
+
+# Arquivos que podem conter chaves de API
+*_config*.json
+*_example*.json
+*_sample*.json
