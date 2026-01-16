@@ -223,7 +223,11 @@ module.exports = {
     },
 
     ahaRevenueRegistered() {
-        return `Venda registrada ✅`;
+        return (
+            `Venda registrada (teste) ✅\n\n` +
+            `💡 Esta é apenas uma demonstração durante o onboarding.\n` +
+            `As transações reais serão salvas apenas após você concluir o cadastro.`
+        );
     },
 
     // ============================================================
@@ -296,7 +300,11 @@ module.exports = {
     },
 
     ahaCostsRegistered() {
-        return `Custo registrado ✅`;
+        return (
+            `Custo registrado (teste) ✅\n\n` +
+            `💡 Esta é apenas uma demonstração durante o onboarding.\n` +
+            `As transações reais serão salvas apenas após você concluir o cadastro.`
+        );
     },
 
     // Mensagens para pedir o segundo tipo de custo (complementar)
