@@ -396,6 +396,69 @@ class OnboardingStateHandlers {
             }
             
             if (skip) {
+                // Se há membros na lista, precisamos criar o perfil e salvá-los AGORA
+                // Isso garante que os membros existam no banco mesmo se o onboarding for interrompido
+                const membersToSave = onboarding.data.members_to_add || [];
+
+                if (membersToSave.length > 0) {
+                    try {
+                        // Cria o perfil da clínica se ainda não existe
+                        let userId = onboarding.data.userId;
+                        if (!userId) {
+                            const result = await userController.createUserFromOnboarding({
+                                telefone: onboarding.data.telefone,
+                                nome_completo: onboarding.data.nome,
+                                nome_clinica: onboarding.data.clinica
+                            });
+                            userId = result.user.id;
+                            onboarding.data.userId = userId;
+                            console.log('[ONBOARDING] Perfil criado antecipadamente para salvar membros:', userId);
+                        }
+
+                        // Cria membro primário (quem está fazendo o onboarding)
+                        const clinicMemberService = require('./clinicMemberService');
+                        const primaryRole = onboarding.data.role === 'dona_gestora' ? 'dona' :
+                                           onboarding.data.role === 'adm_financeiro' ? 'adm' :
+                                           onboarding.data.role || 'dona';
+
+                        await clinicMemberService.addMember({
+                            clinicId: userId,
+                            telefone: onboarding.data.telefone,
+                            nome: onboarding.data.nome,
+                            funcao: primaryRole,
+                            createdBy: userId,
+                            isPrimary: true
+                        });
+
+                        // Salva os membros adicionais no banco AGORA
+                        for (const member of membersToSave) {
+                            const normalizedMemberPhone = normalizePhone(member.telefone) || member.telefone;
+                            const result = await clinicMemberService.addMember({
+                                clinicId: userId,
+                                telefone: normalizedMemberPhone,
+                                nome: member.nome,
+                                funcao: member.funcao,
+                                createdBy: userId,
+                                isPrimary: false
+                            });
+
+                            // Invalida cache do telefone do membro para próxima busca
+                            if (result.success) {
+                                const memberCacheKey = `phone:profile:${normalizedMemberPhone}`;
+                                await cacheService.delete(memberCacheKey);
+                                console.log(`[ONBOARDING] Membro salvo no banco: ${member.nome} (${normalizedMemberPhone})`);
+                            }
+                        }
+
+                        // Marca que membros já foram salvos para não duplicar depois
+                        onboarding.data.members_saved_early = true;
+                        console.log(`[ONBOARDING] ${membersToSave.length} membros salvos antecipadamente`);
+                    } catch (memberError) {
+                        console.error('[ONBOARDING] Erro ao salvar membros antecipadamente:', memberError);
+                        // Não bloqueia o fluxo, apenas loga o erro
+                    }
+                }
+
                 // Prossegue para próximo passo
                 console.log('[ONBOARDING] PROFILE_ADD_MEMBER - pulando, indo para CONTEXT_WHY');
                 onboarding.step = 'CONTEXT_WHY';
@@ -485,6 +548,9 @@ class OnboardingStateHandlers {
             }
             
             const phone = normalizePhone(messageTrimmed) || messageTrimmed;
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:487',message:'Normalizando telefone do membro antes de adicionar',data:{originalPhone:messageTrimmed,normalizedPhone:phone,nome:onboarding.data.current_member_name},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+            // #endregion
             
             // Valida formato do telefone (mínimo 10 dígitos)
             if (!/^\d{10,15}$/.test(phone.replace(/\D/g, ''))) {
@@ -497,6 +563,9 @@ class OnboardingStateHandlers {
                 telefone: phone,
                 funcao: onboarding.data.current_member_function
             });
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:499',message:'Membro adicionado à lista members_to_add',data:{phone:phone,nome:onboarding.data.current_member_name,funcao:onboarding.data.current_member_function,totalMembers:onboarding.data.members_to_add.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+            // #endregion
             
             // Limpa dados temporários do membro atual
             delete onboarding.data.current_member_function;
@@ -643,15 +712,16 @@ class OnboardingStateHandlers {
             }
 
             // Cria clinic_members (membro primário e adicionais)
-            if (userId && profileJustCreated) {
+            // PULA se já foram salvos antecipadamente em PROFILE_ADD_MEMBER
+            if (userId && profileJustCreated && !onboarding.data.members_saved_early) {
                 try {
                     const clinicMemberService = require('./clinicMemberService');
-                    
+
                     // Cria membro primário (quem fez o onboarding)
-                    const primaryRole = onboarding.data.role === 'dona_gestora' ? 'dona' : 
+                    const primaryRole = onboarding.data.role === 'dona_gestora' ? 'dona' :
                                        onboarding.data.role === 'adm_financeiro' ? 'adm' :
                                        onboarding.data.role || 'dona';
-                    
+
                     await clinicMemberService.addMember({
                         clinicId: userId,
                         telefone: normalizedPhone,
@@ -660,11 +730,14 @@ class OnboardingStateHandlers {
                         createdBy: userId,
                         isPrimary: true
                     });
-                    
+
                     // Cria membros adicionais coletados no PROFILE_ADD_MEMBER
                     const membersToAdd = onboarding.data.members_to_add || [];
                     for (const member of membersToAdd) {
                         const normalizedMemberPhone = normalizePhone(member.telefone) || member.telefone;
+                        // #region agent log
+                        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:620',message:'Salvando membro adicional no banco',data:{originalPhone:member.telefone,normalizedPhone:normalizedMemberPhone,nome:member.nome,funcao:member.funcao,clinicId:userId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+                        // #endregion
                         const result = await clinicMemberService.addMember({
                             clinicId: userId,
                             telefone: normalizedMemberPhone,
@@ -673,7 +746,10 @@ class OnboardingStateHandlers {
                             createdBy: userId,
                             isPrimary: false
                         });
-                        
+                        // #region agent log
+                        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:632',message:'Resultado ao adicionar membro',data:{success:result.success,error:result.error,memberId:result.member?.id,phoneSaved:normalizedMemberPhone},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+                        // #endregion
+
                         // Invalida cache do telefone do membro adicionado para garantir que próxima busca encontre
                         if (result.success) {
                             const memberCacheKey = `phone:profile:${normalizedMemberPhone}`;
@@ -681,11 +757,11 @@ class OnboardingStateHandlers {
                             console.log(`[ONBOARDING] Cache invalidado para membro: ${normalizedMemberPhone}`);
                         }
                     }
-                    
+
                     if (membersToAdd.length > 0) {
                         console.log(`[ONBOARDING] ${membersToAdd.length} membros adicionais cadastrados para clínica ${userId}`);
                     }
-                    
+
                     // Também invalida cache do telefone principal após criar membros
                     const primaryCacheKey = `phone:profile:${normalizedPhone}`;
                     await cacheService.delete(primaryCacheKey);
@@ -693,6 +769,8 @@ class OnboardingStateHandlers {
                     // Não falha o onboarding se erro em clinic_members
                     console.error('[ONBOARDING] Erro ao criar clinic_members:', memberError);
                 }
+            } else if (onboarding.data.members_saved_early) {
+                console.log('[ONBOARDING] Membros já foram salvos antecipadamente em PROFILE_ADD_MEMBER, pulando duplicação');
             }
 
             // Durante onboarding: transações são apenas de TESTE (não salvas no banco)
