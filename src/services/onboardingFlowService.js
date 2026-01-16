@@ -121,17 +121,20 @@ function extractSaleHeuristics(text = '') {
 
     let forma_pagamento = null;
     let parcelas = null;
-    if (lower.includes('pix')) forma_pagamento = 'pix';
-    else if (lower.includes('dinheiro')) forma_pagamento = 'dinheiro';
-    else if (lower.includes('débito') || lower.includes('debito')) forma_pagamento = 'debito';
-    else if (lower.includes('cartão') || lower.includes('cartao') || lower.includes('crédito') || lower.includes('credito')) {
-        const px = raw.match(/(\d{1,2})\s*x\b/i);
-        if (px && px[1]) {
-            forma_pagamento = 'parcelado';
-            parcelas = parseInt(px[1], 10);
-        } else {
-            forma_pagamento = 'credito_avista';
-        }
+    
+    // PRIMEIRO: Verifica se há padrão "número x" na mensagem inteira (qualquer número seguido de x = parcela)
+    const parcelasMatch = raw.match(/\b(\d{1,2})\s*x\b/i);
+    if (parcelasMatch && parcelasMatch[1]) {
+        forma_pagamento = 'parcelado';
+        parcelas = parseInt(parcelasMatch[1], 10);
+    } else if (lower.includes('pix')) {
+        forma_pagamento = 'pix';
+    } else if (lower.includes('dinheiro')) {
+        forma_pagamento = 'dinheiro';
+    } else if (lower.includes('débito') || lower.includes('debito')) {
+        forma_pagamento = 'debito';
+    } else if (lower.includes('cartão') || lower.includes('cartao') || lower.includes('crédito') || lower.includes('credito')) {
+        forma_pagamento = 'credito_avista';
     }
 
     return { paciente, procedimento, forma_pagamento, parcelas };
@@ -966,7 +969,7 @@ class OnboardingStateHandlers {
         return await respond(onboardingCopy.handoffToDailyUse());
     }
 
-    async handleHandoffToDailyUse(onboarding, messageTrimmed, respond, respondAndClear) {
+    async handleHandoffToDailyUse(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear) {
         const v = normalizeText(messageTrimmed);
         
         if (v === '1' || v.includes('registrar venda') || v.includes('venda')) {
@@ -979,6 +982,30 @@ class OnboardingStateHandlers {
         
         if (v === '3' || v.includes('resumo') || v.includes('ver resumo')) {
             return await respondAndClear(onboardingCopy.handoffShowSummary());
+        }
+
+        // Detecta se a mensagem parece ser uma transação (venda ou custo)
+        // Se for, finaliza onboarding automaticamente e processa como transação normal
+        const intentHeuristicService = require('./intentHeuristicService');
+        const intent = await intentHeuristicService.detectIntent(messageTrimmed);
+        
+        if (intent && (intent.intencao === 'registrar_entrada' || intent.intencao === 'registrar_saida')) {
+            // Parece ser uma transação - finaliza onboarding silenciosamente
+            // Limpa estado sem enviar mensagem
+            try {
+                const existingTimer = this.persistTimers.get(normalizedPhone);
+                if (existingTimer) {
+                    clearTimeout(existingTimer);
+                    this.persistTimers.delete(normalizedPhone);
+                }
+                await onboardingService.clearWhatsappState(normalizedPhone);
+            } catch (e) {
+                console.error('[ONBOARDING] Falha ao limpar estado:', e?.message || e);
+            }
+            this.onboardingStates.delete(normalizedPhone);
+            
+            // Retorna null para indicar que o onboarding foi finalizado e a mensagem deve ser processada normalmente
+            return null;
         }
 
         onboarding.step = 'MDR_SETUP_INTRO';
@@ -1377,7 +1404,7 @@ class OnboardingFlowService {
                 case 'AHA_SUMMARY':
                     return await handlers.handleAhaSummary(onboarding, normalizedPhone, respond);
                 case 'HANDOFF_TO_DAILY_USE':
-                    return await handlers.handleHandoffToDailyUse(onboarding, messageTrimmed, respond, respondAndClear);
+                    return await handlers.handleHandoffToDailyUse(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear);
                 case 'MDR_SETUP_INTRO':
                     return await handlers.handleMdrSetupIntro(onboarding, messageTrimmed, respond, respondAndClear);
                 case 'MDR_SETUP_QUESTION':
