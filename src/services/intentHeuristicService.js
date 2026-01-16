@@ -88,6 +88,25 @@ class IntentHeuristicService {
       exportar_dados: [
         'exportar', 'baixar relatório', 'baixar relatorio', 'me manda pdf',
         'excel', 'planilha', 'download', 'gerar relatório', 'gerar relatorio'
+      ],
+      adicionar_numero: [
+        'cadastrar número', 'cadastrar numero', 'adicionar número', 'adicionar numero',
+        'novo número', 'novo numero', 'registrar número', 'registrar numero',
+        'vincular número', 'vincular numero', 'adicionar membro', 'cadastrar membro',
+        'adicionar outro whatsapp', 'vincular outro whatsapp', 'quero adicionar',
+        'preciso cadastrar um número', 'adicionar celular', 'cadastrar celular'
+      ],
+      listar_numeros: [
+        'meus números', 'meus numeros', 'números cadastrados', 'numeros cadastrados',
+        'listar números', 'listar numeros', 'ver números', 'ver numeros',
+        'quem tem acesso', 'mostrar números', 'mostrar numeros', 'ver membros',
+        'listar membros', 'membros cadastrados'
+      ],
+      remover_numero: [
+        'remover número', 'remover numero', 'excluir número', 'excluir numero',
+        'deletar número', 'deletar numero', 'tirar número', 'tirar numero',
+        'desvincular número', 'desvincular numero', 'remover membro', 'excluir membro',
+        'tirar acesso', 'remover acesso', 'revogar acesso'
       ]
     };
   }

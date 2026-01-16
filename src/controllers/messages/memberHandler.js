@@ -11,6 +11,8 @@ class MemberHandler {
   constructor() {
     // Estado para fluxo de adição de membro
     this.addMemberStates = new Map();
+    // Estado para fluxo de remoção de membro
+    this.removeMemberStates = new Map();
   }
 
   /**
@@ -225,9 +227,141 @@ class MemberHandler {
       response += `   👤 ${roleName}\n\n`;
     }
     
-    response += '_Para adicionar mais números, diga: "cadastrar número"_';
-    
+    response += '_Para adicionar mais números, diga: "cadastrar número"_\n';
+    response += '_Para remover algum número, diga: "remover número"_';
+
     return response;
+  }
+
+  /**
+   * Inicia o fluxo de remoção de membro
+   */
+  async handleRemoveMember(user, phone) {
+    const normalizedPhone = normalizePhone(phone) || phone;
+
+    // Verifica se tem permissão
+    const hasPermission = await clinicMemberService.hasAdminPermission(normalizedPhone);
+
+    if (!hasPermission) {
+      return onboardingCopy.removeMemberNoPermission();
+    }
+
+    // Busca membros da clínica
+    const members = await clinicMemberService.listMembers(user.id);
+
+    if (!members || members.length === 0) {
+      return '📱 Não há números cadastrados para remover.';
+    }
+
+    // Filtra membros que podem ser removidos (não primários)
+    const removableMembers = members.filter(m => !m.is_primary);
+
+    if (removableMembers.length === 0) {
+      return '⚠️ Não há números que possam ser removidos.\n\nO número principal da clínica não pode ser removido.';
+    }
+
+    // Inicia estado de remoção
+    this.removeMemberStates.set(normalizedPhone, {
+      step: 'SELECT',
+      clinicId: user.id,
+      members: removableMembers,
+      timestamp: Date.now()
+    });
+
+    // Monta lista de membros para seleção
+    let response = '🗑️ *Qual número deseja remover?*\n\n';
+
+    removableMembers.forEach((member, index) => {
+      const roleName = clinicMemberService.getRoleName(member.funcao);
+      response += `${index + 1}️⃣ ${member.nome}\n`;
+      response += `   📞 ${member.telefone}\n`;
+      response += `   👤 ${roleName}\n\n`;
+    });
+
+    response += `Digite o número da opção (1-${removableMembers.length})\n`;
+    response += `Ou digite "cancelar" para sair.`;
+
+    return response;
+  }
+
+  /**
+   * Verifica se está em processo de remover membro
+   */
+  isRemovingMember(phone) {
+    const normalizedPhone = normalizePhone(phone) || phone;
+    const state = this.removeMemberStates.get(normalizedPhone);
+
+    // Expira após 10 minutos
+    if (state && Date.now() - state.timestamp > 10 * 60 * 1000) {
+      this.removeMemberStates.delete(normalizedPhone);
+      return false;
+    }
+
+    return !!state;
+  }
+
+  /**
+   * Processa mensagem no fluxo de remoção de membro
+   */
+  async processRemoveMember(phone, message) {
+    const normalizedPhone = normalizePhone(phone) || phone;
+    const state = this.removeMemberStates.get(normalizedPhone);
+
+    if (!state) {
+      return null;
+    }
+
+    const messageLower = message.toLowerCase().trim();
+
+    // Permite cancelar
+    if (['cancelar', 'sair', 'voltar'].includes(messageLower)) {
+      this.removeMemberStates.delete(normalizedPhone);
+      return '❌ Remoção cancelada.';
+    }
+
+    if (state.step === 'SELECT') {
+      // Verifica se é um número válido
+      const selection = parseInt(message.trim(), 10);
+
+      if (isNaN(selection) || selection < 1 || selection > state.members.length) {
+        return `❓ Opção inválida. Digite um número de 1 a ${state.members.length}, ou "cancelar" para sair.`;
+      }
+
+      const selectedMember = state.members[selection - 1];
+      state.selectedMember = selectedMember;
+      state.step = 'CONFIRM';
+      state.timestamp = Date.now();
+      this.removeMemberStates.set(normalizedPhone, state);
+
+      return onboardingCopy.removeMemberConfirmation(selectedMember.nome, selectedMember.telefone);
+    }
+
+    if (state.step === 'CONFIRM') {
+      const isYes = messageLower === '1' || messageLower === 'sim' || messageLower.includes('confirmo');
+      const isNo = messageLower === '2' || messageLower === 'não' || messageLower === 'nao';
+
+      if (isYes) {
+        // Remove o membro
+        const result = await clinicMemberService.removeMember(state.selectedMember.id, normalizedPhone);
+
+        this.removeMemberStates.delete(normalizedPhone);
+
+        if (result.success) {
+          return onboardingCopy.removeMemberSuccess(state.selectedMember.nome);
+        } else {
+          return `❌ Erro ao remover: ${result.error}`;
+        }
+      }
+
+      if (isNo) {
+        this.removeMemberStates.delete(normalizedPhone);
+        return '❌ Remoção cancelada.';
+      }
+
+      return onboardingCopy.removeMemberConfirmation(state.selectedMember.nome, state.selectedMember.telefone);
+    }
+
+    return null;
   }
 }
 

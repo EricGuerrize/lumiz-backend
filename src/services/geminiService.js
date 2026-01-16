@@ -87,6 +87,7 @@ INTENÇÕES:
 - insights: insights, dicas, sugestoes, sugestões, recomendacoes, recomendações
 - adicionar_numero: cadastrar número, adicionar número, novo número, registrar número, vincular número, adicionar celular, cadastrar celular, quero adicionar outro número, preciso cadastrar um número, adicionar membro, cadastrar membro, vincular outro whatsapp, adicionar outro whatsapp, quero adicionar alguém, preciso adicionar um número, cadastrar outro telefone
 - listar_numeros: meus números, números cadastrados, listar números, ver números, quem tem acesso, quais números estão cadastrados, mostrar números, ver membros, listar membros
+- remover_numero: remover número, excluir número, deletar número, tirar número, desvincular número, remover membro, excluir membro, tirar acesso, remover acesso, revogar acesso
 - ajuda: ajuda, como usar, exemplos, o que você faz, como funciona
 - saudacao: oi, olá, bom dia, boa tarde, boa noite
 - desfazer: cancelar, desfazer, apagar última, errei, deletar última
@@ -232,6 +233,10 @@ EXEMPLOS:
 "Números cadastrados" → {"intencao":"listar_numeros","dados":{}}
 "Quem tem acesso" → {"intencao":"listar_numeros","dados":{}}
 "Ver números" → {"intencao":"listar_numeros","dados":{}}
+"Remover número" → {"intencao":"remover_numero","dados":{}}
+"Excluir membro" → {"intencao":"remover_numero","dados":{}}
+"Tirar acesso" → {"intencao":"remover_numero","dados":{}}
+"Desvincular número" → {"intencao":"remover_numero","dados":{}}
 "Ajuda" → {"intencao":"ajuda","dados":{}}
 "Oi" → {"intencao":"saudacao","dados":{}}
 
