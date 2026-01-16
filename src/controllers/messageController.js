@@ -59,12 +59,14 @@ class MessageController {
   async handleIncomingMessage(phone, message) {
     try {
       const normalizedPhone = normalizePhone(phone) || phone;
+      console.log(`[MESSAGE] v2 - Recebida mensagem de ${normalizedPhone}: ${message?.substring(0, 30)}`);
 
       // IMPORTANTE: Primeiro verifica se é membro de clínica (clinic_members)
       // Isso tem prioridade sobre o estado de onboarding para evitar que membros
       // cadastrados fiquem presos em onboarding antigo
       const clinicMemberService = require('../services/clinicMemberService');
       const existingMember = await clinicMemberService.findMemberByPhone(normalizedPhone);
+      console.log(`[MESSAGE] existingMember encontrado:`, existingMember ? `${existingMember.nome} (clinic_id: ${existingMember.clinic_id})` : 'NAO');
 
       // Se é membro de uma clínica, NÃO processa como onboarding
       // (limpa qualquer estado de onboarding residual)
