@@ -1034,9 +1034,47 @@ class OnboardingStateHandlers {
         const intentHeuristicService = require('./intentHeuristicService');
         const intent = await intentHeuristicService.detectIntent(messageTrimmed);
         
-        if (intent && (intent.intencao === 'registrar_entrada' || intent.intencao === 'registrar_saida')) {
-            // Parece ser uma transação - finaliza onboarding silenciosamente
-            // Limpa estado sem enviar mensagem
+        // Verifica se detectou intent de transação
+        const isTransaction = intent && (intent.intencao === 'registrar_entrada' || intent.intencao === 'registrar_saida');
+        
+        // Se não detectou com heurística, faz verificação mais ampla
+        if (!isTransaction) {
+            const lower = messageTrimmed.toLowerCase();
+            const hasValue = /\d+/.test(messageTrimmed); // Tem algum número
+            
+            // Palavras-chave de venda
+            const saleKeywords = ['botox', 'preenchimento', 'harmonização', 'harmonizacao', 'bioestimulador', 
+                                 'fios', 'peeling', 'laser', 'paciente', 'cliente', 'procedimento',
+                                 'fiz', 'realizei', 'atendi', 'vendi', 'fechei', 'atendimento', 'tox', 'preench'];
+            
+            // Palavras-chave de custo
+            const costKeywords = ['insumos', 'marketing', 'aluguel', 'energia', 'internet', 'material',
+                                 'produto', 'fornecedor', 'boleto', 'conta', 'paguei', 'gastei', 'comprei',
+                                 'pagar', 'despesa', 'custo', 'gasto', 'salário', 'salario'];
+            
+            const hasSaleKeyword = saleKeywords.some(kw => lower.includes(kw));
+            const hasCostKeyword = costKeywords.some(kw => lower.includes(kw));
+            
+            // Se tem palavra-chave de transação E um valor numérico, considera como transação
+            if (hasValue && (hasSaleKeyword || hasCostKeyword)) {
+                // Parece ser uma transação - finaliza onboarding silenciosamente
+                try {
+                    const existingTimer = this.persistTimers.get(normalizedPhone);
+                    if (existingTimer) {
+                        clearTimeout(existingTimer);
+                        this.persistTimers.delete(normalizedPhone);
+                    }
+                    await onboardingService.clearWhatsappState(normalizedPhone);
+                } catch (e) {
+                    console.error('[ONBOARDING] Falha ao limpar estado:', e?.message || e);
+                }
+                this.onboardingStates.delete(normalizedPhone);
+                
+                // Retorna null para indicar que o onboarding foi finalizado e a mensagem deve ser processada normalmente
+                return null;
+            }
+        } else if (isTransaction) {
+            // Detectou transação via heurística - finaliza onboarding silenciosamente
             try {
                 const existingTimer = this.persistTimers.get(normalizedPhone);
                 if (existingTimer) {
@@ -1057,7 +1095,7 @@ class OnboardingStateHandlers {
         return await respond(onboardingCopy.mdrSetupIntro());
     }
 
-    async handleMdrSetupIntro(onboarding, messageTrimmed, respond, respondAndClear) {
+    async handleMdrSetupIntro(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear) {
         const choice = validateChoice(messageTrimmed, {
             'setup': ['1', 'configurar', 'agora'],
             'skip': ['2', 'pular', 'depois']
@@ -1070,6 +1108,68 @@ class OnboardingStateHandlers {
         if (choice === 'setup') {
             onboarding.step = 'MDR_SETUP_QUESTION';
             return await respond(onboardingCopy.mdrSetupQuestion());
+        }
+
+        // Detecta se a mensagem parece ser uma transação (venda ou custo)
+        // Se for, finaliza onboarding automaticamente e processa como transação normal
+        const intentHeuristicService = require('./intentHeuristicService');
+        const intent = await intentHeuristicService.detectIntent(messageTrimmed);
+        
+        // Verifica se detectou intent de transação
+        const isTransaction = intent && (intent.intencao === 'registrar_entrada' || intent.intencao === 'registrar_saida');
+        
+        // Se não detectou com heurística, faz verificação mais ampla
+        if (!isTransaction) {
+            const lower = messageTrimmed.toLowerCase();
+            const hasValue = /\d+/.test(messageTrimmed); // Tem algum número
+            
+            // Palavras-chave de venda
+            const saleKeywords = ['botox', 'preenchimento', 'harmonização', 'harmonizacao', 'bioestimulador', 
+                                 'fios', 'peeling', 'laser', 'paciente', 'cliente', 'procedimento',
+                                 'fiz', 'realizei', 'atendi', 'vendi', 'fechei', 'atendimento', 'tox', 'preench'];
+            
+            // Palavras-chave de custo
+            const costKeywords = ['insumos', 'marketing', 'aluguel', 'energia', 'internet', 'material',
+                                 'produto', 'fornecedor', 'boleto', 'conta', 'paguei', 'gastei', 'comprei',
+                                 'pagar', 'despesa', 'custo', 'gasto', 'salário', 'salario'];
+            
+            const hasSaleKeyword = saleKeywords.some(kw => lower.includes(kw));
+            const hasCostKeyword = costKeywords.some(kw => lower.includes(kw));
+            
+            // Se tem palavra-chave de transação E um valor numérico, considera como transação
+            if (hasValue && (hasSaleKeyword || hasCostKeyword)) {
+                // Parece ser uma transação - finaliza onboarding silenciosamente
+                try {
+                    const existingTimer = this.persistTimers.get(normalizedPhone);
+                    if (existingTimer) {
+                        clearTimeout(existingTimer);
+                        this.persistTimers.delete(normalizedPhone);
+                    }
+                    await onboardingService.clearWhatsappState(normalizedPhone);
+                } catch (e) {
+                    console.error('[ONBOARDING] Falha ao limpar estado:', e?.message || e);
+                }
+                this.onboardingStates.delete(normalizedPhone);
+                
+                // Retorna null para indicar que o onboarding foi finalizado e a mensagem deve ser processada normalmente
+                return null;
+            }
+        } else if (isTransaction) {
+            // Detectou transação via heurística - finaliza onboarding silenciosamente
+            try {
+                const existingTimer = this.persistTimers.get(normalizedPhone);
+                if (existingTimer) {
+                    clearTimeout(existingTimer);
+                    this.persistTimers.delete(normalizedPhone);
+                }
+                await onboardingService.clearWhatsappState(normalizedPhone);
+            } catch (e) {
+                console.error('[ONBOARDING] Falha ao limpar estado:', e?.message || e);
+            }
+            this.onboardingStates.delete(normalizedPhone);
+            
+            // Retorna null para indicar que o onboarding foi finalizado e a mensagem deve ser processada normalmente
+            return null;
         }
 
         return await respond(onboardingCopy.invalidChoice());
@@ -1453,7 +1553,7 @@ class OnboardingFlowService {
                 case 'HANDOFF_TO_DAILY_USE':
                     return await handlers.handleHandoffToDailyUse(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear);
                 case 'MDR_SETUP_INTRO':
-                    return await handlers.handleMdrSetupIntro(onboarding, messageTrimmed, respond, respondAndClear);
+                    return await handlers.handleMdrSetupIntro(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear);
                 case 'MDR_SETUP_QUESTION':
                     return await handlers.handleMdrSetupQuestion(onboarding, messageTrimmed, respond);
                 case 'MDR_SETUP_UPLOAD':
