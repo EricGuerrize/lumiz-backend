@@ -63,7 +63,14 @@ class MessageController {
       // Verifica se está em processo de onboarding
       if (onboardingFlowService.isOnboarding(normalizedPhone)) {
         const result = await onboardingFlowService.processOnboarding(normalizedPhone, message);
-        return result;
+        
+        // Se o onboarding retornou null, significa que foi finalizado e a mensagem deve ser processada normalmente
+        if (result === null) {
+          // Onboarding foi finalizado, reprocessa a mensagem normalmente
+          // Continua o fluxo abaixo para processar como transação normal
+        } else if (result) {
+          return result;
+        }
       }
 
       // Detecta mensagem inicial do teste gratuito (link do site)

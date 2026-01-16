@@ -164,20 +164,20 @@ class IntentHeuristicService {
     // Extrai forma de pagamento
     let formaPagamento = null;
     let parcelas = null;
-    if (lower.includes('pix')) {
+    
+    // PRIMEIRO: Verifica se há padrão "número x" na mensagem inteira (qualquer número seguido de x = parcela)
+    const parcelasMatch = raw.match(/\b(\d{1,2})\s*x\b/i);
+    if (parcelasMatch && parcelasMatch[1]) {
+      formaPagamento = 'parcelado';
+      parcelas = parseInt(parcelasMatch[1], 10);
+    } else if (lower.includes('pix')) {
       formaPagamento = 'pix';
     } else if (lower.includes('dinheiro')) {
       formaPagamento = 'dinheiro';
     } else if (lower.includes('débito') || lower.includes('debito')) {
       formaPagamento = 'debito';
     } else if (lower.includes('cartão') || lower.includes('cartao') || lower.includes('crédito') || lower.includes('credito')) {
-      const px = raw.match(/(\d{1,2})\s*x\b/i);
-      if (px && px[1]) {
-        formaPagamento = 'parcelado';
-        parcelas = parseInt(px[1], 10);
-      } else {
-        formaPagamento = 'credito_avista';
-      }
+      formaPagamento = 'credito_avista';
     }
 
     return {
