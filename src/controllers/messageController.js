@@ -60,22 +60,40 @@ class MessageController {
     try {
       const normalizedPhone = normalizePhone(phone) || phone;
 
-      // Verifica se está em processo de onboarding
-      if (onboardingFlowService.isOnboarding(normalizedPhone)) {
-        const result = await onboardingFlowService.processOnboarding(normalizedPhone, message);
-        
-        // Se o onboarding retornou null, significa que foi finalizado e a mensagem deve ser processada normalmente
-        if (result === null) {
-          // Onboarding foi finalizado, reprocessa a mensagem normalmente
-          // Continua o fluxo abaixo para processar como transação normal
-        } else if (result) {
-          return result;
+      // IMPORTANTE: Primeiro verifica se é membro de clínica (clinic_members)
+      // Isso tem prioridade sobre o estado de onboarding para evitar que membros
+      // cadastrados fiquem presos em onboarding antigo
+      const clinicMemberService = require('../services/clinicMemberService');
+      const existingMember = await clinicMemberService.findMemberByPhone(normalizedPhone);
+
+      // Se é membro de uma clínica, NÃO processa como onboarding
+      // (limpa qualquer estado de onboarding residual)
+      if (existingMember && existingMember.clinic_id) {
+        // Se tinha estado de onboarding, limpa silenciosamente
+        if (onboardingFlowService.isOnboarding(normalizedPhone)) {
+          console.log(`[MESSAGE] Membro ${normalizedPhone} encontrado em clinic_members, limpando estado de onboarding residual`);
+          // Limpa estado em memória
+          onboardingFlowService.onboardingStates?.delete(normalizedPhone);
+        }
+        // Continua para processamento normal como membro da clínica
+      } else {
+        // Não é membro, verifica se está em processo de onboarding
+        if (onboardingFlowService.isOnboarding(normalizedPhone)) {
+          const result = await onboardingFlowService.processOnboarding(normalizedPhone, message);
+
+          // Se o onboarding retornou null, significa que foi finalizado e a mensagem deve ser processada normalmente
+          if (result === null) {
+            // Onboarding foi finalizado, reprocessa a mensagem normalmente
+            // Continua o fluxo abaixo para processar como transação normal
+          } else if (result) {
+            return result;
+          }
         }
       }
 
       // Detecta mensagem inicial do teste gratuito (link do site)
       const messageLower = message.toLowerCase().trim();
-      const isTesteGratuitoMessage = 
+      const isTesteGratuitoMessage =
         messageLower.includes('🔥 quero organizar o financeiro da minha clínica com a lumiz') ||
         messageLower.includes('quero organizar o financeiro da minha clínica com a lumiz') ||
         messageLower.includes('tenho o convite para o teste gratuito') ||
