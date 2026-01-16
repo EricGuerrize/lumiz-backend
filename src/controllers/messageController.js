@@ -262,15 +262,49 @@ class MessageController {
     switch (intent.intencao) {
       case 'registrar_entrada':
       case 'registrar_saida':
-        if (!intent.dados.valor) {
+        const tipo = intent.intencao === 'registrar_entrada' ? 'venda' : 'custo';
+        const temValor = intent.dados.valor && intent.dados.valor > 0;
+        const temCategoria = intent.dados.categoria && intent.dados.categoria.trim().length > 0;
+        
+        // Se tem ambos, processa normalmente
+        if (temValor && temCategoria) {
+          return await this.transactionHandler.handleTransactionRequest(user, intent, phone);
+        }
+        
+        // Se não tem valor E não tem categoria: pergunta ambos
+        if (!temValor && !temCategoria) {
           this.awaitingData.set(phone, {
             intent: intent,
             timestamp: Date.now()
           });
-          const tipo = intent.intencao === 'registrar_entrada' ? 'venda' : 'custo';
-          const cat = intent.dados.categoria || 'esse item';
-          return `Entendi que é ${tipo === 'venda' ? 'uma venda' : 'um custo'} de *${cat}*, mas qual o valor? 💰\n\nPode mandar só o número (ex: R$ 500).`;
+          const exemplos = tipo === 'venda' 
+            ? '_Botox R$ 2800_ ou _Preenchimento R$ 3500_'
+            : '_Insumos R$ 500_ ou _Aluguel R$ 2000_';
+          return `O que você quer registrar? 💰\n\nMe diga o ${tipo === 'venda' ? 'procedimento' : 'tipo de custo'} e o valor.\n\nExemplo: ${exemplos}`;
         }
+        
+        // Se tem categoria mas não tem valor: pergunta apenas o valor
+        if (temCategoria && !temValor) {
+          this.awaitingData.set(phone, {
+            intent: intent,
+            timestamp: Date.now()
+          });
+          return `Entendi que é uma ${tipo} de *${intent.dados.categoria}*, mas qual o valor? 💰\n\nPode mandar só o número (ex: R$ 500).`;
+        }
+        
+        // Se tem valor mas não tem categoria: pergunta apenas a categoria
+        if (temValor && !temCategoria) {
+          this.awaitingData.set(phone, {
+            intent: intent,
+            timestamp: Date.now()
+          });
+          const exemplos = tipo === 'venda'
+            ? '_Botox_, _Preenchimento_, _Harmonização_'
+            : '_Insumos_, _Aluguel_, _Marketing_';
+          return `Qual ${tipo === 'venda' ? 'procedimento' : 'tipo de custo'} dessa ${tipo} de ${formatarMoeda(intent.dados.valor)}? 💰\n\nExemplo: ${exemplos}`;
+        }
+        
+        // Fallback: processa normalmente
         return await this.transactionHandler.handleTransactionRequest(user, intent, phone);
 
       case 'consultar_saldo':
