@@ -617,6 +617,33 @@ module.exports = {
     },
 
     // ============================================================
+    // Remoção de Membros
+    // ============================================================
+    removeMemberNoPermission() {
+        return (
+            `⚠️ Apenas a dona ou gestora da clínica pode remover números.\n\n` +
+            `Se você precisa remover alguém, peça para quem tem permissão fazer isso.`
+        );
+    },
+
+    removeMemberConfirmation(nome, telefone) {
+        return (
+            `⚠️ Tem certeza que deseja remover *${nome}*?\n` +
+            `📞 ${telefone}\n\n` +
+            `Essa pessoa perderá acesso aos dados financeiros da clínica.\n\n` +
+            `1️⃣ Sim, remover\n` +
+            `2️⃣ Não, cancelar`
+        );
+    },
+
+    removeMemberSuccess(nome) {
+        return (
+            `✅ *${nome}* foi removido(a) com sucesso!\n\n` +
+            `Essa pessoa não tem mais acesso aos dados financeiros da clínica.`
+        );
+    },
+
+    // ============================================================
     // Transferência de Número entre Clínicas
     // ============================================================
     transferConfirmationToOwner(phone, newClinicName) {

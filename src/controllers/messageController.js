@@ -101,10 +101,16 @@ class MessageController {
 
       // Se não encontrou usuário e não é mensagem de teste, faz busca mais robusta
       if (!user) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'messageController.js:103',message:'Usuário não encontrado, buscando em clinic_members',data:{phone:normalizedPhone},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
         // Busca adicional em clinic_members incluindo membros não confirmados
         // Isso garante que encontramos membros recém-cadastrados que ainda não confirmaram
         const clinicMemberService = require('../services/clinicMemberService');
         const member = await clinicMemberService.findMemberByPhone(normalizedPhone);
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'messageController.js:107',message:'Resultado busca adicional em clinic_members',data:{found:!!member,memberId:member?.id,clinicId:member?.clinic_id,phoneInDb:member?.telefone},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
         
         if (member && member.clinic_id) {
           // Encontrou membro! Busca o profile da clínica
@@ -161,6 +167,14 @@ class MessageController {
       // Verifica se está no fluxo de adicionar membro
       if (this.memberHandler.isAddingMember(normalizedPhone)) {
         const result = await this.memberHandler.processAddMember(normalizedPhone, message);
+        if (result) {
+          return result;
+        }
+      }
+
+      // Verifica se está no fluxo de remover membro
+      if (this.memberHandler.isRemovingMember(normalizedPhone)) {
+        const result = await this.memberHandler.processRemoveMember(normalizedPhone, message);
         if (result) {
           return result;
         }
@@ -373,6 +387,9 @@ class MessageController {
 
       case 'listar_numeros':
         return await this.memberHandler.handleListMembers(user);
+
+      case 'remover_numero':
+        return await this.memberHandler.handleRemoveMember(user, phone);
 
       case 'enviar_documento':
         return this.helpHandler.handleDocumentPrompt();
