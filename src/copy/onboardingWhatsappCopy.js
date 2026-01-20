@@ -255,7 +255,7 @@ module.exports = {
     ahaCostsUploadVariable() {
         return (
             `Beleza — variável ✅\n` +
-            `Me manda um custo variável.\n` +
+            `Me manda um custo variável (Ex: Compra de insumos, injetaveis etc).\n` +
             `Pode ser texto, foto ou PDF (boleto, NF, etc.).`
         );
     },
@@ -263,7 +263,7 @@ module.exports = {
     ahaCostsUploadFixed() {
         return (
             `Perfeito — fixo ✅\n` +
-            `Me manda um custo fixo.\n` +
+            `Me manda um custo fixo (Ex: Aluguel, conta de luz).\n` +
             `Pode ser texto ou documento.`
         );
     },
@@ -311,7 +311,7 @@ module.exports = {
     ahaCostsSecondIntroFixed() {
         return (
             `Custo variável registrado ✅\n\n` +
-            `Agora me manda um custo fixo (ex: aluguel, salário, internet).\n` +
+            `Agora me manda um custo fixo (Ex: Aluguel, conta de luz).\n` +
             `Pode ser texto, foto ou PDF.`
         );
     },
@@ -319,7 +319,7 @@ module.exports = {
     ahaCostsSecondIntroVariable() {
         return (
             `Custo fixo registrado ✅\n\n` +
-            `Agora me manda um custo variável (ex: insumos, fornecedor).\n` +
+            `Agora me manda um custo variável (Ex: Compra de insumos, injetaveis etc).\n` +
             `Pode ser texto, foto ou PDF.`
         );
     },
