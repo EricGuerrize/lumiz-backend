@@ -15,7 +15,7 @@ const documentService = require('./documentService');
 const CACHE_TTL_SECONDS = 1800; // 30 minutos
 const STATE_CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 1 hora
 const STATE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 horas
-const PERSIST_DEBOUNCE_MS = 5000; // 5 segundos
+const PERSIST_DEBOUNCE_MS = 1000; // 1 segundo (reduzido de 5s para evitar perda de estado)
 const MIN_NAME_LENGTH = 2;
 const MIN_CLINIC_NAME_LENGTH = 2;
 
@@ -28,16 +28,16 @@ function normalizeText(value = '') {
 
 function isYes(value = '') {
     const v = normalizeText(value);
-    const result = v === '1' || v === 'sim' || v === 's' || v === 'ok' || v === 'confirmar' || 
-           v.includes('pode registrar') || v.includes('tá ok') || v.includes('ta ok') || 
-           v.includes('confere') || v.includes('autorizo') || v.includes('autorizar');
+    const result = v === '1' || v === 'sim' || v === 's' || v === 'ok' || v === 'confirmar' ||
+        v.includes('pode registrar') || v.includes('tá ok') || v.includes('ta ok') ||
+        v.includes('confere') || v.includes('autorizo') || v.includes('autorizar');
     return result;
 }
 
 function isNo(value = '') {
     const v = normalizeText(value);
-    return v === '2' || v === 'nao' || v === 'não' || v === 'n' || v === 'cancelar' || 
-           v.includes('corrigir') || v.includes('ajustar') || v.includes('editar');
+    return v === '2' || v === 'nao' || v === 'não' || v === 'n' || v === 'cancelar' ||
+        v.includes('corrigir') || v.includes('ajustar') || v.includes('editar');
 }
 
 function parseBrazilianNumber(raw) {
@@ -64,19 +64,40 @@ function parseBrazilianNumber(raw) {
 
 function extractBestAmountFromText(text = '') {
     const raw = String(text);
+    // 1. Prioridade: Busca explícita por R$
     const currencyMatch = raw.match(/r\$\s*([0-9]{1,3}(?:[.,][0-9]{3})*(?:[.,][0-9]{2})?|[0-9]+(?:[.,][0-9]{2})?)/i);
     if (currencyMatch && currencyMatch[1]) {
         const value = parseBrazilianNumber(currencyMatch[1]);
         if (value && value > 0) return value;
     }
 
+    // 2. Busca genérica por números
     const matches = [...raw.matchAll(/(\d+(?:[.,]\d+)?)/g)].map((m) => m[1]);
+
     const candidates = matches
-        .map((m) => parseBrazilianNumber(m))
-        .filter((n) => Number.isFinite(n) && n > 0)
-        .filter((n) => !(n >= 1900 && n <= 2100));
+        .map((m) => ({ str: m, val: parseBrazilianNumber(m) }))
+        .filter(item => {
+            const n = item.val;
+            // Valida se é número válido positivo
+            if (!Number.isFinite(n) || n <= 0) return false;
+
+            // Filtro heurístico: Ignora anos (ex: 2024, 2025)
+            // (Muitas vezes o usuário digita a data)
+            if (n >= 1900 && n <= 2100) return false;
+
+            // Filtro heurístico de MENU: Ignora dígitos simples 1-9 que não tem formatação de centavos
+            // Ex: "1", "2" são ignorados (provável menu). "1,00", "2.50" são aceitos (valor).
+            // Nota: Se o usuário quis dizer 1 real e digitou "1", ele cairá no fallback de "valor não encontrado",
+            // o que é mais seguro do que assumir valor errado em step de menu.
+            if (/^[1-9]$/.test(item.str)) return false;
+
+            return true;
+        })
+        .map(item => item.val);
 
     if (!candidates.length) return null;
+
+    // Retorna o maior valor encontrado (assumindo que o maior valor é o da transação)
     return Math.max(...candidates);
 }
 
@@ -87,19 +108,19 @@ function validateAndExtractValue(text, errorMessage = null) {
     if (!valor || Number.isNaN(valor) || valor <= 0) {
         return { valid: false, error: errorMessage || onboardingCopy.ahaRevenueMissingValue() };
     }
-    
+
     // Validação de limites
     const MAX_VALUE = 10000000; // R$ 10 milhões
     const MIN_VALUE = 0.01; // R$ 0,01
-    
+
     if (valor > MAX_VALUE) {
         return { valid: false, error: onboardingCopy.valueTooHigh() };
     }
-    
+
     if (valor < MIN_VALUE) {
         return { valid: false, error: onboardingCopy.valueTooLow() };
     }
-    
+
     return { valid: true, valor };
 }
 
@@ -121,7 +142,7 @@ function extractSaleHeuristics(text = '') {
 
     let forma_pagamento = null;
     let parcelas = null;
-    
+
     // PRIMEIRO: Verifica se há padrão "número x" na mensagem inteira (qualquer número seguido de x = parcela)
     const parcelasMatch = raw.match(/\b(\d{1,2})\s*x\b/i);
     if (parcelasMatch && parcelasMatch[1]) {
@@ -155,22 +176,41 @@ function formatDate(date) {
 }
 
 // Correção #17: Função helper para validação de escolhas
+// CORREÇÃO: Quando a mensagem é apenas um dígito de 1-9, trata como escolha de menu
 function validateChoice(message, options) {
-    const v = normalizeText(message);
+    // CORREÇÃO: Se a mensagem é apenas um dígito de 1-9, garante que seja tratada como escolha de menu
+    const trimmedMessage = String(message).trim();
+    const isSingleDigitMenuChoice = /^[1-9]$/.test(trimmedMessage);
+    const messageToValidate = isSingleDigitMenuChoice ? trimmedMessage : message;
+
+    const v = normalizeText(messageToValidate);
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:158', message: 'validateChoice entrada', data: { message: message, normalized: v, optionsKeys: Object.keys(options), isSingleDigitMenuChoice: isSingleDigitMenuChoice }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'C' }) }).catch(() => { });
+    // #endregion
     for (const [key, matchers] of Object.entries(options)) {
         if (matchers.some(matcher => {
             if (typeof matcher === 'string') {
                 const normalizedMatcher = normalizeText(matcher);
-                return v === normalizedMatcher || v.includes(normalizedMatcher);
+                const matches = v === normalizedMatcher || v.includes(normalizedMatcher);
+                // #region agent log
+                if (matches) fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:165', message: 'validateChoice match encontrado', data: { key: key, matcher: matcher, normalizedMatcher: normalizedMatcher, v: v }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'C' }) }).catch(() => { });
+                // #endregion
+                return matches;
             }
             if (matcher instanceof RegExp) {
                 return matcher.test(v);
             }
             return false;
         })) {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:174', message: 'validateChoice retornando key', data: { key: key }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'C' }) }).catch(() => { });
+            // #endregion
             return key;
         }
     }
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:177', message: 'validateChoice nenhum match, retornando null', data: { v: v }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'C' }) }).catch(() => { });
+    // #endregion
     return null;
 }
 
@@ -178,18 +218,18 @@ function validateChoice(message, options) {
 // Correção #2: Cálculo de resumo usando apenas dados salvos
 function calculateSummaryFromOnboardingData(onboarding) {
     const sale = onboarding.data?.pending_sale;
-    
+
     // Suporte para múltiplos custos salvos
     const savedCosts = onboarding.data?.saved_costs || [];
     const pendingCost = onboarding.data?.pending_cost;
 
     // Só conta se foi salvo com sucesso (tem flag saved)
     const entradas = (sale?.saved && sale?.valor) ? sale.valor : 0;
-    
+
     // Soma custos fixos e variáveis do array de custos salvos
     let custosFixos = 0;
     let custosVariaveis = 0;
-    
+
     for (const cost of savedCosts) {
         if (cost?.saved && cost?.valor) {
             if (cost.tipo === 'fixa') {
@@ -199,7 +239,7 @@ function calculateSummaryFromOnboardingData(onboarding) {
             }
         }
     }
-    
+
     // Também considera o pending_cost se foi salvo (para compatibilidade)
     if (pendingCost?.saved && pendingCost?.valor) {
         if (pendingCost.tipo === 'fixa') {
@@ -208,7 +248,7 @@ function calculateSummaryFromOnboardingData(onboarding) {
             custosVariaveis += pendingCost.valor;
         }
     }
-    
+
     const saldoParcial = entradas - custosFixos - custosVariaveis;
 
     return {
@@ -273,7 +313,13 @@ class OnboardingStateHandlers {
     }
 
     async handleStart(onboarding, messageTrimmed, normalizedPhone, respond) {
-        const v = normalizeText(messageTrimmed);
+        // CORREÇÃO: Quando está em step de menu, mensagens que são apenas números de 1-9
+        // devem ser tratadas como escolhas de menu, não como valores monetários
+        const trimmedMessage = messageTrimmed.trim();
+        const isSingleDigitMenuChoice = /^[1-9]$/.test(trimmedMessage);
+        const messageToCheck = isSingleDigitMenuChoice ? trimmedMessage : messageTrimmed;
+
+        const v = normalizeText(messageToCheck);
         const choseYes = v === '1' || v.includes('sim') || v.includes('começar') || v.includes('comecar');
         const choseHow = v === '2' || v.includes('como funciona') || v.includes('como a lumiz funciona');
 
@@ -319,20 +365,20 @@ class OnboardingStateHandlers {
         if (messageTrimmed.length < MIN_NAME_LENGTH) {
             return await respond(onboardingCopy.nameTooShort());
         }
-        
+
         // Valida que tem pelo menos uma letra (não só números ou símbolos)
         if (!/[a-zA-ZÀ-ÿ]/.test(messageTrimmed)) {
             return await respond(onboardingCopy.invalidName());
         }
-        
+
         // Valida comprimento máximo
         if (messageTrimmed.length > 100) {
             return await respond('Nome muito longo. Por favor, use até 100 caracteres.');
         }
-        
+
         onboarding.data.nome = messageTrimmed.trim();
         onboarding.step = 'PROFILE_CLINIC';
-        return await respond(onboardingCopy.profileClinicQuestion());
+        return await respond(onboardingCopy.profileClinicQuestion(), true);
     }
 
     async handleProfileClinic(onboarding, messageTrimmed, respond) {
@@ -340,20 +386,20 @@ class OnboardingStateHandlers {
         if (messageTrimmed.length < MIN_CLINIC_NAME_LENGTH) {
             return await respond(onboardingCopy.clinicNameTooShort());
         }
-        
+
         // Valida que tem pelo menos uma letra (não só números ou símbolos)
         if (!/[a-zA-ZÀ-ÿ]/.test(messageTrimmed)) {
             return await respond(onboardingCopy.invalidClinicName());
         }
-        
+
         // Valida comprimento máximo
         if (messageTrimmed.length > 100) {
             return await respond('Nome da clínica muito longo. Por favor, use até 100 caracteres.');
         }
-        
+
         onboarding.data.clinica = messageTrimmed.trim();
         onboarding.step = 'PROFILE_ROLE';
-        return await respond(onboardingCopy.profileRoleQuestion());
+        return await respond(onboardingCopy.profileRoleQuestion(), true);
     }
 
     async handleProfileRole(onboarding, messageTrimmed, respond) {
@@ -380,7 +426,7 @@ class OnboardingStateHandlers {
 
     async handleProfileAddMember(onboarding, messageTrimmed, respond) {
         const v = normalizeText(messageTrimmed);
-        
+
         // Se está no início (primeira vez neste step)
         // Se adding_member não existe ou é false, significa que acabou de entrar neste step
         if (!onboarding.data.adding_member && !onboarding.data.current_member_step) {
@@ -388,13 +434,13 @@ class OnboardingStateHandlers {
             // Pergunta se quer adicionar membro
             const wantsToAdd = v === '1' || v === 'sim' || v.includes('adicionar');
             const skip = v === '2' || v === 'não' || v === 'nao' || v.includes('depois');
-            
+
             if (wantsToAdd) {
                 onboarding.data.adding_member = true;
                 onboarding.data.current_member_step = 'ROLE';
-                return await respond(onboardingCopy.profileAddMemberRoleQuestion());
+                return await respond(onboardingCopy.profileAddMemberRoleQuestion(), true);
             }
-            
+
             if (skip) {
                 // Se há membros na lista, precisamos criar o perfil e salvá-los AGORA
                 // Isso garante que os membros existam no banco mesmo se o onboarding for interrompido
@@ -418,8 +464,8 @@ class OnboardingStateHandlers {
                         // Cria membro primário (quem está fazendo o onboarding)
                         const clinicMemberService = require('./clinicMemberService');
                         const primaryRole = onboarding.data.role === 'dona_gestora' ? 'dona' :
-                                           onboarding.data.role === 'adm_financeiro' ? 'adm' :
-                                           onboarding.data.role || 'dona';
+                            onboarding.data.role === 'adm_financeiro' ? 'adm' :
+                                onboarding.data.role || 'dona';
 
                         await clinicMemberService.addMember({
                             clinicId: userId,
@@ -464,14 +510,14 @@ class OnboardingStateHandlers {
                 onboarding.step = 'CONTEXT_WHY';
                 delete onboarding.data.adding_member;
                 delete onboarding.data.current_member_step;
-                return await respond(onboardingCopy.contextWhyQuestion());
+                return await respond(onboardingCopy.contextWhyQuestion(), true);
             }
-            
+
             // Se não é nem sim nem não, mostra a pergunta novamente
             console.log('[ONBOARDING] PROFILE_ADD_MEMBER - resposta inválida, mostrando pergunta novamente');
             return await respond(onboardingCopy.profileAddMemberQuestion());
         }
-        
+
         // Coletando função
         if (onboarding.data.current_member_step === 'ROLE') {
             const role = validateChoice(messageTrimmed, {
@@ -480,52 +526,52 @@ class OnboardingStateHandlers {
                 'secretaria': ['3', 'secretária', 'secretaria'],
                 'profissional': ['4', 'profissional']
             });
-            
+
             if (!role) {
                 return await respond(onboardingCopy.invalidChoice());
             }
-            
+
             onboarding.data.current_member_function = role;
             onboarding.data.current_member_step = 'NAME';
-            return await respond(onboardingCopy.profileAddMemberNameQuestion());
+            return await respond(onboardingCopy.profileAddMemberNameQuestion(), true);
         }
-        
+
         // Coletando nome
         if (onboarding.data.current_member_step === 'NAME') {
             // Detecta se o usuário enviou um número (telefone) no lugar do nome
             const phonePattern = /^\d{10,15}$/;
             const digitsOnly = messageTrimmed.replace(/\D/g, '');
             const looksLikePhone = phonePattern.test(digitsOnly) && digitsOnly.length >= 10;
-            
+
             if (looksLikePhone) {
                 // Usuário enviou número no lugar do nome - oferece opção de corrigir
                 onboarding.data.temp_phone_entered = messageTrimmed.trim();
                 onboarding.data.current_member_step = 'NAME_CORRECTION';
                 return await respond(onboardingCopy.profileAddMemberNameCorrection());
             }
-            
+
             if (messageTrimmed.length < MIN_NAME_LENGTH) {
                 return await respond(onboardingCopy.nameTooShort());
             }
-            
+
             onboarding.data.current_member_name = messageTrimmed.trim();
             onboarding.data.current_member_step = 'PHONE';
-            return await respond(onboardingCopy.profileAddMemberPhoneQuestion());
+            return await respond(onboardingCopy.profileAddMemberPhoneQuestion(), true);
         }
-        
+
         // Opção de correção quando número foi enviado no lugar do nome
         if (onboarding.data.current_member_step === 'NAME_CORRECTION') {
             const v = normalizeText(messageTrimmed);
             const wantsToCorrect = v === '1' || v === 'sim' || v.includes('corrigir') || v.includes('corrige');
             const wantsToContinue = v === '2' || v === 'não' || v === 'nao' || v.includes('continuar');
-            
+
             if (wantsToCorrect) {
                 // Volta para pedir o nome novamente
                 onboarding.data.current_member_step = 'NAME';
                 delete onboarding.data.temp_phone_entered;
                 return await respond(onboardingCopy.profileAddMemberNameQuestion());
             }
-            
+
             if (wantsToContinue) {
                 // Usa o número como nome (improvável, mas permite continuar)
                 // E usa o número temporário como telefone
@@ -534,10 +580,10 @@ class OnboardingStateHandlers {
                 delete onboarding.data.temp_phone_entered;
                 return await respond(onboardingCopy.profileAddMemberPhoneQuestion());
             }
-            
+
             return await respond(onboardingCopy.profileAddMemberNameCorrection());
         }
-        
+
         // Coletando telefone
         if (onboarding.data.current_member_step === 'PHONE') {
             // Permite voltar para corrigir o nome digitando "corrigir" ou "voltar"
@@ -546,17 +592,17 @@ class OnboardingStateHandlers {
                 onboarding.data.current_member_step = 'NAME';
                 return await respond(onboardingCopy.profileAddMemberNameQuestion() + '\n\n(Digite o nome correto)');
             }
-            
+
             const phone = normalizePhone(messageTrimmed) || messageTrimmed;
             // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:487',message:'Normalizando telefone do membro antes de adicionar',data:{originalPhone:messageTrimmed,normalizedPhone:phone,nome:onboarding.data.current_member_name},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+            fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:487', message: 'Normalizando telefone do membro antes de adicionar', data: { originalPhone: messageTrimmed, normalizedPhone: phone, nome: onboarding.data.current_member_name }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'B' }) }).catch(() => { });
             // #endregion
-            
+
             // Valida formato do telefone (mínimo 10 dígitos)
             if (!/^\d{10,15}$/.test(phone.replace(/\D/g, ''))) {
                 return await respond(onboardingCopy.profileAddMemberInvalidPhone() + '\n\n💡 Dica: Se quiser corrigir o nome, digite "corrigir"');
             }
-            
+
             // Adiciona à lista de membros
             onboarding.data.members_to_add.push({
                 nome: onboarding.data.current_member_name,
@@ -564,22 +610,22 @@ class OnboardingStateHandlers {
                 funcao: onboarding.data.current_member_function
             });
             // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:499',message:'Membro adicionado à lista members_to_add',data:{phone:phone,nome:onboarding.data.current_member_name,funcao:onboarding.data.current_member_function,totalMembers:onboarding.data.members_to_add.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+            fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:499', message: 'Membro adicionado à lista members_to_add', data: { phone: phone, nome: onboarding.data.current_member_name, funcao: onboarding.data.current_member_function, totalMembers: onboarding.data.members_to_add.length }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'B' }) }).catch(() => { });
             // #endregion
-            
+
             // Limpa dados temporários do membro atual
             delete onboarding.data.current_member_function;
             delete onboarding.data.current_member_name;
             delete onboarding.data.current_member_step;
             delete onboarding.data.adding_member;
             delete onboarding.data.temp_phone_entered;
-            
+
             // Pergunta se quer adicionar mais
             return await respond(onboardingCopy.profileAddMemberSuccess(
                 onboarding.data.members_to_add[onboarding.data.members_to_add.length - 1].nome
             ));
         }
-        
+
         return await respond(onboardingCopy.invalidChoice());
     }
 
@@ -596,7 +642,7 @@ class OnboardingStateHandlers {
 
         onboarding.data.context_why = why;
         onboarding.step = 'CONTEXT_HOW';
-        return await respond(onboardingCopy.contextHowQuestion());
+        return await respond(onboardingCopy.contextHowQuestion(), true);
     }
 
     async handleContextHow(onboarding, messageTrimmed, normalizedPhone, respond) {
@@ -623,7 +669,7 @@ class OnboardingStateHandlers {
     async handleAhaRevenue(onboarding, messageTrimmed, respond) {
         // REMOVIDO: Chamada Gemini desnecessária (já foi corrigido na análise)
         // Usa apenas heurísticas locais
-        
+
         const valorResult = validateAndExtractValue(messageTrimmed, onboardingCopy.ahaRevenueMissingValue());
         if (!valorResult.valid) {
             return await respond(valorResult.error);
@@ -646,13 +692,13 @@ class OnboardingStateHandlers {
             // Se não detectou, assume 'avista' como padrão seguro
             sale.forma_pagamento = 'avista';
         }
-        
+
         // Se mencionou cartão mas não tem parcelas, assume à vista
-        if ((sale.forma_pagamento === 'parcelado' || 
-             sale.forma_pagamento.includes('cartão') || 
-             sale.forma_pagamento.includes('cartao') || 
-             sale.forma_pagamento.includes('credito') ||
-             sale.forma_pagamento.includes('crédito')) && !sale.parcelas) {
+        if ((sale.forma_pagamento === 'parcelado' ||
+            sale.forma_pagamento.includes('cartão') ||
+            sale.forma_pagamento.includes('cartao') ||
+            sale.forma_pagamento.includes('credito') ||
+            sale.forma_pagamento.includes('crédito')) && !sale.parcelas) {
             // Se mencionou cartão mas não tem número de parcelas, assume crédito à vista
             sale.forma_pagamento = 'credito_avista';
             sale.parcelas = null;
@@ -719,8 +765,8 @@ class OnboardingStateHandlers {
 
                     // Cria membro primário (quem fez o onboarding)
                     const primaryRole = onboarding.data.role === 'dona_gestora' ? 'dona' :
-                                       onboarding.data.role === 'adm_financeiro' ? 'adm' :
-                                       onboarding.data.role || 'dona';
+                        onboarding.data.role === 'adm_financeiro' ? 'adm' :
+                            onboarding.data.role || 'dona';
 
                     await clinicMemberService.addMember({
                         clinicId: userId,
@@ -736,7 +782,7 @@ class OnboardingStateHandlers {
                     for (const member of membersToAdd) {
                         const normalizedMemberPhone = normalizePhone(member.telefone) || member.telefone;
                         // #region agent log
-                        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:620',message:'Salvando membro adicional no banco',data:{originalPhone:member.telefone,normalizedPhone:normalizedMemberPhone,nome:member.nome,funcao:member.funcao,clinicId:userId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+                        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:620', message: 'Salvando membro adicional no banco', data: { originalPhone: member.telefone, normalizedPhone: normalizedMemberPhone, nome: member.nome, funcao: member.funcao, clinicId: userId }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'B' }) }).catch(() => { });
                         // #endregion
                         const result = await clinicMemberService.addMember({
                             clinicId: userId,
@@ -747,7 +793,7 @@ class OnboardingStateHandlers {
                             isPrimary: false
                         });
                         // #region agent log
-                        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:632',message:'Resultado ao adicionar membro',data:{success:result.success,error:result.error,memberId:result.member?.id,phoneSaved:normalizedMemberPhone},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+                        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:632', message: 'Resultado ao adicionar membro', data: { success: result.success, error: result.error, memberId: result.member?.id, phoneSaved: normalizedMemberPhone }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'B' }) }).catch(() => { });
                         // #endregion
 
                         // Invalida cache do telefone do membro adicionado para garantir que próxima busca encontre
@@ -804,33 +850,58 @@ class OnboardingStateHandlers {
     }
 
     async handleAhaCostsIntro(onboarding, messageTrimmed, respond) {
-        const costType = validateChoice(messageTrimmed, {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:806', message: 'handleAhaCostsIntro entrada', data: { message: messageTrimmed, step: onboarding.step }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'C' }) }).catch(() => { });
+        // #endregion
+
+        // CORREÇÃO: Quando está em step de menu, mensagens que são apenas números de 1-9
+        // devem ser tratadas como escolhas de menu, não como valores monetários
+        // Verifica se a mensagem é apenas um número de 1-9 (escolha de menu)
+        const trimmedMessage = messageTrimmed.trim();
+        const isSingleDigitMenuChoice = /^[1-9]$/.test(trimmedMessage);
+
+        // Se for apenas um dígito de 1-9, força tratamento como escolha de menu
+        const messageToValidate = isSingleDigitMenuChoice ? trimmedMessage : messageTrimmed;
+
+        const costType = validateChoice(messageToValidate, {
             'fixo': ['1', 'fixo'],
             'variável': ['2', 'variável', 'variavel'],
             'não_sei': ['3', 'não sei', 'nao sei']
         });
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:812', message: 'validateChoice resultado', data: { costType: costType, message: messageTrimmed, isSingleDigitMenuChoice: isSingleDigitMenuChoice }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'C' }) }).catch(() => { });
+        // #endregion
 
         if (costType === 'não_sei') {
             return await respond(onboardingCopy.ahaCostsDontKnow());
         }
 
         if (!costType) {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:818', message: 'validateChoice retornou null, enviando invalidChoice', data: { message: messageTrimmed }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'C' }) }).catch(() => { });
+            // #endregion
             return await respond(onboardingCopy.invalidChoice());
         }
 
         onboarding.data.cost_type = costType;
         onboarding.step = 'AHA_COSTS_UPLOAD';
         if (costType === 'fixo') {
-            return await respond(onboardingCopy.ahaCostsUploadFixed());
+            return await respond(onboardingCopy.ahaCostsUploadFixed(), true);
         } else {
-            return await respond(onboardingCopy.ahaCostsUploadVariable());
+            return await respond(onboardingCopy.ahaCostsUploadVariable(), true);
         }
     }
 
     async handleAhaCostsUpload(onboarding, messageTrimmed, mediaUrl, fileName, respond) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:830', message: 'handleAhaCostsUpload entrada', data: { message: messageTrimmed, step: onboarding.step, hasMediaUrl: !!mediaUrl }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
+        // #endregion
         // Correção #9: Só processa documento se não tem texto válido
         const valorFromText = extractBestAmountFromText(messageTrimmed);
-        
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:833', message: 'extractBestAmountFromText resultado', data: { valorFromText: valorFromText, message: messageTrimmed }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
+        // #endregion
+
         // Se tem valor no texto, ignora documento
         if (valorFromText && valorFromText > 0) {
             const costType = onboarding.data.cost_type || 'variável';
@@ -841,7 +912,7 @@ class OnboardingStateHandlers {
                 data: new Date().toISOString().split('T')[0]
             };
             onboarding.step = 'AHA_COSTS_CATEGORY';
-            return await respond(onboardingCopy.ahaCostsCategoryQuestion());
+            return await respond(onboardingCopy.ahaCostsCategoryQuestion(), true);
         }
 
         // Correção #3: Tratamento de erro em processamento de documento
@@ -849,21 +920,21 @@ class OnboardingStateHandlers {
         if (mediaUrl) {
             try {
                 // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboardingFlowService.js:596',message:'handleAhaCostsUpload calling processImage',data:{hasMediaUrl:!!mediaUrl,urlPreview:mediaUrl?.substring(0,50)||'none',messageKey:'null',step:onboarding.step},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+                fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:596', message: 'handleAhaCostsUpload calling processImage', data: { hasMediaUrl: !!mediaUrl, urlPreview: mediaUrl?.substring(0, 50) || 'none', messageKey: 'null', step: onboarding.step }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
                 // #endregion
                 // Timeout para processamento de documento (30 segundos)
                 const processPromise = documentService.processImage(mediaUrl, null);
-                const timeoutPromise = new Promise((_, reject) => 
+                const timeoutPromise = new Promise((_, reject) =>
                     setTimeout(() => reject(new Error('Timeout ao processar documento')), 30000)
                 );
-                
+
                 const result = await Promise.race([processPromise, timeoutPromise]);
-                
+
                 let transacao = null;
                 if (result.transacoes && result.transacoes.length > 0) {
                     transacao = result.transacoes.find(t => t.tipo === 'saida') || result.transacoes[0];
                 }
-                
+
                 if (transacao && transacao.valor) {
                     onboarding.data.pending_cost_document = {
                         valor: transacao.valor,
@@ -915,7 +986,7 @@ class OnboardingStateHandlers {
                 data: doc.data || new Date().toISOString().split('T')[0],
                 categoria: doc.categoria || null
             };
-            
+
             if (doc.categoria && doc.categoria !== 'Outros') {
                 onboarding.step = 'AHA_COSTS_CONFIRM';
                 return await respond(onboardingCopy.ahaCostsConfirmation({
@@ -927,7 +998,7 @@ class OnboardingStateHandlers {
             }
         }
         onboarding.step = 'AHA_COSTS_CATEGORY';
-        return await respond(onboardingCopy.ahaCostsCategoryQuestion());
+        return await respond(onboardingCopy.ahaCostsCategoryQuestion(), true);
     }
 
     async handleAhaCostsCategory(onboarding, messageTrimmed, respond) {
@@ -1000,16 +1071,16 @@ class OnboardingStateHandlers {
                 onboarding.data.saved_costs = [];
             }
             onboarding.data.saved_costs.push({ ...cost });
-            
+
             // Verifica se já coletou ambos os tipos de custo
             const hasFixedCost = onboarding.data.saved_costs.some(c => c.tipo === 'fixa');
             const hasVariableCost = onboarding.data.saved_costs.some(c => c.tipo === 'variavel');
-            
+
             // Se ainda falta um tipo de custo, pede o outro
             if (!hasFixedCost || !hasVariableCost) {
                 // Limpa o custo pendente para o próximo
                 onboarding.data.pending_cost = null;
-                
+
                 // Define o próximo tipo de custo a ser coletado
                 if (currentCostType === 'variavel' && !hasFixedCost) {
                     // Foi variável, agora pede fixo
@@ -1047,15 +1118,15 @@ class OnboardingStateHandlers {
 
     async handleHandoffToDailyUse(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear) {
         const v = normalizeText(messageTrimmed);
-        
+
         if (v === '1' || v.includes('registrar venda') || v.includes('venda')) {
             return await respondAndClear(onboardingCopy.handoffRegisterSale());
         }
-        
+
         if (v === '2' || v.includes('registrar custo') || v.includes('custo')) {
             return await respondAndClear(onboardingCopy.handoffRegisterCost());
         }
-        
+
         if (v === '3' || v.includes('resumo') || v.includes('ver resumo')) {
             return await respondAndClear(onboardingCopy.handoffShowSummary());
         }
@@ -1064,28 +1135,28 @@ class OnboardingStateHandlers {
         // Se for, finaliza onboarding automaticamente e processa como transação normal
         const intentHeuristicService = require('./intentHeuristicService');
         const intent = await intentHeuristicService.detectIntent(messageTrimmed);
-        
+
         // Verifica se detectou intent de transação
         const isTransaction = intent && (intent.intencao === 'registrar_entrada' || intent.intencao === 'registrar_saida');
-        
+
         // Se não detectou com heurística, faz verificação mais ampla
         if (!isTransaction) {
             const lower = messageTrimmed.toLowerCase();
             const hasValue = /\d+/.test(messageTrimmed); // Tem algum número
-            
+
             // Palavras-chave de venda
-            const saleKeywords = ['botox', 'preenchimento', 'harmonização', 'harmonizacao', 'bioestimulador', 
-                                 'fios', 'peeling', 'laser', 'paciente', 'cliente', 'procedimento',
-                                 'fiz', 'realizei', 'atendi', 'vendi', 'fechei', 'atendimento', 'tox', 'preench'];
-            
+            const saleKeywords = ['botox', 'preenchimento', 'harmonização', 'harmonizacao', 'bioestimulador',
+                'fios', 'peeling', 'laser', 'paciente', 'cliente', 'procedimento',
+                'fiz', 'realizei', 'atendi', 'vendi', 'fechei', 'atendimento', 'tox', 'preench'];
+
             // Palavras-chave de custo
             const costKeywords = ['insumos', 'marketing', 'aluguel', 'energia', 'internet', 'material',
-                                 'produto', 'fornecedor', 'boleto', 'conta', 'paguei', 'gastei', 'comprei',
-                                 'pagar', 'despesa', 'custo', 'gasto', 'salário', 'salario'];
-            
+                'produto', 'fornecedor', 'boleto', 'conta', 'paguei', 'gastei', 'comprei',
+                'pagar', 'despesa', 'custo', 'gasto', 'salário', 'salario'];
+
             const hasSaleKeyword = saleKeywords.some(kw => lower.includes(kw));
             const hasCostKeyword = costKeywords.some(kw => lower.includes(kw));
-            
+
             // Se tem palavra-chave de transação E um valor numérico, considera como transação
             if (hasValue && (hasSaleKeyword || hasCostKeyword)) {
                 // Parece ser uma transação - finaliza onboarding silenciosamente
@@ -1100,7 +1171,7 @@ class OnboardingStateHandlers {
                     console.error('[ONBOARDING] Falha ao limpar estado:', e?.message || e);
                 }
                 this.onboardingStates.delete(normalizedPhone);
-                
+
                 // Retorna null para indicar que o onboarding foi finalizado e a mensagem deve ser processada normalmente
                 return null;
             }
@@ -1117,7 +1188,7 @@ class OnboardingStateHandlers {
                 console.error('[ONBOARDING] Falha ao limpar estado:', e?.message || e);
             }
             this.onboardingStates.delete(normalizedPhone);
-            
+
             // Retorna null para indicar que o onboarding foi finalizado e a mensagem deve ser processada normalmente
             return null;
         }
@@ -1145,28 +1216,28 @@ class OnboardingStateHandlers {
         // Se for, finaliza onboarding automaticamente e processa como transação normal
         const intentHeuristicService = require('./intentHeuristicService');
         const intent = await intentHeuristicService.detectIntent(messageTrimmed);
-        
+
         // Verifica se detectou intent de transação
         const isTransaction = intent && (intent.intencao === 'registrar_entrada' || intent.intencao === 'registrar_saida');
-        
+
         // Se não detectou com heurística, faz verificação mais ampla
         if (!isTransaction) {
             const lower = messageTrimmed.toLowerCase();
             const hasValue = /\d+/.test(messageTrimmed); // Tem algum número
-            
+
             // Palavras-chave de venda
-            const saleKeywords = ['botox', 'preenchimento', 'harmonização', 'harmonizacao', 'bioestimulador', 
-                                 'fios', 'peeling', 'laser', 'paciente', 'cliente', 'procedimento',
-                                 'fiz', 'realizei', 'atendi', 'vendi', 'fechei', 'atendimento', 'tox', 'preench'];
-            
+            const saleKeywords = ['botox', 'preenchimento', 'harmonização', 'harmonizacao', 'bioestimulador',
+                'fios', 'peeling', 'laser', 'paciente', 'cliente', 'procedimento',
+                'fiz', 'realizei', 'atendi', 'vendi', 'fechei', 'atendimento', 'tox', 'preench'];
+
             // Palavras-chave de custo
             const costKeywords = ['insumos', 'marketing', 'aluguel', 'energia', 'internet', 'material',
-                                 'produto', 'fornecedor', 'boleto', 'conta', 'paguei', 'gastei', 'comprei',
-                                 'pagar', 'despesa', 'custo', 'gasto', 'salário', 'salario'];
-            
+                'produto', 'fornecedor', 'boleto', 'conta', 'paguei', 'gastei', 'comprei',
+                'pagar', 'despesa', 'custo', 'gasto', 'salário', 'salario'];
+
             const hasSaleKeyword = saleKeywords.some(kw => lower.includes(kw));
             const hasCostKeyword = costKeywords.some(kw => lower.includes(kw));
-            
+
             // Se tem palavra-chave de transação E um valor numérico, considera como transação
             if (hasValue && (hasSaleKeyword || hasCostKeyword)) {
                 // Parece ser uma transação - finaliza onboarding silenciosamente
@@ -1181,7 +1252,7 @@ class OnboardingStateHandlers {
                     console.error('[ONBOARDING] Falha ao limpar estado:', e?.message || e);
                 }
                 this.onboardingStates.delete(normalizedPhone);
-                
+
                 // Retorna null para indicar que o onboarding foi finalizado e a mensagem deve ser processada normalmente
                 return null;
             }
@@ -1198,7 +1269,7 @@ class OnboardingStateHandlers {
                 console.error('[ONBOARDING] Falha ao limpar estado:', e?.message || e);
             }
             this.onboardingStates.delete(normalizedPhone);
-            
+
             // Retorna null para indicar que o onboarding foi finalizado e a mensagem deve ser processada normalmente
             return null;
         }
@@ -1215,7 +1286,7 @@ class OnboardingStateHandlers {
         onboarding.data.mdr_count = num;
         onboarding.data.mdr_current = 1;
         onboarding.step = 'MDR_SETUP_UPLOAD';
-        return await respond(onboardingCopy.mdrSetupUpload());
+        return await respond(onboardingCopy.mdrSetupUpload(), true);
     }
 
     async handleMdrSetupUpload(onboarding, mediaUrl, respond) {
@@ -1246,7 +1317,7 @@ class OnboardingFlowService {
         this.onboardingData = this.onboardingStates;
         this.persistTimers = new Map(); // Correção #4: Debounce persistência
         this.handlers = new OnboardingStateHandlers(this);
-        
+
         // Correção #2: Limpeza automática de estados antigos
         setInterval(() => {
             this.cleanupOldStates();
@@ -1281,7 +1352,7 @@ class OnboardingFlowService {
 
     async startIntroFlow(phone) {
         const normalizedPhone = normalizePhone(phone) || phone;
-        
+
         try {
             const persisted = await onboardingService.getWhatsappState(normalizedPhone);
             if (persisted?.step) {
@@ -1358,10 +1429,13 @@ class OnboardingFlowService {
             case 'AHA_REVENUE_CONFIRM':
                 const sale = onboarding.data?.pending_sale;
                 if (sale) {
+                    // Garante que default para forma de pagamento existe
+                    if (!sale.forma_pagamento) sale.forma_pagamento = 'avista';
+
                     return onboardingCopy.ahaRevenueConfirmation({
                         procedimento: sale.procedimento || '—',
                         valor: sale.valor,
-                        pagamento: sale.forma_pagamento || 'Não informado',
+                        pagamento: sale.forma_pagamento === 'parcelado' ? `Cartão ${sale.parcelas}x` : sale.forma_pagamento,
                         data: sale.data || 'Hoje'
                     });
                 }
@@ -1371,7 +1445,7 @@ class OnboardingFlowService {
             case 'AHA_COSTS_UPLOAD':
                 const costTypeResume = onboarding.data?.cost_type;
                 const savedCostsCount = onboarding.data?.saved_costs?.length || 0;
-                
+
                 // Se já tem um custo salvo, está pedindo o segundo
                 if (savedCostsCount > 0) {
                     if (costTypeResume === 'fixo') {
@@ -1380,7 +1454,7 @@ class OnboardingFlowService {
                         return onboardingCopy.ahaCostsSecondIntroVariable();
                     }
                 }
-                
+
                 // Primeiro custo
                 if (costTypeResume === 'fixo') {
                     return onboardingCopy.ahaCostsUploadFixed();
@@ -1470,7 +1544,7 @@ class OnboardingFlowService {
                     persist().catch(e => {
                         console.error('[ONBOARDING] Erro em persistState agendado:', e?.message || e);
                     });
-                }, PERSIST_DEBOUNCE_MS);
+                }, 1000); // Força 1s mesmo se a constante mudar, para segurança
                 this.persistTimers.set(normalizedPhone, timer);
             }
         };
@@ -1482,7 +1556,7 @@ class OnboardingFlowService {
                 console.error('[ONBOARDING] respond recebeu text inválido:', text);
                 text = onboardingCopy.lostState();
             }
-            
+
             // Sempre persiste estado antes de responder
             try {
                 if (criticalPersist) {
@@ -1506,7 +1580,7 @@ class OnboardingFlowService {
                 console.error('[ONBOARDING] Erro inesperado na persistência:', e?.message || e);
                 // Não bloqueia resposta
             }
-            
+
             // Garante que sempre retorna uma string válida
             return text || onboardingCopy.lostState();
         };
@@ -1546,6 +1620,9 @@ class OnboardingFlowService {
         // Correção #19: Usar handlers ao invés de switch gigante
         const handlers = this.handlers;
         const step = onboarding.step;
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:1548', message: 'processOnboarding switch step', data: { step: step, message: messageTrimmed.substring(0, 50) }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'B' }) }).catch(() => { });
+        // #endregion
 
         try {
             switch (step) {
