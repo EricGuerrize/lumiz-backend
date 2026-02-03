@@ -342,6 +342,9 @@ class OnboardingStateHandlers {
     async handleConsent(onboarding, messageTrimmed, normalizedPhone, respond) {
         const choseAuthorize = isYes(messageTrimmed);
         const choseDeny = isNo(messageTrimmed);
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:345', message: 'handleConsent', data: { messageTrimmed: messageTrimmed.substring(0, 30), choseAuthorize, choseDeny }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'E' }) }).catch(() => { });
+        // #endregion
 
         if (choseDeny) {
             return await respond(onboardingCopy.consentDenied());
@@ -912,7 +915,8 @@ class OnboardingStateHandlers {
                 data: new Date().toISOString().split('T')[0]
             };
             onboarding.step = 'AHA_COSTS_CATEGORY';
-            return await respond(onboardingCopy.ahaCostsCategoryQuestion(), true);
+            const isFixo = costType === 'fixo';
+            return await respond(isFixo ? onboardingCopy.ahaCostsCategoryQuestionFixed() : onboardingCopy.ahaCostsCategoryQuestionVariable(), true);
         }
 
         // Correção #3: Tratamento de erro em processamento de documento
@@ -998,23 +1002,31 @@ class OnboardingStateHandlers {
             }
         }
         onboarding.step = 'AHA_COSTS_CATEGORY';
-        return await respond(onboardingCopy.ahaCostsCategoryQuestion(), true);
+        const isFixo = onboarding.data.pending_cost?.tipo === 'fixa';
+        return await respond(isFixo ? onboardingCopy.ahaCostsCategoryQuestionFixed() : onboardingCopy.ahaCostsCategoryQuestionVariable(), true);
     }
 
     async handleAhaCostsCategory(onboarding, messageTrimmed, respond) {
-        const categoria = validateChoice(messageTrimmed, {
-            'Insumos / materiais': ['1', 'insumo', 'material'],
-            'Aluguel': ['2', 'aluguel'],
-            'Salários': ['3', 'salário', 'salario'],
-            'Marketing': ['4', 'marketing', 'publicidade'],
-            'Impostos': ['5', 'imposto'],
-            'Outros': ['6']
-        }) || 'Outros';
-
         if (!onboarding.data.pending_cost) {
             onboarding.step = 'AHA_COSTS_UPLOAD';
             return await respond(onboardingCopy.costErrorRetry());
         }
+
+        const isFixo = onboarding.data.pending_cost.tipo === 'fixa';
+        const categoria = isFixo
+            ? (validateChoice(messageTrimmed, {
+                'Insumos / materiais': ['1', 'insumo', 'material'],
+                'Aluguel': ['2', 'aluguel'],
+                'Salários': ['3', 'salário', 'salario'],
+                'Marketing': ['4', 'marketing', 'publicidade'],
+                'Impostos': ['5', 'imposto'],
+                'Outros': ['6', 'outro']
+            }) || 'Outros')
+            : (validateChoice(messageTrimmed, {
+                'Insumos / materiais': ['1', 'insumo', 'material', 'luva', 'mascara', 'touca', 'gaze'],
+                'Fornecedores de injetáveis': ['2', 'injetavel', 'injetáveis', 'acido', 'ácido', 'bioestimulador', 'toxina'],
+                'Outros': ['3', 'outro', 'preferir']
+            }) || 'Outros');
 
         onboarding.data.pending_cost.categoria = categoria;
         onboarding.step = 'AHA_COSTS_CONFIRM';
@@ -1032,7 +1044,8 @@ class OnboardingStateHandlers {
 
         if (correction) {
             onboarding.step = 'AHA_COSTS_CATEGORY';
-            return await respond(onboardingCopy.ahaCostsCategoryQuestion());
+            const isFixo = onboarding.data.pending_cost?.tipo === 'fixa';
+            return await respond(isFixo ? onboardingCopy.ahaCostsCategoryQuestionFixed() : onboardingCopy.ahaCostsCategoryQuestionVariable());
         }
 
         if (confirmed) {
@@ -1463,7 +1476,9 @@ class OnboardingFlowService {
                 }
                 return onboardingCopy.ahaCostsIntro();
             case 'AHA_COSTS_CATEGORY':
-                return onboardingCopy.ahaCostsCategoryQuestion();
+                return (onboarding.data?.pending_cost?.tipo === 'fixa')
+                    ? onboardingCopy.ahaCostsCategoryQuestionFixed()
+                    : onboardingCopy.ahaCostsCategoryQuestionVariable();
             case 'AHA_COSTS_CONFIRM':
                 const cost = onboarding.data?.pending_cost;
                 if (cost) {
@@ -1474,7 +1489,9 @@ class OnboardingFlowService {
                         data: cost.data || 'Hoje'
                     });
                 }
-                return onboardingCopy.ahaCostsCategoryQuestion();
+                return (onboarding.data?.pending_cost?.tipo === 'fixa')
+                    ? onboardingCopy.ahaCostsCategoryQuestionFixed()
+                    : onboardingCopy.ahaCostsCategoryQuestionVariable();
             case 'AHA_SUMMARY':
                 return null;
             case 'HANDOFF_TO_DAILY_USE':
@@ -1501,7 +1518,13 @@ class OnboardingFlowService {
     async processOnboarding(phone, message, mediaUrl = null, fileName = null) {
         const normalizedPhone = normalizePhone(phone) || phone;
         const onboarding = this.onboardingStates.get(normalizedPhone);
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:1518', message: 'processOnboarding entry', data: { normalizedPhone: normalizedPhone ? String(normalizedPhone).substring(0, 20) : null, hasState: !!onboarding, step: onboarding?.step, messagePreview: message ? String(message).trim().substring(0, 25) : null }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'D' }) }).catch(() => { });
+        // #endregion
         if (!onboarding) {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:1522', message: 'processOnboarding returning null (no state)', data: { normalizedPhone: normalizedPhone ? String(normalizedPhone).substring(0, 20) : null }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'D' }) }).catch(() => { });
+            // #endregion
             return null;
         }
 

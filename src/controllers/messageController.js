@@ -60,6 +60,9 @@ class MessageController {
     try {
       const normalizedPhone = normalizePhone(phone) || phone;
       console.log(`[MESSAGE] v2 - Recebida mensagem de ${normalizedPhone}: ${message?.substring(0, 30)}`);
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'messageController.js:62',message:'handleIncomingMessage entry',data:{phone:String(phone).substring(0,20),normalizedPhone:normalizedPhone?String(normalizedPhone).substring(0,20):null,messagePreview:message?String(message).trim().substring(0,30):null},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
 
       // IMPORTANTE: Primeiro verifica se é membro de clínica (clinic_members)
       // Isso tem prioridade sobre o estado de onboarding para evitar que membros
@@ -80,8 +83,16 @@ class MessageController {
         // Continua para processamento normal como membro da clínica
       } else {
         // Não é membro, verifica se está em processo de onboarding
-        if (onboardingFlowService.isOnboarding(normalizedPhone)) {
+        const isOnboarding = onboardingFlowService.isOnboarding(normalizedPhone);
+        const onboardingStep = onboardingFlowService.getOnboardingStep(normalizedPhone);
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'messageController.js:84',message:'isOnboarding check',data:{normalizedPhone:normalizedPhone?String(normalizedPhone).substring(0,20):null,isOnboarding,onboardingStep,messagePreview:message?String(message).trim().substring(0,20):null},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
+        if (isOnboarding) {
           const result = await onboardingFlowService.processOnboarding(normalizedPhone, message);
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'messageController.js:92',message:'processOnboarding resultado',data:{resultType:result==null?'null':typeof result,resultPreview:typeof result==='string'?result.substring(0,80):null,hasResult:!!result},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+          // #endregion
 
           // Se o onboarding retornou null, significa que foi finalizado e a mensagem deve ser processada normalmente
           if (result === null) {
@@ -208,15 +219,30 @@ class MessageController {
         }
       }
 
+      // CORREÇÃO: Se usuário não existe e a mensagem parece ser saudação, inicia onboarding antes de detectar intent
+      if (!user) {
+        const messageLower = message.toLowerCase().trim();
+        const isGreeting = messageLower === 'oi' || messageLower === 'olá' || messageLower === 'ola' || 
+                          messageLower === 'sim' || messageLower === 'começar' || messageLower === 'comecar' ||
+                          messageLower.includes('oi') || messageLower.includes('olá') || messageLower.includes('ola');
+        if (isGreeting) {
+          return await onboardingFlowService.startIntroFlow(normalizedPhone);
+        }
+      }
+
       // Tenta heurística primeiro (economiza ~60% das chamadas Gemini)
       let intent = await intentHeuristicService.detectIntent(message);
       let usedHeuristic = false;
 
       // Se heurística não funcionou ou confiança baixa, chama Gemini
       if (!intent || intent.confidence < 0.7) {
-        // Busca contexto histórico (RAG) - só se for chamar Gemini
-        const recentHistory = await conversationHistoryService.getRecentHistory(user.id, 5);
-        const similarExamples = await conversationHistoryService.findSimilarExamples(message, user.id, 3);
+        // Busca contexto histórico (RAG) - só se for chamar Gemini e se usuário existir
+        let recentHistory = [];
+        let similarExamples = [];
+        if (user && user.id) {
+          recentHistory = await conversationHistoryService.getRecentHistory(user.id, 5);
+          similarExamples = await conversationHistoryService.findSimilarExamples(message, user.id, 3);
+        }
 
         const geminiIntent = await geminiService.processMessage(message, {
           recentMessages: recentHistory,
@@ -430,12 +456,19 @@ class MessageController {
         return await this.goalHandler.handleDefineGoal(user, phone, intent);
 
       case 'saudacao':
+        // Se o usuário não existe, inicia onboarding ao invés de retornar mensagem genérica
+        if (!user) {
+          return await onboardingFlowService.startIntroFlow(phone);
+        }
         return this.helpHandler.handleGreeting();
 
       case 'ajuda':
         return this.helpHandler.handleHelp();
 
       case 'apenas_valor':
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'messageController.js:465',message:'routeIntent apenas_valor',data:{valor:intent.dados?.valor,phone:String(phone).substring(0,20)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
         return await this.handleOnlyValue(intent, phone);
 
       case 'apenas_procedimento':

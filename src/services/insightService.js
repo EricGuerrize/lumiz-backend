@@ -10,7 +10,7 @@ class InsightService {
     this.model = null;
     if (process.env.GEMINI_API_KEY) {
       const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-      this.model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
+      this.model = genAI.getGenerativeModel({ model: process.env.GEMINI_MODEL || 'gemini-1.5-flash' });
     } else {
       console.warn('[INSIGHTS] GEMINI_API_KEY não configurada. Insights automáticos desativados.');
     }

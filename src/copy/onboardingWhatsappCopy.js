@@ -278,7 +278,7 @@ module.exports = {
         );
     },
 
-    ahaCostsCategoryQuestion() {
+    ahaCostsCategoryQuestionFixed() {
         return (
             `Pra eu organizar certinho, isso entra mais como:\n\n` +
             `1️⃣ Insumos / materiais\n` +
@@ -287,6 +287,15 @@ module.exports = {
             `4️⃣ Marketing\n` +
             `5️⃣ Impostos\n` +
             `6️⃣ Outros`
+        );
+    },
+
+    ahaCostsCategoryQuestionVariable() {
+        return (
+            `Pra eu organizar certinho, isso entra mais como:\n\n` +
+            `1️⃣ Insumos / materiais (Ex: caixa de luvas, máscara descartável, touca, gaze, etc)\n` +
+            `2️⃣ Fornecedores de injetáveis: (Ex: ácido hialurônico, bioestimuladores, toxina botulínica, etc)\n\n` +
+            `3️⃣ Se preferir, pode mandar só o nome do produto e o valor. Já resolve 👍`
         );
     },
 
@@ -336,8 +345,9 @@ module.exports = {
             `• Custos fixos: ${formatarMoeda(Number(custosFixos))}\n` +
             `• Custos variáveis: ${formatarMoeda(Number(custosVariaveis))}\n` +
             `• Saldo parcial: ${formatarMoeda(Number(saldoParcial))}\n\n` +
-            `A partir de agora, a ideia é simples:\n` +
-            `tudo que entra ou sai do seu caixa, você me manda aqui.`
+            `Observação importante: Esse saldo parcial é só uma referência do que passou por aqui até agora. Ele pode não bater exatamente com o que hoje você vê no banco — e tá tudo bem.\n\n` +
+            `Se quiser, você pode me mandar quanto tem hoje de saldo, e a partir disso a gente vai ajustando tudo naturalmente ao longo do tempo. Se preferir não informar agora, sem problema nenhum. Seguimos normalmente.\n\n` +
+            `A partir de agora, a ideia é simples: tudo que entra ou sai do seu caixa, você me manda aqui.`
         );
     },
 
@@ -351,13 +361,12 @@ module.exports = {
             `Não tem regra nem formulário.\n` +
             `Tudo que entrar ou sair da clínica, você me manda aqui.\n\n` +
             `Exemplos:\n` +
-            `• "Recebi 1.500 no pix hoje"\n` +
-            `• "Paguei fornecedor 2.300"\n` +
+            `• "Recebi 1.500 no pix hoje de fulana, que fez tal procedimento"\n` +
+            `• "Paguei parcela do fornecedor 2.300"\n` +
             `• "Quanto entrou esse mês?"\n` +
             `• "O que ainda falta cair?"\n` +
             `• "Hoje fizemos R$ 15.000 em vendas, atendemos 10 pacientes"\n\n` +
-            `Quanto mais você me usa, melhor eu entendo sua rotina —\n` +
-            `e mais claros ficam seus números.\n\n` +
+            `Quanto mais você me usa, melhor eu entendo sua rotina. Mais claro ficam seus números, sua organização e gestão!\n\n` +
             `1️⃣ Registrar venda\n` +
             `2️⃣ Registrar custo\n` +
             `3️⃣ Ver resumo do mês`
@@ -369,10 +378,10 @@ module.exports = {
     // ============================================================
     mdrSetupIntro() {
         return (
-            `Quer dar um próximo passo e deixar seu caixa ainda mais realista?\n` +
-            `Posso configurar as taxas do cartão pra entender:\n\n` +
-            `• quando o dinheiro cai, em uma compra parcelada\n` +
-            `• quanto R$ cai de verdade na sua conta\n\n` +
+            `Ah, só mais um detalhe pra deixar sua gestão da clínica ainda mais redondinha e sem surpresas no fim do mês!\n\n` +
+            `Como muita venda em clínica é no cartão (e parcelado), as taxas MDR comem uma fatia do valor que cai na conta.\n\n` +
+            `Configurando isso, eu já mostro pra você o valor líquido real em cada registro de venda — tipo: "Recebi R$ 1.500 no Pix hoje (cai tudo agora), mas se fosse 3x no cartão, o total líquido seria uns R$ 1.380... Distribuídos em 3 parcelas mensais (cerca de R$ 460 por mês na conta, já com as taxas MDR descontadas). Assim o caixa fica mais previsível e sem surpresas!\n\n` +
+            `Quer dar um próximo passo e deixar seu caixa ainda mais realista ou pular por enquanto?\n\n` +
             `1️⃣ Configurar agora\n` +
             `2️⃣ Pular por enquanto`
         );
