@@ -1002,7 +1002,6 @@ class OnboardingStateHandlers {
             }
         }
         onboarding.step = 'AHA_COSTS_CATEGORY';
-        const isFixo = onboarding.data.pending_cost?.tipo === 'fixa';
         return await respond(isFixo ? onboardingCopy.ahaCostsCategoryQuestionFixed() : onboardingCopy.ahaCostsCategoryQuestionVariable(), true);
     }
 
