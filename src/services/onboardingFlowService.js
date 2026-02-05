@@ -1149,11 +1149,24 @@ class OnboardingStateHandlers {
             }
 
             // Se já tem os dois tipos, vai para o resumo
-            onboarding.step = 'AHA_SUMMARY';
+            onboarding.step = 'BALANCE_QUESTION';
             // Correção #2: Usa dados salvos (com flag saved) para calcular resumo
             const summary = calculateSummaryFromOnboardingData(onboarding);
+            await analyticsService.track('onboarding_summary_viewed', {
+                phone: normalizedPhone,
+                userId: onboarding.data.userId || null,
+                source: 'whatsapp'
+            });
             // Persistência crítica após salvar transação
-            return await respond(onboardingCopy.ahaCostsRegistered() + '\n\n' + onboardingCopy.ahaSummary(summary), true, true);
+            return await respond(
+                onboardingCopy.ahaCostsRegistered() +
+                '\n\n' +
+                onboardingCopy.ahaSummary(summary) +
+                '\n\n' +
+                onboardingCopy.balanceQuestion(),
+                true,
+                true
+            );
         }
 
         return await respond(onboardingCopy.invalidChoice());
@@ -1181,8 +1194,8 @@ class OnboardingStateHandlers {
         }
 
         if (choice === 'no') {
-            onboarding.step = 'HANDOFF_TO_DAILY_USE';
-            return await respond(onboardingCopy.handoffToDailyUse(), true);
+            onboarding.step = 'MDR_SETUP_INTRO';
+            return await respond(onboardingCopy.handoffToDailyUse() + '\n\n' + onboardingCopy.mdrSetupIntro(), true);
         }
 
         return await respond(onboardingCopy.invalidChoice());
@@ -1210,25 +1223,18 @@ class OnboardingStateHandlers {
         // O script diz "As transações reais serão salvas apenas após você concluir o cadastro".
         // Vou assumir que o saldo também será aplicado ao criar a conta defitiniva ou finalizar.
 
-        onboarding.step = 'HANDOFF_TO_DAILY_USE';
-        return await respond(onboardingCopy.balanceConfirmation(saldo) + '\n\n' + onboardingCopy.handoffToDailyUse(), true);
+        onboarding.step = 'MDR_SETUP_INTRO';
+        return await respond(
+            onboardingCopy.balanceConfirmation(saldo) +
+            '\n\n' +
+            onboardingCopy.handoffToDailyUse() +
+            '\n\n' +
+            onboardingCopy.mdrSetupIntro(),
+            true
+        );
     }
 
     async handleHandoffToDailyUse(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear) {
-        const v = normalizeText(messageTrimmed);
-
-        if (v === '1' || v.includes('registrar venda') || v.includes('venda')) {
-            return await respondAndClear(onboardingCopy.handoffRegisterSale());
-        }
-
-        if (v === '2' || v.includes('registrar custo') || v.includes('custo')) {
-            return await respondAndClear(onboardingCopy.handoffRegisterCost());
-        }
-
-        if (v === '3' || v.includes('resumo') || v.includes('ver resumo')) {
-            return await respondAndClear(onboardingCopy.handoffShowSummary());
-        }
-
         // Detecta se a mensagem parece ser uma transação (venda ou custo)
         // Se for, finaliza onboarding automaticamente e processa como transação normal
         const intentHeuristicService = require('./intentHeuristicService');

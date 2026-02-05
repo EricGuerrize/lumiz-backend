@@ -241,7 +241,7 @@ module.exports = {
     ahaCostsIntro() {
         return (
             `Agora vem a parte que dá clareza de verdade: custos.\n\n` +
-            `Pode ser texto, foto ou PDF (boleto, NF, etc.).`
+            `Me envie um custo, pode ser texto, foto ou PDF (boleto, NF, etc.).`
         );
     },
 
@@ -379,20 +379,17 @@ module.exports = {
     // ============================================================
     handoffToDailyUse() {
         return (
-            `Onboarding feito ✅\n` +
-            `Agora é só me usar no dia a dia.\n\n` +
+            `Onboarding feito ✅\n\n` +
+            `Agora é só me usar no dia a dia.\n` +
             `Não tem regra nem formulário.\n` +
-            `Tudo que entrar ou sair da clínica, você me manda aqui.\n\n` +
-            `Exemplos:\n` +
-            `• "Recebi 1.500 no pix hoje de fulana, que fez tal procedimento"\n` +
-            `• "Paguei parcela do fornecedor 2.300"\n` +
-            `• "Quanto entrou esse mês?"\n` +
-            `• "O que ainda falta cair?"\n` +
-            `• "Hoje fizemos R$ 15.000 em vendas, atendemos 10 pacientes"\n\n` +
-            `Quanto mais você me usa, melhor eu entendo sua rotina. Mais claro ficam seus números, sua organização e gestão!\n\n` +
-            `1️⃣ Registrar venda\n` +
-            `2️⃣ Registrar custo\n` +
-            `3️⃣ Ver resumo do mês`
+            `Tudo que entrar ou sair da clínica, me manda aqui.\n\n` +
+            `Exemplos:\n\n` +
+            `"Recebi 1.500 no pix hoje de fulana, que fez tal procedimento"\n\n` +
+            `"Paguei parcela do fornecedor 2.300"\n\n` +
+            `"Quanto entrou esse mês?"\n\n` +
+            `"O que ainda falta cair?"\n\n` +
+            `Quanto mais você me usa, melhor eu entendo sua rotina e mais claros ficam seus números!\n` +
+            `Vamos nessa juntos?`
         );
     },
 
