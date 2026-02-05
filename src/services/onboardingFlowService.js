@@ -750,17 +750,6 @@ class OnboardingStateHandlers {
                 return await respond(onboardingCopy.ahaRevenuePrompt(onboarding.data.nome || ''));
             }
 
-            // SALVA INTERAÇÃO PARA APRENDIZADO (CAPTURE)
-            if (sale.original_text) {
-                knowledgeService.saveInteraction(
-                    sale.original_text,
-                    'registrar_receita',
-                    { procedimento: sale.procedimento || '—', forma_pagamento: sale.forma_pagamento },
-                    onboarding.data.clinicId
-                ).catch(err => console.error('[KNOWLEDGE] Erro ao salvar receita:', err.message));
-            }
-
-            // Correção #6 e #8: Validar criação de usuário adequadamente
             let userId = onboarding.data.userId;
             let profileJustCreated = false;
             if (!userId) {
@@ -785,6 +774,16 @@ class OnboardingStateHandlers {
                         return await respond(onboardingCopy.userCreationError());
                     }
                 }
+            }
+
+            // SALVA INTERAÇÃO PARA APRENDIZADO (CAPTURE)
+            if (sale.original_text) {
+                knowledgeService.saveInteraction(
+                    sale.original_text,
+                    'registrar_receita',
+                    { procedimento: sale.procedimento || '—', forma_pagamento: sale.forma_pagamento },
+                    userId
+                ).catch(err => console.error('[KNOWLEDGE] Erro ao salvar receita:', err.message));
             }
 
             // Cria clinic_members (membro primário e adicionais)
@@ -1089,7 +1088,7 @@ class OnboardingStateHandlers {
                     cost.original_text,
                     'registrar_custo',
                     { tipo: cost.tipo, categoria: cost.categoria, descricao: cost.descricao },
-                    onboarding.data.clinicId
+                    onboarding.data.userId
                 ).catch(err => console.error('[KNOWLEDGE] Erro ao salvar custo:', err.message));
             }
 

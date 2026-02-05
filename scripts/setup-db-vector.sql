@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS learned_knowledge (
     intent_name TEXT NOT NULL,              -- O intent detectado (ex: registrar_receita)
     metadata JSONB DEFAULT '{}'::jsonb,     -- Dados extras como categoria, tags, etc.
     is_global BOOLEAN DEFAULT false,        -- Se esse conhecimento serve para todos ou só para essa clínica
-    clinic_id UUID REFERENCES clinics(id),  -- (Opcional) Escopo por clínica
+    clinic_id UUID REFERENCES profiles(id), -- Escopo por clínica (apontando para profiles)
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
