@@ -1801,7 +1801,12 @@ class OnboardingFlowService {
                 const errorResponse = await respond(onboardingCopy.lostState());
                 return errorResponse || 'Ops, me perdi. Digite "Oi" para recomeçar.';
             } catch (respondError) {
-                console.error('[ONBOARDING] Erro ao gerar resposta de erro:', respondError);
+                console.error('[ONBOARDING] Erro fatal ao gerar resposta de erro:', {
+                    error: respondError.message,
+                    originalError: error.message,
+                    phone: normalizedPhone,
+                    step: onboarding?.step
+                });
                 return 'Ops, me perdi. Digite "Oi" para recomeçar.';
             }
         }

@@ -171,10 +171,15 @@ class OnboardingService {
       .from('onboarding_progress')
       .insert(initialState)
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) {
       throw error;
+    }
+
+    if (!data) {
+      // Should not happen on insert unless RLS blocks it
+      throw new Error('FAILED_TO_INSERT_STATE');
     }
 
     const decorated = this.decorate(data);
@@ -200,7 +205,7 @@ class OnboardingService {
 
     const existing = await this.getRawState(phone);
     if (!existing) return null;
-    
+
     const decorated = this.decorate(existing);
     // Cache the state (30 minutes TTL)
     await cacheService.set(cacheKey, decorated, 1800);
@@ -282,10 +287,22 @@ class OnboardingService {
       })
       .eq('id', id)
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) {
       throw error;
+    }
+
+    if (!data) {
+      // Se update retornou null, o registro pode não existir ou não haver permissão
+      // Retornar null ou lançar erro?
+      // Neste contexto, se estamos tentando atualizar record que deveria existir, é erro.
+      // Mas para evitar crash hard, podemos retornar null e deixar quem chamou decidir.
+      // Porém, upsertWhatsappState espera um objeto.
+      // Vamos logar e lançar um erro mais descritivo.
+      console.warn(`[ONBOARDING] Update retornou 0 linhas para id ${id}`);
+      // Se lançarmos erro, o catch do upsertWhatsappState pega e retorna null, que é o comportamento seguro.
+      throw new Error('UPDATE_FAILED_NO_ROWS');
     }
 
     return this.decorate(data);
@@ -610,7 +627,7 @@ class OnboardingService {
       const normalizedPhone = normalizePhone(phone) || phone;
       const state = await this.getRawState(normalizedPhone);
       if (!state) return null;
-      
+
       const whatsappState = state.data?.realtime?.whatsapp;
       if (!whatsappState) return null;
 
@@ -628,7 +645,7 @@ class OnboardingService {
 
   async upsertWhatsappState(phone, { step, data } = {}) {
     if (!phone) return null;
-    
+
     try {
       // Normaliza telefone para garantir consistência
       const { normalizePhone } = require('../utils/phone');
@@ -657,7 +674,7 @@ class OnboardingService {
 
   async clearWhatsappState(phone) {
     if (!phone) return null;
-    
+
     try {
       // Normaliza telefone para garantir consistência
       const { normalizePhone } = require('../utils/phone');
