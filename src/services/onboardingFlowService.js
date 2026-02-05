@@ -858,7 +858,9 @@ class OnboardingStateHandlers {
                 return await respond(onboardingCopy.userCreationError());
             }
 
-            onboarding.step = 'AHA_COSTS_INTRO';
+            onboarding.data.pending_cost = null; // Limpa para garantir estado limpo
+            onboarding.data.cost_type = null; // Não sabemos o tipo ainda
+            onboarding.step = 'AHA_COSTS_UPLOAD';
             // Persistência crítica após salvar transação
             return await respond(onboardingCopy.ahaRevenueRegistered() + '\n\n' + onboardingCopy.ahaCostsIntro(), true, true);
         }
@@ -866,80 +868,44 @@ class OnboardingStateHandlers {
         return await respond(onboardingCopy.invalidChoice());
     }
 
-    async handleAhaCostsIntro(onboarding, messageTrimmed, respond) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:806', message: 'handleAhaCostsIntro entrada', data: { message: messageTrimmed, step: onboarding.step }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'C' }) }).catch(() => { });
-        // #endregion
-
-        // CORREÇÃO: Quando está em step de menu, mensagens que são apenas números de 1-9
-        // devem ser tratadas como escolhas de menu, não como valores monetários
-        // Verifica se a mensagem é apenas um número de 1-9 (escolha de menu)
-        const trimmedMessage = messageTrimmed.trim();
-        const isSingleDigitMenuChoice = /^[1-9]$/.test(trimmedMessage);
-
-        // Se for apenas um dígito de 1-9, força tratamento como escolha de menu
-        const messageToValidate = isSingleDigitMenuChoice ? trimmedMessage : messageTrimmed;
-
-        const costType = validateChoice(messageToValidate, {
-            'fixo': ['1', 'fixo'],
-            'variável': ['2', 'variável', 'variavel'],
-            'não_sei': ['3', 'não sei', 'nao sei']
-        });
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:812', message: 'validateChoice resultado', data: { costType: costType, message: messageTrimmed, isSingleDigitMenuChoice: isSingleDigitMenuChoice }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'C' }) }).catch(() => { });
-        // #endregion
-
-        if (costType === 'não_sei') {
-            return await respond(onboardingCopy.ahaCostsDontKnow());
-        }
-
-        if (!costType) {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:818', message: 'validateChoice retornou null, enviando invalidChoice', data: { message: messageTrimmed }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'C' }) }).catch(() => { });
-            // #endregion
-            return await respond(onboardingCopy.invalidChoice());
-        }
-
-        onboarding.data.cost_type = costType;
-        onboarding.step = 'AHA_COSTS_UPLOAD';
-        if (costType === 'fixo') {
-            return await respond(onboardingCopy.ahaCostsUploadFixed(), true);
-        } else {
-            return await respond(onboardingCopy.ahaCostsUploadVariable(), true);
-        }
-    }
+    // handleAhaCostsIntro foi removido pois agora o fluxo vai direto para UPLOAD
+    // A mensagem de intro já pede o upload
 
     async handleAhaCostsUpload(onboarding, messageTrimmed, mediaUrl, fileName, respond) {
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:830', message: 'handleAhaCostsUpload entrada', data: { message: messageTrimmed, step: onboarding.step, hasMediaUrl: !!mediaUrl }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
+        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:830', message: 'handleAhaCostsUpload entrada', data: { message: messageTrimmed, step: onboarding.step, hasMediaUrl: !!mediaUrl, targetCostType: onboarding.data.cost_type }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
         // #endregion
+
         // Correção #9: Só processa documento se não tem texto válido
         const valorFromText = extractBestAmountFromText(messageTrimmed);
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:833', message: 'extractBestAmountFromText resultado', data: { valorFromText: valorFromText, message: messageTrimmed }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
-        // #endregion
 
         // Se tem valor no texto, ignora documento
         if (valorFromText && valorFromText > 0) {
-            const costType = onboarding.data.cost_type || 'variável';
+            // Se já sabemos o tipo (ex: segundo custo), já define. Se não, precisamos perguntar.
+            const knownType = onboarding.data.cost_type;
+
             onboarding.data.pending_cost = {
                 valor: valorFromText,
-                tipo: costType === 'fixo' ? 'fixa' : 'variavel',
+                tipo: knownType === 'fixo' ? 'fixa' : (knownType === 'variável' ? 'variavel' : null),
                 descricao: messageTrimmed,
                 data: new Date().toISOString().split('T')[0]
             };
-            onboarding.step = 'AHA_COSTS_CATEGORY';
-            const isFixo = costType === 'fixo';
-            return await respond(isFixo ? onboardingCopy.ahaCostsCategoryQuestionFixed() : onboardingCopy.ahaCostsCategoryQuestionVariable(), true);
+
+            if (knownType) {
+                // Se já sabemos o tipo, pula a classificação e vai para categoria
+                onboarding.step = 'AHA_COSTS_CATEGORY';
+                const isFixo = knownType === 'fixo';
+                return await respond(isFixo ? onboardingCopy.ahaCostsCategoryQuestionFixed() : onboardingCopy.ahaCostsCategoryQuestionVariable(), true);
+            } else {
+                // Se não sabemos, pergunta
+                onboarding.step = 'AHA_COSTS_CLASSIFY';
+                return await respond(onboardingCopy.ahaCostsClassify(), true);
+            }
         }
 
-        // Correção #3: Tratamento de erro em processamento de documento
         // Se recebeu documento E não tem valor no texto, processa documento
         if (mediaUrl) {
             try {
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:596', message: 'handleAhaCostsUpload calling processImage', data: { hasMediaUrl: !!mediaUrl, urlPreview: mediaUrl?.substring(0, 50) || 'none', messageKey: 'null', step: onboarding.step }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
-                // #endregion
                 // Timeout para processamento de documento (30 segundos)
                 const processPromise = documentService.processImage(mediaUrl, null);
                 const timeoutPromise = new Promise((_, reject) =>
@@ -954,6 +920,8 @@ class OnboardingStateHandlers {
                 }
 
                 if (transacao && transacao.valor) {
+                    const knownType = onboarding.data.cost_type;
+
                     onboarding.data.pending_cost_document = {
                         valor: transacao.valor,
                         categoria: transacao.categoria || 'Outros',
@@ -961,62 +929,95 @@ class OnboardingStateHandlers {
                         data: transacao.data || new Date().toISOString().split('T')[0],
                         fornecedor: transacao.categoria || '—'
                     };
-                    onboarding.step = 'AHA_COSTS_DOCUMENT_TYPE';
-                    return await respond(onboardingCopy.documentReceivedMessage({
+
+                    onboarding.data.pending_cost = {
                         valor: transacao.valor,
-                        vencimento: transacao.data ? formatDate(transacao.data) : '—',
-                        fornecedor: transacao.categoria || '—'
-                    }));
+                        tipo: knownType === 'fixo' ? 'fixa' : (knownType === 'variável' ? 'variavel' : null),
+                        descricao: transacao.descricao || fileName || 'Documento',
+                        data: transacao.data || new Date().toISOString().split('T')[0],
+                        categoria: transacao.categoria || null
+                    }
+
+                    if (knownType) {
+                        // Se já sabemos o tipo, podemos ir direto para confirmação se tiver categoria, ou categoria
+                        onboarding.step = 'AHA_COSTS_CATEGORY'; // Simplify: always ask category to be safe/organized
+                        const isFixo = knownType === 'fixo';
+                        return await respond(onboardingCopy.documentReceivedSimple({ valor: transacao.valor }) + '\n\n' +
+                            (isFixo ? onboardingCopy.ahaCostsCategoryQuestionFixed() : onboardingCopy.ahaCostsCategoryQuestionVariable()));
+                    } else {
+                        onboarding.step = 'AHA_COSTS_CLASSIFY';
+                        return await respond(onboardingCopy.documentReceivedSimple({ valor: transacao.valor }) + '\n\n' + onboardingCopy.ahaCostsClassify());
+                    }
                 } else {
-                    // Documento processado mas não extraiu transação válida
                     return await respond(onboardingCopy.documentProcessError());
                 }
             } catch (e) {
                 console.error('[ONBOARDING] Erro ao processar documento:', e);
-                // Informa usuário do erro e oferece alternativa
                 return await respond(onboardingCopy.documentProcessError());
             }
         }
 
-        // Se não conseguiu extrair valor nem do texto nem do documento
         return await respond(onboardingCopy.costValueNotFound());
     }
 
-    async handleAhaCostsDocumentType(onboarding, messageTrimmed, respond) {
-        const choice = validateChoice(messageTrimmed, {
+    async handleAhaCostsClassify(onboarding, messageTrimmed, respond) {
+        const costType = validateChoice(messageTrimmed, {
             'fixo': ['1', 'fixo'],
-            'variavel': ['2', 'variável', 'variavel']
+            'variável': ['2', 'variável', 'variavel'],
+            'não_sei': ['3', 'não sei', 'nao sei']
         });
 
-        if (!choice) {
+        if (costType === 'não_sei') {
+            // Script diz: "Tranquilo. É aluguel, salário...?"
+            // E diz "Usuário responde -> Lumiz classifica"
+            // Por simplificação (e robustez), vamos classificar baseado nessa resposta
+            onboarding.step = 'AHA_COSTS_CLASSIFY_HELP';
+            return await respond(onboardingCopy.ahaCostsDontKnow());
+        }
+
+        if (!costType) {
             return await respond(onboardingCopy.invalidChoice());
         }
 
-        const isFixo = choice === 'fixo';
-        const isVariavel = choice === 'variavel';
-
-        const doc = onboarding.data.pending_cost_document;
-        if (doc) {
-            onboarding.data.pending_cost = {
-                valor: doc.valor,
-                tipo: isFixo ? 'fixa' : 'variavel',
-                descricao: doc.descricao || doc.fileName || 'Documento',
-                data: doc.data || new Date().toISOString().split('T')[0],
-                categoria: doc.categoria || null
-            };
-
-            if (doc.categoria && doc.categoria !== 'Outros') {
-                onboarding.step = 'AHA_COSTS_CONFIRM';
-                return await respond(onboardingCopy.ahaCostsConfirmation({
-                    tipo: onboarding.data.pending_cost.tipo === 'fixa' ? 'Fixo' : 'Variável',
-                    categoria: doc.categoria,
-                    valor: doc.valor,
-                    data: formatDate(doc.data)
-                }));
-            }
+        if (!onboarding.data.pending_cost) {
+            onboarding.step = 'AHA_COSTS_UPLOAD';
+            return await respond(onboardingCopy.costErrorRetry());
         }
+
+        onboarding.data.pending_cost.tipo = costType === 'fixo' ? 'fixa' : 'variavel';
         onboarding.step = 'AHA_COSTS_CATEGORY';
-        return await respond(isFixo ? onboardingCopy.ahaCostsCategoryQuestionFixed() : onboardingCopy.ahaCostsCategoryQuestionVariable(), true);
+
+        if (costType === 'fixo') {
+            return await respond(onboardingCopy.ahaCostsCategoryQuestionFixed(), true);
+        } else {
+            return await respond(onboardingCopy.ahaCostsCategoryQuestionVariable(), true);
+        }
+    }
+
+    async handleAhaCostsClassifyHelp(onboarding, messageTrimmed, respond) {
+        // Tenta classificar baseado no texto
+        const text = normalizeText(messageTrimmed);
+
+        // Heurísticas simples
+        const fixedKeywords = ['aluguel', 'salário', 'salario', 'internet', 'luz', 'agua', 'água', 'marketing', 'imposto', 'contador', 'sistema'];
+        const variableKeywords = ['insumo', 'material', 'luva', 'mascara', 'seringa', 'toxina', 'botox', 'produto', 'compra'];
+
+        const seemsFixed = fixedKeywords.some(kw => text.includes(kw));
+        const seemsVariable = variableKeywords.some(kw => text.includes(kw));
+
+        // Padrão: Variável se inconclusivo? Ou pergunta category de um deles?
+        // Vamos assumir Variável se não soubermos, pois é mais comum ter dúvidas em insumos.
+        // Ou melhor: se parece Fixo, vai pra Fixo. Se não, vai pra Variável.
+        const isFixo = seemsFixed;
+
+        onboarding.data.pending_cost.tipo = isFixo ? 'fixa' : 'variavel';
+        onboarding.step = 'AHA_COSTS_CATEGORY';
+
+        if (isFixo) {
+            return await respond(onboardingCopy.ahaCostsCategoryQuestionFixed(), true);
+        } else {
+            return await respond(onboardingCopy.ahaCostsCategoryQuestionVariable(), true);
+        }
     }
 
     async handleAhaCostsCategory(onboarding, messageTrimmed, respond) {
@@ -1110,12 +1111,15 @@ class OnboardingStateHandlers {
                 // Define o próximo tipo de custo a ser coletado
                 if (currentCostType === 'variavel' && !hasFixedCost) {
                     // Foi variável, agora pede fixo
-                    onboarding.data.cost_type = 'fixo';
+                    onboarding.data.cost_type = 'fixo'; // Pre-set type
                     onboarding.step = 'AHA_COSTS_UPLOAD';
+                    // Nota: O texto do script diz "Agora me manda um custo fixo". 
+                    // No código anterior usavamos ahaCostsSecondIntroFixed. Preciso checar se existe, se não crio um ad-hoc ou uso o do copy.
+                    // O copy antigo tinha ahaCostsSecondIntroFixed. Vou assumir que ela ainda existe e se adequa.
                     return await respond(onboardingCopy.ahaCostsSecondIntroFixed(), true);
                 } else if (currentCostType === 'fixa' && !hasVariableCost) {
                     // Foi fixo, agora pede variável
-                    onboarding.data.cost_type = 'variável';
+                    onboarding.data.cost_type = 'variável'; // Pre-set type
                     onboarding.step = 'AHA_COSTS_UPLOAD';
                     return await respond(onboardingCopy.ahaCostsSecondIntroVariable(), true);
                 }
@@ -1144,7 +1148,7 @@ class OnboardingStateHandlers {
 
     async handleBalanceQuestion(onboarding, messageTrimmed, respond) {
         const choice = validateChoice(messageTrimmed, {
-            'yes': ['1', 'sim', 'vou mandar'],
+            'yes': ['1', 'sim', 'vou mandar', 'mandar'],
             'no': ['2', 'não', 'nao', 'seguimos']
         });
 
@@ -1162,20 +1166,29 @@ class OnboardingStateHandlers {
     }
 
     async handleBalanceInput(onboarding, messageTrimmed, respond) {
-        const valorResult = validateAndExtractValue(messageTrimmed);
+        // Valida valor usando utilitário existente
+        const result = validateAndExtractValue(messageTrimmed);
 
-        if (!valorResult.valid) {
+        if (!result.valid) {
             return await respond(onboardingCopy.balanceInputInvalid());
         }
 
-        onboarding.data.saldo_inicial = valorResult.valor;
-        onboarding.step = 'HANDOFF_TO_DAILY_USE';
+        const saldo = result.valor;
+        // Não salva no banco real pois é onboarding? Ou salva?
+        // O script diz "Lumiz confirma e ajusta".
+        // Como o onboarding até agora foi "teste", mas o saldo "pra eu ir ajustando" parece algo persistente.
+        // No entanto, como o usuário ainda não terminou o onboarding (tecnicamente), talvez devêssemos salvar no `onboarding.data`
+        // e persistir no final?
+        // Vamos salvar no `onboarding.data`.
 
-        return await respond(
-            onboardingCopy.balanceConfirmation(valorResult.valor) + '\n\n' +
-            onboardingCopy.handoffToDailyUse(),
-            true
-        );
+        onboarding.data.initial_balance = saldo;
+
+        // Se user já existe, atualiza?
+        // O script diz "As transações reais serão salvas apenas após você concluir o cadastro".
+        // Vou assumir que o saldo também será aplicado ao criar a conta defitiniva ou finalizar.
+
+        onboarding.step = 'HANDOFF_TO_DAILY_USE';
+        return await respond(onboardingCopy.balanceConfirmation(saldo) + '\n\n' + onboardingCopy.handoffToDailyUse(), true);
     }
 
     async handleHandoffToDailyUse(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear) {

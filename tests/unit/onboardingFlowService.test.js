@@ -11,6 +11,29 @@ jest.mock('../../src/services/onboardingService', () => ({
   clearWhatsappState: jest.fn().mockResolvedValue(true)
 }));
 
+jest.mock('../../src/services/cacheService', () => ({
+  delete: jest.fn().mockResolvedValue(true),
+  get: jest.fn().mockResolvedValue(null),
+  set: jest.fn().mockResolvedValue(true)
+}));
+
+jest.mock('../../src/controllers/userController', () => ({
+  createUserFromOnboarding: jest.fn().mockResolvedValue({ user: { id: 'test-user-id' } }),
+  findUserByPhone: jest.fn().mockResolvedValue(null)
+}));
+
+jest.mock('../../src/services/clinicMemberService', () => ({
+  addMember: jest.fn().mockResolvedValue({ success: true })
+}));
+
+jest.mock('../../src/services/documentService', () => ({
+  processImage: jest.fn().mockResolvedValue({ transacoes: [] })
+}));
+
+jest.mock('../../src/services/intentHeuristicService', () => ({
+  detectIntent: jest.fn().mockResolvedValue(null)
+}));
+
 // Funções utilitárias não exportadas - testamos indiretamente via comportamento
 // Mas podemos testar funções públicas e fluxos
 
@@ -25,7 +48,7 @@ describe('OnboardingFlowService - Funções Utilitárias', () => {
       await onboardingFlowService.processOnboarding(phone, '1'); // Role
       await onboardingFlowService.processOnboarding(phone, '1'); // Context why
       await onboardingFlowService.processOnboarding(phone, '1'); // Context how
-      
+
       const response = await onboardingFlowService.processOnboarding(phone, 'Botox 2800 pix');
       expect(response).toContain('2800');
       expect(response).toContain('Vou registrar assim');
@@ -40,7 +63,7 @@ describe('OnboardingFlowService - Funções Utilitárias', () => {
       await onboardingFlowService.processOnboarding(phone, '1');
       await onboardingFlowService.processOnboarding(phone, '1');
       await onboardingFlowService.processOnboarding(phone, '1');
-      
+
       const response = await onboardingFlowService.processOnboarding(phone, 'R$ 1.500,50 pix');
       expect(response).toContain('1500.50');
     });
@@ -54,7 +77,7 @@ describe('OnboardingFlowService - Funções Utilitárias', () => {
       await onboardingFlowService.processOnboarding(phone, '1');
       await onboardingFlowService.processOnboarding(phone, '1');
       await onboardingFlowService.processOnboarding(phone, '1');
-      
+
       const response = await onboardingFlowService.processOnboarding(phone, 'Botox 99999999');
       expect(response).toContain('muito alto');
     });
@@ -68,7 +91,7 @@ describe('OnboardingFlowService - Funções Utilitárias', () => {
       await onboardingFlowService.processOnboarding(phone, '1');
       await onboardingFlowService.processOnboarding(phone, '1');
       await onboardingFlowService.processOnboarding(phone, '1');
-      
+
       const response = await onboardingFlowService.processOnboarding(phone, 'Botox 0.001');
       expect(response).toContain('muito baixo');
     });
@@ -79,7 +102,7 @@ describe('OnboardingFlowService - Funções Utilitárias', () => {
       const phone = '5511999999995';
       await onboardingFlowService.startIntroFlow(phone);
       await onboardingFlowService.processOnboarding(phone, '1');
-      
+
       const response = await onboardingFlowService.processOnboarding(phone, 'A');
       expect(response).toContain('muito curto');
     });
@@ -88,7 +111,7 @@ describe('OnboardingFlowService - Funções Utilitárias', () => {
       const phone = '5511999999994';
       await onboardingFlowService.startIntroFlow(phone);
       await onboardingFlowService.processOnboarding(phone, '1');
-      
+
       const response = await onboardingFlowService.processOnboarding(phone, '123');
       expect(response).toContain('inválido');
     });
@@ -97,7 +120,7 @@ describe('OnboardingFlowService - Funções Utilitárias', () => {
       const phone = '5511999999993';
       await onboardingFlowService.startIntroFlow(phone);
       await onboardingFlowService.processOnboarding(phone, '1');
-      
+
       const response = await onboardingFlowService.processOnboarding(phone, '!!!');
       expect(response).toContain('inválido');
     });
@@ -106,7 +129,7 @@ describe('OnboardingFlowService - Funções Utilitárias', () => {
       const phone = '5511999999992';
       await onboardingFlowService.startIntroFlow(phone);
       await onboardingFlowService.processOnboarding(phone, '1');
-      
+
       const response = await onboardingFlowService.processOnboarding(phone, 'Maria Silva');
       expect(response).toContain('nome da sua clínica');
     });
@@ -122,7 +145,7 @@ describe('OnboardingFlowService - Funções Utilitárias', () => {
       await onboardingFlowService.processOnboarding(phone, '1');
       await onboardingFlowService.processOnboarding(phone, '1');
       await onboardingFlowService.processOnboarding(phone, '1');
-      
+
       const response = await onboardingFlowService.processOnboarding(phone, 'Maria botox 2800 pix');
       expect(response).toContain('Maria');
     });
@@ -136,7 +159,7 @@ describe('OnboardingFlowService - Funções Utilitárias', () => {
       await onboardingFlowService.processOnboarding(phone, '1');
       await onboardingFlowService.processOnboarding(phone, '1');
       await onboardingFlowService.processOnboarding(phone, '1');
-      
+
       const response = await onboardingFlowService.processOnboarding(phone, 'Botox 2800 pix');
       expect(response).toContain('pix');
     });
@@ -150,7 +173,7 @@ describe('OnboardingFlowService - Funções Utilitárias', () => {
       await onboardingFlowService.processOnboarding(phone, '1');
       await onboardingFlowService.processOnboarding(phone, '1');
       await onboardingFlowService.processOnboarding(phone, '1');
-      
+
       const response = await onboardingFlowService.processOnboarding(phone, 'Botox 2800 3x');
       expect(response).toContain('3x');
     });

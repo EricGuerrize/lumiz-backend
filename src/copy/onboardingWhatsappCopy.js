@@ -12,10 +12,8 @@ module.exports = {
     // ============================================================
     startMessage() {
         return (
-            `Oi! Eu sou a Lumiz 👋\n` +
-            `Eu organizo o financeiro da sua clínica aqui no WhatsApp, sem planilhas.\n\n` +
-            `Pra te mostrar como a Lumiz vira seu organizador diário de caixa, vamos\n` +
-            `fazer um teste rápido de 3 minutos.\n\n` +
+            `Oi! Eu sou a Lumiz 👋 Eu organizo o financeiro da sua clínica aqui no WhatsApp, sem planilhas.\n\n` +
+            `Pra te mostrar como a Lumiz vira seu organizador financeiro diário, vamos fazer um teste rápido de 3 minutos.\n\n` +
             `Posso começar?\n\n` +
             `1️⃣ Sim!\n` +
             `2️⃣ Como a Lumiz funciona?`
@@ -37,8 +35,7 @@ module.exports = {
     // ============================================================
     consentQuestion() {
         return (
-            `Antes de começarmos: posso usar os dados que você me enviar aqui só pra organizar seu financeiro?\n` +
-            `Você pode parar quando quiser.\n\n` +
+            `Antes de começarmos: posso usar os dados que você me enviar aqui só pra organizar seu financeiro? Você pode parar quando quiser.\n\n` +
             `1️⃣ Autorizo\n` +
             `2️⃣ Não`
         );
@@ -46,7 +43,7 @@ module.exports = {
 
     consentDenied() {
         return (
-            `Puxa que pena, pra você ver na prática como vamos mudar seu dia a dia, preciso da sua confirmação.\n\n` +
+            `Puxa que pena, para você ver na prática como vamos mudar seu dia a dia, preciso da sua confirmação.\n\n` +
             `Posso usar os dados que você me enviar aqui só pra organizar seu financeiro?\n\n` +
             `1️⃣ Autorizo\n` +
             `2️⃣ Não`
@@ -175,12 +172,11 @@ module.exports = {
     ahaRevenuePrompt(nome) {
         return (
             `Perfeito, ${nome}. ✅\n\n` +
-            `Agora vou te mostrar em 3 etapas como funcionamos\n\n` +
-            `Etapa 1/3 — Primeira venda\n` +
+            `Agora vou te mostrar em 3 etapas como funcionamos\n` +
             `Me manda uma venda real, do jeito que você lembraria. Pode ser simples.\n\n` +
             `Exemplos:\n` +
             `• "Botox R$ 1.200 no pix hoje"\n` +
-            `• "Júlia fez full face, pagou R$ 15.600 / 3.000 pix + 6x cartão"`
+            `• "Júlia fez full face, pagou R$ 15.600. Sendo 3.000 pix + 6x cartão"`
         );
     },
 
@@ -244,13 +240,8 @@ module.exports = {
     // ============================================================
     ahaCostsIntro() {
         return (
-            `Show. Venda registrada ✅\n\n` +
             `Agora vem a parte que dá clareza de verdade: custos.\n\n` +
-            `Etapa 2/3 — Primeiro custo\n` +
-            `Esse custo é mais:\n\n` +
-            `1️⃣ 🧱 Fixo (todo mês)\n` +
-            `2️⃣ 🧪 Variável (depende do mês)\n` +
-            `3️⃣ Não sei`
+            `Pode ser texto, foto ou PDF (boleto, NF, etc.).`
         );
     },
 
@@ -261,19 +252,18 @@ module.exports = {
     // ============================================================
     // 6) AHA_COSTS_UPLOAD - Cadastro de custo
     // ============================================================
-    ahaCostsUploadVariable() {
+    ahaCostsUploadPrompt() {
         return (
-            `Beleza — variável ✅\n` +
-            `Me manda um custo variável (Ex: Compra de insumos, injetaveis etc).\n` +
-            `Pode ser texto, foto ou PDF (boleto, NF, etc.).`
+            `Pode ser texto, foto ou PDF.`
         );
     },
 
-    ahaCostsUploadFixed() {
+    ahaCostsClassify() {
         return (
-            `Perfeito — fixo ✅\n` +
-            `Me manda um custo fixo (Ex: Aluguel, conta de luz).\n` +
-            `Pode ser texto ou documento.`
+            `Esse custo é mais:\n\n` +
+            `1️⃣ 🧱 Fixo (todo mês)\n` +
+            `2️⃣ 🧪 Variável (depende do mês)\n` +
+            `3️⃣ Não sei`
         );
     },
 
@@ -283,12 +273,14 @@ module.exports = {
             `Encontrei: ${formatarMoeda(Number(valor))}, vencimento ${vencimento}, fornecedor ${fornecedor || '—'}.\n` +
             `Isso é um custo fixo ou variável?\n\n` +
             `1️⃣ Fixo\n` +
-            `2️⃣ Variável`
+            `2️⃣ Variável\n` +
+            `3️⃣ Não sei`
         );
     },
 
     ahaCostsCategoryQuestionFixed() {
         return (
+            `Beleza → fixo ✅\n\n` +
             `Pra eu organizar certinho, isso entra mais como:\n\n` +
             `1️⃣ Aluguel\n` +
             `2️⃣ Salários\n` +
@@ -301,10 +293,11 @@ module.exports = {
 
     ahaCostsCategoryQuestionVariable() {
         return (
+            `Beleza → variável ✅\n\n` +
             `Pra eu organizar certinho, isso entra mais como:\n\n` +
-            `1️⃣ Insumos / materiais (Ex: caixa de luvas, máscara descartável, touca, gaze, etc)\n` +
-            `2️⃣ Fornecedores de injetáveis: (Ex: ácido hialurônico, bioestimuladores, toxina botulínica, etc)\n\n` +
-            `3️⃣ Se preferir, pode mandar só o nome do produto e o valor. Já resolve 👍`
+            `1️⃣ Insumos / materiais (Ex: luvas, máscara, touca, gaze…)\n` +
+            `2️⃣ Fornecedores de injetáveis (Ex: ácido hialurônico, toxina botulínica, bioestimuladores…)\n` +
+            `3️⃣ Outros`
         );
     },
 
@@ -348,14 +341,13 @@ module.exports = {
     ahaSummary({ entradas, custosFixos, custosVariaveis, saldoParcial }) {
         return (
             `Pronto ✅\n\n` +
-            `Etapa 3/3 — Seu resumo inicial:\n\n` +
-            `📌 Resumo parcial do mês\n` +
+            `Olha que legal o resumo inicial:\n\n` +
+            `📌 *Resumo parcial do mês:*\n\n` +
             `• Entradas: ${formatarMoeda(Number(entradas))}\n` +
             `• Custos fixos: ${formatarMoeda(Number(custosFixos))}\n` +
             `• Custos variáveis: ${formatarMoeda(Number(custosVariaveis))}\n` +
             `• Saldo parcial: ${formatarMoeda(Number(saldoParcial))}\n\n` +
-            `Observação importante: Esse saldo parcial é só uma referência do que passou por aqui até agora. Ele pode não bater exatamente com o que hoje você vê no banco — e tá tudo bem.\n\n` +
-            `A partir de agora, a ideia é simples: tudo que entra ou sai do seu caixa, você me manda aqui.`
+            `ℹ️ Esse saldo parcial é só uma referência do que passou por aqui até agora. Ele pode não bater exatamente com o que você vê no banco, e tá tudo bem.`
         );
     },
 
@@ -409,10 +401,12 @@ module.exports = {
     // ============================================================
     mdrSetupIntro() {
         return (
-            `Ah, só mais um detalhe pra deixar sua gestão da clínica ainda mais redondinha e sem surpresas no fim do mês!\n\n` +
-            `Como muita venda em clínica é no cartão (e parcelado), as taxas MDR comem uma fatia do valor que cai na conta.\n\n` +
-            `Configurando isso, eu já mostro pra você o valor líquido real em cada registro de venda — tipo: "Recebi R$ 1.500 no Pix hoje (cai tudo agora), mas se fosse 3x no cartão, o total líquido seria uns R$ 1.380... Distribuídos em 3 parcelas mensais (cerca de R$ 460 por mês na conta, já com as taxas MDR descontadas). Assim o caixa fica mais previsível e sem surpresas!\n\n` +
-            `Quer dar um próximo passo e deixar seu caixa ainda mais realista ou pular por enquanto?\n\n` +
+            `Só mais um detalhe pra deixar seu caixa sem surpresas no fim do mês!\n\n` +
+            `Como muita venda em clínica é no cartão parcelado, as taxas MDR comem uma fatia do valor que cai na conta.\n\n` +
+            `Configurando isso, eu já mostro pra você o valor líquido real em cada venda.\n` +
+            `Exemplo: "Uma venda de R$ 1.500 em 3x no cartão → cai R$ 460 por mês na conta, já com as taxas MDR descontadas."\n\n` +
+            `Assim o caixa fica mais previsível!\n\n` +
+            `Quer configurar as taxas do seu cartão agora?\n\n` +
             `1️⃣ Configurar agora\n` +
             `2️⃣ Pular por enquanto`
         );
