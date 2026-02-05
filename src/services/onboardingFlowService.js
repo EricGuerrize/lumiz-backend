@@ -8,6 +8,7 @@ const supabase = require('../db/supabase');
 const userController = require('../controllers/userController');
 const transactionController = require('../controllers/transactionController');
 const documentService = require('./documentService');
+const knowledgeService = require('./knowledgeService');
 
 // ============================================================
 // Constantes (correção #18 - Magic numbers)
@@ -701,7 +702,8 @@ class OnboardingStateHandlers {
             forma_pagamento: heur.forma_pagamento,
             parcelas: heur.parcelas,
             bandeira_cartao: null,
-            data: new Date().toISOString().split('T')[0]
+            data: new Date().toISOString().split('T')[0],
+            original_text: messageTrimmed
         };
 
         // Correção #4: Validação melhorada de forma_pagamento
@@ -746,6 +748,16 @@ class OnboardingStateHandlers {
             if (!sale) {
                 onboarding.step = 'AHA_REVENUE';
                 return await respond(onboardingCopy.ahaRevenuePrompt(onboarding.data.nome || ''));
+            }
+
+            // SALVA INTERAÇÃO PARA APRENDIZADO (CAPTURE)
+            if (sale.original_text) {
+                knowledgeService.saveInteraction(
+                    sale.original_text,
+                    'registrar_receita',
+                    { procedimento: sale.procedimento || '—', forma_pagamento: sale.forma_pagamento },
+                    onboarding.data.clinicId
+                ).catch(err => console.error('[KNOWLEDGE] Erro ao salvar receita:', err.message));
             }
 
             // Correção #6 e #8: Validar criação de usuário adequadamente
@@ -889,7 +901,8 @@ class OnboardingStateHandlers {
                 valor: valorFromText,
                 tipo: knownType === 'fixo' ? 'fixa' : (knownType === 'variável' ? 'variavel' : null),
                 descricao: messageTrimmed,
-                data: new Date().toISOString().split('T')[0]
+                data: new Date().toISOString().split('T')[0],
+                original_text: messageTrimmed
             };
 
             if (knownType) {
@@ -1068,6 +1081,16 @@ class OnboardingStateHandlers {
             if (!cost) {
                 onboarding.step = 'AHA_COSTS_UPLOAD';
                 return await respond(onboardingCopy.costErrorRetry());
+            }
+
+            // SALVA INTERAÇÃO PARA APRENDIZADO (CAPTURE)
+            if (cost.original_text) {
+                knowledgeService.saveInteraction(
+                    cost.original_text,
+                    'registrar_custo',
+                    { tipo: cost.tipo, categoria: cost.categoria, descricao: cost.descricao },
+                    onboarding.data.clinicId
+                ).catch(err => console.error('[KNOWLEDGE] Erro ao salvar custo:', err.message));
             }
 
             // Durante onboarding: transações são apenas de TESTE (não salvas no banco)
@@ -1770,6 +1793,10 @@ class OnboardingFlowService {
                     return await handlers.handleAhaCostsIntro(onboarding, messageTrimmed, respond);
                 case 'AHA_COSTS_UPLOAD':
                     return await handlers.handleAhaCostsUpload(onboarding, messageTrimmed, mediaUrl, fileName, respond);
+                case 'AHA_COSTS_CLASSIFY':
+                    return await handlers.handleAhaCostsClassify(onboarding, messageTrimmed, respond);
+                case 'AHA_COSTS_CLASSIFY_HELP':
+                    return await handlers.handleAhaCostsClassifyHelp(onboarding, messageTrimmed, respond);
                 case 'AHA_COSTS_DOCUMENT_TYPE':
                     return await handlers.handleAhaCostsDocumentType(onboarding, messageTrimmed, respond);
                 case 'AHA_COSTS_CATEGORY':

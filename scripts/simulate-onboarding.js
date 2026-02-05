@@ -1,118 +1,70 @@
 const onboardingFlowService = require('../src/services/onboardingFlowService');
-const userController = require('../src/controllers/userController');
-const supabase = require('../src/db/supabase');
+const { normalizePhone } = require('../src/utils/phone');
 
-// Mock userController to avoid real DB writes during simple flow test, 
-// OR use a test phone number and let it write to DB (better for full integration test).
-// Let's use a random test phone.
-const testPhone = '551198888' + Math.floor(Math.random() * 10000);
+async function simulateOnboarding() {
+    const phone = '5511777776666';
+    const normalizedPhone = normalizePhone(phone);
 
-async function simulateFlow() {
-    console.log(`🤖 Iniciando simulação de onboarding para ${testPhone}...\n`);
+    console.log(`\n🚀 INICIANDO SIMULAÇÃO DE ONBOARDING PARA: ${phone}\n`);
 
-    // Helper to send message and print response
-    async function send(msg) {
-        console.log(`👤 Usuário: "${msg}"`);
-        let response;
-
-        // Se não tem sessão, inicia
-        if (!onboardingFlowService.isOnboarding(testPhone)) {
-            await onboardingFlowService.startNewOnboarding(testPhone);
-            // O controller normalmente mandaria a msg inicial, mas aqui chamamos o process direto
-            // Na verdade, o startNewOnboarding só seta o estado.
-            // O messageController é quem retorna a primeira mensagem.
-            // Vamos simular o comportamento do messageController chamando processOnboarding
-            // Mas o processOnboarding só responde SE já estiver no mapa.
-            // O startNewOnboarding já coloca no mapa com step 'intro_menu'.
-            // Então se mandarmos qualquer coisa agora, ele deve responder o menu?
-            // Não, o menu é a resposta do start.
-            // Vamos assumir que o usuário já recebeu o menu e agora responde.
-        }
-
-        response = await onboardingFlowService.processOnboarding(testPhone, msg);
-        console.log(`🤖 Bot: "${response?.replace(/\n/g, ' ')}"`);
-        console.log(`   [Step atual: ${onboardingFlowService.getOnboardingStep(testPhone)}]\n`);
+    const runStep = async (message) => {
+        console.log(`👤 USUÁRIO: "${message}"`);
+        const response = await onboardingFlowService.processOnboarding(normalizedPhone, message);
+        console.log(`🤖 LUMIZ:\n${response}\n---\n`);
         return response;
-    }
+    };
 
-    try {
-        // 1. Start
-        await onboardingFlowService.startNewOnboarding(testPhone);
-        console.log('--- Bot enviou Menu Inicial ---\n');
+    // 1. Início
+    await onboardingFlowService.startIntroFlow(normalizedPhone);
 
-        // 2. Fluxo "Conhecer"
-        await send('1'); // Quero conhecer
-        await send('próximo');
-        await send('próximo');
-        await send('próximo');
-        await send('menu'); // Volta pro menu
+    // 2. Consentimento
+    await runStep('1'); // Inicia -> Consent
 
-        // 3. Fluxo "Cadastro"
-        await send('2'); // Começar cadastro
+    // 3. Autorizar
+    await runStep('1'); // Sim -> Nome
 
-        // Step 1: Tipo
-        await send('1'); // Facial
+    // 4. Nome
+    await runStep('Eric Teste'); // -> Clínica
 
-        // Step 2: Nome
-        await send('Clínica Teste Simulation');
+    // 5. Clínica
+    await runStep('Minha Clínica'); // -> Role
 
-        // Step 3: Cidade
-        await send('São Paulo - SP');
+    // 6. Função (Dona)
+    await runStep('1'); // -> Add member
 
-        // Step 4: Responsável
-        await send('Doutora Teste');
+    // 7. Add member (Pular)
+    await runStep('2'); // -> Context Why
 
-        // Step 5: Email
-        await send('teste@simulation.com');
+    // 8. Por que usar (Clareza)
+    await runStep('2'); // -> Context How
 
-        // Step 5b: WhatsApp
-        await send('este');
+    // 9. Como recebe (Pix)
+    await runStep('1'); // -> Aha Revenue
 
-        // Step 6: Procedimentos
-        await send('45');
+    // 10. Registrar Receita
+    await runStep('Venda 5000 no pix'); // -> Confirm Revenue
 
-        // Step 7: Ticket
-        await send('850');
+    // 11. Confirmar Receita
+    await runStep('1'); // -> Aha Costs Intro
 
-        // Step 8: Confirmar
-        const confirmResponse = await send('sim');
+    // 12. Registrar CUSTO (O desafio do 2000)
+    console.log('🧪 TESTANDO RECONHECIMENTO DE "2000"...');
+    await runStep('Luz 2000'); // -> Classify Question
 
-        if (confirmResponse.includes('Erro')) {
-            throw new Error('Falha ao criar usuário no banco de dados.');
-        }
+    // 13. Classificar Custo (Fixo)
+    console.log('🧪 TESTANDO CLASSIFICAÇÃO "1"...');
+    await runStep('1'); // -> Category Question
 
-        // 4. Tutorial
-        await send('sim'); // Vamos fazer o teste
+    // 14. Categoria (Luz)
+    await runStep('1'); // -> Confirm Cost
 
-        // Tutorial Venda
-        await send('Venda teste de 500 reais');
+    // 15. Confirmar Custo
+    await runStep('1'); // -> Summary or next cost
 
-        // Tutorial Confirma Venda
-        await send('confirmar');
-
-        // Tutorial Custo
-        await send('Custo teste de 100 reais');
-
-        // Tutorial Confirma Custo
-        await send('confirmar');
-
-        // Tutorial Fim
-        await send('detalhes'); // Finaliza
-
-        console.log('✅ Simulação concluída com sucesso!');
-
-        // Cleanup
-        console.log('🧹 Limpando usuário de teste...');
-        // Need to find user ID to delete
-        const { data: user } = await supabase.from('profiles').select('id').eq('telefone', testPhone).single();
-        if (user) {
-            await supabase.auth.admin.deleteUser(user.id);
-            await supabase.from('profiles').delete().eq('id', user.id);
-        }
-
-    } catch (error) {
-        console.error('❌ Erro na simulação:', error);
-    }
+    console.log('\n✅ SIMULAÇÃO CONCLUÍDA COM SUCESSO!');
 }
 
-simulateFlow();
+simulateOnboarding().catch(err => {
+    console.error('\n❌ ERRO NA SIMULAÇÃO:', err);
+    process.exit(1);
+});

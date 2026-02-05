@@ -1,4 +1,5 @@
 const cacheService = require('./cacheService');
+const knowledgeService = require('./knowledgeService');
 
 // Constantes
 const CACHE_TTL_SECONDS = 300; // 5 minutos
@@ -183,7 +184,7 @@ class IntentHeuristicService {
     // Extrai forma de pagamento
     let formaPagamento = null;
     let parcelas = null;
-    
+
     // PRIMEIRO: Verifica se há padrão "número x" na mensagem inteira (qualquer número seguido de x = parcela)
     const parcelasMatch = raw.match(/\b(\d{1,2})\s*x\b/i);
     if (parcelasMatch && parcelasMatch[1]) {
@@ -212,7 +213,7 @@ class IntentHeuristicService {
    */
   extractCostInfo(text) {
     const lower = String(text).toLowerCase();
-    
+
     let categoria = null;
     const costKeywords = {
       'Insumos / materiais': ['insumo', 'material', 'produto'],
@@ -247,15 +248,33 @@ class IntentHeuristicService {
       return null;
     }
 
-    // Verifica cache primeiro
-    const cacheKey = `intent:${this.normalizeText(message)}`;
+    const normalized = this.normalizeText(message);
+    const original = String(message).trim();
+
+    // 1. Tenta Busca Semântica primeiro (Aprendizado Autônomo)
+    try {
+      const similarInteractions = await knowledgeService.searchSimilarity(original, null, 0.95);
+      if (similarInteractions && similarInteractions.length > 0) {
+        const bestMatch = similarInteractions[0];
+        console.log(`[HEURISTIC] Aprendizado encontrado: "${bestMatch.content}" -> ${bestMatch.intent_name}`);
+        return {
+          intencao: bestMatch.intent_name,
+          dados: { ...bestMatch.metadata, learned: true },
+          confidence: bestMatch.similarity,
+          source: 'learned'
+        };
+      }
+    } catch (e) {
+      console.error('[HEURISTIC] Erro na busca semântica:', e.message);
+    }
+
+    // 2. Verifica cache de heurística tradicional
+    const cacheKey = `intent:${normalized}`;
     const cached = await cacheService.get(cacheKey);
     if (cached) {
       return cached;
     }
 
-    const normalized = this.normalizeText(message);
-    const original = String(message).trim();
 
     // Detecta "apenas_valor" primeiro (só número)
     const apenasValorMatch = original.trim().match(/^\d+([.,]\d+)?\s*$/);
@@ -281,7 +300,7 @@ class IntentHeuristicService {
         // Confiança baseada no número de matches e especificidade
         const matchRatio = matches.length / keywords.length;
         const baseConfidence = Math.min(0.5 + (matchRatio * 0.4), 0.9);
-        
+
         // Aumenta confiança se tiver valor numérico para transações
         if ((intent === 'registrar_entrada' || intent === 'registrar_saida') && this.extractValue(original)) {
           confidence = Math.min(baseConfidence + 0.2, 0.95);
