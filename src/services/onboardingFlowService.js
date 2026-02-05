@@ -649,22 +649,26 @@ class OnboardingStateHandlers {
     }
 
     async handleContextHow(onboarding, messageTrimmed, normalizedPhone, respond) {
-        const how = validateChoice(messageTrimmed, {
-            'mais_pix': ['1', 'pix'],
-            'mais_cartao': ['2', 'cartão', 'cartao'],
-            'meio_a_meio': ['3', 'meio a meio', 'meio']
+        // Suporte às 4 novas opções de pagamento
+        const payment = validateChoice(messageTrimmed, {
+            'pix': ['1', 'pix'],
+            'cartao': ['2', 'cartão', 'cartao'],
+            'boleto': ['3', 'boleto'],
+            'outros': ['4', 'outro', 'outros']
         });
 
-        if (!how) {
+        if (!payment) {
             return await respond(onboardingCopy.invalidChoice());
         }
 
-        onboarding.data.context_how = how;
+        // Mantém compatibilidade com campo antigo e novo
+        onboarding.data.context_how = payment;
+        onboarding.data.context_payment = payment;
         onboarding.step = 'AHA_REVENUE';
         await analyticsService.track('onboarding_context_collected', {
             phone: normalizedPhone,
             source: 'whatsapp',
-            properties: { why: onboarding.data.context_why, how }
+            properties: { why: onboarding.data.context_why, payment }
         });
         return await respond(onboardingCopy.ahaRevenuePrompt(onboarding.data.nome || ''), true); // Persist imediato
     }
@@ -1014,9 +1018,9 @@ class OnboardingStateHandlers {
         const isFixo = onboarding.data.pending_cost.tipo === 'fixa';
         const categoria = isFixo
             ? (validateChoice(messageTrimmed, {
-                'Insumos / materiais': ['1', 'insumo', 'material'],
-                'Aluguel': ['2', 'aluguel'],
-                'Salários': ['3', 'salário', 'salario'],
+                'Aluguel': ['1', 'aluguel'],
+                'Salários': ['2', 'salário', 'salario'],
+                'Internet / Utilitários': ['3', 'internet', 'utilitário', 'utilitarios', 'luz', 'água', 'agua'],
                 'Marketing': ['4', 'marketing', 'publicidade'],
                 'Impostos': ['5', 'imposto'],
                 'Outros': ['6', 'outro']
@@ -1119,13 +1123,49 @@ class OnboardingStateHandlers {
     }
 
     async handleAhaSummary(onboarding, normalizedPhone, respond) {
-        onboarding.step = 'HANDOFF_TO_DAILY_USE';
+        onboarding.step = 'BALANCE_QUESTION';
         await analyticsService.track('onboarding_summary_viewed', {
             phone: normalizedPhone,
             userId: onboarding.data.userId || null,
             source: 'whatsapp'
         });
-        return await respond(onboardingCopy.handoffToDailyUse());
+        return await respond(onboardingCopy.balanceQuestion(), true);
+    }
+
+    async handleBalanceQuestion(onboarding, messageTrimmed, respond) {
+        const choice = validateChoice(messageTrimmed, {
+            'yes': ['1', 'sim', 'vou mandar'],
+            'no': ['2', 'não', 'nao', 'seguimos']
+        });
+
+        if (choice === 'yes') {
+            onboarding.step = 'BALANCE_INPUT';
+            return await respond(onboardingCopy.balanceInputPrompt(), true);
+        }
+
+        if (choice === 'no') {
+            onboarding.step = 'HANDOFF_TO_DAILY_USE';
+            return await respond(onboardingCopy.handoffToDailyUse(), true);
+        }
+
+        return await respond(onboardingCopy.invalidChoice());
+    }
+
+    async handleBalanceInput(onboarding, messageTrimmed, respond) {
+        const valorResult = validateAndExtractValue(messageTrimmed);
+
+        if (!valorResult.valid) {
+            return await respond(onboardingCopy.balanceInputInvalid());
+        }
+
+        onboarding.data.saldo_inicial = valorResult.valor;
+        onboarding.step = 'HANDOFF_TO_DAILY_USE';
+
+        return await respond(
+            onboardingCopy.balanceConfirmation(valorResult.valor) + '\n\n' +
+            onboardingCopy.handoffToDailyUse(),
+            true
+        );
     }
 
     async handleHandoffToDailyUse(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear) {
@@ -1435,7 +1475,8 @@ class OnboardingFlowService {
             case 'CONTEXT_WHY':
                 return onboardingCopy.contextWhyQuestion();
             case 'CONTEXT_HOW':
-                return onboardingCopy.contextHowQuestion();
+            case 'CONTEXT_PAYMENT':
+                return onboardingCopy.contextPaymentQuestion();
             case 'AHA_REVENUE':
                 return onboardingCopy.ahaRevenuePrompt(nome);
             case 'AHA_REVENUE_CONFIRM':
@@ -1493,6 +1534,10 @@ class OnboardingFlowService {
                     : onboardingCopy.ahaCostsCategoryQuestionVariable();
             case 'AHA_SUMMARY':
                 return null;
+            case 'BALANCE_QUESTION':
+                return onboardingCopy.balanceQuestion();
+            case 'BALANCE_INPUT':
+                return onboardingCopy.balanceInputPrompt();
             case 'HANDOFF_TO_DAILY_USE':
                 return onboardingCopy.handoffToDailyUse();
             case 'MDR_SETUP_INTRO':
@@ -1662,7 +1707,8 @@ class OnboardingFlowService {
                     return await handlers.handleProfileAddMember(onboarding, messageTrimmed, respond);
                 case 'CONTEXT_WHY':
                     return await handlers.handleContextWhy(onboarding, messageTrimmed, respond);
-                case 'CONTEXT_HOW':
+                case 'CONTEXT_HOW':      // Mantém compatibilidade
+                case 'CONTEXT_PAYMENT':
                     return await handlers.handleContextHow(onboarding, messageTrimmed, normalizedPhone, respond);
                 case 'AHA_REVENUE':
                     return await handlers.handleAhaRevenue(onboarding, messageTrimmed, respond);
@@ -1680,6 +1726,10 @@ class OnboardingFlowService {
                     return await handlers.handleAhaCostsConfirm(onboarding, messageTrimmed, normalizedPhone, respond);
                 case 'AHA_SUMMARY':
                     return await handlers.handleAhaSummary(onboarding, normalizedPhone, respond);
+                case 'BALANCE_QUESTION':
+                    return await handlers.handleBalanceQuestion(onboarding, messageTrimmed, respond);
+                case 'BALANCE_INPUT':
+                    return await handlers.handleBalanceInput(onboarding, messageTrimmed, respond);
                 case 'HANDOFF_TO_DAILY_USE':
                     return await handlers.handleHandoffToDailyUse(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear);
                 case 'MDR_SETUP_INTRO':

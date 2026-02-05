@@ -46,8 +46,10 @@ module.exports = {
 
     consentDenied() {
         return (
-            `Sem problema. Posso te explicar como funciona, mas não consigo registrar dados sem autorização.\n` +
-            `Quer ver um exemplo de resumo?`
+            `Puxa que pena, pra você ver na prática como vamos mudar seu dia a dia, preciso da sua confirmação.\n\n` +
+            `Posso usar os dados que você me enviar aqui só pra organizar seu financeiro?\n\n` +
+            `1️⃣ Autorizo\n` +
+            `2️⃣ Não`
         );
     },
 
@@ -152,13 +154,19 @@ module.exports = {
         );
     },
 
-    contextHowQuestion() {
+    contextPaymentQuestion() {
         return (
             `Em média, sua clínica recebe mais por:\n\n` +
-            `1️⃣ Mais PIX\n` +
-            `2️⃣ Mais cartão\n` +
-            `3️⃣ Meio a meio`
+            `1️⃣ PIX\n` +
+            `2️⃣ Cartão\n` +
+            `3️⃣ Boleto\n` +
+            `4️⃣ Outros`
         );
+    },
+
+    // Mantém alias para compatibilidade
+    contextHowQuestion() {
+        return this.contextPaymentQuestion();
     },
 
     // ============================================================
@@ -167,6 +175,7 @@ module.exports = {
     ahaRevenuePrompt(nome) {
         return (
             `Perfeito, ${nome}. ✅\n\n` +
+            `Agora vou te mostrar em 3 etapas como funcionamos\n\n` +
             `Etapa 1/3 — Primeira venda\n` +
             `Me manda uma venda real, do jeito que você lembraria. Pode ser simples.\n\n` +
             `Exemplos:\n` +
@@ -281,9 +290,9 @@ module.exports = {
     ahaCostsCategoryQuestionFixed() {
         return (
             `Pra eu organizar certinho, isso entra mais como:\n\n` +
-            `1️⃣ Insumos / materiais\n` +
-            `2️⃣ Aluguel\n` +
-            `3️⃣ Salários\n` +
+            `1️⃣ Aluguel\n` +
+            `2️⃣ Salários\n` +
+            `3️⃣ Internet / Utilitários (luz, água…)\n` +
             `4️⃣ Marketing\n` +
             `5️⃣ Impostos\n` +
             `6️⃣ Outros`
@@ -346,9 +355,31 @@ module.exports = {
             `• Custos variáveis: ${formatarMoeda(Number(custosVariaveis))}\n` +
             `• Saldo parcial: ${formatarMoeda(Number(saldoParcial))}\n\n` +
             `Observação importante: Esse saldo parcial é só uma referência do que passou por aqui até agora. Ele pode não bater exatamente com o que hoje você vê no banco — e tá tudo bem.\n\n` +
-            `Se quiser, você pode me mandar quanto tem hoje de saldo, e a partir disso a gente vai ajustando tudo naturalmente ao longo do tempo. Se preferir não informar agora, sem problema nenhum. Seguimos normalmente.\n\n` +
             `A partir de agora, a ideia é simples: tudo que entra ou sai do seu caixa, você me manda aqui.`
         );
+    },
+
+    // ============================================================
+    // 7.5) BALANCE - Pergunta sobre saldo inicial
+    // ============================================================
+    balanceQuestion() {
+        return (
+            `Quer me mandar o saldo que você tem hoje pra eu ir ajustando?\n\n` +
+            `1️⃣ Sim, vou mandar\n` +
+            `2️⃣ Não agora, seguimos assim`
+        );
+    },
+
+    balanceConfirmation(saldo) {
+        return `Saldo registrado: ${formatarMoeda(Number(saldo))} ✅`;
+    },
+
+    balanceInputPrompt() {
+        return 'Qual o saldo atual da clínica? (Ex: R$ 5.000)';
+    },
+
+    balanceInputInvalid() {
+        return 'Não consegui identificar o valor. Pode me mandar novamente? (Ex: R$ 5.000)';
     },
 
     // ============================================================
