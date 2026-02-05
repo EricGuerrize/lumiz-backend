@@ -16,15 +16,24 @@ class UserController {
   async findUserByPhone(phone) {
     try {
       const normalized = normalizePhone(phone) || phone;
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'userController.js:18',message:'Buscando usuário por telefone',data:{originalPhone:phone,normalized:normalized},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
       
       // Try cache first
       const cacheKey = `phone:profile:${normalized}`;
       const cached = await cacheService.get(cacheKey);
       if (cached) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'userController.js:24',message:'Usuário encontrado no cache',data:{fromCache:true,userId:cached.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+        // #endregion
         return cached;
       }
 
       const variants = getPhoneVariants(phone);
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'userController.js:28',message:'Variantes de telefone geradas',data:{variantsCount:variants.length,variants:variants},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
 
       // 1. Busca na tabela profiles pelo telefone (comportamento original)
       let query = supabase
@@ -63,6 +72,9 @@ class UserController {
       }
 
       const { data: member, error: memberError } = await memberQuery.maybeSingle();
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'userController.js:65',message:'Resultado busca membro em clinic_members',data:{found:!!member,errorCode:memberError?.code,memberId:member?.id,clinicId:member?.clinic_id,phoneInDb:member?.telefone,isActive:member?.is_active,confirmed:member?.confirmed},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
 
       if (memberError && memberError.code !== 'PGRST116') {
         // PGRST116 = não encontrado, outros erros são problemas reais

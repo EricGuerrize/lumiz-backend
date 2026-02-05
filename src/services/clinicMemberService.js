@@ -20,6 +20,9 @@ class ClinicMemberService {
   async findMemberByPhone(phone) {
     const normalizedPhone = normalizePhone(phone) || phone;
     const variants = getPhoneVariants(phone);
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'clinicMemberService.js:21',message:'Buscando membro por telefone',data:{originalPhone:phone,normalizedPhone:normalizedPhone,variantsCount:variants.length,variants:variants},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+    // #endregion
     
     // Tenta busca com variantes primeiro (mais robusto)
     let memberQuery = supabase
@@ -34,6 +37,9 @@ class ClinicMemberService {
     }
     
     const { data, error } = await memberQuery.maybeSingle();
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'clinicMemberService.js:36',message:'Resultado busca membro',data:{found:!!data,errorCode:error?.code,errorMessage:error?.message,memberId:data?.id,clinicId:data?.clinic_id,phoneInDb:data?.telefone},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+    // #endregion
     
     if (error && error.code !== 'PGRST116') {
       // PGRST116 = não encontrado, outros erros são problemas reais

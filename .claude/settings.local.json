@@ -21,9 +21,17 @@
       "Bash(find:*)",
       "Bash(chmod:*)",
       "Bash(grep:*)",
-      "Bash(node scripts/fix-debug-fetch.js:*)"
+      "Bash(node scripts/fix-debug-fetch.js:*)",
+      "Bash(node -c:*)",
+      "Bash(node:*)",
+      "Bash(npx:*)",
+      "Bash(npm search:*)"
     ],
     "deny": [],
     "ask": []
-  }
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "supabase"
+  ]
 }

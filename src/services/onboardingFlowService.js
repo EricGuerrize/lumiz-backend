@@ -175,6 +175,16 @@ function formatDate(date) {
     return date.toLocaleDateString('pt-BR');
 }
 
+function normalizeStartTime(startTime) {
+    if (typeof startTime === 'number' && Number.isFinite(startTime)) return startTime;
+    if (startTime instanceof Date && !isNaN(startTime.getTime())) return startTime.getTime();
+    if (typeof startTime === 'string') {
+        const parsed = Date.parse(startTime);
+        if (Number.isFinite(parsed)) return parsed;
+    }
+    return Date.now();
+}
+
 // Correção #17: Função helper para validação de escolhas
 // CORREÇÃO: Quando a mensagem é apenas um dígito de 1-9, trata como escolha de menu
 function validateChoice(message, options) {
@@ -1396,6 +1406,34 @@ class OnboardingFlowService {
         return this.onboardingStates.has(normalizedPhone);
     }
 
+    async ensureOnboardingState(phone) {
+        const normalizedPhone = normalizePhone(phone) || phone;
+        if (this.onboardingStates.has(normalizedPhone)) return true;
+
+        try {
+            const persisted = await onboardingService.getWhatsappState(normalizedPhone);
+            if (persisted?.step) {
+                this.onboardingStates.set(normalizedPhone, {
+                    step: persisted.step,
+                    startTime: normalizeStartTime(persisted.startTime),
+                    data: persisted.data || { telefone: normalizedPhone }
+                });
+
+                await analyticsService.track('onboarding_whatsapp_resumed', {
+                    phone: normalizedPhone,
+                    userId: persisted?.data?.userId || null,
+                    source: 'whatsapp',
+                    properties: { step: persisted.step, reason: 'ensure_onboarding_state' }
+                });
+                return true;
+            }
+        } catch (e) {
+            console.error('[ONBOARDING] Falha ao restaurar estado persistido:', e?.message || e);
+        }
+
+        return false;
+    }
+
     getOnboardingStep(phone) {
         const normalizedPhone = normalizePhone(phone) || phone;
         const data = this.onboardingStates.get(normalizedPhone);
@@ -1410,7 +1448,7 @@ class OnboardingFlowService {
             if (persisted?.step) {
                 this.onboardingStates.set(normalizedPhone, {
                     step: persisted.step,
-                    startTime: persisted.startTime || Date.now(),
+                    startTime: normalizeStartTime(persisted.startTime),
                     data: persisted.data || { telefone: normalizedPhone }
                 });
                 await analyticsService.track('onboarding_whatsapp_resumed', {

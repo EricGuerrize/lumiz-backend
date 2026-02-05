@@ -71,19 +71,33 @@ class MessageController {
       const existingMember = await clinicMemberService.findMemberByPhone(normalizedPhone);
       console.log(`[MESSAGE] existingMember encontrado:`, existingMember ? `${existingMember.nome} (clinic_id: ${existingMember.clinic_id})` : 'NAO');
 
-      // Se é membro de uma clínica, NÃO processa como onboarding
-      // (limpa qualquer estado de onboarding residual)
+      // Se é membro de uma clínica, verifica se está em onboarding ATIVO
+      // Só limpa estado de onboarding se estiver em steps FINAIS (já completou o fluxo principal)
       if (existingMember && existingMember.clinic_id) {
-        // Se tinha estado de onboarding, limpa silenciosamente
-        if (onboardingFlowService.isOnboarding(normalizedPhone)) {
-          console.log(`[MESSAGE] Membro ${normalizedPhone} encontrado em clinic_members, limpando estado de onboarding residual`);
-          // Limpa estado em memória
-          onboardingFlowService.onboardingStates?.delete(normalizedPhone);
+        const isOnboarding = await onboardingFlowService.ensureOnboardingState(normalizedPhone);
+        const onboardingStep = onboardingFlowService.getOnboardingStep(normalizedPhone);
+
+        // Steps finais onde o onboarding pode ser considerado "residual"
+        const finalSteps = ['HANDOFF_TO_DAILY_USE', 'MDR_SETUP_INTRO', 'MDR_SETUP_QUESTION', 'MDR_SETUP_UPLOAD', 'MDR_SETUP_COMPLETE'];
+        const isInFinalStep = finalSteps.includes(onboardingStep);
+
+        // Se está em onboarding ATIVO (não em step final), continua o onboarding
+        if (isOnboarding && !isInFinalStep) {
+          console.log(`[MESSAGE] Membro ${normalizedPhone} está em onboarding ativo (step: ${onboardingStep}), continuando fluxo`);
+          const result = await onboardingFlowService.processOnboarding(normalizedPhone, message);
+          if (result === null) {
+            // Onboarding foi finalizado, continua para processamento normal
+          } else if (result) {
+            return result;
+          }
+        } else if (isOnboarding && isInFinalStep) {
+          // Está em step final - pode limpar se quiser sair do onboarding
+          console.log(`[MESSAGE] Membro ${normalizedPhone} em step final de onboarding (${onboardingStep}), processando normalmente`);
         }
         // Continua para processamento normal como membro da clínica
       } else {
         // Não é membro, verifica se está em processo de onboarding
-        const isOnboarding = onboardingFlowService.isOnboarding(normalizedPhone);
+        const isOnboarding = await onboardingFlowService.ensureOnboardingState(normalizedPhone);
         const onboardingStep = onboardingFlowService.getOnboardingStep(normalizedPhone);
         // #region agent log
         fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'messageController.js:84',message:'isOnboarding check',data:{normalizedPhone:normalizedPhone?String(normalizedPhone).substring(0,20):null,isOnboarding,onboardingStep,messagePreview:message?String(message).trim().substring(0,20):null},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
@@ -578,7 +592,7 @@ class MessageController {
     const normalizedPhone = normalizePhone(phone) || phone;
     
     // Se está em onboarding, processa no onboarding
-    if (onboardingFlowService.isOnboarding(normalizedPhone)) {
+    if (await onboardingFlowService.ensureOnboardingState(normalizedPhone)) {
       // #region agent log
       fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'messageController.js:361',message:'Onboarding detected, calling processOnboarding',data:{hasMessageKey:!!messageKey,messageKeyPreview:messageKey?String(messageKey).substring(0,20):'null',hasMediaUrl:!!mediaUrl},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
       // #endregion
@@ -596,7 +610,7 @@ class MessageController {
     const normalizedPhone = normalizePhone(phone) || phone;
     
     // Se está em onboarding, processa no onboarding
-    if (onboardingFlowService.isOnboarding(normalizedPhone)) {
+    if (await onboardingFlowService.ensureOnboardingState(normalizedPhone)) {
       return await onboardingFlowService.processOnboarding(normalizedPhone, '', mediaUrl, fileName);
     }
     

@@ -6,8 +6,8 @@
                 "/Users/ericguerrize/lumiz-backend/scripts/mcp-server.js"
             ],
             "env": {
-                "SUPABASE_URL": "https://whmbyfnwnlbrfmgdwdfw.supabase.co",
-                "SUPABASE_SERVICE_ROLE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndobWJ5Zm53bmxicmZtZ2R3ZGZ3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MTkxNzg3MCwiZXhwIjoyMDc3NDkzODcwfQ.7fTwCPv7I6ZasEDAHsQ90MMdjfiPNqy_bvsOk5UwTds"
+                "SUPABASE_URL": "https://your-project.supabase.co",
+                "SUPABASE_SERVICE_ROLE_KEY": "your_supabase_service_role_key_here"
             }
         }
     }

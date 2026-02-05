@@ -36,7 +36,7 @@ class DocumentHandler {
       }
 
       // Verifica se usuário está cadastrado
-      if (onboardingFlowService.isOnboarding(phone)) {
+      if (await onboardingFlowService.ensureOnboardingState(phone)) {
         return 'Complete seu cadastro primeiro! 😊\n\nQual o nome da sua clínica?';
       }
 
@@ -81,7 +81,7 @@ class DocumentHandler {
       }
 
       // Verifica se está em onboarding
-      if (onboardingFlowService.isOnboarding(phone)) {
+      if (await onboardingFlowService.ensureOnboardingState(phone)) {
         const step = onboardingFlowService.getOnboardingStep(phone);
 
         // Se está no step de primeira venda ou custos, processa a imagem
@@ -149,7 +149,7 @@ class DocumentHandler {
   async handleImageMessageWithBuffer(phone, imageBuffer, mimeType, caption) {
     try {
       // Verifica se está em onboarding
-      if (onboardingFlowService.isOnboarding(phone)) {
+      if (await onboardingFlowService.ensureOnboardingState(phone)) {
         const step = onboardingFlowService.getOnboardingStep(phone);
         if (step === 'primeira_venda' || step === 'primeiro_custo' || step === 'segundo_custo') {
           const result = await documentService.processImageFromBuffer(imageBuffer, mimeType);
@@ -246,5 +246,4 @@ class DocumentHandler {
 }
 
 module.exports = DocumentHandler;
-
 
