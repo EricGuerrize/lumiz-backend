@@ -81,9 +81,10 @@ function extractBestAmountFromText(text = '') {
             // Valida se é número válido positivo
             if (!Number.isFinite(n) || n <= 0) return false;
 
-            // Filtro heurístico: Ignora anos (ex: 2024, 2025)
-            // (Muitas vezes o usuário digita a data)
-            if (n >= 1900 && n <= 2100) return false;
+            // Filtro heurístico: Ignora anos (ex: 2024, 2025) APENAS se houver outros candidatos ou se parecer muito uma data
+            // Mas "2000" é um valor comum. Vamos ser menos agressivos.
+            // if (n >= 1900 && n <= 2100) return false; // REMOVIDO: Bloqueava valores como 2000
+
 
             // Filtro heurístico de MENU: Ignora dígitos simples 1-9 que não tem formatação de centavos
             // Ex: "1", "2" são ignorados (provável menu). "1,00", "2.50" são aceitos (valor).

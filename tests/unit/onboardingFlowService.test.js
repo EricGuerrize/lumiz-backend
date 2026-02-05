@@ -54,6 +54,24 @@ describe('OnboardingFlowService - Funções Utilitárias', () => {
       expect(response).toContain('Vou registrar assim');
     });
 
+    test('deve extrair valor de "2000" mesmo parecendo ano', async () => {
+      // Mock para simular o comportamento de extração (já que é testado indiretamente via fluxo acima)
+      // Mas o ideal seria testar a função isolada se ela fosse exportada.
+      // Como não é, vamos simular via fluxo mesmo.
+      const phone = '5511999999977';
+      await onboardingFlowService.startIntroFlow(phone);
+      // Pula steps iniciais
+      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, 'T');
+      await onboardingFlowService.processOnboarding(phone, 'C');
+      await onboardingFlowService.processOnboarding(phone, '1'); // Context
+      await onboardingFlowService.processOnboarding(phone, '1'); // Context
+      await onboardingFlowService.processOnboarding(phone, '1'); // Context
+
+      const response = await onboardingFlowService.processOnboarding(phone, 'Consultoria 2000');
+      expect(response).toContain('2000');
+    });
+
     test('deve extrair valor de "R$ 1.500,50"', async () => {
       const phone = '5511999999998';
       await onboardingFlowService.startIntroFlow(phone);
