@@ -1874,17 +1874,3 @@ class OnboardingFlowService {
 }
 
 module.exports = new OnboardingFlowService();
-            } catch (respondError) {
-                console.error('[ONBOARDING] Erro fatal ao gerar resposta de erro:', {
-                    error: respondError.message,
-                    originalError: error.message,
-                    phone: normalizedPhone,
-                    step: onboarding?.step
-                });
-                return 'Ops, me perdi. Digite "Oi" para recomeçar.';
-            }
-        }
-    }
-}
-
-module.exports = new OnboardingFlowService();
