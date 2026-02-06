@@ -1194,8 +1194,13 @@ class OnboardingStateHandlers {
         }
 
         if (choice === 'no') {
-            onboarding.step = 'HANDOFF_TO_DAILY_USE';
-            return await respondAndClear(onboardingCopy.handoffToDailyUse());
+            onboarding.step = 'MDR_SETUP_INTRO';
+            return await respond(
+                onboardingCopy.handoffToDailyUse() +
+                '\n\n' +
+                onboardingCopy.mdrSetupIntro(),
+                true
+            );
         }
 
         return await respond(onboardingCopy.invalidChoice());
@@ -1223,19 +1228,28 @@ class OnboardingStateHandlers {
         // O script diz "As transações reais serão salvas apenas após você concluir o cadastro".
         // Vou assumir que o saldo também será aplicado ao criar a conta defitiniva ou finalizar.
 
-        onboarding.step = 'HANDOFF_TO_DAILY_USE';
-        return await respondAndClear(
+        onboarding.step = 'MDR_SETUP_INTRO';
+        return await respond(
             onboardingCopy.balanceConfirmation(saldo) +
             '\n\n' +
-            onboardingCopy.handoffToDailyUse()
+            onboardingCopy.handoffToDailyUse() +
+            '\n\n' +
+            onboardingCopy.mdrSetupIntro(),
+            true
         );
     }
 
     async handleHandoffToDailyUse(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear) {
-        // Caso legacy: força handoff e encerra
+        // Caso legacy: força handoff e segue para etapa de MDR
         if (onboarding.data?.force_handoff) {
             delete onboarding.data.force_handoff;
-            return await respondAndClear(onboardingCopy.handoffToDailyUse());
+            onboarding.step = 'MDR_SETUP_INTRO';
+            return await respond(
+                onboardingCopy.handoffToDailyUse() +
+                '\n\n' +
+                onboardingCopy.mdrSetupIntro(),
+                true
+            );
         }
 
         // Detecta se a mensagem parece ser uma transação (venda ou custo)
@@ -1300,8 +1314,8 @@ class OnboardingStateHandlers {
             return null;
         }
 
-        onboarding.step = 'HANDOFF_TO_DAILY_USE';
-        return await respondAndClear(onboardingCopy.handoffToDailyUse());
+        onboarding.step = 'MDR_SETUP_INTRO';
+        return await respond(onboardingCopy.mdrSetupIntro(), true);
     }
 
     async handleMdrSetupIntro(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear) {
@@ -1650,9 +1664,11 @@ class OnboardingFlowService {
             case 'HANDOFF_TO_DAILY_USE':
                 return onboardingCopy.handoffToDailyUse();
             case 'MDR_SETUP_INTRO':
+                return onboardingCopy.mdrSetupIntro();
             case 'MDR_SETUP_QUESTION':
+                return onboardingCopy.mdrSetupQuestion();
             case 'MDR_SETUP_UPLOAD':
-                return onboardingCopy.handoffToDailyUse();
+                return onboardingCopy.mdrSetupUpload();
             default:
                 return onboardingCopy.startMessage();
         }
