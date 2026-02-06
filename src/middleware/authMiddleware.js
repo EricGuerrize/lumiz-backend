@@ -26,6 +26,19 @@ const authenticateToken = async (req, res, next) => {
       .single();
 
     if (profileError || !profile) {
+      // Fallback: tenta vincular por telefone do usuário auth
+      const authPhone = user.phone || user.user_metadata?.phone;
+      if (authPhone) {
+        const variants = getPhoneVariants(authPhone);
+        let phoneQuery = supabase.from('profiles').select('*');
+        phoneQuery = variants.length ? phoneQuery.in('telefone', variants) : phoneQuery.eq('telefone', authPhone);
+        const { data: phoneProfile } = await phoneQuery.maybeSingle();
+        if (phoneProfile) {
+          req.user = phoneProfile;
+          req.authUser = user;
+          return next();
+        }
+      }
       return res.status(403).json({ error: 'Perfil não encontrado' });
     }
 
@@ -62,6 +75,20 @@ const authenticateFlexible = async (req, res, next) => {
           req.user = profile;
           req.authUser = user;
           return next();
+        }
+
+        // Fallback por telefone do usuário auth
+        const authPhone = user.phone || user.user_metadata?.phone;
+        if (authPhone) {
+          const variants = getPhoneVariants(authPhone);
+          let phoneQuery = supabase.from('profiles').select('*');
+          phoneQuery = variants.length ? phoneQuery.in('telefone', variants) : phoneQuery.eq('telefone', authPhone);
+          const { data: phoneProfile } = await phoneQuery.maybeSingle();
+          if (phoneProfile) {
+            req.user = phoneProfile;
+            req.authUser = user;
+            return next();
+          }
         }
       }
     }
