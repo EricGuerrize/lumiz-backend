@@ -6,6 +6,7 @@ node_modules/
 .vscode/
 dist/
 coverage/
+lumiz-financeiro/
 
 # Arquivos de documentação (não versionar)
 *.md

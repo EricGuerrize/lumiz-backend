@@ -301,13 +301,14 @@ class TransactionController {
 
       const entradas = summary ? parseFloat(summary.receitas) : 0;
       const saidas = summary ? parseFloat(summary.despesas) : 0;
+      const totalTransacoes = summary ? parseInt(summary.total_transacoes) : (transactions || []).length;
 
       return {
         periodo: `${month}/${year}`,
         entradas,
         saidas,
         saldo: entradas - saidas,
-        totalTransacoes: summary ? parseInt(summary.total_transacoes) : 0,
+        totalTransacoes,
         porCategoria,
         transacoes: (transactions || []).map(t => ({
           // Mapeia para manter compatibilidade com quem consome 'transacoes' direto
@@ -315,6 +316,9 @@ class TransactionController {
           amount: parseFloat(t.valor),
           date: t.data,
           category: t.categoria,
+          categories: {
+            name: t.categoria || 'Sem categoria'
+          },
           description: t.descricao
         }))
       };
@@ -330,7 +334,7 @@ class TransactionController {
 
       let query = supabase
         .from('view_financial_ledger')
-        .select('*')
+        .select('*', { count: 'exact' })
         .eq('user_id', userId);
 
       if (startDate) query = query.gte('data', startDate);
@@ -342,8 +346,8 @@ class TransactionController {
       }
 
       // Filtro por valor
-      if (minValue) query = query.gte('valor', minValue);
-      if (maxValue) query = query.lte('valor', maxValue);
+      if (minValue !== null && minValue !== undefined) query = query.gte('valor', minValue);
+      if (maxValue !== null && maxValue !== undefined) query = query.lte('valor', maxValue);
 
       // Filtro por categoria (insensitive filter na view pode ser pesado, mas funcional)
       if (categoria) {
@@ -357,7 +361,7 @@ class TransactionController {
       // O Supabase range é 0-based inclusive, então range(0, 9) retorna 10 items.
       query = query.range(offset, offset + limit - 1);
 
-      const { data: transactions, error, count } = await query; // count se precisar mudar query para select('*', { count: 'exact' })
+      const { data: transactions, error, count } = await query;
 
       if (error) throw error;
 
@@ -375,11 +379,12 @@ class TransactionController {
 
       // Para saber se tem mais, precisaríamos do count total ou pedir limit + 1.
       // Simplificação: se retornou 'limit', assume que pode ter mais.
-      const hasMore = transactions.length === limit;
+      const total = count || 0;
+      const hasMore = offset + (transactions || []).length < total;
 
       return {
         transactions: formatted,
-        total: transactions.length, // approximation without count query
+        total,
         limit,
         offset,
         hasMore
