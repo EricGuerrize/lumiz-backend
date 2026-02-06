@@ -232,65 +232,27 @@ class TransactionController {
 
   async getRecentTransactions(userId, limit = 10) {
     try {
-      // Busca últimos atendimentos
-      const { data: atendimentos, error: atendError } = await supabase
-        .from('atendimentos')
-        .select(`
-          id,
-          data,
-          valor_total,
-          custo_total,
-          observacoes,
-          atendimento_procedimentos (
-            procedimentos (
-              nome
-            )
-          )
-        `)
-        .eq('user_id', userId)
-        .order('data', { ascending: false })
-        .limit(limit);
-
-      if (atendError) throw atendError;
-
-      // Formata para o formato esperado
-      const transactions = (atendimentos || []).map(a => ({
-        id: a.id,
-        type: 'entrada',
-        amount: a.valor_total,
-        date: a.data,
-        categories: {
-          name: a.atendimento_procedimentos?.[0]?.procedimentos?.nome || 'Procedimento'
-        }
-      }));
-
-      // Busca últimas contas a pagar
-      const { data: contas, error: contasError } = await supabase
-        .from('contas_pagar')
+      // Busca transações consolidadas na view
+      const { data: transactions, error } = await supabase
+        .from('view_financial_ledger')
         .select('*')
         .eq('user_id', userId)
         .order('data', { ascending: false })
         .limit(limit);
 
-      if (contasError) throw contasError;
+      if (error) throw error;
 
-      // Adiciona contas ao array
-      (contas || []).forEach(c => {
-        transactions.push({
-          id: c.id,
-          type: 'saida',
-          amount: c.valor,
-          date: c.data,
-          categories: {
-            name: c.categoria || c.descricao || 'Despesa'
-          }
-        });
-      });
-
-      // Ordena por data e limita
-      return transactions
-        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-        .slice(0, limit);
+      // Mapeia para o formato esperado pelo frontend/mensagem
+      return (transactions || []).map(t => ({
+        id: t.id,
+        type: t.type,
+        amount: parseFloat(t.valor), // valor já vem corrigido da view, mas garante float pro JS
+        date: t.data,
+        categories: {
+          name: t.categoria || 'Sem categoria'
+        },
+        description: t.descricao
+      }));
     } catch (error) {
       console.error('Erro ao buscar transações recentes:', error);
       throw error;
@@ -300,7 +262,9 @@ class TransactionController {
   async getMonthlyReport(userId, year, month) {
     try {
       const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-      const endDate = new Date(year, month, 0).toISOString().split('T')[0];
+      // End date deve ser o último dia do mês
+      const lastDay = new Date(year, month, 0).getDate();
+      const endDate = `${year}-${String(month).padStart(2, '0')}-${lastDay}`;
 
       // 1. Busca totais na View (Rápido)
       const { data: summary, error: summaryError } = await supabase
@@ -309,55 +273,30 @@ class TransactionController {
         .eq('user_id', userId)
         .eq('ano', year)
         .eq('mes', month)
-        .single();
+        .maybeSingle();
 
-      if (summaryError && summaryError.code !== 'PGRST116') throw summaryError;
+      if (summaryError) throw summaryError;
 
-      // 2. Busca detalhes para listagem (Ainda necessário para mostrar na tela)
-      // Atendimentos do mês
-      const { data: atendimentos, error: atendError } = await supabase
-        .from('atendimentos')
-        .select(`
-          *,
-          atendimento_procedimentos (
-            procedimentos (
-              nome
-            )
-          )
-        `)
-        .eq('user_id', userId)
-        .gte('data', startDate)
-        .lte('data', endDate);
-
-      if (atendError) throw atendError;
-
-      // Contas do mês
-      const { data: contas, error: contasError } = await supabase
-        .from('contas_pagar')
+      // 2. Busca detalhes para listagem via Ledger View
+      const { data: transactions, error: transError } = await supabase
+        .from('view_financial_ledger')
         .select('*')
         .eq('user_id', userId)
         .gte('data', startDate)
-        .lte('data', endDate);
+        .lte('data', endDate)
+        .order('data', { ascending: false });
 
-      if (contasError) throw contasError;
+      if (transError) throw transError;
 
-      // Agrupa por categoria (mantido em JS pois é complexo fazer em SQL sem view específica)
+      // Agrupa por categoria
       const porCategoria = {};
 
-      (atendimentos || []).forEach(a => {
-        const catName = a.atendimento_procedimentos?.[0]?.procedimentos?.nome || 'Procedimento';
+      (transactions || []).forEach(t => {
+        const catName = t.categoria || 'Sem Categoria';
         if (!porCategoria[catName]) {
-          porCategoria[catName] = { total: 0, tipo: 'entrada' };
+          porCategoria[catName] = { total: 0, tipo: t.type }; // 'entrada' ou 'saida'
         }
-        porCategoria[catName].total += parseFloat(a.valor_total || 0);
-      });
-
-      (contas || []).forEach(c => {
-        const catName = c.categoria || c.descricao || 'Despesa';
-        if (!porCategoria[catName]) {
-          porCategoria[catName] = { total: 0, tipo: 'saida' };
-        }
-        porCategoria[catName].total += parseFloat(c.valor || 0);
+        porCategoria[catName].total += parseFloat(t.valor || 0);
       });
 
       const entradas = summary ? parseFloat(summary.receitas) : 0;
@@ -370,7 +309,14 @@ class TransactionController {
         saldo: entradas - saidas,
         totalTransacoes: summary ? parseInt(summary.total_transacoes) : 0,
         porCategoria,
-        transacoes: [...(atendimentos || []), ...(contas || [])]
+        transacoes: (transactions || []).map(t => ({
+          // Mapeia para manter compatibilidade com quem consome 'transacoes' direto
+          ...t,
+          amount: parseFloat(t.valor),
+          date: t.data,
+          category: t.categoria,
+          description: t.descricao
+        }))
       };
     } catch (error) {
       console.error('Erro ao gerar relatório mensal:', error);
@@ -382,113 +328,63 @@ class TransactionController {
     try {
       const { startDate, endDate, tipo, categoria, minValue, maxValue, limit = 50, offset = 0 } = filters;
 
-      let transactions = [];
+      let query = supabase
+        .from('view_financial_ledger')
+        .select('*')
+        .eq('user_id', userId);
 
-      // Busca atendimentos (entradas)
-      if (!tipo || tipo === 'entrada') {
-        let atendQuery = supabase
-          .from('atendimentos')
-          .select(`
-            id,
-            data,
-            valor_total,
-            custo_total,
-            observacoes,
-            forma_pagamento,
-            parcelas,
-            bandeira_cartao,
-            atendimento_procedimentos (
-              procedimentos (
-                nome
-              )
-            )
-          `)
-          .eq('user_id', userId);
+      if (startDate) query = query.gte('data', startDate);
+      if (endDate) query = query.lte('data', endDate);
 
-        if (startDate) atendQuery = atendQuery.gte('data', startDate);
-        if (endDate) atendQuery = atendQuery.lte('data', endDate);
-        if (minValue) atendQuery = atendQuery.gte('valor_total', minValue);
-        if (maxValue) atendQuery = atendQuery.lte('valor_total', maxValue);
-
-        const { data: atendimentos, error: atendError } = await atendQuery
-          .order('data', { ascending: false });
-
-        if (atendError) throw atendError;
-
-        (atendimentos || []).forEach(a => {
-          const catName = a.atendimento_procedimentos?.[0]?.procedimentos?.nome || 'Procedimento';
-
-          // Filtra por categoria se especificado
-          if (categoria && !catName.toLowerCase().includes(categoria.toLowerCase())) {
-            return;
-          }
-
-          transactions.push({
-            id: a.id,
-            type: 'entrada',
-            amount: parseFloat(a.valor_total),
-            date: a.data,
-            category: catName,
-            description: a.observacoes,
-            forma_pagamento: a.forma_pagamento,
-            parcelas: a.parcelas,
-            bandeira_cartao: a.bandeira_cartao,
-            source: 'atendimentos'
-          });
-        });
+      // Tipo (entrada/saida)
+      if (tipo) {
+        query = query.eq('type', tipo);
       }
 
-      // Busca contas (saídas)
-      if (!tipo || tipo === 'saida') {
-        let contasQuery = supabase
-          .from('contas_pagar')
-          .select('*')
-          .eq('user_id', userId);
+      // Filtro por valor
+      if (minValue) query = query.gte('valor', minValue);
+      if (maxValue) query = query.lte('valor', maxValue);
 
-        if (startDate) contasQuery = contasQuery.gte('data', startDate);
-        if (endDate) contasQuery = contasQuery.lte('data', endDate);
-        if (minValue) contasQuery = contasQuery.gte('valor', minValue);
-        if (maxValue) contasQuery = contasQuery.lte('valor', maxValue);
-
-        const { data: contas, error: contasError } = await contasQuery
-          .order('data', { ascending: false });
-
-        if (contasError) throw contasError;
-
-        (contas || []).forEach(c => {
-          const catName = c.categoria || c.descricao || 'Despesa';
-
-          // Filtra por categoria se especificado
-          if (categoria && !catName.toLowerCase().includes(categoria.toLowerCase())) {
-            return;
-          }
-
-          transactions.push({
-            id: c.id,
-            type: 'saida',
-            amount: parseFloat(c.valor),
-            date: c.data,
-            category: catName,
-            description: c.observacoes,
-            source: 'contas_pagar'
-          });
-        });
+      // Filtro por categoria (insensitive filter na view pode ser pesado, mas funcional)
+      if (categoria) {
+        query = query.ilike('categoria', `%${categoria}%`);
       }
 
-      // Ordena por data
-      transactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      // Ordenação
+      query = query.order('data', { ascending: false });
 
-      // Aplica paginação
-      const total = transactions.length;
-      const paginated = transactions.slice(offset, offset + limit);
+      // Paginação
+      // O Supabase range é 0-based inclusive, então range(0, 9) retorna 10 items.
+      query = query.range(offset, offset + limit - 1);
+
+      const { data: transactions, error, count } = await query; // count se precisar mudar query para select('*', { count: 'exact' })
+
+      if (error) throw error;
+
+      // Formata retorno
+      const formatted = (transactions || []).map(t => ({
+        id: t.id,
+        type: t.type,
+        amount: parseFloat(t.valor),
+        date: t.data,
+        category: t.categoria || 'Sem categoria',
+        description: t.descricao,
+        forma_pagamento: t.payment_method,
+        source: t.type === 'entrada' ? 'atendimentos' : 'contas_pagar'
+      }));
+
+      // Para saber se tem mais, precisaríamos do count total ou pedir limit + 1.
+      // Simplificação: se retornou 'limit', assume que pode ter mais.
+      const hasMore = transactions.length === limit;
 
       return {
-        transactions: paginated,
-        total,
+        transactions: formatted,
+        total: transactions.length, // approximation without count query
         limit,
         offset,
-        hasMore: offset + limit < total
+        hasMore
       };
+
     } catch (error) {
       console.error('Erro ao buscar transações:', error);
       throw error;

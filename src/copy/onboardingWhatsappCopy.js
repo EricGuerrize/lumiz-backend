@@ -241,20 +241,13 @@ module.exports = {
     ahaCostsIntro() {
         return (
             `Agora vem a parte que dá clareza de verdade: custos.\n\n` +
-            `Me envie um custo, pode ser texto, foto ou PDF (boleto, NF, etc.).`
+            `Me envie um custo, pode ser texto, foto ou PDF...`
         );
     },
 
-    ahaCostsDontKnow() {
-        return `Tranquilo. É aluguel, salário, internet, insumo, fornecedor…?`;
-    },
-
-    // ============================================================
-    // 6) AHA_COSTS_UPLOAD - Cadastro de custo
-    // ============================================================
     ahaCostsUploadPrompt() {
         return (
-            `Pode ser texto, foto ou PDF.`
+            `Me envie um custo, pode ser texto, foto ou PDF...`
         );
     },
 
