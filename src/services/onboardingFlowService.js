@@ -1182,7 +1182,7 @@ class OnboardingStateHandlers {
         return await respond(onboardingCopy.balanceQuestion(), true);
     }
 
-    async handleBalanceQuestion(onboarding, messageTrimmed, respond) {
+    async handleBalanceQuestion(onboarding, messageTrimmed, respond, respondAndClear) {
         const choice = validateChoice(messageTrimmed, {
             'yes': ['1', 'sim', 'vou mandar', 'mandar'],
             'no': ['2', 'não', 'nao', 'seguimos']
@@ -1194,14 +1194,14 @@ class OnboardingStateHandlers {
         }
 
         if (choice === 'no') {
-            onboarding.step = 'MDR_SETUP_INTRO';
-            return await respond(onboardingCopy.handoffToDailyUse() + '\n\n' + onboardingCopy.mdrSetupIntro(), true);
+            onboarding.step = 'HANDOFF_TO_DAILY_USE';
+            return await respondAndClear(onboardingCopy.handoffToDailyUse());
         }
 
         return await respond(onboardingCopy.invalidChoice());
     }
 
-    async handleBalanceInput(onboarding, messageTrimmed, respond) {
+    async handleBalanceInput(onboarding, messageTrimmed, respond, respondAndClear) {
         // Valida valor usando utilitário existente
         const result = validateAndExtractValue(messageTrimmed);
 
@@ -1223,18 +1223,21 @@ class OnboardingStateHandlers {
         // O script diz "As transações reais serão salvas apenas após você concluir o cadastro".
         // Vou assumir que o saldo também será aplicado ao criar a conta defitiniva ou finalizar.
 
-        onboarding.step = 'MDR_SETUP_INTRO';
-        return await respond(
+        onboarding.step = 'HANDOFF_TO_DAILY_USE';
+        return await respondAndClear(
             onboardingCopy.balanceConfirmation(saldo) +
             '\n\n' +
-            onboardingCopy.handoffToDailyUse() +
-            '\n\n' +
-            onboardingCopy.mdrSetupIntro(),
-            true
+            onboardingCopy.handoffToDailyUse()
         );
     }
 
     async handleHandoffToDailyUse(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear) {
+        // Caso legacy: força handoff e encerra
+        if (onboarding.data?.force_handoff) {
+            delete onboarding.data.force_handoff;
+            return await respondAndClear(onboardingCopy.handoffToDailyUse());
+        }
+
         // Detecta se a mensagem parece ser uma transação (venda ou custo)
         // Se for, finaliza onboarding automaticamente e processa como transação normal
         const intentHeuristicService = require('./intentHeuristicService');
@@ -1297,8 +1300,8 @@ class OnboardingStateHandlers {
             return null;
         }
 
-        onboarding.step = 'MDR_SETUP_INTRO';
-        return await respond(onboardingCopy.mdrSetupIntro());
+        onboarding.step = 'HANDOFF_TO_DAILY_USE';
+        return await respondAndClear(onboardingCopy.handoffToDailyUse());
     }
 
     async handleMdrSetupIntro(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear) {
@@ -1455,10 +1458,23 @@ class OnboardingFlowService {
         try {
             const persisted = await onboardingService.getWhatsappState(normalizedPhone);
             if (persisted?.step) {
+                const legacyMdrSteps = new Set([
+                    'MDR_SETUP_INTRO',
+                    'MDR_SETUP_QUESTION',
+                    'MDR_SETUP_UPLOAD',
+                    'MDR_SETUP_COMPLETE'
+                ]);
+                const step = legacyMdrSteps.has(persisted.step)
+                    ? 'HANDOFF_TO_DAILY_USE'
+                    : persisted.step;
+
                 this.onboardingStates.set(normalizedPhone, {
-                    step: persisted.step,
+                    step,
                     startTime: normalizeStartTime(persisted.startTime),
-                    data: persisted.data || { telefone: normalizedPhone }
+                    data: {
+                        ...(persisted.data || { telefone: normalizedPhone }),
+                        ...(legacyMdrSteps.has(persisted.step) ? { force_handoff: true } : {})
+                    }
                 });
 
                 await analyticsService.track('onboarding_whatsapp_resumed', {
@@ -1488,10 +1504,23 @@ class OnboardingFlowService {
         try {
             const persisted = await onboardingService.getWhatsappState(normalizedPhone);
             if (persisted?.step) {
+                const legacyMdrSteps = new Set([
+                    'MDR_SETUP_INTRO',
+                    'MDR_SETUP_QUESTION',
+                    'MDR_SETUP_UPLOAD',
+                    'MDR_SETUP_COMPLETE'
+                ]);
+                const step = legacyMdrSteps.has(persisted.step)
+                    ? 'HANDOFF_TO_DAILY_USE'
+                    : persisted.step;
+
                 this.onboardingStates.set(normalizedPhone, {
-                    step: persisted.step,
+                    step,
                     startTime: normalizeStartTime(persisted.startTime),
-                    data: persisted.data || { telefone: normalizedPhone }
+                    data: {
+                        ...(persisted.data || { telefone: normalizedPhone }),
+                        ...(legacyMdrSteps.has(persisted.step) ? { force_handoff: true } : {})
+                    }
                 });
                 await analyticsService.track('onboarding_whatsapp_resumed', {
                     phone: normalizedPhone,
@@ -1621,11 +1650,9 @@ class OnboardingFlowService {
             case 'HANDOFF_TO_DAILY_USE':
                 return onboardingCopy.handoffToDailyUse();
             case 'MDR_SETUP_INTRO':
-                return onboardingCopy.mdrSetupIntro();
             case 'MDR_SETUP_QUESTION':
-                return onboardingCopy.mdrSetupQuestion();
             case 'MDR_SETUP_UPLOAD':
-                return onboardingCopy.mdrSetupUpload();
+                return onboardingCopy.handoffToDailyUse();
             default:
                 return onboardingCopy.startMessage();
         }
@@ -1811,9 +1838,9 @@ class OnboardingFlowService {
                 case 'AHA_SUMMARY':
                     return await handlers.handleAhaSummary(onboarding, normalizedPhone, respond);
                 case 'BALANCE_QUESTION':
-                    return await handlers.handleBalanceQuestion(onboarding, messageTrimmed, respond);
+                    return await handlers.handleBalanceQuestion(onboarding, messageTrimmed, respond, respondAndClear);
                 case 'BALANCE_INPUT':
-                    return await handlers.handleBalanceInput(onboarding, messageTrimmed, respond);
+                    return await handlers.handleBalanceInput(onboarding, messageTrimmed, respond, respondAndClear);
                 case 'HANDOFF_TO_DAILY_USE':
                     return await handlers.handleHandoffToDailyUse(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear);
                 case 'MDR_SETUP_INTRO':
@@ -1833,6 +1860,20 @@ class OnboardingFlowService {
             try {
                 const errorResponse = await respond(onboardingCopy.lostState());
                 return errorResponse || 'Ops, me perdi. Digite "Oi" para recomeçar.';
+            } catch (respondError) {
+                console.error('[ONBOARDING] Erro fatal ao gerar resposta de erro:', {
+                    error: respondError.message,
+                    originalError: error.message,
+                    phone: normalizedPhone,
+                    step: onboarding?.step
+                });
+                return 'Ops, me perdi. Digite "Oi" para recomeçar.';
+            }
+        }
+    }
+}
+
+module.exports = new OnboardingFlowService();
             } catch (respondError) {
                 console.error('[ONBOARDING] Erro fatal ao gerar resposta de erro:', {
                     error: respondError.message,

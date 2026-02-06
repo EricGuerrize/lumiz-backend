@@ -381,13 +381,14 @@ module.exports = {
             `"Paguei parcela do fornecedor 2.300"\n\n` +
             `"Quanto entrou esse mês?"\n\n` +
             `"O que ainda falta cair?"\n\n` +
+            `Para configurar taxas da maquininha depois, diga: "configurar maquininha" ou "configurar taxas".\n\n` +
             `Quanto mais você me usa, melhor eu entendo sua rotina e mais claros ficam seus números!\n` +
             `Vamos nessa juntos?`
         );
     },
 
     // ============================================================
-    // 9) MDR_SETUP - Taxas da maquininha (opcional)
+    // 9) MDR_SETUP - Taxas da maquininha (legado)
     // ============================================================
     mdrSetupIntro() {
         return (

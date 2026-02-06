@@ -24,6 +24,7 @@ const ExportHandler = require('./messages/exportHandler');
 const ScheduleHandler = require('./messages/scheduleHandler');
 const InsightsHandler = require('./messages/insightsHandler');
 const MemberHandler = require('./messages/memberHandler');
+const mdrChatFlowService = require('../services/mdrChatFlowService');
 
 /**
  * MessageController refatorado - Orquestrador principal
@@ -78,7 +79,7 @@ class MessageController {
         const onboardingStep = onboardingFlowService.getOnboardingStep(normalizedPhone);
 
         // Steps finais onde o onboarding pode ser considerado "residual"
-        const finalSteps = ['HANDOFF_TO_DAILY_USE', 'MDR_SETUP_INTRO', 'MDR_SETUP_QUESTION', 'MDR_SETUP_UPLOAD', 'MDR_SETUP_COMPLETE'];
+        const finalSteps = ['HANDOFF_TO_DAILY_USE', 'MDR_SETUP_INTRO', 'MDR_SETUP_QUESTION', 'MDR_SETUP_UPLOAD', 'MDR_SETUP_COMPLETE']; // MDR steps legacy
         const isInFinalStep = finalSteps.includes(onboardingStep);
 
         // Se está em onboarding ATIVO (não em step final), continua o onboarding
@@ -230,6 +231,17 @@ class MessageController {
         const result = await this.memberHandler.processTransferResponse(normalizedPhone, message);
         if (result) {
           return result;
+        }
+      }
+
+      if (user && user.id) {
+        const mdrResponse = await mdrChatFlowService.handleMessageIfNeeded({
+          phone: normalizedPhone,
+          user,
+          message
+        });
+        if (mdrResponse) {
+          return mdrResponse;
         }
       }
 
@@ -591,6 +603,20 @@ class MessageController {
   async handleImageMessage(phone, mediaUrl, caption, messageKey = null) {
     const normalizedPhone = normalizePhone(phone) || phone;
 
+    if (mdrChatFlowService.isActive(normalizedPhone)) {
+      const user = await userController.findUserByPhone(normalizedPhone);
+      if (user) {
+        const mdrResponse = await mdrChatFlowService.handleMedia({
+          phone: normalizedPhone,
+          user,
+          mediaUrl
+        });
+        if (mdrResponse) {
+          return mdrResponse;
+        }
+      }
+    }
+
     // Se está em onboarding, processa no onboarding
     if (await onboardingFlowService.ensureOnboardingState(normalizedPhone)) {
       // #region agent log
@@ -608,6 +634,20 @@ class MessageController {
 
   async handleDocumentMessage(phone, mediaUrl, fileName, messageKey = null) {
     const normalizedPhone = normalizePhone(phone) || phone;
+
+    if (mdrChatFlowService.isActive(normalizedPhone)) {
+      const user = await userController.findUserByPhone(normalizedPhone);
+      if (user) {
+        const mdrResponse = await mdrChatFlowService.handleMedia({
+          phone: normalizedPhone,
+          user,
+          mediaUrl
+        });
+        if (mdrResponse) {
+          return mdrResponse;
+        }
+      }
+    }
 
     // Se está em onboarding, processa no onboarding
     if (await onboardingFlowService.ensureOnboardingState(normalizedPhone)) {

@@ -38,23 +38,7 @@ const summaryHandlers = {
    * Transição para uso diário
    */
   async handleHandoffToDailyUse(onboarding, messageTrimmed, respond, respondAndClear) {
-    const normalized = messageTrimmed.toLowerCase();
-    
-    // Verifica se quer configurar MDR
-    if (normalized.includes('configurar') || normalized.includes('taxa') || 
-        normalized.includes('mdr') || normalized === '1') {
-      onboarding.step = 'MDR_SETUP_INTRO';
-      return await respond(onboardingCopy.mdrSetupIntro());
-    }
-    
-    // Finaliza onboarding
-    if (normalized.includes('depois') || normalized.includes('pular') || 
-        normalized === '2' || normalized === 'n') {
-      return await respondAndClear(onboardingCopy.onboardingComplete());
-    }
-    
-    // Qualquer outra resposta finaliza
-    return await respondAndClear(onboardingCopy.onboardingComplete());
+    return await respondAndClear(onboardingCopy.handoffToDailyUse());
   }
 };
 

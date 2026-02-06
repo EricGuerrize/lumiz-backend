@@ -61,7 +61,7 @@ class MdrService {
    * @param {string} config.provider - Provedor (Stone, PagSeguro, etc)
    * @returns {Promise<Object>} Configuração salva
    */
-  async saveManualConfig({ phone, userId, bandeiras, tiposVenda, parcelas, provider }) {
+  async saveManualConfig({ phone, userId, bandeiras, tiposVenda, parcelas, provider, rawPayload }) {
     const payload = {
       phone,
       user_id: userId,
@@ -73,7 +73,8 @@ class MdrService {
       raw_payload: {
         bandeiras,
         tiposVenda,
-        parcelas
+        parcelas,
+        ...(rawPayload || {})
       },
       status: 'pending_confirmation'
     };
@@ -376,4 +377,3 @@ class MdrService {
 const instance = new MdrService();
 module.exports = instance;
 module.exports.MdrService = MdrService;
-
