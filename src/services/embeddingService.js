@@ -8,7 +8,7 @@ class EmbeddingService {
             return;
         }
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-        this.model = genAI.getGenerativeModel({ model: "text-embedding-004" });
+        this.model = genAI.getGenerativeModel({ model: "gemini-embedding-001" });
     }
 
     /**

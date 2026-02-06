@@ -61,7 +61,7 @@ class MessageController {
       const normalizedPhone = normalizePhone(phone) || phone;
       console.log(`[MESSAGE] v2 - Recebida mensagem de ${normalizedPhone}: ${message?.substring(0, 30)}`);
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'messageController.js:62',message:'handleIncomingMessage entry',data:{phone:String(phone).substring(0,20),normalizedPhone:normalizedPhone?String(normalizedPhone).substring(0,20):null,messagePreview:message?String(message).trim().substring(0,30):null},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'messageController.js:62', message: 'handleIncomingMessage entry', data: { phone: String(phone).substring(0, 20), normalizedPhone: normalizedPhone ? String(normalizedPhone).substring(0, 20) : null, messagePreview: message ? String(message).trim().substring(0, 30) : null }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
       // #endregion
 
       // IMPORTANTE: Primeiro verifica se é membro de clínica (clinic_members)
@@ -100,12 +100,12 @@ class MessageController {
         const isOnboarding = await onboardingFlowService.ensureOnboardingState(normalizedPhone);
         const onboardingStep = onboardingFlowService.getOnboardingStep(normalizedPhone);
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'messageController.js:84',message:'isOnboarding check',data:{normalizedPhone:normalizedPhone?String(normalizedPhone).substring(0,20):null,isOnboarding,onboardingStep,messagePreview:message?String(message).trim().substring(0,20):null},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'messageController.js:84', message: 'isOnboarding check', data: { normalizedPhone: normalizedPhone ? String(normalizedPhone).substring(0, 20) : null, isOnboarding, onboardingStep, messagePreview: message ? String(message).trim().substring(0, 20) : null }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'B' }) }).catch(() => { });
         // #endregion
         if (isOnboarding) {
           const result = await onboardingFlowService.processOnboarding(normalizedPhone, message);
           // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'messageController.js:92',message:'processOnboarding resultado',data:{resultType:result==null?'null':typeof result,resultPreview:typeof result==='string'?result.substring(0,80):null,hasResult:!!result},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+          fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'messageController.js:92', message: 'processOnboarding resultado', data: { resultType: result == null ? 'null' : typeof result, resultPreview: typeof result === 'string' ? result.substring(0, 80) : null, hasResult: !!result }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'B' }) }).catch(() => { });
           // #endregion
 
           // Se o onboarding retornou null, significa que foi finalizado e a mensagem deve ser processada normalmente
@@ -147,16 +147,16 @@ class MessageController {
       // Se não encontrou usuário e não é mensagem de teste, faz busca mais robusta
       if (!user) {
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'messageController.js:103',message:'Usuário não encontrado, buscando em clinic_members',data:{phone:normalizedPhone},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'messageController.js:103', message: 'Usuário não encontrado, buscando em clinic_members', data: { phone: normalizedPhone }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
         // #endregion
         // Busca adicional em clinic_members incluindo membros não confirmados
         // Isso garante que encontramos membros recém-cadastrados que ainda não confirmaram
         const clinicMemberService = require('../services/clinicMemberService');
         const member = await clinicMemberService.findMemberByPhone(normalizedPhone);
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'messageController.js:107',message:'Resultado busca adicional em clinic_members',data:{found:!!member,memberId:member?.id,clinicId:member?.clinic_id,phoneInDb:member?.telefone},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'messageController.js:107', message: 'Resultado busca adicional em clinic_members', data: { found: !!member, memberId: member?.id, clinicId: member?.clinic_id, phoneInDb: member?.telefone }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
         // #endregion
-        
+
         if (member && member.clinic_id) {
           // Encontrou membro! Busca o profile da clínica
           const { data: clinicProfile } = await supabase
@@ -164,7 +164,7 @@ class MessageController {
             .select('*')
             .eq('id', member.clinic_id)
             .single();
-          
+
           if (clinicProfile) {
             // Adiciona informação do membro
             clinicProfile._member = {
@@ -174,17 +174,17 @@ class MessageController {
               confirmed: member.confirmed,
               phone_used: normalizedPhone
             };
-            
+
             // Atualiza cache para próxima busca
             const cacheService = require('../services/cacheService');
             const cacheKey = `phone:profile:${normalizedPhone}`;
             await cacheService.set(cacheKey, clinicProfile, 900);
-            
+
             // Atribui ao user para continuar processamento normalmente
             user = clinicProfile;
           }
         }
-        
+
         // Se ainda não encontrou usuário, inicia novo onboarding
         if (!user) {
           return await onboardingFlowService.startNewOnboarding(normalizedPhone);
@@ -236,9 +236,9 @@ class MessageController {
       // CORREÇÃO: Se usuário não existe e a mensagem parece ser saudação, inicia onboarding antes de detectar intent
       if (!user) {
         const messageLower = message.toLowerCase().trim();
-        const isGreeting = messageLower === 'oi' || messageLower === 'olá' || messageLower === 'ola' || 
-                          messageLower === 'sim' || messageLower === 'começar' || messageLower === 'comecar' ||
-                          messageLower.includes('oi') || messageLower.includes('olá') || messageLower.includes('ola');
+        const isGreeting = messageLower === 'oi' || messageLower === 'olá' || messageLower === 'ola' ||
+          messageLower === 'sim' || messageLower === 'começar' || messageLower === 'comecar' ||
+          messageLower.includes('oi') || messageLower.includes('olá') || messageLower.includes('ola');
         if (isGreeting) {
           return await onboardingFlowService.startIntroFlow(normalizedPhone);
         }
@@ -313,7 +313,7 @@ class MessageController {
       return response;
     } catch (error) {
       console.error('Erro ao processar mensagem:', error);
-      
+
       // Detecta erros específicos de conexão com Supabase
       if (error.message && (
         error.message.includes('fetch failed') ||
@@ -324,7 +324,7 @@ class MessageController {
         console.error('[MESSAGE] Erro de conexão com Supabase detectado');
         return 'Ops, estou com um probleminha de conexão agora 😅\n\nTenta de novo em alguns segundos. Se o problema continuar, pode ser que o servidor esteja temporariamente indisponível.';
       }
-      
+
       return 'Eita, deu um erro aqui 😅\n\nTenta de novo! Se o problema continuar, me manda a mensagem de um jeito mais simples.\n\nExemplo: _"Botox R$ 2800 cliente Maria"_';
     }
   }
@@ -339,24 +339,24 @@ class MessageController {
         const tipo = intent.intencao === 'registrar_entrada' ? 'venda' : 'custo';
         const temValor = intent.dados.valor && intent.dados.valor > 0;
         const temCategoria = intent.dados.categoria && intent.dados.categoria.trim().length > 0;
-        
+
         // Se tem ambos, processa normalmente
         if (temValor && temCategoria) {
-          return await this.transactionHandler.handleTransactionRequest(user, intent, phone);
+          return await this.transactionHandler.handleTransactionRequest(user, intent, phone, message);
         }
-        
+
         // Se não tem valor E não tem categoria: pergunta ambos
         if (!temValor && !temCategoria) {
           this.awaitingData.set(phone, {
             intent: intent,
             timestamp: Date.now()
           });
-          const exemplos = tipo === 'venda' 
+          const exemplos = tipo === 'venda'
             ? '_Botox R$ 2800_ ou _Preenchimento R$ 3500_'
             : '_Insumos R$ 500_ ou _Aluguel R$ 2000_';
           return `O que você quer registrar? 💰\n\nMe diga o ${tipo === 'venda' ? 'procedimento' : 'tipo de custo'} e o valor.\n\nExemplo: ${exemplos}`;
         }
-        
+
         // Se tem categoria mas não tem valor: pergunta apenas o valor
         if (temCategoria && !temValor) {
           this.awaitingData.set(phone, {
@@ -365,7 +365,7 @@ class MessageController {
           });
           return `Entendi que é uma ${tipo} de *${intent.dados.categoria}*, mas qual o valor? 💰\n\nPode mandar só o número (ex: R$ 500).`;
         }
-        
+
         // Se tem valor mas não tem categoria: pergunta apenas a categoria
         if (temValor && !temCategoria) {
           this.awaitingData.set(phone, {
@@ -377,9 +377,9 @@ class MessageController {
             : '_Insumos_, _Aluguel_, _Marketing_';
           return `Qual ${tipo === 'venda' ? 'procedimento' : 'tipo de custo'} dessa ${tipo} de ${formatarMoeda(intent.dados.valor)}? 💰\n\nExemplo: ${exemplos}`;
         }
-        
+
         // Fallback: processa normalmente
-        return await this.transactionHandler.handleTransactionRequest(user, intent, phone);
+        return await this.transactionHandler.handleTransactionRequest(user, intent, phone, message);
 
       case 'consultar_saldo':
         return await this.queryHandler.handleBalance(user);
@@ -481,7 +481,7 @@ class MessageController {
 
       case 'apenas_valor':
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'messageController.js:465',message:'routeIntent apenas_valor',data:{valor:intent.dados?.valor,phone:String(phone).substring(0,20)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'messageController.js:465', message: 'routeIntent apenas_valor', data: { valor: intent.dados?.valor, phone: String(phone).substring(0, 20) }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
         // #endregion
         return await this.handleOnlyValue(intent, phone);
 
@@ -515,7 +515,7 @@ class MessageController {
     if ((intent.intencao === 'registrar_entrada' || intent.intencao === 'registrar_saida') && intent.dados.valor) {
       console.log('[CONTROLLER] Novo comando completo detectado, descartando espera anterior');
       this.awaitingData.delete(phone);
-      return await this.transactionHandler.handleTransactionRequest(user, intent, phone);
+      return await this.transactionHandler.handleTransactionRequest(user, intent, phone, message);
     }
 
     // Cenário 2: Apenas valor
@@ -523,7 +523,7 @@ class MessageController {
       pendingData.intent.dados.valor = intent.dados.valor;
       this.awaitingData.delete(phone);
       console.log(`[CONTROLLER] Valor ${intent.dados.valor} recebido via apenas_valor`);
-      return await this.transactionHandler.handleTransactionRequest(user, pendingData.intent, phone);
+      return await this.transactionHandler.handleTransactionRequest(user, pendingData.intent, phone, message);
     }
 
     // Cenário 3: Fallback regex
@@ -535,7 +535,7 @@ class MessageController {
         intent.dados.valor = valor;
         this.awaitingData.delete(phone);
         console.log(`[CONTROLLER] Valor ${valor} recebido via regex`);
-        return await this.transactionHandler.handleTransactionRequest(user, intent, phone);
+        return await this.transactionHandler.handleTransactionRequest(user, intent, phone, message);
       }
     }
 
@@ -548,40 +548,40 @@ class MessageController {
   async handleSecondaryMemberConfirmation(user, phone, message) {
     const onboardingCopy = require('../copy/onboardingWhatsappCopy');
     const clinicMemberService = require('../services/clinicMemberService');
-    
+
     const messageLower = message.toLowerCase().trim();
-    
+
     // Verifica se é resposta à confirmação
-    const isYes = messageLower === '1' || messageLower === 'sim' || 
-                  messageLower.includes('confirmo') || messageLower.includes('aceito');
-    const isNo = messageLower === '2' || messageLower === 'não' || 
-                 messageLower === 'nao' || messageLower.includes('não sou');
-    
+    const isYes = messageLower === '1' || messageLower === 'sim' ||
+      messageLower.includes('confirmo') || messageLower.includes('aceito');
+    const isNo = messageLower === '2' || messageLower === 'não' ||
+      messageLower === 'nao' || messageLower.includes('não sou');
+
     if (isYes) {
       // Confirma o vínculo
       await clinicMemberService.confirmMember(phone);
-      
+
       // Invalida cache para que próxima consulta pegue confirmed=true
       await cacheService.delete(`phone:profile:${phone}`);
-      
+
       return onboardingCopy.secondaryNumberConfirmed(user.nome_clinica);
     }
-    
+
     if (isNo) {
       // Rejeita o vínculo
       await clinicMemberService.rejectMember(phone);
-      
+
       // Invalida cache
       await cacheService.delete(`phone:profile:${phone}`);
-      
+
       return onboardingCopy.secondaryNumberRejected();
     }
-    
+
     // Se não é resposta clara, mostra a pergunta de confirmação
     // Busca quem adicionou este membro para mostrar na mensagem
     const member = await clinicMemberService.findMemberByPhone(phone);
     const addedByName = member?.profiles?.nome_completo || 'alguém da clínica';
-    
+
     return onboardingCopy.secondaryNumberConfirmation(user.nome_clinica, addedByName);
   }
 
@@ -590,15 +590,15 @@ class MessageController {
    */
   async handleImageMessage(phone, mediaUrl, caption, messageKey = null) {
     const normalizedPhone = normalizePhone(phone) || phone;
-    
+
     // Se está em onboarding, processa no onboarding
     if (await onboardingFlowService.ensureOnboardingState(normalizedPhone)) {
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'messageController.js:361',message:'Onboarding detected, calling processOnboarding',data:{hasMessageKey:!!messageKey,messageKeyPreview:messageKey?String(messageKey).substring(0,20):'null',hasMediaUrl:!!mediaUrl},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'messageController.js:361', message: 'Onboarding detected, calling processOnboarding', data: { hasMessageKey: !!messageKey, messageKeyPreview: messageKey ? String(messageKey).substring(0, 20) : 'null', hasMediaUrl: !!mediaUrl }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
       // #endregion
       return await onboardingFlowService.processOnboarding(normalizedPhone, caption || '', mediaUrl, null);
     }
-    
+
     return await this.documentHandler.handleImageMessage(phone, mediaUrl, caption, messageKey);
   }
 
@@ -608,12 +608,12 @@ class MessageController {
 
   async handleDocumentMessage(phone, mediaUrl, fileName, messageKey = null) {
     const normalizedPhone = normalizePhone(phone) || phone;
-    
+
     // Se está em onboarding, processa no onboarding
     if (await onboardingFlowService.ensureOnboardingState(normalizedPhone)) {
       return await onboardingFlowService.processOnboarding(normalizedPhone, '', mediaUrl, fileName);
     }
-    
+
     return await this.documentHandler.handleDocumentMessage(phone, mediaUrl, fileName, messageKey);
   }
 

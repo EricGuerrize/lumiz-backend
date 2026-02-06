@@ -1,5 +1,6 @@
 const transactionController = require('../transactionController');
 const analyticsService = require('../../services/analyticsService');
+const knowledgeService = require('../../services/knowledgeService');
 const { formatarMoeda } = require('../../utils/currency');
 
 /**
@@ -13,7 +14,7 @@ class TransactionHandler {
   /**
    * Processa requisição de transação
    */
-  async handleTransactionRequest(user, intent, phone) {
+  async handleTransactionRequest(user, intent, phone, originalText) {
     const { tipo, valor, categoria, descricao, data, forma_pagamento, parcelas, bandeira_cartao, nome_cliente } = intent.dados;
 
     if (!valor || Math.abs(valor) <= 0) {
@@ -24,6 +25,7 @@ class TransactionHandler {
     this.pendingTransactions.set(phone, {
       user,
       dados: { tipo, valor, categoria, descricao, data, forma_pagamento, parcelas, bandeira_cartao, nome_cliente },
+      originalText,
       timestamp: Date.now()
     });
 
@@ -94,7 +96,7 @@ class TransactionHandler {
           userId: user?.id || null,
           source: 'whatsapp'
         });
-      } catch (e) {}
+      } catch (e) { }
 
       const { tipo, valor, categoria, descricao, data, forma_pagamento, parcelas, bandeira_cartao, nome_cliente } = pending.dados;
 
@@ -117,6 +119,16 @@ class TransactionHandler {
           data,
           categoria
         });
+      }
+
+      // SALVA INTERAÇÃO PARA APRENDIZADO (CAPTURE)
+      if (pending.originalText) {
+        knowledgeService.saveInteraction(
+          pending.originalText,
+          tipo === 'entrada' ? 'registrar_receita' : 'registrar_saida',
+          { categoria, valor: Math.abs(valor) },
+          user.id
+        ).catch(err => console.error('[KNOWLEDGE] Erro ao salvar transação:', err.message));
       }
 
       this.pendingTransactions.delete(phone);
@@ -143,7 +155,7 @@ class TransactionHandler {
           userId: user?.id || null,
           source: 'whatsapp'
         });
-      } catch (e) {}
+      } catch (e) { }
       this.pendingTransactions.delete(phone);
       return 'Registro cancelado ❌\n\nSe quiser registrar, é só me enviar novamente com os dados corretos!';
     }
