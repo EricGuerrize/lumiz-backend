@@ -79,7 +79,8 @@ class MessageController {
         const onboardingStep = onboardingFlowService.getOnboardingStep(normalizedPhone);
 
         // Steps finais onde o onboarding pode ser considerado "residual"
-        const finalSteps = ['HANDOFF_TO_DAILY_USE', 'MDR_SETUP_INTRO', 'MDR_SETUP_QUESTION', 'MDR_SETUP_UPLOAD', 'MDR_SETUP_COMPLETE']; // MDR steps legacy
+        // IMPORTANTE: MDR_SETUP_* faz parte do onboarding atual e deve ser processado pelo fluxo.
+        const finalSteps = ['MDR_SETUP_COMPLETE'];
         const isInFinalStep = finalSteps.includes(onboardingStep);
 
         // Se está em onboarding ATIVO (não em step final), continua o onboarding
