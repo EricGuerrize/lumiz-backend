@@ -1410,7 +1410,14 @@ class OnboardingStateHandlers {
         return await respond(onboardingCopy.mdrSetupUpload(), true);
     }
 
-    async handleMdrSetupUpload(onboarding, mediaUrl, respond) {
+    async handleMdrSetupUpload(onboarding, messageTrimmed, mediaUrl, respond, respondAndClear) {
+        const text = normalizeText(messageTrimmed || '');
+        const skipKeywords = ['2', 'pular', 'depois', 'cancelar', 'cancela', 'nao', 'não'];
+
+        if (!mediaUrl && skipKeywords.some((kw) => text === kw || text.includes(kw))) {
+            return await respondAndClear(onboardingCopy.mdrSetupSkip());
+        }
+
         if (mediaUrl) {
             const current = onboarding.data.mdr_current || 1;
             const total = onboarding.data.mdr_count || 1;
@@ -1420,10 +1427,15 @@ class OnboardingStateHandlers {
                 return await respond(onboardingCopy.mdrPrintReceived({ current, total }));
             } else {
                 onboarding.step = 'MDR_SETUP_COMPLETE';
-                return await respond(onboardingCopy.mdrSetupReinforcement() + '\n\n' + onboardingCopy.mdrSetupComplete());
+                return await respondAndClear(
+                    onboardingCopy.mdrSetupReinforcement() + '\n\n' + onboardingCopy.mdrSetupComplete()
+                );
             }
         } else {
-            return await respond(onboardingCopy.mdrNeedPhoto());
+            return await respond(
+                onboardingCopy.mdrNeedPhoto() +
+                '\n\nSe quiser pular por enquanto, responda "2" ou "cancelar".'
+            );
         }
     }
 
@@ -1864,7 +1876,7 @@ class OnboardingFlowService {
                 case 'MDR_SETUP_QUESTION':
                     return await handlers.handleMdrSetupQuestion(onboarding, messageTrimmed, respond);
                 case 'MDR_SETUP_UPLOAD':
-                    return await handlers.handleMdrSetupUpload(onboarding, mediaUrl, respond);
+                    return await handlers.handleMdrSetupUpload(onboarding, messageTrimmed, mediaUrl, respond, respondAndClear);
                 case 'MDR_SETUP_COMPLETE':
                     return await handlers.handleMdrSetupComplete(respond, respondAndClear);
                 default:
