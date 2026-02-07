@@ -184,6 +184,7 @@ class IntentHeuristicService {
     // Extrai forma de pagamento
     let formaPagamento = null;
     let parcelas = null;
+    let bandeiraCartao = null;
 
     // PRIMEIRO: Verifica se há padrão "número x" na mensagem inteira (qualquer número seguido de x = parcela)
     const parcelasMatch = raw.match(/\b(\d{1,2})\s*x\b/i);
@@ -197,14 +198,29 @@ class IntentHeuristicService {
     } else if (lower.includes('débito') || lower.includes('debito')) {
       formaPagamento = 'debito';
     } else if (lower.includes('cartão') || lower.includes('cartao') || lower.includes('crédito') || lower.includes('credito')) {
-      formaPagamento = 'credito_avista';
+      if (lower.includes('à vista') || lower.includes('a vista') || lower.includes('avista') || lower.includes('1x')) {
+        formaPagamento = 'credito_avista';
+      } else {
+        formaPagamento = 'cartao_indefinido';
+      }
+    }
+
+    if (lower.includes('mastercard') || lower.includes('master')) {
+      bandeiraCartao = 'mastercard';
+    } else if (lower.includes('visa')) {
+      bandeiraCartao = 'visa';
+    } else if (lower.includes('elo')) {
+      bandeiraCartao = 'elo';
+    } else if (lower.includes('amex')) {
+      bandeiraCartao = 'amex';
     }
 
     return {
       nome_cliente: nomeCliente,
       categoria: categoria,
-      forma_pagamento: formaPagamento || 'avista',
-      parcelas: parcelas
+      forma_pagamento: formaPagamento || null,
+      parcelas: parcelas,
+      bandeira_cartao: bandeiraCartao
     };
   }
 
@@ -335,8 +351,9 @@ class IntentHeuristicService {
         tipo: 'entrada',
         valor: valor,
         categoria: saleInfo.categoria || 'Procedimento',
-        forma_pagamento: saleInfo.forma_pagamento || 'avista',
+        forma_pagamento: saleInfo.forma_pagamento || null,
         parcelas: saleInfo.parcelas || null,
+        bandeira_cartao: saleInfo.bandeira_cartao || null,
         nome_cliente: saleInfo.nome_cliente || null,
         data: dataHoje
       };

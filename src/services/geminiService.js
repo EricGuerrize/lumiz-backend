@@ -111,7 +111,7 @@ EXTRAÇÃO:
   * "segunda", "terça", etc = calcular o último dia da semana mencionado (se hoje é ${nomeDiaHoje}, calcule corretamente)
   * "dia 15" ou "15/11" = usar a data específica
 - TIPO: "entrada" (venda) ou "saida" (custo)
-- FORMA_PAGAMENTO: "pix", "dinheiro", "debito", "credito_avista", "parcelado" (padrão: "avista" se não especificado)
+- FORMA_PAGAMENTO: "pix", "dinheiro", "debito", "credito_avista", "parcelado" (se não especificado, retorne null)
 - PARCELAS: número de parcelas (se parcelado)
 - BANDEIRA_CARTAO: visa, mastercard, elo, etc (se mencionado)
 - NOME_CLIENTE: nome do paciente/cliente (se mencionado)

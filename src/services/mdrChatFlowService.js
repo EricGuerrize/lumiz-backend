@@ -166,15 +166,16 @@ class MdrChatFlowService {
 
       case STEP.SETTLEMENT_MANUAL: {
         const settlement = this._choice(message, {
-          automatic: ['1', 'automatico', 'automatica', 'd+1', 'antecipado'],
-          flow: ['2', 'no fluxo', 'parcelado', 'mes a mes']
+          automatic_d1: ['1', 'automatico', 'automatica', 'd+1', 'd1', 'antecipado'],
+          automatic_d30: ['2', 'd+30', 'd30', '30 dias', 'trinta dias'],
+          no_fluxo: ['3', 'no fluxo', 'parcelado', 'mes a mes', 'mensal']
         });
 
         if (!settlement) {
           return mdrCopy.invalidChoice();
         }
 
-        const settlementMode = settlement === 'automatic' ? 'automatic' : 'flow';
+        const settlementMode = this._normalizeSettlementMode(settlement);
         const rawPayload = {
           raw_text: state.rawText,
           settlement_mode: settlementMode,
@@ -221,15 +222,16 @@ class MdrChatFlowService {
 
       case STEP.SETTLEMENT_OCR: {
         const settlement = this._choice(message, {
-          automatic: ['1', 'automatico', 'automatica', 'd+1', 'antecipado'],
-          flow: ['2', 'no fluxo', 'parcelado', 'mes a mes']
+          automatic_d1: ['1', 'automatico', 'automatica', 'd+1', 'd1', 'antecipado'],
+          automatic_d30: ['2', 'd+30', 'd30', '30 dias', 'trinta dias'],
+          no_fluxo: ['3', 'no fluxo', 'parcelado', 'mes a mes', 'mensal']
         });
 
         if (!settlement) {
           return mdrCopy.invalidChoice();
         }
 
-        const settlementMode = settlement === 'automatic' ? 'automatic' : 'flow';
+        const settlementMode = this._normalizeSettlementMode(settlement);
         if (state.configId) {
           await mdrService.confirmConfig(state.configId, {
             rawPayload: { ...(state.rawPayload || {}), settlement_mode: settlementMode }
@@ -395,6 +397,20 @@ class MdrChatFlowService {
     if (value === null || value === undefined) return '—';
     if (typeof value === 'number') return `${value}%`;
     return String(value);
+  }
+
+  _normalizeSettlementMode(choice) {
+    const normalized = String(choice || '').toLowerCase().trim();
+    if (normalized === 'automatic' || normalized === 'automatic_d1' || normalized === 'd+1' || normalized === 'd1') {
+      return 'automatic_d1';
+    }
+    if (normalized === 'automatic_d30' || normalized === 'd+30' || normalized === 'd30') {
+      return 'automatic_d30';
+    }
+    if (normalized === 'flow' || normalized === 'no_fluxo') {
+      return 'no_fluxo';
+    }
+    return 'automatic_d1';
   }
 
   async _markConfigured(phone, configId, settlementMode) {

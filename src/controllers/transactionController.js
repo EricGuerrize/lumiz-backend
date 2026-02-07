@@ -1,5 +1,7 @@
 const supabase = require('../db/supabase');
 const userController = require('./userController');
+const mdrService = require('../services/mdrService');
+const mdrPricingService = require('../services/mdrPricingService');
 
 class TransactionController {
   async createTransaction(userId, transactionData) {
@@ -43,33 +45,84 @@ class TransactionController {
       const procedimento = await userController.findOrCreateProcedimento(userId, categoria || 'Procedimento');
       console.log('Procedimento:', procedimento.nome, procedimento.id);
 
-      // Calcula custo estimado (10% do valor cobrado como exemplo)
-      const custoEstimado = valor * 0.1;
+      const saleDate = data || new Date().toISOString().split('T')[0];
+      const parcelasInformadas = this._normalizeInstallments(parcelas);
+      const formaPagamentoNormalizada = this._normalizePaymentMethod(forma_pagamento, parcelasInformadas) || 'credito_avista';
+      const bandeiraNormalizada = this._normalizeBrand(bandeira_cartao);
 
-      // Define forma de pagamento e status
-      const formaPagto = forma_pagamento === 'parcelado' ? 'parcelado' : 'avista';
-      const statusPagto = forma_pagamento === 'parcelado' ? 'agendado' : 'pago';
+      let mdrConfig = null;
+      if (['debito', 'credito_avista', 'parcelado'].includes(formaPagamentoNormalizada)) {
+        mdrConfig = await mdrService.getLatestConfig(null, userId);
+      }
 
-      // Cria atendimento
-      const { data: atendimento, error: atendError } = await supabase
+      const pricing = mdrPricingService.calculateSalePricing({
+        valorBruto: Number(valor) || 0,
+        formaPagamento: formaPagamentoNormalizada,
+        parcelas: parcelasInformadas || 1,
+        bandeiraCartao: bandeiraNormalizada,
+        saleDate,
+        mdrConfig
+      });
+
+      const custoEstimado = pricing.valorBruto * 0.1;
+      const hoje = new Date().toISOString().split('T')[0];
+      const hasFutureReceipt = pricing.recebimentoPrevisto > hoje;
+      const statusPagto = hasFutureReceipt || formaPagamentoNormalizada === 'parcelado' ? 'agendado' : 'pago';
+      const totalParcelas = formaPagamentoNormalizada === 'parcelado'
+        ? (parcelasInformadas || 1)
+        : null;
+
+      const atendimentoPayload = {
+        user_id: userId,
+        cliente_id: cliente.id,
+        data: saleDate,
+        valor_total: pricing.valorBruto,
+        custo_total: custoEstimado,
+        forma_pagamento: formaPagamentoNormalizada,
+        status_pagamento: statusPagto,
+        parcelas: totalParcelas,
+        bandeira_cartao: bandeiraNormalizada || null,
+        observacoes: descricao || null,
+        valor_bruto: pricing.valorBruto,
+        valor_liquido: pricing.valorLiquido,
+        mdr_percent_applied: pricing.mdrPercentApplied,
+        mdr_config_id: mdrConfig?.id || null,
+        settlement_mode_applied: pricing.settlementModeApplied || null,
+        recebimento_previsto: pricing.recebimentoPrevisto || null,
+        mdr_rule_snapshot: pricing.mdrRuleSnapshot || {}
+      };
+
+      let atendimento = null;
+      let atendError = null;
+      ({ data: atendimento, error: atendError } = await supabase
         .from('atendimentos')
-        .insert([{
+        .insert([atendimentoPayload])
+        .select()
+        .single());
+
+      if (atendError && this._isMissingColumnError(atendError)) {
+        const legacyPayload = {
           user_id: userId,
           cliente_id: cliente.id,
-          data: data || new Date().toISOString().split('T')[0],
-          valor_total: valor,
+          data: saleDate,
+          valor_total: pricing.valorBruto,
           custo_total: custoEstimado,
-          forma_pagamento: formaPagto,
+          forma_pagamento: formaPagamentoNormalizada,
           status_pagamento: statusPagto,
-          parcelas: parcelas || null,
-          bandeira_cartao: bandeira_cartao || null,
+          parcelas: totalParcelas,
+          bandeira_cartao: bandeiraNormalizada || null,
           observacoes: descricao || null
-        }])
-        .select()
-        .single();
+        };
+
+        ({ data: atendimento, error: atendError } = await supabase
+          .from('atendimentos')
+          .insert([legacyPayload])
+          .select()
+          .single());
+      }
 
       if (atendError) throw atendError;
-      console.log('Atendimento criado:', atendimento.id, 'Parcelas:', parcelas || 'À vista');
+      console.log('Atendimento criado:', atendimento.id, 'Parcelas:', totalParcelas || 'À vista');
 
       // Cria registro de procedimento no atendimento
       const { error: procError } = await supabase
@@ -77,7 +130,7 @@ class TransactionController {
         .insert([{
           atendimento_id: atendimento.id,
           procedimento_id: procedimento.id,
-          valor_cobrado: valor,
+          valor_cobrado: pricing.valorBruto,
           custo_material: custoEstimado,
           ml_utilizado: procedimento.tipo === 'botox' ? 10 : procedimento.tipo === 'acido' ? 1 : null
         }]);
@@ -87,34 +140,43 @@ class TransactionController {
       }
 
       // === GERAÇÃO DE PARCELAS (VENDAS) ===
-      if (formaPagto === 'parcelado' && parcelas > 1) {
-        console.log(`[FINANCEIRO] Gerando ${parcelas} parcelas para o atendimento ${atendimento.id}`);
-        const valorParcela = valor / parcelas;
-        const listaParcelas = [];
-        const dataBase = new Date(data || new Date());
+      if (formaPagamentoNormalizada === 'parcelado' && pricing.parcelasPlan.length) {
+        console.log(`[FINANCEIRO] Gerando ${pricing.parcelasPlan.length} parcela(s) para o atendimento ${atendimento.id}`);
+        const listaParcelas = pricing.parcelasPlan.map((parcelaPlan) => ({
+          atendimento_id: atendimento.id,
+          numero: parcelaPlan.numero,
+          valor: parcelaPlan.valor_liquido,
+          data_vencimento: parcelaPlan.recebimento_previsto,
+          paga: false,
+          bandeira_cartao: bandeiraNormalizada || null,
+          valor_bruto: parcelaPlan.valor_bruto,
+          valor_liquido: parcelaPlan.valor_liquido,
+          mdr_percent_applied: parcelaPlan.mdr_percent_applied,
+          recebimento_previsto: parcelaPlan.recebimento_previsto,
+          mdr_rule_snapshot: parcelaPlan.mdr_rule_snapshot || {}
+        }));
 
-        for (let i = 0; i < parcelas; i++) {
-          const dataVencimento = new Date(dataBase);
-          dataVencimento.setMonth(dataVencimento.getMonth() + i);
-
-          listaParcelas.push({
-            atendimento_id: atendimento.id,
-            // user_id removido pois pode não existir na tabela parcelas e já está vinculado via atendimento
-            numero: i + 1,
-            valor: valorParcela,
-            data_vencimento: dataVencimento.toISOString().split('T')[0],
-            paga: false,
-            bandeira_cartao: bandeira_cartao || null
-          });
-        }
-
-        const { error: parcelasError } = await supabase
+        let { error: parcelasError } = await supabase
           .from('parcelas')
           .insert(listaParcelas);
 
+        if (parcelasError && this._isMissingColumnError(parcelasError)) {
+          const legacyParcelas = listaParcelas.map((parcelaItem) => ({
+            atendimento_id: parcelaItem.atendimento_id,
+            numero: parcelaItem.numero,
+            valor: parcelaItem.valor,
+            data_vencimento: parcelaItem.data_vencimento,
+            paga: parcelaItem.paga,
+            bandeira_cartao: parcelaItem.bandeira_cartao
+          }));
+
+          ({ error: parcelasError } = await supabase
+            .from('parcelas')
+            .insert(legacyParcelas));
+        }
+
         if (parcelasError) {
           console.error('[FINANCEIRO] Erro ao gerar parcelas:', parcelasError);
-          // Não lança erro fatal para não perder o atendimento, mas loga
         } else {
           console.log('[FINANCEIRO] Parcelas geradas com sucesso');
         }
@@ -247,6 +309,10 @@ class TransactionController {
         id: t.id,
         type: t.type,
         amount: parseFloat(t.valor), // valor já vem corrigido da view, mas garante float pro JS
+        gross_amount: t.valor_bruto !== undefined && t.valor_bruto !== null ? parseFloat(t.valor_bruto) : null,
+        net_amount: t.valor_liquido !== undefined && t.valor_liquido !== null ? parseFloat(t.valor_liquido) : null,
+        mdr_percent_applied: t.mdr_percent_applied !== undefined && t.mdr_percent_applied !== null ? parseFloat(t.mdr_percent_applied) : null,
+        recebimento_previsto: t.recebimento_previsto || null,
         date: t.data,
         categories: {
           name: t.categoria || 'Sem categoria'
@@ -314,6 +380,10 @@ class TransactionController {
           // Mapeia para manter compatibilidade com quem consome 'transacoes' direto
           ...t,
           amount: parseFloat(t.valor),
+          gross_amount: t.valor_bruto !== undefined && t.valor_bruto !== null ? parseFloat(t.valor_bruto) : null,
+          net_amount: t.valor_liquido !== undefined && t.valor_liquido !== null ? parseFloat(t.valor_liquido) : null,
+          mdr_percent_applied: t.mdr_percent_applied !== undefined && t.mdr_percent_applied !== null ? parseFloat(t.mdr_percent_applied) : null,
+          recebimento_previsto: t.recebimento_previsto || null,
           date: t.data,
           category: t.categoria,
           categories: {
@@ -370,6 +440,10 @@ class TransactionController {
         id: t.id,
         type: t.type,
         amount: parseFloat(t.valor),
+        gross_amount: t.valor_bruto !== undefined && t.valor_bruto !== null ? parseFloat(t.valor_bruto) : null,
+        net_amount: t.valor_liquido !== undefined && t.valor_liquido !== null ? parseFloat(t.valor_liquido) : null,
+        mdr_percent_applied: t.mdr_percent_applied !== undefined && t.mdr_percent_applied !== null ? parseFloat(t.mdr_percent_applied) : null,
+        recebimento_previsto: t.recebimento_previsto || null,
         date: t.data,
         category: t.categoria || 'Sem categoria',
         description: t.descricao,
@@ -671,6 +745,61 @@ class TransactionController {
       console.error('Erro ao buscar agendamentos:', error);
       throw error;
     }
+  }
+
+  _normalizeInstallments(value) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return null;
+    const rounded = Math.round(parsed);
+    if (rounded < 1 || rounded > 12) return null;
+    return rounded;
+  }
+
+  _normalizePaymentMethod(method, installments) {
+    const normalized = String(method || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+
+    if (!normalized) {
+      return installments > 1 ? 'parcelado' : null;
+    }
+    if (normalized.includes('pix')) return 'pix';
+    if (normalized.includes('dinheiro') || normalized.includes('especie')) return 'dinheiro';
+    if (normalized.includes('debito')) return 'debito';
+    if (normalized.includes('parcelado')) return 'parcelado';
+    if (normalized.includes('credito') || normalized.includes('cartao') || normalized === 'avista') {
+      return installments > 1 ? 'parcelado' : 'credito_avista';
+    }
+    return installments > 1 ? 'parcelado' : normalized;
+  }
+
+  _normalizeBrand(brand) {
+    const normalized = String(brand || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+
+    if (!normalized) return null;
+    if (normalized.includes('master')) return 'mastercard';
+    if (normalized.includes('visa')) return 'visa';
+    if (normalized.includes('elo')) return 'elo';
+    if (normalized.includes('amex') || normalized.includes('american')) return 'amex';
+    return normalized;
+  }
+
+  _isMissingColumnError(error) {
+    const text = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
+    return (
+      text.includes('column') &&
+      (
+        text.includes('does not exist') ||
+        text.includes('could not find') ||
+        text.includes('unknown column')
+      )
+    );
   }
 }
 

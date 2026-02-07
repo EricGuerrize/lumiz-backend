@@ -32,8 +32,9 @@ const mdrWhatsappCopy = {
   settlementQuestion() {
     return (
       `Quando o dinheiro cai na sua conta?\n\n` +
-      `1️⃣ Automatica / D+1 (recebe tudo antecipado)\n` +
-      `2️⃣ No fluxo (recebe parcelado mes a mes)`
+      `1️⃣ Automatica / D+1 (recebe no proximo dia util)\n` +
+      `2️⃣ Automatica / D+30 (recebe em ate 30 dias)\n` +
+      `3️⃣ No fluxo (recebe parcelado mes a mes)`
     );
   },
 
