@@ -1195,12 +1195,10 @@ class OnboardingStateHandlers {
         }
 
         if (choice === 'no') {
-            onboarding.step = 'MDR_SETUP_INTRO';
-            return await respond(
+            return await respondAndClear(
                 onboardingCopy.handoffToDailyUse() +
                 '\n\n' +
-                onboardingCopy.mdrSetupIntro(),
-                true
+                onboardingCopy.onboardingCompletionNoMdr()
             );
         }
 
@@ -1229,27 +1227,23 @@ class OnboardingStateHandlers {
         // O script diz "As transações reais serão salvas apenas após você concluir o cadastro".
         // Vou assumir que o saldo também será aplicado ao criar a conta defitiniva ou finalizar.
 
-        onboarding.step = 'MDR_SETUP_INTRO';
-        return await respond(
+        return await respondAndClear(
             onboardingCopy.balanceConfirmation(saldo) +
             '\n\n' +
             onboardingCopy.handoffToDailyUse() +
             '\n\n' +
-            onboardingCopy.mdrSetupIntro(),
-            true
+            onboardingCopy.onboardingCompletionNoMdr()
         );
     }
 
     async handleHandoffToDailyUse(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear) {
-        // Caso legacy: força handoff e segue para etapa de MDR
+        // Caso legacy: força handoff e finaliza onboarding sem MDR
         if (onboarding.data?.force_handoff) {
             delete onboarding.data.force_handoff;
-            onboarding.step = 'MDR_SETUP_INTRO';
-            return await respond(
+            return await respondAndClear(
                 onboardingCopy.handoffToDailyUse() +
                 '\n\n' +
-                onboardingCopy.mdrSetupIntro(),
-                true
+                onboardingCopy.onboardingCompletionNoMdr()
             );
         }
 
@@ -1315,8 +1309,11 @@ class OnboardingStateHandlers {
             return null;
         }
 
-        onboarding.step = 'MDR_SETUP_INTRO';
-        return await respond(onboardingCopy.mdrSetupIntro(), true);
+        return await respondAndClear(
+            onboardingCopy.handoffToDailyUse() +
+            '\n\n' +
+            onboardingCopy.onboardingCompletionNoMdr()
+        );
     }
 
     async handleMdrSetupIntro(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear) {

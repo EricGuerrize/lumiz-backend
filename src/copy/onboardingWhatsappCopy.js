@@ -386,6 +386,14 @@ module.exports = {
         );
     },
 
+    onboardingCompletionNoMdr() {
+        return (
+            `Configuração 100% finalizada! 🎉 Sua clínica está pronta e sem planilhas. ` +
+            `Caso queira ajustar ou adicionar algo nas configurações, só me chamar!\n\n` +
+            `Bora pra primeira venda real do dia? Se tiver algo que rolou hoje, já pode mandar!`
+        );
+    },
+
     dashboardAccessLink(link) {
         return (
             `Seu dashboard já está liberado ✅\n\n` +
