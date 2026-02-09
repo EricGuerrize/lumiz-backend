@@ -10,6 +10,7 @@ const intentHeuristicService = require('../services/intentHeuristicService');
 const supabase = require('../db/supabase');
 const { normalizePhone } = require('../utils/phone');
 const { formatarMoeda } = require('../utils/currency');
+const { extractPrimaryMonetaryValue } = require('../utils/moneyParser');
 
 // Handlers especializados
 const TransactionHandler = require('./messages/transactionHandler');
@@ -539,17 +540,14 @@ class MessageController {
       return await this.transactionHandler.handleTransactionRequest(user, pendingData.intent, phone, message);
     }
 
-    // Cenário 3: Fallback regex
-    const valorMatch = message.match(/(\d+[.,]?\d*)/);
-    if (valorMatch) {
-      const valor = parseFloat(valorMatch[0].replace(',', '.'));
-      if (!isNaN(valor)) {
-        const intent = pendingData.intent;
-        intent.dados.valor = valor;
-        this.awaitingData.delete(phone);
-        console.log(`[CONTROLLER] Valor ${valor} recebido via regex`);
-        return await this.transactionHandler.handleTransactionRequest(user, intent, phone, message);
-      }
+    // Cenário 3: Fallback robusto para extrair valor monetário principal
+    const valorFallback = extractPrimaryMonetaryValue(message);
+    if (valorFallback && Number.isFinite(valorFallback) && valorFallback > 0) {
+      const pendingIntent = pendingData.intent;
+      pendingIntent.dados.valor = valorFallback;
+      this.awaitingData.delete(phone);
+      console.log(`[CONTROLLER] Valor ${valorFallback} recebido via moneyParser fallback`);
+      return await this.transactionHandler.handleTransactionRequest(user, pendingIntent, phone, message);
     }
 
     return 'Não consegui identificar o valor 🤔\n\nMe manda só o número, tipo: _R$ 500_ ou _R$ 1500.50_';

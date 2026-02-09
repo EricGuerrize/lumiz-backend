@@ -2,6 +2,9 @@ const transactionController = require('../transactionController');
 const analyticsService = require('../../services/analyticsService');
 const knowledgeService = require('../../services/knowledgeService');
 const { formatarMoeda } = require('../../utils/currency');
+const {
+  recoverValueWithInstallmentsContext
+} = require('../../utils/moneyParser');
 
 /**
  * Handler para transações (vendas e custos)
@@ -16,14 +19,15 @@ class TransactionHandler {
    */
   async handleTransactionRequest(user, intent, phone, originalText) {
     const { tipo, valor, categoria, descricao, data, forma_pagamento, parcelas, bandeira_cartao, nome_cliente } = intent.dados;
+    const valorCorrigido = this.recoverTransactionValue(originalText, valor, parcelas);
 
-    if (!valor || Math.abs(valor) <= 0) {
+    if (!valorCorrigido || Math.abs(valorCorrigido) <= 0) {
       return 'Não consegui identificar o valor 🤔\n\nMe manda assim: "Botox R$ 2800" ou "Insumos R$ 3200"';
     }
 
     const normalizedData = {
       tipo,
-      valor,
+      valor: valorCorrigido,
       categoria,
       descricao,
       data,
@@ -213,6 +217,10 @@ class TransactionHandler {
     text += `📅 ${dataFormatada}\n\n`;
     text += `Responde:\n1️⃣ *Confirmar*\n2️⃣ *Cancelar*`;
     return text;
+  }
+
+  recoverTransactionValue(originalText, currentValue, parcelas) {
+    return recoverValueWithInstallmentsContext(originalText, currentValue, parcelas);
   }
 
   resolvePaymentRequirements(dados, originalText) {

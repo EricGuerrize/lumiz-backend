@@ -102,6 +102,10 @@ INTENÇÕES:
 
 EXTRAÇÃO:
 - VALOR: números (1500, 2.800, 3mil = 3000). Se não houver valor, retorne null.
+- REGRA CRÍTICA DE MÚLTIPLOS NÚMEROS:
+  * Em padrões como "3x", "10x" ou "em 3x", esse número representa PARCELAS, não o valor total.
+  * Em mensagens com valor + parcelas (ex: "botox 2000 3x"), valor = 2000 e parcelas = 3.
+  * Se houver apenas parcela sem valor (ex: "botox 3x"), valor deve ser null.
 - CATEGORIA: nome do procedimento ou tipo de custo
 - DESCRICAO: paciente, marca, forma de pagamento
 - DATA: "${dataHoje}" por padrão. Calcule datas relativas:
@@ -149,6 +153,8 @@ EXEMPLOS:
 "Atendi Maria botox 2200 pix" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":2200.00,"categoria":"Botox","descricao":"PIX - Maria","forma_pagamento":"pix","nome_cliente":"Maria","data":"${dataHoje}"}}
 
 "Vendi harmonização 5000 3x" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":5000.00,"categoria":"Harmonização","forma_pagamento":"parcelado","parcelas":3,"data":"${dataHoje}"}}
+"Botox 2000 3x" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":2000.00,"categoria":"Botox","forma_pagamento":"parcelado","parcelas":3,"data":"${dataHoje}"}}
+"Botox 3x" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":null,"categoria":"Botox","forma_pagamento":"parcelado","parcelas":3,"data":"${dataHoje}"}}
 
 "Fechei bioestimulador 4500 com Paula" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":4500.00,"categoria":"Bioestimulador","descricao":"Paula","forma_pagamento":"avista","nome_cliente":"Paula","data":"${dataHoje}"}}
 

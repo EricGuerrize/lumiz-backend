@@ -1,5 +1,6 @@
 const cacheService = require('./cacheService');
 const knowledgeService = require('./knowledgeService');
+const { extractPrimaryMonetaryValue, extractInstallments } = require('../utils/moneyParser');
 
 // Constantes
 const CACHE_TTL_SECONDS = 300; // 5 minutos
@@ -125,27 +126,7 @@ class IntentHeuristicService {
    * Extrai valor numérico do texto (reutiliza lógica do onboardingFlowService)
    */
   extractValue(text) {
-    const raw = String(text);
-    // Regex para R$ seguido de número
-    const currencyMatch = raw.match(/r\$\s*([0-9]{1,3}(?:[.,][0-9]{3})*(?:[.,][0-9]{2})?|[0-9]+(?:[.,][0-9]{2})?)/i);
-    if (currencyMatch && currencyMatch[1]) {
-      const cleaned = currencyMatch[1].replace(/\./g, '').replace(',', '.');
-      const value = parseFloat(cleaned);
-      if (Number.isFinite(value) && value > 0) return value;
-    }
-
-    // Busca todos os números no texto
-    const matches = [...raw.matchAll(/(\d+(?:[.,]\d+)?)/g)].map((m) => m[1]);
-    const candidates = matches
-      .map((m) => {
-        const cleaned = m.replace(/\./g, '').replace(',', '.');
-        return parseFloat(cleaned);
-      })
-      .filter((n) => Number.isFinite(n) && n > 0)
-      .filter((n) => !(n >= 1900 && n <= 2100)); // Exclui anos
-
-    if (!candidates.length) return null;
-    return Math.max(...candidates);
+    return extractPrimaryMonetaryValue(text);
   }
 
   /**
@@ -187,10 +168,10 @@ class IntentHeuristicService {
     let bandeiraCartao = null;
 
     // PRIMEIRO: Verifica se há padrão "número x" na mensagem inteira (qualquer número seguido de x = parcela)
-    const parcelasMatch = raw.match(/\b(\d{1,2})\s*x\b/i);
-    if (parcelasMatch && parcelasMatch[1]) {
+    const installments = extractInstallments(raw);
+    if (installments) {
       formaPagamento = 'parcelado';
-      parcelas = parseInt(parcelasMatch[1], 10);
+      parcelas = installments;
     } else if (lower.includes('pix')) {
       formaPagamento = 'pix';
     } else if (lower.includes('dinheiro')) {
