@@ -106,6 +106,9 @@ EXTRAÇÃO:
   * Em padrões como "3x", "10x" ou "em 3x", esse número representa PARCELAS, não o valor total.
   * Em mensagens com valor + parcelas (ex: "botox 2000 3x"), valor = 2000 e parcelas = 3.
   * Se houver apenas parcela sem valor (ex: "botox 3x"), valor deve ser null.
+- REGRA CRÍTICA DE NOME:
+  * Não classifique procedimento como nome_cliente.
+  * Se o texto for "botox 2000 3x", nome_cliente deve ser null.
 - CATEGORIA: nome do procedimento ou tipo de custo
 - DESCRICAO: paciente, marca, forma de pagamento
 - DATA: "${dataHoje}" por padrão. Calcule datas relativas:
@@ -155,6 +158,7 @@ EXEMPLOS:
 "Vendi harmonização 5000 3x" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":5000.00,"categoria":"Harmonização","forma_pagamento":"parcelado","parcelas":3,"data":"${dataHoje}"}}
 "Botox 2000 3x" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":2000.00,"categoria":"Botox","forma_pagamento":"parcelado","parcelas":3,"data":"${dataHoje}"}}
 "Botox 3x" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":null,"categoria":"Botox","forma_pagamento":"parcelado","parcelas":3,"data":"${dataHoje}"}}
+"Botox 2000 3x paciente Botox" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":2000.00,"categoria":"Botox","forma_pagamento":"parcelado","parcelas":3,"nome_cliente":null,"data":"${dataHoje}"}}
 
 "Fechei bioestimulador 4500 com Paula" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":4500.00,"categoria":"Bioestimulador","descricao":"Paula","forma_pagamento":"avista","nome_cliente":"Paula","data":"${dataHoje}"}}
 

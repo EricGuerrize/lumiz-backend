@@ -1,6 +1,7 @@
 const cacheService = require('./cacheService');
 const knowledgeService = require('./knowledgeService');
 const { extractPrimaryMonetaryValue, extractInstallments } = require('../utils/moneyParser');
+const { PROCEDURE_KEYWORDS, sanitizeClientName } = require('../utils/procedureKeywords');
 
 // Constantes
 const CACHE_TTL_SECONDS = 300; // 5 minutos
@@ -154,13 +155,26 @@ class IntentHeuristicService {
 
     // Extrai procedimento
     let categoria = null;
-    const procKeywords = ['botox', 'preenchimento', 'harmonização', 'harmonizacao', 'bioestimulador', 'fios', 'peeling', 'laser', 'tox', 'preench', 'toxina', 'acido', 'ácido'];
-    for (const keyword of procKeywords) {
+    for (const keyword of PROCEDURE_KEYWORDS) {
       if (lower.includes(keyword)) {
         categoria = keyword.charAt(0).toUpperCase() + keyword.slice(1);
         break;
       }
     }
+
+    if (!nomeCliente && categoria) {
+      const escapedKeywords = PROCEDURE_KEYWORDS.join('|');
+      const leadingNamePattern = new RegExp(
+        `^([A-Za-zÀ-ÿ]+(?:\\s+[A-Za-zÀ-ÿ]+){0,2})\\s+(${escapedKeywords})\\b`,
+        'i'
+      );
+      const fallbackNameMatch = raw.match(leadingNamePattern);
+      if (fallbackNameMatch && fallbackNameMatch[1]) {
+        nomeCliente = fallbackNameMatch[1].trim();
+      }
+    }
+
+    nomeCliente = sanitizeClientName(nomeCliente, categoria);
 
     // Extrai forma de pagamento
     let formaPagamento = null;
@@ -197,7 +211,7 @@ class IntentHeuristicService {
     }
 
     return {
-      nome_cliente: nomeCliente,
+      nome_cliente: nomeCliente || null,
       categoria: categoria,
       forma_pagamento: formaPagamento || null,
       parcelas: parcelas,

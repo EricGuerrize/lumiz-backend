@@ -2,6 +2,7 @@ const supabase = require('../db/supabase');
 const userController = require('./userController');
 const mdrService = require('../services/mdrService');
 const mdrPricingService = require('../services/mdrPricingService');
+const { sanitizeClientName } = require('../utils/procedureKeywords');
 
 class TransactionController {
   async createTransaction(userId, transactionData) {
@@ -36,6 +37,8 @@ class TransactionController {
           nomeCliente = descricao.split(' ')[0] || 'Cliente WhatsApp';
         }
       }
+
+      nomeCliente = sanitizeClientName(nomeCliente, categoria) || 'Cliente WhatsApp';
 
       // Busca ou cria cliente
       const cliente = await userController.findOrCreateCliente(userId, nomeCliente);

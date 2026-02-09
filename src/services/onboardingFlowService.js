@@ -10,6 +10,10 @@ const transactionController = require('../controllers/transactionController');
 const documentService = require('./documentService');
 const knowledgeService = require('./knowledgeService');
 const registrationTokenService = require('./registrationTokenService');
+const {
+    PROCEDURE_KEYWORDS,
+    sanitizeClientName
+} = require('../utils/procedureKeywords');
 
 // ============================================================
 // Constantes (correção #18 - Magic numbers)
@@ -143,6 +147,16 @@ function extractSaleHeuristics(text = '') {
         procedimento = procMatch[2].trim();
     }
 
+    if (!paciente && procedimento) {
+        const escapedKeywords = PROCEDURE_KEYWORDS.join('|');
+        const fallbackNameMatch = raw.match(
+            new RegExp(`^([A-Za-zÀ-ÿ]+(?:\\s+[A-Za-zÀ-ÿ]+){0,2})\\s+(${escapedKeywords})\\b`, 'i')
+        );
+        if (fallbackNameMatch && fallbackNameMatch[1]) {
+            paciente = fallbackNameMatch[1].trim();
+        }
+    }
+
     let forma_pagamento = null;
     let parcelas = null;
 
@@ -161,7 +175,12 @@ function extractSaleHeuristics(text = '') {
         forma_pagamento = 'credito_avista';
     }
 
-    return { paciente, procedimento, forma_pagamento, parcelas };
+    return {
+        paciente: sanitizeClientName(paciente, procedimento),
+        procedimento,
+        forma_pagamento,
+        parcelas
+    };
 }
 
 function formatDate(date) {

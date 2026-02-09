@@ -5,6 +5,7 @@ const { formatarMoeda } = require('../../utils/currency');
 const {
   recoverValueWithInstallmentsContext
 } = require('../../utils/moneyParser');
+const { sanitizeClientName } = require('../../utils/procedureKeywords');
 
 /**
  * Handler para transações (vendas e custos)
@@ -36,6 +37,8 @@ class TransactionHandler {
       bandeira_cartao,
       nome_cliente
     };
+
+    normalizedData.nome_cliente = this.sanitizeClientName(normalizedData.nome_cliente, normalizedData.categoria);
 
     if (tipo === 'entrada') {
       const paymentCheck = this.resolvePaymentRequirements(normalizedData, originalText);
@@ -221,6 +224,10 @@ class TransactionHandler {
 
   recoverTransactionValue(originalText, currentValue, parcelas) {
     return recoverValueWithInstallmentsContext(originalText, currentValue, parcelas);
+  }
+
+  sanitizeClientName(nomeCliente, categoria) {
+    return sanitizeClientName(nomeCliente, categoria);
   }
 
   resolvePaymentRequirements(dados, originalText) {
