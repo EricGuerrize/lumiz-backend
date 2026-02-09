@@ -20,7 +20,7 @@ SELECT
     user_id,
     'entrada'::text as type,
     CASE
-        WHEN forma_pagamento IN ('debito', 'credito_avista', 'parcelado')
+        WHEN LOWER(forma_pagamento::text) IN ('debito', 'débito', 'credito_avista', 'crédito_avista', 'parcelado')
             THEN COALESCE(valor_liquido, valor_total)::numeric
         ELSE COALESCE(valor_bruto, valor_total)::numeric
     END as valor,

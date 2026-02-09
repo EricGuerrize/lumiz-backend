@@ -135,7 +135,7 @@ class MessageController {
         messageLower.includes('comecar com a lumiz');
 
       // Busca usuário pelo telefone
-      const user = await userController.findUserByPhone(normalizedPhone);
+      let user = await userController.findUserByPhone(normalizedPhone);
 
       // Se detectou mensagem de teste gratuito
       if (isTesteGratuitoMessage) {

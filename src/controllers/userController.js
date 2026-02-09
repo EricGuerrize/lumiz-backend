@@ -205,7 +205,7 @@ class UserController {
       }
 
       // Gera token de cadastro e link
-      const { token, registrationLink } = await registrationTokenService.generateRegistrationToken(telefone, 48);
+      const { token, registrationLink } = await registrationTokenService.generateRegistrationToken(telefone, 24);
 
       return {
         user: profile,

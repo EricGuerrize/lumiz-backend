@@ -386,6 +386,15 @@ module.exports = {
         );
     },
 
+    dashboardAccessLink(link) {
+        return (
+            `Seu dashboard já está liberado ✅\n\n` +
+            `Crie seu acesso por este link (válido por 24h):\n` +
+            `${link}\n\n` +
+            `Depois você poderá entrar com email+senha ou telefone+senha.`
+        );
+    },
+
     // ============================================================
     // 9) MDR_SETUP - Taxas da maquininha
     // ============================================================

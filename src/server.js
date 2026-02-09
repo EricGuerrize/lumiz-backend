@@ -23,6 +23,8 @@ const webhookRoutes = require('./routes/webhook');
 const dashboardRoutes = require('./routes/dashboard.routes');
 const onboardingRoutes = require('./routes/onboarding.routes');
 const userRoutes = require('./routes/user.routes');
+const setupRoutes = require('./routes/setup.routes');
+const authRoutes = require('./routes/auth.routes');
 const reminderService = require('./services/reminderService');
 const nudgeService = require('./services/nudgeService');
 const insightService = require('./services/insightService');
@@ -45,7 +47,7 @@ cron.schedule('0 0 * * *', async () => {
     const { error, count } = await supabase
       .from('setup_tokens')
       .delete({ count: 'exact' })
-      .lt('expires_at', new Date().toISOString());
+      .lt('expira_em', new Date().toISOString());
 
     if (error) throw error;
     console.log(`[CRON] Limpeza concluída. ${count || 0} tokens removidos.`);
@@ -169,6 +171,8 @@ app.use('/api', webhookRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/onboarding', onboardingRoutes);
 app.use('/api/user', userRoutes);
+app.use('/api/setup', setupRoutes);
+app.use('/api/auth', authRoutes);
 
 app.get('/health', async (req, res) => {
   const startTime = Date.now();

@@ -1,21 +1,37 @@
 const { v4: uuidv4 } = require('uuid');
 const supabase = require('../db/supabase');
+const { normalizePhone } = require('../utils/phone');
 
 class RegistrationTokenService {
+  getDashboardBaseUrl() {
+    return process.env.DASHBOARD_URL || 'https://lumiz-financeiro.vercel.app';
+  }
+
+  buildSetupLink(token) {
+    return `${this.getDashboardBaseUrl()}/setup?token=${encodeURIComponent(token)}`;
+  }
+
+  buildLegacySetupLink(phone, token) {
+    return `${this.getDashboardBaseUrl()}/setup-account?phone=${encodeURIComponent(phone)}&token=${token}`;
+  }
+
   /**
-   * Gera um token de cadastro vinculado ao telefone
-   * Este token permite que o usuário se cadastre no frontend e vincule o email ao perfil existente
+   * Gera um token de cadastro vinculado ao telefone/perfil da clinica.
+   * O token e de uso unico e expira por padrao em 24h.
    */
-  async generateRegistrationToken(phone, expiresInHours = 48) {
+  async generateSetupToken(phone, clinicId = null, expiresInHours = 24) {
     try {
+      const normalizedPhone = normalizePhone(phone) || phone;
       const token = uuidv4();
       const expiresAt = new Date(Date.now() + expiresInHours * 60 * 60 * 1000);
+      const emailMarker = clinicId
+        ? `phone_${normalizedPhone}|clinic_${clinicId}`
+        : `phone_${normalizedPhone}`;
 
-      // Salva o token no banco (usando a mesma tabela setup_tokens, mas com phone ao invés de email)
       const { data, error } = await supabase
         .from('setup_tokens')
         .insert({
-          email: `phone_${phone}`, // Usa formato especial para identificar tokens de telefone
+          email: emailMarker,
           token: token,
           expira_em: expiresAt.toISOString(),
           usado: false
@@ -28,12 +44,16 @@ class RegistrationTokenService {
         throw error;
       }
 
-      console.log(`[REG_TOKEN] Token gerado para telefone ${phone}, expira em ${expiresInHours}h`);
-      
+      console.log(`[REG_TOKEN] Token gerado para telefone ${normalizedPhone}, expira em ${expiresInHours}h`);
+
       return {
+        id: data.id,
         token,
+        phone: normalizedPhone,
+        clinicId,
         expiresAt: expiresAt.toISOString(),
-        registrationLink: `https://lumiz-financeiro.vercel.app/setup-account?phone=${encodeURIComponent(phone)}&token=${token}`
+        registrationLink: this.buildSetupLink(token),
+        legacyRegistrationLink: this.buildLegacySetupLink(normalizedPhone, token)
       };
     } catch (error) {
       console.error('[REG_TOKEN] Erro ao gerar token de cadastro:', error);
@@ -44,7 +64,7 @@ class RegistrationTokenService {
   /**
    * Valida um token de cadastro e retorna o telefone associado
    */
-  async validateRegistrationToken(token) {
+  async validateSetupToken(token) {
     try {
       const { data, error } = await supabase
         .from('setup_tokens')
@@ -55,23 +75,28 @@ class RegistrationTokenService {
         .single();
 
       if (error || !data) {
-        return { valid: false, phone: null };
+        return { valid: false, phone: null, clinicId: null };
       }
 
-      // Extrai o telefone do formato "phone_5511999999999"
-      const phoneMatch = data.email?.match(/^phone_(.+)$/);
+      // Extrai dados do formato:
+      // phone_5511999999999
+      // phone_5511999999999|clinic_<uuid>
+      const phoneMatch = data.email?.match(/^phone_([^|]+)(?:\|clinic_(.+))?$/);
       if (!phoneMatch) {
-        return { valid: false, phone: null };
+        return { valid: false, phone: null, clinicId: null };
       }
 
       return {
         valid: true,
         phone: phoneMatch[1],
-        tokenId: data.id
+        clinicId: phoneMatch[2] || null,
+        token,
+        tokenId: data.id,
+        expiresAt: data.expira_em || null
       };
     } catch (error) {
       console.error('[REG_TOKEN] Erro ao validar token:', error);
-      return { valid: false, phone: null };
+      return { valid: false, phone: null, clinicId: null };
     }
   }
 
@@ -88,7 +113,27 @@ class RegistrationTokenService {
       console.error('[REG_TOKEN] Erro ao marcar token como usado:', error);
     }
   }
+
+  async invalidateByToken(token) {
+    try {
+      await supabase
+        .from('setup_tokens')
+        .update({ usado: true })
+        .eq('token', token);
+    } catch (error) {
+      console.error('[REG_TOKEN] Erro ao invalidar token:', error);
+    }
+  }
+
+  // Compatibilidade retroativa
+  async generateRegistrationToken(phone, expiresInHours = 24) {
+    return this.generateSetupToken(phone, null, expiresInHours);
+  }
+
+  // Compatibilidade retroativa
+  async validateRegistrationToken(token) {
+    return this.validateSetupToken(token);
+  }
 }
 
 module.exports = new RegistrationTokenService();
-

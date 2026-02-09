@@ -9,6 +9,7 @@ const userController = require('../controllers/userController');
 const transactionController = require('../controllers/transactionController');
 const documentService = require('./documentService');
 const knowledgeService = require('./knowledgeService');
+const registrationTokenService = require('./registrationTokenService');
 
 // ============================================================
 // Constantes (correção #18 - Magic numbers)
@@ -1788,6 +1789,22 @@ class OnboardingFlowService {
         };
 
         const respondAndClear = async (text) => {
+            let finalText = text || onboardingCopy.lostState();
+
+            // Ao finalizar onboarding, envia CTA com link unico para ativar o dashboard (sem SMS).
+            try {
+                const setupToken = await registrationTokenService.generateSetupToken(
+                    normalizedPhone,
+                    onboarding?.data?.userId || null,
+                    24
+                );
+                if (setupToken?.registrationLink) {
+                    finalText += '\n\n' + onboardingCopy.dashboardAccessLink(setupToken.registrationLink);
+                }
+            } catch (setupError) {
+                console.error('[ONBOARDING] Falha ao gerar link de setup:', setupError?.message || setupError);
+            }
+
             try {
                 const existingTimer = this.persistTimers.get(normalizedPhone);
                 if (existingTimer) {
@@ -1805,7 +1822,7 @@ class OnboardingFlowService {
                 source: 'whatsapp',
                 properties: { step: onboarding?.step || null }
             });
-            return text;
+            return finalText;
         };
 
         // Escape hatch global
