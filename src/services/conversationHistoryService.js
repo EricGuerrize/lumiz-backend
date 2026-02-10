@@ -129,6 +129,10 @@ class ConversationHistoryService {
    */
   async saveConversation(userId, userMessage, botResponse, intent, context = {}) {
     try {
+      if (!userId) {
+        return;
+      }
+
       const { error } = await supabase
         .from('conversation_history')
         .insert({
@@ -141,6 +145,10 @@ class ConversationHistoryService {
         });
 
       if (error) {
+        if (error.code === '23503') {
+          console.warn(`[CONV_HIST] user_id sem profile válido (${userId}). Histórico ignorado para evitar falha.`);
+          return;
+        }
         console.error('[CONV_HIST] Erro ao salvar conversa:', error);
       } else {
         console.log(`[CONV_HIST] ✅ Conversa salva: ${userId} - "${userMessage.substring(0, 30)}..."`);
@@ -173,4 +181,3 @@ class ConversationHistoryService {
 }
 
 module.exports = new ConversationHistoryService();
-

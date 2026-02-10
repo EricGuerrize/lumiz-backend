@@ -3,7 +3,7 @@ const axios = require('axios');
 const { buildMdrExtractionPrompt } = require('../config/prompts');
 require('dotenv').config();
 
-const MODEL_ID = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+const MODEL_ID = process.env.GEMINI_MODEL || 'gemini-flash-latest';
 
 class MdrOcrService {
   constructor() {
@@ -71,4 +71,3 @@ class MdrOcrService {
 }
 
 module.exports = new MdrOcrService();
-

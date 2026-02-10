@@ -25,7 +25,8 @@
       "Bash(node -c:*)",
       "Bash(node:*)",
       "Bash(npx:*)",
-      "Bash(npm search:*)"
+      "Bash(npm search:*)",
+      "Bash(ls:*)"
     ],
     "deny": [],
     "ask": []

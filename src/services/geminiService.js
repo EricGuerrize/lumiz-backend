@@ -9,7 +9,42 @@ const GEMINI_TIMEOUT_MS = 30000;
 
 class GeminiService {
   constructor() {
-    this.model = genAI.getGenerativeModel({ model: process.env.GEMINI_MODEL || 'gemini-1.5-flash' });
+    const configuredModel = process.env.GEMINI_MODEL;
+    const fallbackModels = ['gemini-flash-latest', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+    this.modelCandidates = [configuredModel, ...fallbackModels]
+      .filter(Boolean)
+      .filter((model, index, self) => self.indexOf(model) === index);
+  }
+
+  async generateWithFallback(payload) {
+    let lastError = null;
+
+    for (const modelName of this.modelCandidates) {
+      try {
+        const model = genAI.getGenerativeModel({ model: modelName });
+        const result = await retryWithBackoff(
+          () => withTimeout(
+            model.generateContent(payload),
+            GEMINI_TIMEOUT_MS,
+            `Timeout ao processar com ${modelName} (${GEMINI_TIMEOUT_MS / 1000}s)`
+          ),
+          2,
+          500
+        );
+        return result;
+      } catch (error) {
+        lastError = error;
+        const message = String(error?.message || '').toLowerCase();
+        const modelNotFound = message.includes('not found') || message.includes('not supported');
+        if (modelNotFound) {
+          console.warn(`[GEMINI] Modelo indisponível (${modelName}), tentando próximo fallback...`);
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    throw lastError || new Error('Nenhum modelo Gemini disponível');
   }
 
   async processMessage(message, context = {}) {
@@ -277,15 +312,7 @@ RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
 
     try {
       // Adiciona timeout e retry para chamadas do Gemini
-      const result = await retryWithBackoff(
-        () => withTimeout(
-          this.model.generateContent(prompt),
-          GEMINI_TIMEOUT_MS,
-          'Timeout ao processar mensagem com Gemini (30s)'
-        ),
-        3, // 3 tentativas
-        1000 // delay inicial de 1s
-      );
+      const result = await this.generateWithFallback(prompt);
 
       const response = await result.response;
       const text = response.text();
@@ -319,13 +346,9 @@ RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
       ];
 
       const result = await retryWithBackoff(
-        () => withTimeout(
-          this.model.generateContent(parts),
-          GEMINI_TIMEOUT_MS,
-          'Timeout ao processar documento com Gemini (30s)'
-        ),
-        2,
-        1000
+        () => this.generateWithFallback(parts),
+        1,
+        0
       );
 
       const response = await result.response;

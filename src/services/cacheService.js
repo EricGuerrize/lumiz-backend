@@ -174,8 +174,10 @@ class CacheService {
     
     await Promise.all([
       this.delete(`phone:${phone}`),
+      this.delete(`phone:profile:${phone}`),
       this.delete(`phone:onboarding:${phone}`),
-      this.deletePattern(`phone:${phone}:*`)
+      this.deletePattern(`phone:${phone}:*`),
+      this.deletePattern(`phone:profile:${phone}:*`)
     ]);
   }
 
