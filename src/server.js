@@ -26,6 +26,7 @@ const userRoutes = require('./routes/user.routes');
 const setupRoutes = require('./routes/setup.routes');
 const authRoutes = require('./routes/auth.routes');
 const mdrRoutes = require('./routes/mdr.routes');
+const clinicMembersRoutes = require('./routes/clinicMembers.routes');
 const reminderService = require('./services/reminderService');
 const nudgeService = require('./services/nudgeService');
 const insightService = require('./services/insightService');
@@ -175,6 +176,7 @@ app.use('/api/user', userRoutes);
 app.use('/api/setup', setupRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/mdr', mdrRoutes);
+app.use('/api/clinic-members', clinicMembersRoutes);
 
 app.get('/health', async (req, res) => {
   const startTime = Date.now();

@@ -450,218 +450,21 @@ class OnboardingStateHandlers {
         }
 
         onboarding.data.role = role;
-        onboarding.step = 'PROFILE_ADD_MEMBER';
-        // Inicializa lista de membros a adicionar
-        onboarding.data.members_to_add = [];
-        // Garante que adding_member está false na primeira vez
-        onboarding.data.adding_member = false;
-        console.log('[ONBOARDING] PROFILE_ROLE → PROFILE_ADD_MEMBER, role:', role);
-        return await respond(onboardingCopy.profileAddMemberQuestion(), true); // Persist imediato
+        onboarding.step = 'CONTEXT_WHY';
+        console.log('[ONBOARDING] PROFILE_ROLE → CONTEXT_WHY, role:', role);
+        return await respond(onboardingCopy.contextWhyQuestion(), true);
     }
 
     async handleProfileAddMember(onboarding, messageTrimmed, respond) {
-        const v = normalizeText(messageTrimmed);
-
-        // Se está no início (primeira vez neste step)
-        // Se adding_member não existe ou é false, significa que acabou de entrar neste step
-        if (!onboarding.data.adding_member && !onboarding.data.current_member_step) {
-            console.log('[ONBOARDING] PROFILE_ADD_MEMBER - primeira vez, mensagem:', messageTrimmed);
-            // Pergunta se quer adicionar membro
-            const wantsToAdd = v === '1' || v === 'sim' || v.includes('adicionar');
-            const skip = v === '2' || v === 'não' || v === 'nao' || v.includes('depois');
-
-            if (wantsToAdd) {
-                onboarding.data.adding_member = true;
-                onboarding.data.current_member_step = 'ROLE';
-                return await respond(onboardingCopy.profileAddMemberRoleQuestion(), true);
-            }
-
-            if (skip) {
-                // Se há membros na lista, precisamos criar o perfil e salvá-los AGORA
-                // Isso garante que os membros existam no banco mesmo se o onboarding for interrompido
-                const membersToSave = onboarding.data.members_to_add || [];
-
-                if (membersToSave.length > 0) {
-                    try {
-                        // Cria o perfil da clínica se ainda não existe
-                        let userId = onboarding.data.userId;
-                        if (!userId) {
-                            const result = await userController.createUserFromOnboarding({
-                                telefone: onboarding.data.telefone,
-                                nome_completo: onboarding.data.nome,
-                                nome_clinica: onboarding.data.clinica
-                            });
-                            userId = result.user.id;
-                            onboarding.data.userId = userId;
-                            console.log('[ONBOARDING] Perfil criado antecipadamente para salvar membros:', userId);
-                        }
-
-                        // Cria membro primário (quem está fazendo o onboarding)
-                        const clinicMemberService = require('./clinicMemberService');
-                        const primaryRole = onboarding.data.role === 'dona_gestora' ? 'dona' :
-                            onboarding.data.role === 'adm_financeiro' ? 'adm' :
-                                onboarding.data.role || 'dona';
-
-                        await clinicMemberService.addMember({
-                            clinicId: userId,
-                            telefone: onboarding.data.telefone,
-                            nome: onboarding.data.nome,
-                            funcao: primaryRole,
-                            createdBy: userId,
-                            isPrimary: true
-                        });
-
-                        // Salva os membros adicionais no banco AGORA
-                        for (const member of membersToSave) {
-                            const normalizedMemberPhone = normalizePhone(member.telefone) || member.telefone;
-                            const result = await clinicMemberService.addMember({
-                                clinicId: userId,
-                                telefone: normalizedMemberPhone,
-                                nome: member.nome,
-                                funcao: member.funcao,
-                                createdBy: userId,
-                                isPrimary: false
-                            });
-
-                            // Invalida cache do telefone do membro para próxima busca
-                            if (result.success) {
-                                const memberCacheKey = `phone:profile:${normalizedMemberPhone}`;
-                                await cacheService.delete(memberCacheKey);
-                                console.log(`[ONBOARDING] Membro salvo no banco: ${member.nome} (${normalizedMemberPhone})`);
-                            }
-                        }
-
-                        // Marca que membros já foram salvos para não duplicar depois
-                        onboarding.data.members_saved_early = true;
-                        console.log(`[ONBOARDING] ${membersToSave.length} membros salvos antecipadamente`);
-                    } catch (memberError) {
-                        console.error('[ONBOARDING] Erro ao salvar membros antecipadamente:', memberError);
-                        // Não bloqueia o fluxo, apenas loga o erro
-                    }
-                }
-
-                // Prossegue para próximo passo
-                console.log('[ONBOARDING] PROFILE_ADD_MEMBER - pulando, indo para CONTEXT_WHY');
-                onboarding.step = 'CONTEXT_WHY';
-                delete onboarding.data.adding_member;
-                delete onboarding.data.current_member_step;
-                return await respond(onboardingCopy.contextWhyQuestion(), true);
-            }
-
-            // Se não é nem sim nem não, mostra a pergunta novamente
-            console.log('[ONBOARDING] PROFILE_ADD_MEMBER - resposta inválida, mostrando pergunta novamente');
-            return await respond(onboardingCopy.profileAddMemberQuestion());
-        }
-
-        // Coletando função
-        if (onboarding.data.current_member_step === 'ROLE') {
-            const role = validateChoice(messageTrimmed, {
-                'dona': ['1', 'dona', 'gestora'],
-                'adm': ['2', 'adm', 'financeiro'],
-                'secretaria': ['3', 'secretária', 'secretaria'],
-                'profissional': ['4', 'profissional']
-            });
-
-            if (!role) {
-                return await respond(onboardingCopy.invalidChoice());
-            }
-
-            onboarding.data.current_member_function = role;
-            onboarding.data.current_member_step = 'NAME';
-            return await respond(onboardingCopy.profileAddMemberNameQuestion(), true);
-        }
-
-        // Coletando nome
-        if (onboarding.data.current_member_step === 'NAME') {
-            // Detecta se o usuário enviou um número (telefone) no lugar do nome
-            const phonePattern = /^\d{10,15}$/;
-            const digitsOnly = messageTrimmed.replace(/\D/g, '');
-            const looksLikePhone = phonePattern.test(digitsOnly) && digitsOnly.length >= 10;
-
-            if (looksLikePhone) {
-                // Usuário enviou número no lugar do nome - oferece opção de corrigir
-                onboarding.data.temp_phone_entered = messageTrimmed.trim();
-                onboarding.data.current_member_step = 'NAME_CORRECTION';
-                return await respond(onboardingCopy.profileAddMemberNameCorrection());
-            }
-
-            if (messageTrimmed.length < MIN_NAME_LENGTH) {
-                return await respond(onboardingCopy.nameTooShort());
-            }
-
-            onboarding.data.current_member_name = messageTrimmed.trim();
-            onboarding.data.current_member_step = 'PHONE';
-            return await respond(onboardingCopy.profileAddMemberPhoneQuestion(), true);
-        }
-
-        // Opção de correção quando número foi enviado no lugar do nome
-        if (onboarding.data.current_member_step === 'NAME_CORRECTION') {
-            const v = normalizeText(messageTrimmed);
-            const wantsToCorrect = v === '1' || v === 'sim' || v.includes('corrigir') || v.includes('corrige');
-            const wantsToContinue = v === '2' || v === 'não' || v === 'nao' || v.includes('continuar');
-
-            if (wantsToCorrect) {
-                // Volta para pedir o nome novamente
-                onboarding.data.current_member_step = 'NAME';
-                delete onboarding.data.temp_phone_entered;
-                return await respond(onboardingCopy.profileAddMemberNameQuestion());
-            }
-
-            if (wantsToContinue) {
-                // Usa o número como nome (improvável, mas permite continuar)
-                // E usa o número temporário como telefone
-                onboarding.data.current_member_name = onboarding.data.temp_phone_entered || 'Sem nome';
-                onboarding.data.current_member_step = 'PHONE';
-                delete onboarding.data.temp_phone_entered;
-                return await respond(onboardingCopy.profileAddMemberPhoneQuestion());
-            }
-
-            return await respond(onboardingCopy.profileAddMemberNameCorrection());
-        }
-
-        // Coletando telefone
-        if (onboarding.data.current_member_step === 'PHONE') {
-            // Permite voltar para corrigir o nome digitando "corrigir" ou "voltar"
-            const v = normalizeText(messageTrimmed);
-            if (v === 'corrigir' || v === 'voltar' || v === 'corrige' || v.includes('corrigir nome') || v.includes('voltar nome')) {
-                onboarding.data.current_member_step = 'NAME';
-                return await respond(onboardingCopy.profileAddMemberNameQuestion() + '\n\n(Digite o nome correto)');
-            }
-
-            const phone = normalizePhone(messageTrimmed) || messageTrimmed;
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:487', message: 'Normalizando telefone do membro antes de adicionar', data: { originalPhone: messageTrimmed, normalizedPhone: phone, nome: onboarding.data.current_member_name }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'B' }) }).catch(() => { });
-            // #endregion
-
-            // Valida formato do telefone (mínimo 10 dígitos)
-            if (!/^\d{10,15}$/.test(phone.replace(/\D/g, ''))) {
-                return await respond(onboardingCopy.profileAddMemberInvalidPhone() + '\n\n💡 Dica: Se quiser corrigir o nome, digite "corrigir"');
-            }
-
-            // Adiciona à lista de membros
-            onboarding.data.members_to_add.push({
-                nome: onboarding.data.current_member_name,
-                telefone: phone,
-                funcao: onboarding.data.current_member_function
-            });
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:499', message: 'Membro adicionado à lista members_to_add', data: { phone: phone, nome: onboarding.data.current_member_name, funcao: onboarding.data.current_member_function, totalMembers: onboarding.data.members_to_add.length }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'B' }) }).catch(() => { });
-            // #endregion
-
-            // Limpa dados temporários do membro atual
-            delete onboarding.data.current_member_function;
-            delete onboarding.data.current_member_name;
-            delete onboarding.data.current_member_step;
-            delete onboarding.data.adding_member;
-            delete onboarding.data.temp_phone_entered;
-
-            // Pergunta se quer adicionar mais
-            return await respond(onboardingCopy.profileAddMemberSuccess(
-                onboarding.data.members_to_add[onboarding.data.members_to_add.length - 1].nome
-            ));
-        }
-
-        return await respond(onboardingCopy.invalidChoice());
+        // Step legado removido do onboarding.
+        onboarding.step = 'CONTEXT_WHY';
+        delete onboarding.data.adding_member;
+        delete onboarding.data.current_member_step;
+        delete onboarding.data.current_member_function;
+        delete onboarding.data.current_member_name;
+        delete onboarding.data.temp_phone_entered;
+        delete onboarding.data.members_to_add;
+        return await respond(onboardingCopy.contextWhyQuestion(), true);
     }
 
     async handleContextWhy(onboarding, messageTrimmed, respond) {
@@ -1507,8 +1310,11 @@ class OnboardingFlowService {
                     'MDR_SETUP_UPLOAD',
                     'MDR_SETUP_COMPLETE'
                 ]);
+                const legacyProfileMemberStep = persisted.step === 'PROFILE_ADD_MEMBER';
                 const step = legacyMdrSteps.has(persisted.step)
                     ? 'HANDOFF_TO_DAILY_USE'
+                    : legacyProfileMemberStep
+                        ? 'CONTEXT_WHY'
                     : persisted.step;
 
                 this.onboardingStates.set(normalizedPhone, {
@@ -1553,8 +1359,11 @@ class OnboardingFlowService {
                     'MDR_SETUP_UPLOAD',
                     'MDR_SETUP_COMPLETE'
                 ]);
+                const legacyProfileMemberStep = persisted.step === 'PROFILE_ADD_MEMBER';
                 const step = legacyMdrSteps.has(persisted.step)
                     ? 'HANDOFF_TO_DAILY_USE'
+                    : legacyProfileMemberStep
+                        ? 'CONTEXT_WHY'
                     : persisted.step;
 
                 this.onboardingStates.set(normalizedPhone, {
@@ -1612,18 +1421,7 @@ class OnboardingFlowService {
             case 'PROFILE_ROLE':
                 return onboardingCopy.profileRoleQuestion();
             case 'PROFILE_ADD_MEMBER':
-                // Retorna mensagem apropriada baseada no sub-step
-                if (onboarding.data?.current_member_step === 'ROLE') {
-                    return onboardingCopy.profileAddMemberRoleQuestion();
-                } else if (onboarding.data?.current_member_step === 'NAME') {
-                    return onboardingCopy.profileAddMemberNameQuestion();
-                } else if (onboarding.data?.current_member_step === 'NAME_CORRECTION') {
-                    return onboardingCopy.profileAddMemberNameCorrection();
-                } else if (onboarding.data?.current_member_step === 'PHONE') {
-                    return onboardingCopy.profileAddMemberPhoneQuestion();
-                }
-                // Primeira vez neste step - mostra pergunta se quer adicionar
-                return onboardingCopy.profileAddMemberQuestion();
+                return onboardingCopy.contextWhyQuestion();
             case 'CONTEXT_WHY':
                 return onboardingCopy.contextWhyQuestion();
             case 'CONTEXT_HOW':

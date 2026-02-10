@@ -381,6 +381,7 @@ module.exports = {
             `"Paguei parcela do fornecedor 2.300"\n\n` +
             `"Quanto entrou esse mês?"\n\n` +
             `"O que ainda falta cair?"\n\n` +
+            `Para gerenciar os números da equipe, use o dashboard em Configurações/Integrações.\n\n` +
             `Quanto mais você me usa, melhor eu entendo sua rotina e mais claros ficam seus números!\n` +
             `Vamos nessa juntos?`
         );

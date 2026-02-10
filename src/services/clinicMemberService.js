@@ -17,7 +17,8 @@ class ClinicMemberService {
    * @param {string} phone - Número de telefone
    * @returns {Object|null} - Membro encontrado ou null
    */
-  async findMemberByPhone(phone) {
+  async findMemberByPhone(phone, options = {}) {
+    const { includeInactive = false } = options;
     const normalizedPhone = normalizePhone(phone) || phone;
     const variants = getPhoneVariants(phone);
     // #region agent log
@@ -27,8 +28,11 @@ class ClinicMemberService {
     // Tenta busca com variantes primeiro (mais robusto)
     let memberQuery = supabase
       .from('clinic_members')
-      .select('*, profiles:clinic_id(*)')
-      .eq('is_active', true);
+      .select('*, profiles:clinic_id(*)');
+    
+    if (!includeInactive) {
+      memberQuery = memberQuery.eq('is_active', true);
+    }
     
     if (variants.length > 0) {
       memberQuery = memberQuery.in('telefone', variants);
@@ -111,14 +115,20 @@ class ClinicMemberService {
    * @param {string} clinicId - ID da clínica
    * @returns {Array} - Lista de membros
    */
-  async listMembers(clinicId) {
-    const { data, error } = await supabase
+  async listMembers(clinicId, options = {}) {
+    const { includeInactive = false } = options;
+    let query = supabase
       .from('clinic_members')
       .select('*')
       .eq('clinic_id', clinicId)
-      .eq('is_active', true)
       .order('is_primary', { ascending: false })
       .order('created_at', { ascending: true });
+
+    if (!includeInactive) {
+      query = query.eq('is_active', true);
+    }
+    
+    const { data, error } = await query;
     
     if (error) {
       console.error('[CLINIC_MEMBER] Erro ao listar membros:', error);
@@ -143,7 +153,7 @@ class ClinicMemberService {
     }
     
     // Verifica se telefone já está vinculado a outra clínica
-    const existingMember = await this.findMemberByPhone(normalizedPhone);
+    const existingMember = await this.findMemberByPhone(normalizedPhone, { includeInactive: true });
     if (existingMember && existingMember.clinic_id !== clinicId) {
       return { 
         success: false, 
@@ -161,6 +171,8 @@ class ClinicMemberService {
           is_active: true, 
           nome, 
           funcao,
+          confirmed: existingMember.confirmed || isPrimary,
+          confirmed_at: existingMember.confirmed || isPrimary ? (existingMember.confirmed_at || new Date().toISOString()) : null,
           updated_at: new Date().toISOString()
         })
         .eq('id', existingMember.id)
@@ -257,16 +269,32 @@ class ClinicMemberService {
    */
   async removeMember(memberId, requestedBy) {
     // Verifica se quem solicita tem permissão
-    const requester = await this.findMemberByPhone(requestedBy);
-    if (!requester || !['dona', 'gestora'].includes(requester.funcao)) {
+    const hasPermission = await this.hasAdminPermission(requestedBy);
+    if (!hasPermission) {
       return { success: false, error: 'Sem permissão para remover membros' };
+    }
+
+    // Resolve clinic_id do solicitante (membro ou profile principal)
+    const requester = await this.findMemberByPhone(requestedBy);
+    let clinicId = requester?.clinic_id;
+    if (!clinicId) {
+      const normalizedPhone = normalizePhone(requestedBy) || requestedBy;
+      const variants = getPhoneVariants(requestedBy);
+      let profileQuery = supabase.from('profiles').select('id');
+      profileQuery = variants.length ? profileQuery.in('telefone', variants) : profileQuery.eq('telefone', normalizedPhone);
+      const { data: profile } = await profileQuery.maybeSingle();
+      clinicId = profile?.id || null;
+    }
+
+    if (!clinicId) {
+      return { success: false, error: 'Clínica do solicitante não encontrada' };
     }
     
     const { error } = await supabase
       .from('clinic_members')
       .update({ is_active: false })
       .eq('id', memberId)
-      .eq('clinic_id', requester.clinic_id)
+      .eq('clinic_id', clinicId)
       .neq('is_primary', true); // Não pode remover o membro primário
     
     if (error) {
@@ -275,6 +303,67 @@ class ClinicMemberService {
     }
     
     return { success: true };
+  }
+
+  /**
+   * Atualiza dados do membro dentro da clínica
+   * @param {string} clinicId - ID da clínica
+   * @param {string} memberId - ID do membro
+   * @param {Object} updates - Campos permitidos: nome, funcao, is_active
+   * @returns {Object} - { success, member, error }
+   */
+  async updateMember(clinicId, memberId, updates = {}) {
+    const allowedUpdates = {};
+    if (typeof updates.nome === 'string' && updates.nome.trim()) {
+      allowedUpdates.nome = updates.nome.trim();
+    }
+    if (typeof updates.funcao === 'string' && updates.funcao.trim()) {
+      const validFunctions = ['dona', 'gestora', 'adm', 'financeiro', 'secretaria', 'profissional'];
+      if (!validFunctions.includes(updates.funcao.trim())) {
+        return { success: false, error: 'Função inválida' };
+      }
+      allowedUpdates.funcao = updates.funcao.trim();
+    }
+    if (typeof updates.is_active === 'boolean') {
+      allowedUpdates.is_active = updates.is_active;
+    }
+
+    if (Object.keys(allowedUpdates).length === 0) {
+      return { success: false, error: 'Nenhum campo válido para atualizar' };
+    }
+
+    const { data: member, error: findError } = await supabase
+      .from('clinic_members')
+      .select('*')
+      .eq('id', memberId)
+      .eq('clinic_id', clinicId)
+      .maybeSingle();
+
+    if (findError || !member) {
+      return { success: false, error: 'Membro não encontrado' };
+    }
+
+    if (member.is_primary && allowedUpdates.is_active === false) {
+      return { success: false, error: 'Não é permitido desativar o membro principal' };
+    }
+
+    const { data, error } = await supabase
+      .from('clinic_members')
+      .update({
+        ...allowedUpdates,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', memberId)
+      .eq('clinic_id', clinicId)
+      .select('*')
+      .single();
+
+    if (error) {
+      console.error('[CLINIC_MEMBER] Erro ao atualizar membro:', error);
+      return { success: false, error: 'Erro ao atualizar membro' };
+    }
+
+    return { success: true, member: data };
   }
 
   /**
