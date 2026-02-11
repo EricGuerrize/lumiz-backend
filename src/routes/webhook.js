@@ -155,7 +155,7 @@ const webhookHandler = async (req, res) => {
                 console.log('[WEBHOOK] [IMG] MIME type:', mimeType);
 
                 // Processa diretamente com o buffer
-                response = await messageController.handleImageMessageWithBuffer(phone, imageBuffer, mimeType, caption);
+                response = await messageController.handleImageMessageWithBuffer(phone, imageBuffer, mimeType, caption, messageKey);
               } catch (imgError) {
                 console.error(`[WEBHOOK] [IMG] ❌ Erro ao processar base64:`, imgError.message);
                 console.error(`[WEBHOOK] [IMG] Stack:`, imgError.stack);
@@ -209,7 +209,7 @@ const webhookHandler = async (req, res) => {
 
                 console.log('[WEBHOOK] [DOC] Buffer criado, tamanho:', docBuffer.length);
 
-                response = await messageController.handleDocumentMessageWithBuffer(phone, docBuffer, mimeType, fileName);
+                response = await messageController.handleDocumentMessageWithBuffer(phone, docBuffer, mimeType, fileName, messageKey);
               } catch (docError) {
                 console.error(`[WEBHOOK] [DOC] ❌ Erro ao processar base64:`, docError.message);
                 response = 'Erro ao processar documento 😢';

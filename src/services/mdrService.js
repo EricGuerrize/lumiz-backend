@@ -13,16 +13,50 @@ class MdrService {
     this.queue = null;
     this.worker = null;
     this.queueEnabled = false;
+    this._lastErrorLogAt = 0;
+    this.maxReconnectAttempts = Number(process.env.REDIS_MAX_RECONNECT_ATTEMPTS || 5);
+    this.redisQueueFeatureEnabled = this.readFlag('REDIS_QUEUE_ENABLED', !!process.env.REDIS_URL);
 
     console.log('[MDR_QUEUE] REDIS_URL:', process.env.REDIS_URL ? 'configurada' : 'não configurada');
+
+    if (!this.redisQueueFeatureEnabled) {
+      console.warn('[MDR_QUEUE] ⚠️ REDIS_QUEUE_ENABLED=false. Fila OCR MDR desabilitada (modo degradado).');
+      return;
+    }
 
     if (process.env.REDIS_URL) {
       try {
         console.log('[MDR_QUEUE] Conectando ao Redis...');
         // BullMQ requer maxRetriesPerRequest: null
         this.connection = new IORedis(process.env.REDIS_URL, {
-          maxRetriesPerRequest: null
+          maxRetriesPerRequest: null,
+          connectTimeout: 5000,
+          enableOfflineQueue: false,
+          retryStrategy: (times) => {
+            if (times > this.maxReconnectAttempts) {
+              this.queueEnabled = false;
+              this.logRedisError('[MDR_QUEUE] ❌ Limite de reconexão atingido. Fila desativada.');
+              return null;
+            }
+            return Math.min(times * 100, 3000);
+          }
         });
+
+        this.connection.on('ready', () => {
+          if (this.queue && this.worker) {
+            this.queueEnabled = true;
+          }
+          console.log('[MDR_QUEUE] ✅ Redis pronto');
+        });
+        this.connection.on('error', (err) => {
+          this.logRedisError(`[MDR_QUEUE] ❌ Erro Redis: ${err.message}`);
+          this.queueEnabled = false;
+        });
+        this.connection.on('close', () => {
+          this.logRedisError('[MDR_QUEUE] ⚠️ Conexão Redis fechada. Fila em modo degradado.');
+          this.queueEnabled = false;
+        });
+
         console.log('[MDR_QUEUE] Redis conectado, criando Queue...');
         this.queue = new Queue('mdr-ocr', { connection: this.connection });
         console.log('[MDR_QUEUE] Queue criada, criando Worker...');
@@ -30,6 +64,16 @@ class MdrService {
           connection: this.connection
         });
         console.log('[MDR_QUEUE] Worker criado, adicionando event listeners...');
+
+        this.queue.on('error', (err) => {
+          this.logRedisError(`[MDR_QUEUE] ❌ Queue error: ${err.message}`);
+          this.queueEnabled = false;
+        });
+
+        this.worker.on('error', (err) => {
+          this.logRedisError(`[MDR_QUEUE] ❌ Worker error: ${err.message}`);
+          this.queueEnabled = false;
+        });
         
         this.worker.on('completed', (job) => {
           console.log(`[MDR_QUEUE] Job ${job.id} completado`);
@@ -47,6 +91,23 @@ class MdrService {
       }
     } else {
       console.warn('[MDR_QUEUE] ⚠️ REDIS_URL não configurada. OCR será síncrono.');
+    }
+  }
+
+  readFlag(name, defaultValue) {
+    const raw = process.env[name];
+    if (raw === undefined || raw === null || raw === '') return defaultValue;
+    const normalized = String(raw).trim().toLowerCase();
+    if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) return true;
+    if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) return false;
+    return defaultValue;
+  }
+
+  logRedisError(message) {
+    const now = Date.now();
+    if (now - this._lastErrorLogAt > 15000) {
+      console.error(message);
+      this._lastErrorLogAt = now;
     }
   }
 

@@ -45,6 +45,12 @@ function extractInstallments(text) {
     return Number.isFinite(value) ? value : null;
   }
 
+  const vezesMatch = raw.match(/\b(?:em\s+)?(\d{1,2})\s*(?:vezes|parcela(?:s)?)\b/i);
+  if (vezesMatch && vezesMatch[1]) {
+    const value = parseInt(vezesMatch[1], 10);
+    return Number.isFinite(value) ? value : null;
+  }
+
   return null;
 }
 

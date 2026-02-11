@@ -21,10 +21,28 @@ class UserRateLimit {
       try {
         const IORedis = require('ioredis');
         this.redisClient = new IORedis(process.env.REDIS_URL, {
-          maxRetriesPerRequest: null
+          maxRetriesPerRequest: 1,
+          connectTimeout: 5000,
+          enableOfflineQueue: false,
+          retryStrategy: (times) => {
+            if (times > 5) return null;
+            return Math.min(times * 100, 2000);
+          }
         });
-        this.enabled = true;
-        console.log('[RATE_LIMIT] ✅ Redis conectado para rate limiting');
+        this.redisClient.on('ready', () => {
+          this.enabled = true;
+          console.log('[RATE_LIMIT] ✅ Redis conectado para rate limiting');
+        });
+        this.redisClient.on('error', (err) => {
+          this.enabled = false;
+          console.warn('[RATE_LIMIT] ⚠️ Redis indisponível no rate limiting:', err.message);
+          this.startMemoryCleanup();
+        });
+        this.redisClient.on('close', () => {
+          this.enabled = false;
+          console.warn('[RATE_LIMIT] ⚠️ Conexão Redis do rate limiting fechada, fallback em memória ativo.');
+          this.startMemoryCleanup();
+        });
       } catch (error) {
         console.warn('[RATE_LIMIT] ⚠️ Redis não disponível, usando fallback em memória:', error.message);
         this.startMemoryCleanup();
@@ -317,4 +335,3 @@ class UserRateLimit {
 
 // Exporta instância singleton
 module.exports = new UserRateLimit();
-

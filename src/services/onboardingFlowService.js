@@ -16,7 +16,8 @@ const {
 } = require('../utils/procedureKeywords');
 const {
     extractPrimaryMonetaryValue,
-    extractMixedPaymentSplit
+    extractMixedPaymentSplit,
+    extractInstallments
 } = require('../utils/moneyParser');
 
 // ============================================================
@@ -328,6 +329,90 @@ async function calculateMonthlySummary(userId) {
         custosVariaveis,
         saldoParcial
     };
+}
+
+const FIXED_COST_CATEGORY_RULES = [
+    { category: 'Aluguel', keywords: ['aluguel', 'locacao', 'locação'] },
+    { category: 'Salários', keywords: ['salario', 'salários', 'folha', 'funcionario', 'funcionário', 'prolabore', 'pro-labore'] },
+    { category: 'Internet / Utilitários', keywords: ['internet', 'wifi', 'wi-fi', 'luz', 'energia', 'agua', 'água', 'utilitario', 'utilitário'] },
+    { category: 'Marketing', keywords: ['marketing', 'trafego', 'tráfego', 'ads', 'publicidade', 'anuncio', 'anúncio'] },
+    { category: 'Impostos', keywords: ['imposto', 'tributo', 'das', 'iss', 'taxa', 'contador', 'contabilidade'] }
+];
+
+const VARIABLE_COST_CATEGORY_RULES = [
+    { category: 'Insumos / materiais', keywords: ['insumo', 'insumos', 'material', 'materiais', 'luva', 'mascara', 'máscara', 'touca', 'gaze'] },
+    { category: 'Fornecedores de injetáveis', keywords: ['injetavel', 'injetáveis', 'injetaveis', 'toxina', 'botox', 'acido', 'ácido', 'hialuronico', 'hialurônico', 'bioestimulador', 'preenchedor'] }
+];
+
+function inferCostTypeAndCategoryFromText(text = '', forcedType = null) {
+    const normalized = normalizeText(text);
+    if (!normalized) {
+        return { tipo: forcedType || null, categoria: null, source: null };
+    }
+
+    const findCategory = (rules) => {
+        for (const rule of rules) {
+            if (rule.keywords.some((keyword) => normalized.includes(normalizeText(keyword)))) {
+                return rule.category;
+            }
+        }
+        return null;
+    };
+
+    if (forcedType === 'fixo') {
+        return {
+            tipo: 'fixo',
+            categoria: findCategory(FIXED_COST_CATEGORY_RULES),
+            source: 'fixed_forced'
+        };
+    }
+
+    if (forcedType === 'variável' || forcedType === 'variavel') {
+        return {
+            tipo: 'variável',
+            categoria: findCategory(VARIABLE_COST_CATEGORY_RULES),
+            source: 'variable_forced'
+        };
+    }
+
+    const fixedCategory = findCategory(FIXED_COST_CATEGORY_RULES);
+    if (fixedCategory) {
+        return { tipo: 'fixo', categoria: fixedCategory, source: 'fixed_inferred' };
+    }
+
+    const variableCategory = findCategory(VARIABLE_COST_CATEGORY_RULES);
+    if (variableCategory) {
+        return { tipo: 'variável', categoria: variableCategory, source: 'variable_inferred' };
+    }
+
+    return { tipo: null, categoria: null, source: null };
+}
+
+function extractCostPaymentDetails(text = '') {
+    const normalized = normalizeText(text);
+    const installments = extractInstallments(normalized);
+    const hasCard = normalized.includes('cartao') || normalized.includes('cartão') || normalized.includes('credito') || normalized.includes('crédito') || installments > 1;
+    const hasPix = normalized.includes('pix');
+    const hasCash = normalized.includes('dinheiro') || normalized.includes('espécie') || normalized.includes('especie');
+    const hasDebit = normalized.includes('debito') || normalized.includes('débito');
+
+    if (hasPix) {
+        return { forma_pagamento: 'pix', parcelas: null };
+    }
+    if (hasCash) {
+        return { forma_pagamento: 'dinheiro', parcelas: null };
+    }
+    if (hasDebit) {
+        return { forma_pagamento: 'debito', parcelas: null };
+    }
+    if (hasCard) {
+        return {
+            forma_pagamento: installments && installments > 1 ? 'parcelado' : 'credito_avista',
+            parcelas: installments && installments > 1 ? installments : null
+        };
+    }
+
+    return { forma_pagamento: null, parcelas: null };
 }
 
 // ============================================================
@@ -823,9 +908,9 @@ class OnboardingStateHandlers {
     // handleAhaCostsIntro foi removido pois agora o fluxo vai direto para UPLOAD
     // A mensagem de intro já pede o upload
 
-    async handleAhaCostsUpload(onboarding, messageTrimmed, mediaUrl, fileName, respond) {
+    async handleAhaCostsUpload(onboarding, messageTrimmed, mediaUrl, fileName, messageKey, mediaBuffer, mimeType, respond) {
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:830', message: 'handleAhaCostsUpload entrada', data: { message: messageTrimmed, step: onboarding.step, hasMediaUrl: !!mediaUrl, targetCostType: onboarding.data.cost_type }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
+        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:830', message: 'handleAhaCostsUpload entrada', data: { message: messageTrimmed, step: onboarding.step, hasMediaUrl: !!mediaUrl, hasMediaBuffer: !!mediaBuffer, hasMessageKey: !!messageKey, targetCostType: onboarding.data.cost_type }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
         // #endregion
 
         // Correção #9: Só processa documento se não tem texto válido
@@ -835,21 +920,66 @@ class OnboardingStateHandlers {
         if (valorFromText && valorFromText > 0) {
             // Se já sabemos o tipo (ex: segundo custo), já define. Se não, precisamos perguntar.
             const knownType = onboarding.data.cost_type;
+            const inferredCost = inferCostTypeAndCategoryFromText(messageTrimmed, knownType);
+            const paymentInfo = extractCostPaymentDetails(messageTrimmed);
 
             onboarding.data.pending_cost = {
                 valor: valorFromText,
                 tipo: knownType === 'fixo' ? 'fixa' : (knownType === 'variável' ? 'variavel' : null),
                 descricao: messageTrimmed,
                 data: new Date().toISOString().split('T')[0],
-                original_text: messageTrimmed
+                original_text: messageTrimmed,
+                forma_pagamento: paymentInfo.forma_pagamento,
+                parcelas: paymentInfo.parcelas
             };
 
+            if (!onboarding.data.pending_cost.tipo && inferredCost.tipo) {
+                onboarding.data.pending_cost.tipo = inferredCost.tipo === 'fixo' ? 'fixa' : 'variavel';
+            }
+
+            if (inferredCost.categoria) {
+                onboarding.data.pending_cost.categoria = inferredCost.categoria;
+            }
+
             if (knownType) {
+                // Se já sabemos o tipo e a categoria veio no texto, já confirma direto
+                if (onboarding.data.pending_cost.categoria) {
+                    onboarding.step = 'AHA_COSTS_CONFIRM';
+                    return await respond(onboardingCopy.ahaCostsConfirmation({
+                        tipo: onboarding.data.pending_cost.tipo === 'fixa' ? 'Fixo' : 'Variável',
+                        categoria: onboarding.data.pending_cost.categoria,
+                        valor: onboarding.data.pending_cost.valor,
+                        data: formatDate(onboarding.data.pending_cost.data),
+                        pagamento: this._formatCostPaymentText(onboarding.data.pending_cost)
+                    }));
+                }
+
                 // Se já sabemos o tipo, pula a classificação e vai para categoria
                 onboarding.step = 'AHA_COSTS_CATEGORY';
                 const isFixo = knownType === 'fixo';
                 return await respond(isFixo ? onboardingCopy.ahaCostsCategoryQuestionFixed() : onboardingCopy.ahaCostsCategoryQuestionVariable(), true);
             } else {
+                if (onboarding.data.pending_cost.tipo && onboarding.data.pending_cost.categoria) {
+                    onboarding.step = 'AHA_COSTS_CONFIRM';
+                    return await respond(onboardingCopy.ahaCostsConfirmation({
+                        tipo: onboarding.data.pending_cost.tipo === 'fixa' ? 'Fixo' : 'Variável',
+                        categoria: onboarding.data.pending_cost.categoria,
+                        valor: onboarding.data.pending_cost.valor,
+                        data: formatDate(onboarding.data.pending_cost.data),
+                        pagamento: this._formatCostPaymentText(onboarding.data.pending_cost)
+                    }));
+                }
+
+                if (onboarding.data.pending_cost.tipo && !onboarding.data.pending_cost.categoria) {
+                    onboarding.step = 'AHA_COSTS_CATEGORY';
+                    return await respond(
+                        onboarding.data.pending_cost.tipo === 'fixa'
+                            ? onboardingCopy.ahaCostsCategoryQuestionFixed()
+                            : onboardingCopy.ahaCostsCategoryQuestionVariable(),
+                        true
+                    );
+                }
+
                 // Se não sabemos, pergunta
                 onboarding.step = 'AHA_COSTS_CLASSIFY';
                 return await respond(onboardingCopy.ahaCostsClassify(), true);
@@ -857,10 +987,16 @@ class OnboardingStateHandlers {
         }
 
         // Se recebeu documento E não tem valor no texto, processa documento
-        if (mediaUrl) {
+        if (mediaUrl || mediaBuffer) {
             try {
                 // Timeout para processamento de documento (30 segundos)
-                const processPromise = documentService.processImage(mediaUrl, null);
+                const processPromise = mediaBuffer
+                    ? documentService.processDocumentFromBuffer(
+                        mediaBuffer,
+                        mimeType || 'application/pdf',
+                        fileName || null
+                    )
+                    : documentService.processImage(mediaUrl, messageKey || null);
                 const timeoutPromise = new Promise((_, reject) =>
                     setTimeout(() => reject(new Error('Timeout ao processar documento')), 30000)
                 );
@@ -874,6 +1010,10 @@ class OnboardingStateHandlers {
 
                 if (transacao && transacao.valor) {
                     const knownType = onboarding.data.cost_type;
+                    const inferredCost = inferCostTypeAndCategoryFromText(
+                        `${transacao.descricao || ''} ${transacao.categoria || ''}`,
+                        knownType
+                    );
 
                     onboarding.data.pending_cost_document = {
                         valor: transacao.valor,
@@ -889,15 +1029,54 @@ class OnboardingStateHandlers {
                         descricao: transacao.descricao || fileName || 'Documento',
                         data: transacao.data || new Date().toISOString().split('T')[0],
                         categoria: transacao.categoria || null
+                    };
+
+                    if (!onboarding.data.pending_cost.tipo && inferredCost.tipo) {
+                        onboarding.data.pending_cost.tipo = inferredCost.tipo === 'fixo' ? 'fixa' : 'variavel';
+                    }
+                    if (!onboarding.data.pending_cost.categoria && inferredCost.categoria) {
+                        onboarding.data.pending_cost.categoria = inferredCost.categoria;
                     }
 
                     if (knownType) {
-                        // Se já sabemos o tipo, podemos ir direto para confirmação se tiver categoria, ou categoria
-                        onboarding.step = 'AHA_COSTS_CATEGORY'; // Simplify: always ask category to be safe/organized
+                        if (onboarding.data.pending_cost.categoria) {
+                            onboarding.step = 'AHA_COSTS_CONFIRM';
+                            return await respond(
+                                onboardingCopy.documentReceivedSimple({ valor: transacao.valor }) +
+                                '\n\n' +
+                                onboardingCopy.ahaCostsConfirmation({
+                                    tipo: onboarding.data.pending_cost.tipo === 'fixa' ? 'Fixo' : 'Variável',
+                                    categoria: onboarding.data.pending_cost.categoria,
+                                    valor: onboarding.data.pending_cost.valor,
+                                    data: formatDate(onboarding.data.pending_cost.data),
+                                    pagamento: this._formatCostPaymentText(onboarding.data.pending_cost)
+                                })
+                            );
+                        }
+
+                        onboarding.step = 'AHA_COSTS_CATEGORY';
                         const isFixo = knownType === 'fixo';
-                        return await respond(onboardingCopy.documentReceivedSimple({ valor: transacao.valor }) + '\n\n' +
-                            (isFixo ? onboardingCopy.ahaCostsCategoryQuestionFixed() : onboardingCopy.ahaCostsCategoryQuestionVariable()));
+                        return await respond(
+                            onboardingCopy.documentReceivedSimple({ valor: transacao.valor }) +
+                            '\n\n' +
+                            (isFixo ? onboardingCopy.ahaCostsCategoryQuestionFixed() : onboardingCopy.ahaCostsCategoryQuestionVariable())
+                        );
                     } else {
+                        if (onboarding.data.pending_cost.tipo && onboarding.data.pending_cost.categoria) {
+                            onboarding.step = 'AHA_COSTS_CONFIRM';
+                            return await respond(
+                                onboardingCopy.documentReceivedSimple({ valor: transacao.valor }) +
+                                '\n\n' +
+                                onboardingCopy.ahaCostsConfirmation({
+                                    tipo: onboarding.data.pending_cost.tipo === 'fixa' ? 'Fixo' : 'Variável',
+                                    categoria: onboarding.data.pending_cost.categoria,
+                                    valor: onboarding.data.pending_cost.valor,
+                                    data: formatDate(onboarding.data.pending_cost.data),
+                                    pagamento: this._formatCostPaymentText(onboarding.data.pending_cost)
+                                })
+                            );
+                        }
+
                         onboarding.step = 'AHA_COSTS_CLASSIFY';
                         return await respond(onboardingCopy.documentReceivedSimple({ valor: transacao.valor }) + '\n\n' + onboardingCopy.ahaCostsClassify());
                     }
@@ -938,6 +1117,28 @@ class OnboardingStateHandlers {
         }
 
         onboarding.data.pending_cost.tipo = costType === 'fixo' ? 'fixa' : 'variavel';
+
+        if (!onboarding.data.pending_cost.categoria) {
+            const inferred = inferCostTypeAndCategoryFromText(
+                onboarding.data.pending_cost.descricao || onboarding.data.pending_cost.original_text || '',
+                costType
+            );
+            if (inferred.categoria) {
+                onboarding.data.pending_cost.categoria = inferred.categoria;
+            }
+        }
+
+        if (onboarding.data.pending_cost.categoria) {
+            onboarding.step = 'AHA_COSTS_CONFIRM';
+            return await respond(onboardingCopy.ahaCostsConfirmation({
+                tipo: onboarding.data.pending_cost.tipo === 'fixa' ? 'Fixo' : 'Variável',
+                categoria: onboarding.data.pending_cost.categoria,
+                valor: onboarding.data.pending_cost.valor,
+                data: formatDate(onboarding.data.pending_cost.data),
+                pagamento: this._formatCostPaymentText(onboarding.data.pending_cost)
+            }));
+        }
+
         onboarding.step = 'AHA_COSTS_CATEGORY';
 
         if (costType === 'fixo') {
@@ -964,6 +1165,28 @@ class OnboardingStateHandlers {
         const isFixo = seemsFixed;
 
         onboarding.data.pending_cost.tipo = isFixo ? 'fixa' : 'variavel';
+
+        if (!onboarding.data.pending_cost.categoria) {
+            const inferred = inferCostTypeAndCategoryFromText(
+                onboarding.data.pending_cost.descricao || onboarding.data.pending_cost.original_text || '',
+                isFixo ? 'fixo' : 'variável'
+            );
+            if (inferred.categoria) {
+                onboarding.data.pending_cost.categoria = inferred.categoria;
+            }
+        }
+
+        if (onboarding.data.pending_cost.categoria) {
+            onboarding.step = 'AHA_COSTS_CONFIRM';
+            return await respond(onboardingCopy.ahaCostsConfirmation({
+                tipo: onboarding.data.pending_cost.tipo === 'fixa' ? 'Fixo' : 'Variável',
+                categoria: onboarding.data.pending_cost.categoria,
+                valor: onboarding.data.pending_cost.valor,
+                data: formatDate(onboarding.data.pending_cost.data),
+                pagamento: this._formatCostPaymentText(onboarding.data.pending_cost)
+            }));
+        }
+
         onboarding.step = 'AHA_COSTS_CATEGORY';
 
         if (isFixo) {
@@ -1001,18 +1224,32 @@ class OnboardingStateHandlers {
             tipo: onboarding.data.pending_cost.tipo === 'fixa' ? 'Fixo' : 'Variável',
             categoria,
             valor: onboarding.data.pending_cost.valor,
-            data: formatDate(onboarding.data.pending_cost.data)
+            data: formatDate(onboarding.data.pending_cost.data),
+            pagamento: this._formatCostPaymentText(onboarding.data.pending_cost)
         }));
     }
 
     async handleAhaCostsConfirm(onboarding, messageTrimmed, normalizedPhone, respond) {
         const confirmed = isYes(messageTrimmed);
         const correction = isNo(messageTrimmed);
+        const paymentInfo = extractCostPaymentDetails(messageTrimmed);
 
         if (correction) {
             onboarding.step = 'AHA_COSTS_CATEGORY';
             const isFixo = onboarding.data.pending_cost?.tipo === 'fixa';
             return await respond(isFixo ? onboardingCopy.ahaCostsCategoryQuestionFixed() : onboardingCopy.ahaCostsCategoryQuestionVariable());
+        }
+
+        if (!confirmed && onboarding.data.pending_cost && (paymentInfo.forma_pagamento || paymentInfo.parcelas)) {
+            onboarding.data.pending_cost.forma_pagamento = paymentInfo.forma_pagamento || onboarding.data.pending_cost.forma_pagamento || null;
+            onboarding.data.pending_cost.parcelas = paymentInfo.parcelas || null;
+            return await respond(onboardingCopy.ahaCostsConfirmation({
+                tipo: onboarding.data.pending_cost.tipo === 'fixa' ? 'Fixo' : 'Variável',
+                categoria: onboarding.data.pending_cost.categoria || 'Outros',
+                valor: onboarding.data.pending_cost.valor,
+                data: formatDate(onboarding.data.pending_cost.data),
+                pagamento: this._formatCostPaymentText(onboarding.data.pending_cost)
+            }));
         }
 
         if (confirmed) {
@@ -1097,16 +1334,14 @@ class OnboardingStateHandlers {
                 userId: onboarding.data.userId || null,
                 source: 'whatsapp'
             });
-            // Persistência crítica após salvar transação
-            return await respond(
+            await respond(
                 onboardingCopy.ahaCostsRegistered() +
                 '\n\n' +
-                onboardingCopy.ahaSummary(summary) +
-                '\n\n' +
-                onboardingCopy.balanceQuestion(),
+                onboardingCopy.ahaSummary(summary),
                 true,
                 true
             );
+            return await respond(onboardingCopy.balanceQuestion(), true, true);
         }
 
         return await respond(onboardingCopy.invalidChoice());
@@ -1380,6 +1615,19 @@ class OnboardingStateHandlers {
         return await respondAndClear(onboardingCopy.mdrSetupComplete());
     }
 
+    _formatCostPaymentText(cost = {}) {
+        if (cost.forma_pagamento === 'parcelado') {
+            return cost.parcelas ? `Cartão ${cost.parcelas}x` : 'Cartão parcelado';
+        }
+        const map = {
+            pix: 'PIX',
+            dinheiro: 'Dinheiro',
+            debito: 'Débito',
+            credito_avista: 'Cartão à vista'
+        };
+        return map[cost.forma_pagamento] || null;
+    }
+
     _formatSalePaymentText(sale = {}) {
         if (sale.forma_pagamento === 'misto' && Array.isArray(sale.payment_split) && sale.payment_split.length) {
             return 'Meio a meio';
@@ -1637,7 +1885,8 @@ class OnboardingFlowService {
                         tipo: cost.tipo === 'fixa' ? 'Fixo' : 'Variável',
                         categoria: cost.categoria || 'Outros',
                         valor: cost.valor,
-                        data: cost.data || 'Hoje'
+                        data: cost.data || 'Hoje',
+                        pagamento: this.handlers._formatCostPaymentText(cost)
                     });
                 }
                 return (onboarding.data?.pending_cost?.tipo === 'fixa')
@@ -1670,7 +1919,7 @@ class OnboardingFlowService {
         return this.startIntroFlow(phone);
     }
 
-    async processOnboarding(phone, message, mediaUrl = null, fileName = null) {
+    async processOnboarding(phone, message, mediaUrl = null, fileName = null, messageKey = null, mediaBuffer = null, mimeType = null) {
         const normalizedPhone = normalizePhone(phone) || phone;
         const onboarding = this.onboardingStates.get(normalizedPhone);
         // #region agent log
@@ -1854,7 +2103,16 @@ class OnboardingFlowService {
                 case 'AHA_COSTS_INTRO':
                     return await handlers.handleAhaCostsIntro(onboarding, messageTrimmed, respond);
                 case 'AHA_COSTS_UPLOAD':
-                    return await handlers.handleAhaCostsUpload(onboarding, messageTrimmed, mediaUrl, fileName, respond);
+                    return await handlers.handleAhaCostsUpload(
+                        onboarding,
+                        messageTrimmed,
+                        mediaUrl,
+                        fileName,
+                        messageKey,
+                        mediaBuffer,
+                        mimeType,
+                        respond
+                    );
                 case 'AHA_COSTS_CLASSIFY':
                     return await handlers.handleAhaCostsClassify(onboarding, messageTrimmed, respond);
                 case 'AHA_COSTS_CLASSIFY_HELP':

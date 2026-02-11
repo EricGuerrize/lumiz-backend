@@ -9,12 +9,27 @@ class CacheService {
     this.client = null;
     this.enabled = false;
     this.defaultTTL = 3600; // 1 hour default TTL
+    this._lastErrorLogAt = 0;
+    this.maxReconnectAttempts = Number(process.env.REDIS_MAX_RECONNECT_ATTEMPTS || 5);
+    this.cacheFeatureEnabled = this.readFlag('REDIS_CACHE_ENABLED', true);
+
+    if (!this.cacheFeatureEnabled) {
+      console.warn('[CACHE] ⚠️ REDIS_CACHE_ENABLED=false. Cache Redis desabilitado (modo degradado).');
+      return;
+    }
 
     if (process.env.REDIS_URL) {
       try {
         this.client = new IORedis(process.env.REDIS_URL, {
-          maxRetriesPerRequest: null,
+          maxRetriesPerRequest: 1,
+          connectTimeout: 5000,
+          enableOfflineQueue: false,
           retryStrategy: (times) => {
+            if (times > this.maxReconnectAttempts) {
+              this.enabled = false;
+              this.logRedisError('[CACHE] ❌ Limite de reconexão do Redis atingido. Cache desativado.');
+              return null;
+            }
             const delay = Math.min(times * 50, 2000);
             return delay;
           }
@@ -26,12 +41,12 @@ class CacheService {
         });
 
         this.client.on('error', (err) => {
-          console.error('[CACHE] ❌ Erro no Redis:', err.message);
+          this.logRedisError(`[CACHE] ❌ Erro no Redis: ${err.message}`);
           this.enabled = false;
         });
 
         this.client.on('close', () => {
-          console.log('[CACHE] ⚠️ Conexão Redis fechada');
+          this.logRedisError('[CACHE] ⚠️ Conexão Redis fechada');
           this.enabled = false;
         });
       } catch (error) {
@@ -40,6 +55,23 @@ class CacheService {
       }
     } else {
       console.warn('[CACHE] ⚠️ REDIS_URL não configurada. Cache desabilitado.');
+    }
+  }
+
+  readFlag(name, defaultValue) {
+    const raw = process.env[name];
+    if (raw === undefined || raw === null || raw === '') return defaultValue;
+    const normalized = String(raw).trim().toLowerCase();
+    if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) return true;
+    if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) return false;
+    return defaultValue;
+  }
+
+  logRedisError(message) {
+    const now = Date.now();
+    if (now - this._lastErrorLogAt > 15000) {
+      console.error(message);
+      this._lastErrorLogAt = now;
     }
   }
 

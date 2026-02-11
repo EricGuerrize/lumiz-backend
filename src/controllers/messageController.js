@@ -621,13 +621,33 @@ class MessageController {
       // #region agent log
       fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'messageController.js:361', message: 'Onboarding detected, calling processOnboarding', data: { hasMessageKey: !!messageKey, messageKeyPreview: messageKey ? String(messageKey).substring(0, 20) : 'null', hasMediaUrl: !!mediaUrl }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
       // #endregion
-      return await onboardingFlowService.processOnboarding(normalizedPhone, caption || '', mediaUrl, null);
+      return await onboardingFlowService.processOnboarding(
+        normalizedPhone,
+        caption || '',
+        mediaUrl,
+        null,
+        messageKey
+      );
     }
 
     return await this.documentHandler.handleImageMessage(phone, mediaUrl, caption, messageKey);
   }
 
-  async handleImageMessageWithBuffer(phone, imageBuffer, mimeType, caption) {
+  async handleImageMessageWithBuffer(phone, imageBuffer, mimeType, caption, messageKey = null) {
+    const normalizedPhone = normalizePhone(phone) || phone;
+
+    if (await onboardingFlowService.ensureOnboardingState(normalizedPhone)) {
+      return await onboardingFlowService.processOnboarding(
+        normalizedPhone,
+        caption || '',
+        null,
+        null,
+        messageKey,
+        imageBuffer,
+        mimeType
+      );
+    }
+
     return await this.documentHandler.handleImageMessageWithBuffer(phone, imageBuffer, mimeType, caption);
   }
 
@@ -650,13 +670,33 @@ class MessageController {
 
     // Se está em onboarding, processa no onboarding
     if (await onboardingFlowService.ensureOnboardingState(normalizedPhone)) {
-      return await onboardingFlowService.processOnboarding(normalizedPhone, '', mediaUrl, fileName);
+      return await onboardingFlowService.processOnboarding(
+        normalizedPhone,
+        '',
+        mediaUrl,
+        fileName,
+        messageKey
+      );
     }
 
     return await this.documentHandler.handleDocumentMessage(phone, mediaUrl, fileName, messageKey);
   }
 
-  async handleDocumentMessageWithBuffer(phone, docBuffer, mimeType, fileName) {
+  async handleDocumentMessageWithBuffer(phone, docBuffer, mimeType, fileName, messageKey = null) {
+    const normalizedPhone = normalizePhone(phone) || phone;
+
+    if (await onboardingFlowService.ensureOnboardingState(normalizedPhone)) {
+      return await onboardingFlowService.processOnboarding(
+        normalizedPhone,
+        '',
+        null,
+        fileName,
+        messageKey,
+        docBuffer,
+        mimeType
+      );
+    }
+
     const documentService = require('../services/documentService');
     const user = await userController.findUserByPhone(phone);
     if (!user) {

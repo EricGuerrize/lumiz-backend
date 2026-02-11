@@ -316,20 +316,23 @@ module.exports = {
         );
     },
 
-    ahaCostsConfirmation({ tipo, categoria, valor, data }) {
+    ahaCostsConfirmation({ tipo, categoria, valor, data, pagamento }) {
         return (
-            `Registrando: ${tipo} — ${categoria} — ${formatarMoeda(Number(valor))} — ${data}\n` +
-            `Confere?\n\n` +
-            `1️⃣ Confere\n` +
-            `2️⃣ Ajustar`
+            `💸 *CUSTO*\n\n` +
+            `Tipo: ${tipo}\n` +
+            `Categoria: ${categoria}\n` +
+            `Valor: ${formatarMoeda(Number(valor))}\n` +
+            `${pagamento ? `Pagamento: ${pagamento}\n` : ''}` +
+            `Data: ${data}\n\n` +
+            `Tá ok?\n\n` +
+            `1️⃣ Tá ok\n` +
+            `2️⃣ ✏️ Ajustar`
         );
     },
 
     ahaCostsRegistered() {
         return (
-            `Custo registrado (teste) ✅\n\n` +
-            `💡 Esta é apenas uma demonstração durante o onboarding.\n` +
-            `As transações reais serão salvas apenas após você concluir o cadastro.`
+            `Custo registrado (teste) ✅`
         );
     },
 

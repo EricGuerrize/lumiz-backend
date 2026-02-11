@@ -11,13 +11,46 @@ class PdfQueueService {
         this.queue = null;
         this.worker = null;
         this.queueEnabled = false;
+        this._lastErrorLogAt = 0;
+        this.maxReconnectAttempts = Number(process.env.REDIS_MAX_RECONNECT_ATTEMPTS || 5);
+        this.redisQueueFeatureEnabled = this.readFlag('REDIS_QUEUE_ENABLED', !!process.env.REDIS_URL);
+
+        if (!this.redisQueueFeatureEnabled) {
+            console.warn('[PDF_QUEUE] ⚠️ REDIS_QUEUE_ENABLED=false. Fila de PDF desabilitada (modo degradado).');
+            return;
+        }
 
         if (process.env.REDIS_URL) {
             try {
                 console.log('[PDF_QUEUE] Conectando ao Redis...');
                 // BullMQ requer maxRetriesPerRequest: null
                 this.connection = new IORedis(process.env.REDIS_URL, {
-                    maxRetriesPerRequest: null
+                    maxRetriesPerRequest: null,
+                    connectTimeout: 5000,
+                    enableOfflineQueue: false,
+                    retryStrategy: (times) => {
+                        if (times > this.maxReconnectAttempts) {
+                            this.queueEnabled = false;
+                            this.logRedisError('[PDF_QUEUE] ❌ Limite de reconexão atingido. Fila desativada.');
+                            return null;
+                        }
+                        return Math.min(times * 100, 3000);
+                    }
+                });
+
+                this.connection.on('ready', () => {
+                    if (this.queue && this.worker) {
+                        this.queueEnabled = true;
+                    }
+                    console.log('[PDF_QUEUE] ✅ Redis pronto');
+                });
+                this.connection.on('error', (err) => {
+                    this.logRedisError(`[PDF_QUEUE] ❌ Erro Redis: ${err.message}`);
+                    this.queueEnabled = false;
+                });
+                this.connection.on('close', () => {
+                    this.logRedisError('[PDF_QUEUE] ⚠️ Conexão Redis fechada. Fila em modo degradado.');
+                    this.queueEnabled = false;
                 });
 
                 console.log('[PDF_QUEUE] Criando Queue pdf-generation...');
@@ -27,6 +60,16 @@ class PdfQueueService {
                 this.worker = new Worker('pdf-generation', this.processJob.bind(this), {
                     connection: this.connection,
                     concurrency: 2 // Processa até 2 PDFs simultaneamente
+                });
+
+                this.queue.on('error', (err) => {
+                    this.logRedisError(`[PDF_QUEUE] ❌ Queue error: ${err.message}`);
+                    this.queueEnabled = false;
+                });
+
+                this.worker.on('error', (err) => {
+                    this.logRedisError(`[PDF_QUEUE] ❌ Worker error: ${err.message}`);
+                    this.queueEnabled = false;
                 });
 
                 this.worker.on('completed', (job) => {
@@ -44,6 +87,23 @@ class PdfQueueService {
             }
         } else {
             console.warn('[PDF_QUEUE] ⚠️ REDIS_URL não configurada. Fila desativada.');
+        }
+    }
+
+    readFlag(name, defaultValue) {
+        const raw = process.env[name];
+        if (raw === undefined || raw === null || raw === '') return defaultValue;
+        const normalized = String(raw).trim().toLowerCase();
+        if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) return true;
+        if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) return false;
+        return defaultValue;
+    }
+
+    logRedisError(message) {
+        const now = Date.now();
+        if (now - this._lastErrorLogAt > 15000) {
+            console.error(message);
+            this._lastErrorLogAt = now;
         }
     }
 

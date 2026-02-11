@@ -120,6 +120,10 @@ class DocumentService {
 
         } catch (downloadError) {
           console.error('[DOC] ⚠️ Erro ao baixar via URL direta:', downloadError.message);
+          console.warn('[DOC_URL_DOWNLOAD_FAILED]', {
+            hasMessageKey: !!messageKey,
+            message: downloadError.message
+          });
           imageBuffer = null;
         }
       } else {
@@ -133,7 +137,7 @@ class DocumentService {
       // #endregion
       if ((!imageBuffer || imageBuffer.length === 0) && messageKey) {
         try {
-          console.log('[DOC] Tentando baixar via Evolution API (fallback)...');
+          console.log('[DOC] URL falhou -> tentando baixar via Evolution API com messageKey (fallback)...');
           // Lazy load para evitar dependência circular se houver
           const evolutionService = require('./evolutionService');
           const mediaResponse = await evolutionService.downloadMedia(messageKey, 'image');
@@ -142,10 +146,13 @@ class DocumentService {
             imageBuffer = mediaResponse.data;
             console.log('[DOC] ✅ Arquivo baixado via Evolution API');
             console.log('[DOC] Tamanho:', imageBuffer.length, 'bytes');
+            console.log('[DOC_FALLBACK_MESSAGEKEY_SUCCESS]');
           }
         } catch (evolutionError) {
           console.log('[DOC] ❌ Erro ao baixar via Evolution API:', evolutionError.message);
         }
+      } else if ((!imageBuffer || imageBuffer.length === 0) && !messageKey) {
+        console.warn('[DOC] URL falhou e não há messageKey para fallback de mídia.');
       }
 
       if (!imageBuffer || imageBuffer.length === 0) {

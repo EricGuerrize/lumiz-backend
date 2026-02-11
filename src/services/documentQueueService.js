@@ -16,15 +16,48 @@ class DocumentQueueService {
     this.queue = null;
     this.worker = null;
     this.queueEnabled = false;
+    this._lastErrorLogAt = 0;
+    this.maxReconnectAttempts = Number(process.env.REDIS_MAX_RECONNECT_ATTEMPTS || 5);
+    this.redisQueueFeatureEnabled = this.readFlag('REDIS_QUEUE_ENABLED', !!process.env.REDIS_URL);
     
     // Callbacks para quando o processamento terminar (usado em onboarding)
     this.completionCallbacks = new Map();
+
+    if (!this.redisQueueFeatureEnabled) {
+      console.warn('[DOC_QUEUE] ⚠️ REDIS_QUEUE_ENABLED=false. Fila de documentos desabilitada (modo degradado).');
+      return;
+    }
 
     if (process.env.REDIS_URL) {
       try {
         console.log('[DOC_QUEUE] Conectando ao Redis...');
         this.connection = new IORedis(process.env.REDIS_URL, {
-          maxRetriesPerRequest: null
+          maxRetriesPerRequest: null,
+          connectTimeout: 5000,
+          enableOfflineQueue: false,
+          retryStrategy: (times) => {
+            if (times > this.maxReconnectAttempts) {
+              this.queueEnabled = false;
+              this.logRedisError('[DOC_QUEUE] ❌ Limite de reconexão atingido. Fila desativada.');
+              return null;
+            }
+            return Math.min(times * 100, 3000);
+          }
+        });
+
+        this.connection.on('ready', () => {
+          if (this.queue && this.worker) {
+            this.queueEnabled = true;
+          }
+          console.log('[DOC_QUEUE] ✅ Redis pronto');
+        });
+        this.connection.on('error', (err) => {
+          this.logRedisError(`[DOC_QUEUE] ❌ Erro Redis: ${err.message}`);
+          this.queueEnabled = false;
+        });
+        this.connection.on('close', () => {
+          this.logRedisError('[DOC_QUEUE] ⚠️ Conexão Redis fechada. Fila em modo degradado.');
+          this.queueEnabled = false;
         });
 
         console.log('[DOC_QUEUE] Criando Queue document-processing...');
@@ -34,6 +67,16 @@ class DocumentQueueService {
         this.worker = new Worker('document-processing', this.processJob.bind(this), {
           connection: this.connection,
           concurrency: 3 // Processa até 3 documentos simultaneamente
+        });
+
+        this.queue.on('error', (err) => {
+          this.logRedisError(`[DOC_QUEUE] ❌ Queue error: ${err.message}`);
+          this.queueEnabled = false;
+        });
+
+        this.worker.on('error', (err) => {
+          this.logRedisError(`[DOC_QUEUE] ❌ Worker error: ${err.message}`);
+          this.queueEnabled = false;
         });
 
         this.worker.on('completed', (job, result) => {
@@ -53,6 +96,23 @@ class DocumentQueueService {
       }
     } else {
       console.warn('[DOC_QUEUE] ⚠️ REDIS_URL não configurada. Fila desativada.');
+    }
+  }
+
+  readFlag(name, defaultValue) {
+    const raw = process.env[name];
+    if (raw === undefined || raw === null || raw === '') return defaultValue;
+    const normalized = String(raw).trim().toLowerCase();
+    if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) return true;
+    if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) return false;
+    return defaultValue;
+  }
+
+  logRedisError(message) {
+    const now = Date.now();
+    if (now - this._lastErrorLogAt > 15000) {
+      console.error(message);
+      this._lastErrorLogAt = now;
     }
   }
 

@@ -7,6 +7,15 @@ const helmet = require('helmet');
 const compression = require('compression');
 require('dotenv').config();
 
+function readFlag(name, defaultValue) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === null || raw === '') return defaultValue;
+  const normalized = String(raw).trim().toLowerCase();
+  if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) return false;
+  return defaultValue;
+}
+
 // Valida variáveis de ambiente na startup
 const { validate } = require('./config/env');
 try {
@@ -59,14 +68,24 @@ cron.schedule('0 0 * * *', async () => {
     if (process.env.SENTRY_DSN) Sentry.captureException(error);
   }
 });
-// Garante que mdrService seja inicializado na startup para ativar BullMQ
-console.log('[SERVER] Carregando mdrService...');
-try {
-  const mdrService = require('./services/mdrService');
-  console.log('[SERVER] ✅ mdrService carregado e inicializado');
-} catch (error) {
-  console.error('[SERVER] ❌ Erro ao carregar mdrService:', error.message);
-  console.error('[SERVER] Stack:', error.stack);
+const redisCacheEnabled = readFlag('REDIS_CACHE_ENABLED', !!process.env.REDIS_URL);
+const redisQueueEnabled = readFlag('REDIS_QUEUE_ENABLED', !!process.env.REDIS_URL);
+console.log(`[SERVER] Redis runtime: cache=${redisCacheEnabled ? 'enabled' : 'disabled'}, queues=${redisQueueEnabled ? 'enabled' : 'disabled'}`);
+if (!redisCacheEnabled || !redisQueueEnabled) {
+  console.warn('[REDIS_DEGRADED_MODE_ACTIVE] Parte do runtime Redis está em modo degradado por configuração.');
+}
+
+if (redisQueueEnabled) {
+  console.log('[SERVER] Carregando mdrService...');
+  try {
+    require('./services/mdrService');
+    console.log('[SERVER] ✅ mdrService carregado e inicializado');
+  } catch (error) {
+    console.error('[SERVER] ❌ Erro ao carregar mdrService:', error.message);
+    console.error('[SERVER] Stack:', error.stack);
+  }
+} else {
+  console.log('[SERVER] mdrService não inicializado na startup (REDIS_QUEUE_ENABLED=false).');
 }
 
 const app = express();
@@ -366,6 +385,8 @@ Server running on port ${PORT}
 Environment: ${process.env.NODE_ENV || 'development'}
 Evolution API: ${process.env.EVOLUTION_API_URL}
 Supabase: ${process.env.SUPABASE_URL ? 'Connected' : 'Not configured'}
+Redis Cache: ${redisCacheEnabled ? 'Enabled' : 'Disabled'}
+Redis Queues: ${redisQueueEnabled ? 'Enabled' : 'Disabled'}
 
 Endpoints:
   - Webhook: http://localhost:${PORT}/api/webhook
