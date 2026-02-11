@@ -14,6 +14,10 @@ const {
     PROCEDURE_KEYWORDS,
     sanitizeClientName
 } = require('../utils/procedureKeywords');
+const {
+    extractPrimaryMonetaryValue,
+    extractMixedPaymentSplit
+} = require('../utils/moneyParser');
 
 // ============================================================
 // Constantes (correção #18 - Magic numbers)
@@ -69,43 +73,17 @@ function parseBrazilianNumber(raw) {
 }
 
 function extractBestAmountFromText(text = '') {
-    const raw = String(text);
-    // 1. Prioridade: Busca explícita por R$
-    const currencyMatch = raw.match(/r\$\s*([0-9]{1,3}(?:[.,][0-9]{3})*(?:[.,][0-9]{2})?|[0-9]+(?:[.,][0-9]{2})?)/i);
-    if (currencyMatch && currencyMatch[1]) {
-        const value = parseBrazilianNumber(currencyMatch[1]);
-        if (value && value > 0) return value;
+    const raw = String(text || '');
+    const fromMoneyParser = extractPrimaryMonetaryValue(raw);
+    if (fromMoneyParser && fromMoneyParser > 0) return fromMoneyParser;
+
+    // fallback para casos como "5 mil"
+    const milMatch = raw.match(/(\d+(?:[.,]\d+)?)\s*mil\b/i);
+    if (milMatch && milMatch[1]) {
+        const base = parseBrazilianNumber(milMatch[1]);
+        if (base && base > 0) return base * 1000;
     }
-
-    // 2. Busca genérica por números
-    const matches = [...raw.matchAll(/(\d+(?:[.,]\d+)?)/g)].map((m) => m[1]);
-
-    const candidates = matches
-        .map((m) => ({ str: m, val: parseBrazilianNumber(m) }))
-        .filter(item => {
-            const n = item.val;
-            // Valida se é número válido positivo
-            if (!Number.isFinite(n) || n <= 0) return false;
-
-            // Filtro heurístico: Ignora anos (ex: 2024, 2025) APENAS se houver outros candidatos ou se parecer muito uma data
-            // Mas "2000" é um valor comum. Vamos ser menos agressivos.
-            // if (n >= 1900 && n <= 2100) return false; // REMOVIDO: Bloqueava valores como 2000
-
-
-            // Filtro heurístico de MENU: Ignora dígitos simples 1-9 que não tem formatação de centavos
-            // Ex: "1", "2" são ignorados (provável menu). "1,00", "2.50" são aceitos (valor).
-            // Nota: Se o usuário quis dizer 1 real e digitou "1", ele cairá no fallback de "valor não encontrado",
-            // o que é mais seguro do que assumir valor errado em step de menu.
-            if (/^[1-9]$/.test(item.str)) return false;
-
-            return true;
-        })
-        .map(item => item.val);
-
-    if (!candidates.length) return null;
-
-    // Retorna o maior valor encontrado (assumindo que o maior valor é o da transação)
-    return Math.max(...candidates);
+    return null;
 }
 
 // Correção #13: Validação de valor unificada
@@ -159,6 +137,8 @@ function extractSaleHeuristics(text = '') {
 
     let forma_pagamento = null;
     let parcelas = null;
+    let payment_split = null;
+    let valor_total = extractBestAmountFromText(raw);
 
     // PRIMEIRO: Verifica se há padrão "número x" na mensagem inteira (qualquer número seguido de x = parcela)
     const parcelasMatch = raw.match(/\b(\d{1,2})\s*x\b/i);
@@ -175,11 +155,25 @@ function extractSaleHeuristics(text = '') {
         forma_pagamento = 'credito_avista';
     }
 
+    const mixed = extractMixedPaymentSplit(raw, valor_total);
+    if (mixed && mixed.splits?.length) {
+        payment_split = mixed.splits;
+        valor_total = mixed.total || valor_total;
+        forma_pagamento = 'misto';
+        const hasCardSplit = mixed.splits.some((part) => part.metodo === 'parcelado');
+        if (hasCardSplit) {
+            const cardPart = mixed.splits.find((part) => part.metodo === 'parcelado');
+            parcelas = cardPart?.parcelas || parcelas;
+        }
+    }
+
     return {
         paciente: sanitizeClientName(paciente, procedimento),
         procedimento,
         forma_pagamento,
-        parcelas
+        parcelas,
+        payment_split,
+        valor_total
     };
 }
 
@@ -484,12 +478,11 @@ class OnboardingStateHandlers {
     }
 
     async handleContextHow(onboarding, messageTrimmed, normalizedPhone, respond) {
-        // Suporte às 4 novas opções de pagamento
+        // Suporte às opções de pagamento (com meio a meio)
         const payment = validateChoice(messageTrimmed, {
-            'pix': ['1', 'pix'],
-            'cartao': ['2', 'cartão', 'cartao'],
-            'boleto': ['3', 'boleto'],
-            'outros': ['4', 'outro', 'outros']
+            'avista': ['1', 'pix', 'dinheiro', 'a vista', 'à vista'],
+            'parcelado': ['2', 'cartão parcelado', 'cartao parcelado', 'parcelado'],
+            'misto': ['3', 'meio a meio', 'meio a meia', 'meio-meio', '50/50', 'metade', 'metade metade']
         });
 
         if (!payment) {
@@ -499,6 +492,7 @@ class OnboardingStateHandlers {
         // Mantém compatibilidade com campo antigo e novo
         onboarding.data.context_how = payment;
         onboarding.data.context_payment = payment;
+        onboarding.data.recebimento_preferencial = payment;
         onboarding.step = 'AHA_REVENUE';
         await analyticsService.track('onboarding_context_collected', {
             phone: normalizedPhone,
@@ -512,18 +506,20 @@ class OnboardingStateHandlers {
         // REMOVIDO: Chamada Gemini desnecessária (já foi corrigido na análise)
         // Usa apenas heurísticas locais
 
-        const valorResult = validateAndExtractValue(messageTrimmed, onboardingCopy.ahaRevenueMissingValue());
+        const heur = extractSaleHeuristics(messageTrimmed);
+        const valorFonte = heur.valor_total || extractBestAmountFromText(messageTrimmed);
+        const valorResult = validateAndExtractValue(String(valorFonte || messageTrimmed), onboardingCopy.ahaRevenueMissingValue());
         if (!valorResult.valid) {
             return await respond(valorResult.error);
         }
 
-        const heur = extractSaleHeuristics(messageTrimmed);
         const sale = {
             paciente: heur.paciente,
             procedimento: heur.procedimento,
-            valor: valorResult.valor,
+            valor: valorFonte || valorResult.valor,
             forma_pagamento: heur.forma_pagamento,
             parcelas: heur.parcelas,
+            payment_split: heur.payment_split || null,
             bandeira_cartao: null,
             data: new Date().toISOString().split('T')[0],
             original_text: messageTrimmed
@@ -550,9 +546,11 @@ class OnboardingStateHandlers {
         onboarding.data.pending_sale = sale;
         onboarding.step = 'AHA_REVENUE_CONFIRM';
         return await respond(onboardingCopy.ahaRevenueConfirmation({
-            procedimento: sale.procedimento || '—',
+            procedimento: sale.procedimento || 'Procedimento',
+            paciente: sale.paciente || null,
             valor: sale.valor,
-            pagamento: sale.forma_pagamento === 'parcelado' ? `Cartão ${sale.parcelas}x` : sale.forma_pagamento,
+            pagamento: this._formatSalePaymentText(sale),
+            split: this._formatSplitForCopy(sale.payment_split),
             data: formatDate(sale.data)
         }), true); // Persist imediato - dados importantes coletados
     }
@@ -562,8 +560,8 @@ class OnboardingStateHandlers {
         const correction = isNo(messageTrimmed);
 
         if (correction) {
-            onboarding.step = 'AHA_REVENUE';
-            return await respond(onboardingCopy.ahaRevenuePrompt(onboarding.data.nome || ''));
+            onboarding.step = 'AHA_REVENUE_ADJUST';
+            return await respond(onboardingCopy.ahaRevenueAdjustMenu(), true);
         }
 
         if (confirmed) {
@@ -701,6 +699,125 @@ class OnboardingStateHandlers {
         }
 
         return await respond(onboardingCopy.invalidChoice());
+    }
+
+    async handleAhaRevenueAdjust(onboarding, messageTrimmed, respond) {
+        const choice = validateChoice(messageTrimmed, {
+            'valor': ['1', 'valor', 'valor total'],
+            'pagamento': ['2', 'forma', 'pagamento'],
+            'parcelas': ['3', 'parcelas', 'parcela'],
+            'procedimento': ['4', 'procedimento', 'descricao', 'descrição']
+        });
+
+        if (!choice) return await respond(onboardingCopy.invalidChoice());
+
+        if (choice === 'valor') {
+            onboarding.step = 'AHA_REVENUE_ADJUST_VALUE';
+            return await respond('Perfeito. Me manda só o novo valor total da venda (ex: R$ 5000).', true);
+        }
+        if (choice === 'pagamento') {
+            onboarding.step = 'AHA_REVENUE_ADJUST_PAYMENT';
+            return await respond('Me diga a forma de pagamento:\n\n1️⃣ PIX\n2️⃣ Dinheiro\n3️⃣ Débito\n4️⃣ Crédito à vista\n5️⃣ Cartão parcelado\n6️⃣ Meio a meio', true);
+        }
+        if (choice === 'parcelas') {
+            onboarding.step = 'AHA_REVENUE_ADJUST_INSTALLMENTS';
+            return await respond('Quantas parcelas no cartão? (ex: 6x)', true);
+        }
+
+        onboarding.step = 'AHA_REVENUE_ADJUST_PROCEDURE';
+        return await respond('Me manda o procedimento/descrição correto.', true);
+    }
+
+    async handleAhaRevenueAdjustValue(onboarding, messageTrimmed, respond) {
+        const value = extractBestAmountFromText(messageTrimmed);
+        if (!value || value <= 0) return await respond(onboardingCopy.ahaRevenueMissingValue());
+        if (!onboarding.data.pending_sale) onboarding.data.pending_sale = {};
+        onboarding.data.pending_sale.valor = value;
+        if (Array.isArray(onboarding.data.pending_sale.payment_split) && onboarding.data.pending_sale.payment_split.length === 2) {
+            const half = Number((value / 2).toFixed(2));
+            onboarding.data.pending_sale.payment_split = [
+                { ...onboarding.data.pending_sale.payment_split[0], valor: half },
+                { ...onboarding.data.pending_sale.payment_split[1], valor: Number((value - half).toFixed(2)) }
+            ];
+        }
+        onboarding.step = 'AHA_REVENUE_CONFIRM';
+        const sale = onboarding.data.pending_sale;
+        return await respond(onboardingCopy.ahaRevenueConfirmation({
+            procedimento: sale.procedimento || 'Procedimento',
+            paciente: sale.paciente || null,
+            valor: sale.valor,
+            pagamento: this._formatSalePaymentText(sale),
+            split: this._formatSplitForCopy(sale.payment_split),
+            data: formatDate(sale.data)
+        }), true);
+    }
+
+    async handleAhaRevenueAdjustPayment(onboarding, messageTrimmed, respond) {
+        const choice = validateChoice(messageTrimmed, {
+            'pix': ['1', 'pix'],
+            'dinheiro': ['2', 'dinheiro'],
+            'debito': ['3', 'debito', 'débito'],
+            'credito_avista': ['4', 'credito avista', 'crédito à vista', 'a vista', 'avista'],
+            'parcelado': ['5', 'parcelado', 'cartao parcelado', 'cartão parcelado'],
+            'misto': ['6', 'meio a meio', 'metade', '50/50']
+        });
+        if (!choice) return await respond(onboardingCopy.invalidChoice());
+        if (!onboarding.data.pending_sale) onboarding.data.pending_sale = {};
+        onboarding.data.pending_sale.forma_pagamento = choice;
+        if (choice !== 'misto') onboarding.data.pending_sale.payment_split = null;
+        onboarding.step = 'AHA_REVENUE_CONFIRM';
+        const sale = onboarding.data.pending_sale;
+        return await respond(onboardingCopy.ahaRevenueConfirmation({
+            procedimento: sale.procedimento || 'Procedimento',
+            paciente: sale.paciente || null,
+            valor: sale.valor,
+            pagamento: this._formatSalePaymentText(sale),
+            split: this._formatSplitForCopy(sale.payment_split),
+            data: formatDate(sale.data)
+        }), true);
+    }
+
+    async handleAhaRevenueAdjustInstallments(onboarding, messageTrimmed, respond) {
+        const installments = parseInt((messageTrimmed.match(/(\d{1,2})/) || [])[1], 10);
+        if (!Number.isFinite(installments) || installments < 1 || installments > 24) {
+            return await respond('Não consegui entender as parcelas. Me manda no formato "6x" ou só "6".');
+        }
+        if (!onboarding.data.pending_sale) onboarding.data.pending_sale = {};
+        onboarding.data.pending_sale.parcelas = installments;
+        if (onboarding.data.pending_sale.forma_pagamento !== 'misto') {
+            onboarding.data.pending_sale.forma_pagamento = installments > 1 ? 'parcelado' : 'credito_avista';
+        } else if (Array.isArray(onboarding.data.pending_sale.payment_split)) {
+            onboarding.data.pending_sale.payment_split = onboarding.data.pending_sale.payment_split.map((part) =>
+                part.metodo === 'parcelado' || part.metodo === 'credito_avista'
+                    ? { ...part, metodo: installments > 1 ? 'parcelado' : 'credito_avista', parcelas: installments > 1 ? installments : null }
+                    : part
+            );
+        }
+        onboarding.step = 'AHA_REVENUE_CONFIRM';
+        const sale = onboarding.data.pending_sale;
+        return await respond(onboardingCopy.ahaRevenueConfirmation({
+            procedimento: sale.procedimento || 'Procedimento',
+            paciente: sale.paciente || null,
+            valor: sale.valor,
+            pagamento: this._formatSalePaymentText(sale),
+            split: this._formatSplitForCopy(sale.payment_split),
+            data: formatDate(sale.data)
+        }), true);
+    }
+
+    async handleAhaRevenueAdjustProcedure(onboarding, messageTrimmed, respond) {
+        if (!onboarding.data.pending_sale) onboarding.data.pending_sale = {};
+        onboarding.data.pending_sale.procedimento = messageTrimmed?.trim() || 'Procedimento';
+        onboarding.step = 'AHA_REVENUE_CONFIRM';
+        const sale = onboarding.data.pending_sale;
+        return await respond(onboardingCopy.ahaRevenueConfirmation({
+            procedimento: sale.procedimento || 'Procedimento',
+            paciente: sale.paciente || null,
+            valor: sale.valor,
+            pagamento: this._formatSalePaymentText(sale),
+            split: this._formatSplitForCopy(sale.payment_split),
+            data: formatDate(sale.data)
+        }), true);
     }
 
     // handleAhaCostsIntro foi removido pois agora o fluxo vai direto para UPLOAD
@@ -1262,6 +1379,38 @@ class OnboardingStateHandlers {
     async handleMdrSetupComplete(respond, respondAndClear) {
         return await respondAndClear(onboardingCopy.mdrSetupComplete());
     }
+
+    _formatSalePaymentText(sale = {}) {
+        if (sale.forma_pagamento === 'misto' && Array.isArray(sale.payment_split) && sale.payment_split.length) {
+            return 'Meio a meio';
+        }
+        if (sale.forma_pagamento === 'parcelado') {
+            return sale.parcelas ? `Cartão ${sale.parcelas}x` : 'Cartão parcelado';
+        }
+        const map = {
+            pix: 'PIX',
+            dinheiro: 'Dinheiro',
+            debito: 'Débito',
+            credito_avista: 'Crédito à vista',
+            avista: 'Crédito à vista'
+        };
+        return map[sale.forma_pagamento] || 'Não informado';
+    }
+
+    _formatSplitForCopy(split = null) {
+        if (!Array.isArray(split) || !split.length) return null;
+        return split.map((part) => {
+            const metodoLabel = part.metodo === 'pix' ? 'PIX' :
+                part.metodo === 'dinheiro' ? 'Dinheiro' :
+                part.metodo === 'debito' ? 'Débito' :
+                part.metodo === 'parcelado' ? 'Cartão' :
+                part.metodo === 'credito_avista' ? 'Cartão à vista' : 'Cartão';
+            return {
+                ...part,
+                metodo_label: metodoLabel
+            };
+        });
+    }
 }
 
 class OnboardingFlowService {
@@ -1436,13 +1585,25 @@ class OnboardingFlowService {
                     if (!sale.forma_pagamento) sale.forma_pagamento = 'avista';
 
                     return onboardingCopy.ahaRevenueConfirmation({
-                        procedimento: sale.procedimento || '—',
+                        procedimento: sale.procedimento || 'Procedimento',
+                        paciente: sale.paciente || null,
                         valor: sale.valor,
-                        pagamento: sale.forma_pagamento === 'parcelado' ? `Cartão ${sale.parcelas}x` : sale.forma_pagamento,
-                        data: sale.data || 'Hoje'
+                        pagamento: this.handlers._formatSalePaymentText(sale),
+                        split: this.handlers._formatSplitForCopy(sale.payment_split),
+                        data: formatDate(sale.data || 'Hoje')
                     });
                 }
                 return onboardingCopy.ahaRevenuePrompt(nome);
+            case 'AHA_REVENUE_ADJUST':
+                return onboardingCopy.ahaRevenueAdjustMenu();
+            case 'AHA_REVENUE_ADJUST_VALUE':
+                return 'Me manda só o novo valor total da venda (ex: R$ 5000).';
+            case 'AHA_REVENUE_ADJUST_PAYMENT':
+                return 'Me diga a forma de pagamento:\n\n1️⃣ PIX\n2️⃣ Dinheiro\n3️⃣ Débito\n4️⃣ Crédito à vista\n5️⃣ Cartão parcelado\n6️⃣ Meio a meio';
+            case 'AHA_REVENUE_ADJUST_INSTALLMENTS':
+                return 'Quantas parcelas no cartão? (ex: 6x)';
+            case 'AHA_REVENUE_ADJUST_PROCEDURE':
+                return 'Me manda o procedimento/descrição correto.';
             case 'AHA_COSTS_INTRO':
                 return onboardingCopy.ahaCostsIntro();
             case 'AHA_COSTS_UPLOAD':
@@ -1680,6 +1841,16 @@ class OnboardingFlowService {
                     return await handlers.handleAhaRevenue(onboarding, messageTrimmed, respond);
                 case 'AHA_REVENUE_CONFIRM':
                     return await handlers.handleAhaRevenueConfirm(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear);
+                case 'AHA_REVENUE_ADJUST':
+                    return await handlers.handleAhaRevenueAdjust(onboarding, messageTrimmed, respond);
+                case 'AHA_REVENUE_ADJUST_VALUE':
+                    return await handlers.handleAhaRevenueAdjustValue(onboarding, messageTrimmed, respond);
+                case 'AHA_REVENUE_ADJUST_PAYMENT':
+                    return await handlers.handleAhaRevenueAdjustPayment(onboarding, messageTrimmed, respond);
+                case 'AHA_REVENUE_ADJUST_INSTALLMENTS':
+                    return await handlers.handleAhaRevenueAdjustInstallments(onboarding, messageTrimmed, respond);
+                case 'AHA_REVENUE_ADJUST_PROCEDURE':
+                    return await handlers.handleAhaRevenueAdjustProcedure(onboarding, messageTrimmed, respond);
                 case 'AHA_COSTS_INTRO':
                     return await handlers.handleAhaCostsIntro(onboarding, messageTrimmed, respond);
                 case 'AHA_COSTS_UPLOAD':

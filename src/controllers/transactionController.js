@@ -23,7 +23,19 @@ class TransactionController {
     }
   }
 
-  async createAtendimento(userId, { valor, categoria, descricao, data, forma_pagamento, parcelas, bandeira_cartao, nome_cliente }) {
+  async createAtendimento(userId, {
+    valor,
+    categoria,
+    descricao,
+    data,
+    forma_pagamento,
+    parcelas,
+    bandeira_cartao,
+    nome_cliente,
+    split_group_id = null,
+    split_part = null,
+    split_total_parts = null
+  }) {
     try {
       // Usa nome_cliente se fornecido, senão extrai da descrição
       let nomeCliente = nome_cliente || 'Cliente WhatsApp';
@@ -92,7 +104,10 @@ class TransactionController {
         mdr_config_id: mdrConfig?.id || null,
         settlement_mode_applied: pricing.settlementModeApplied || null,
         recebimento_previsto: pricing.recebimentoPrevisto || null,
-        mdr_rule_snapshot: pricing.mdrRuleSnapshot || {}
+        mdr_rule_snapshot: pricing.mdrRuleSnapshot || {},
+        split_group_id,
+        split_part,
+        split_total_parts
       };
 
       let atendimento = null;

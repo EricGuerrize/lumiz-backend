@@ -1,6 +1,10 @@
 const cacheService = require('./cacheService');
 const knowledgeService = require('./knowledgeService');
-const { extractPrimaryMonetaryValue, extractInstallments } = require('../utils/moneyParser');
+const {
+  extractPrimaryMonetaryValue,
+  extractInstallments,
+  extractMixedPaymentSplit
+} = require('../utils/moneyParser');
 const { PROCEDURE_KEYWORDS, sanitizeClientName } = require('../utils/procedureKeywords');
 
 // Constantes
@@ -210,12 +214,16 @@ class IntentHeuristicService {
       bandeiraCartao = 'amex';
     }
 
+    const paymentSplit = extractMixedPaymentSplit(raw, this.extractValue(raw));
+
     return {
       nome_cliente: nomeCliente || null,
       categoria: categoria,
       forma_pagamento: formaPagamento || null,
       parcelas: parcelas,
-      bandeira_cartao: bandeiraCartao
+      bandeira_cartao: bandeiraCartao,
+      payment_split: paymentSplit?.splits || null,
+      valor_total: paymentSplit?.total || null
     };
   }
 
@@ -344,11 +352,13 @@ class IntentHeuristicService {
       const saleInfo = this.extractSaleInfo(original);
       dados = {
         tipo: 'entrada',
-        valor: valor,
+        valor: saleInfo.valor_total || valor,
         categoria: saleInfo.categoria || 'Procedimento',
         forma_pagamento: saleInfo.forma_pagamento || null,
         parcelas: saleInfo.parcelas || null,
         bandeira_cartao: saleInfo.bandeira_cartao || null,
+        payment_split: saleInfo.payment_split || null,
+        valor_total: saleInfo.valor_total || null,
         nome_cliente: saleInfo.nome_cliente || null,
         data: dataHoje
       };

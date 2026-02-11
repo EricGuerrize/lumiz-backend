@@ -154,10 +154,9 @@ module.exports = {
     contextPaymentQuestion() {
         return (
             `Em média, sua clínica recebe mais por:\n\n` +
-            `1️⃣ PIX\n` +
-            `2️⃣ Cartão\n` +
-            `3️⃣ Boleto\n` +
-            `4️⃣ Outros`
+            `1️⃣ À vista (pix/dinheiro)\n` +
+            `2️⃣ Cartão parcelado\n` +
+            `3️⃣ Meio a meio`
         );
     },
 
@@ -196,7 +195,7 @@ module.exports = {
         return `Isso foi hoje ou em outra data?`;
     },
 
-    ahaRevenueConfirmation({ procedimento, valor, pagamento, data }) {
+    ahaRevenueConfirmation({ procedimento, valor, pagamento, data, paciente, split }) {
         const pagamentoLabel = (() => {
             if (pagamento.includes('parcelado') || pagamento.includes('x')) {
                 const match = pagamento.match(/(\d+)x/i);
@@ -218,12 +217,35 @@ module.exports = {
             return pagamento;
         })();
 
+        const splitText = Array.isArray(split) && split.length
+            ? `Split: ${split.map((s) => {
+                const metodo = s.metodo_label || s.metodo || 'Outro';
+                const parcelaTxt = s.parcelas && s.parcelas > 1 ? ` ${s.parcelas}x` : '';
+                return `${metodo}${parcelaTxt} ${formatarMoeda(Number(s.valor || 0))}`;
+            }).join(' + ')}\n`
+            : '';
+
         return (
-            `Vou registrar assim:\n` +
-            `Venda: ${procedimento || '—'} — ${formatarMoeda(Number(valor))} — ${pagamentoLabel} — ${data}\n\n` +
+            `💰 *VENDA*\n\n` +
+            `Procedimento: ${procedimento || 'Procedimento'}\n` +
+            `${paciente ? `Cliente: ${paciente}\n` : ''}` +
+            `Valor total: ${formatarMoeda(Number(valor))}\n` +
+            `Pagamento: ${pagamentoLabel}\n` +
+            `${splitText}` +
+            `Data: ${data}\n\n` +
             `Tá ok?\n\n` +
             `1️⃣ Tá ok\n` +
             `2️⃣ ✏️ Ajustar`
+        );
+    },
+
+    ahaRevenueAdjustMenu() {
+        return (
+            `O que você quer ajustar?\n\n` +
+            `1️⃣ Valor total\n` +
+            `2️⃣ Forma de pagamento\n` +
+            `3️⃣ Parcelas do cartão\n` +
+            `4️⃣ Procedimento/descrição`
         );
     },
 
