@@ -211,17 +211,11 @@ function validateChoice(message, options) {
     const messageToValidate = isSingleDigitMenuChoice ? trimmedMessage : message;
 
     const v = normalizeText(messageToValidate);
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:158', message: 'validateChoice entrada', data: { message: message, normalized: v, optionsKeys: Object.keys(options), isSingleDigitMenuChoice: isSingleDigitMenuChoice }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'C' }) }).catch(() => { });
-    // #endregion
     for (const [key, matchers] of Object.entries(options)) {
         if (matchers.some(matcher => {
             if (typeof matcher === 'string') {
                 const normalizedMatcher = normalizeText(matcher);
                 const matches = v === normalizedMatcher || v.includes(normalizedMatcher);
-                // #region agent log
-                if (matches) fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:165', message: 'validateChoice match encontrado', data: { key: key, matcher: matcher, normalizedMatcher: normalizedMatcher, v: v }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'C' }) }).catch(() => { });
-                // #endregion
                 return matches;
             }
             if (matcher instanceof RegExp) {
@@ -229,15 +223,9 @@ function validateChoice(message, options) {
             }
             return false;
         })) {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:174', message: 'validateChoice retornando key', data: { key: key }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'C' }) }).catch(() => { });
-            // #endregion
             return key;
         }
     }
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:177', message: 'validateChoice nenhum match, retornando null', data: { v: v }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'C' }) }).catch(() => { });
-    // #endregion
     return null;
 }
 
@@ -453,9 +441,6 @@ class OnboardingStateHandlers {
     async handleConsent(onboarding, messageTrimmed, normalizedPhone, respond) {
         const choseAuthorize = isYes(messageTrimmed);
         const choseDeny = isNo(messageTrimmed);
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:345', message: 'handleConsent', data: { messageTrimmed: messageTrimmed.substring(0, 30), choseAuthorize, choseDeny }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'E' }) }).catch(() => { });
-        // #endregion
 
         if (choseDeny) {
             return await respond(onboardingCopy.consentDenied());
@@ -716,9 +701,6 @@ class OnboardingStateHandlers {
                     const membersToAdd = onboarding.data.members_to_add || [];
                     for (const member of membersToAdd) {
                         const normalizedMemberPhone = normalizePhone(member.telefone) || member.telefone;
-                        // #region agent log
-                        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:620', message: 'Salvando membro adicional no banco', data: { originalPhone: member.telefone, normalizedPhone: normalizedMemberPhone, nome: member.nome, funcao: member.funcao, clinicId: userId }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'B' }) }).catch(() => { });
-                        // #endregion
                         const result = await clinicMemberService.addMember({
                             clinicId: userId,
                             telefone: normalizedMemberPhone,
@@ -727,9 +709,6 @@ class OnboardingStateHandlers {
                             createdBy: userId,
                             isPrimary: false
                         });
-                        // #region agent log
-                        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:632', message: 'Resultado ao adicionar membro', data: { success: result.success, error: result.error, memberId: result.member?.id, phoneSaved: normalizedMemberPhone }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'B' }) }).catch(() => { });
-                        // #endregion
 
                         // Invalida cache do telefone do membro adicionado para garantir que próxima busca encontre
                         if (result.success) {
@@ -909,9 +888,6 @@ class OnboardingStateHandlers {
     // A mensagem de intro já pede o upload
 
     async handleAhaCostsUpload(onboarding, messageTrimmed, mediaUrl, fileName, messageKey, mediaBuffer, mimeType, respond) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:830', message: 'handleAhaCostsUpload entrada', data: { message: messageTrimmed, step: onboarding.step, hasMediaUrl: !!mediaUrl, hasMediaBuffer: !!mediaBuffer, hasMessageKey: !!messageKey, targetCostType: onboarding.data.cost_type }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
-        // #endregion
 
         // Correção #9: Só processa documento se não tem texto válido
         const valorFromText = extractBestAmountFromText(messageTrimmed);
@@ -1087,6 +1063,20 @@ class OnboardingStateHandlers {
                 console.error('[ONBOARDING] Erro ao processar documento:', e);
                 return await respond(onboardingCopy.documentProcessError());
             }
+        }
+
+        // Texto contextual sem valor (ex: "segue comprovante do boleto"):
+        // evita perguntar valor logo em seguida quando o usuário está apenas contextualizando.
+        const contextualDocKeywords = ['comprovante', 'boleto', 'nota', 'anexo', 'segue', 'pdf', 'foto', 'arquivo', 'documento'];
+        const normalizedText = normalizeText(messageTrimmed || '');
+        const looksLikeDocumentContextOnly =
+            !mediaUrl &&
+            !mediaBuffer &&
+            !valorFromText &&
+            contextualDocKeywords.some((kw) => normalizedText.includes(kw));
+
+        if (looksLikeDocumentContextOnly) {
+            return await respond('Perfeito, estou analisando seu documento. Assim que terminar eu te peço só a confirmação.');
         }
 
         return await respond(onboardingCopy.costValueNotFound());
@@ -1922,13 +1912,7 @@ class OnboardingFlowService {
     async processOnboarding(phone, message, mediaUrl = null, fileName = null, messageKey = null, mediaBuffer = null, mimeType = null) {
         const normalizedPhone = normalizePhone(phone) || phone;
         const onboarding = this.onboardingStates.get(normalizedPhone);
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:1518', message: 'processOnboarding entry', data: { normalizedPhone: normalizedPhone ? String(normalizedPhone).substring(0, 20) : null, hasState: !!onboarding, step: onboarding?.step, messagePreview: message ? String(message).trim().substring(0, 25) : null }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'D' }) }).catch(() => { });
-        // #endregion
         if (!onboarding) {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:1522', message: 'processOnboarding returning null (no state)', data: { normalizedPhone: normalizedPhone ? String(normalizedPhone).substring(0, 20) : null }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'D' }) }).catch(() => { });
-            // #endregion
             return null;
         }
 
@@ -2063,9 +2047,6 @@ class OnboardingFlowService {
         // Correção #19: Usar handlers ao invés de switch gigante
         const handlers = this.handlers;
         const step = onboarding.step;
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'onboardingFlowService.js:1548', message: 'processOnboarding switch step', data: { step: step, message: messageTrimmed.substring(0, 50) }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'B' }) }).catch(() => { });
-        // #endregion
 
         try {
             switch (step) {

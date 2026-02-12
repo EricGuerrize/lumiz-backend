@@ -39,6 +39,8 @@ class MessageController {
     this.awaitingData = new Map();
     this.pendingDocumentTransactions = new Map();
     this.pendingEdits = new Map();
+    this.mediaProcessing = new Map();
+    this.MEDIA_PROCESSING_TTL_MS = 60 * 1000;
 
     // Inicializa handlers com referências aos Maps
     this.transactionHandler = new TransactionHandler(this.pendingTransactions);
@@ -55,6 +57,47 @@ class MessageController {
     this.memberHandler = new MemberHandler();
   }
 
+  startMediaProcessing(phone, type = 'document') {
+    const normalizedPhone = normalizePhone(phone) || phone;
+    this.mediaProcessing.set(normalizedPhone, {
+      startedAt: Date.now(),
+      type
+    });
+    console.log('[DOC_CONTEXT_GUARD_ACTIVE]', { phone: normalizedPhone, type });
+  }
+
+  stopMediaProcessing(phone, reason = 'completed') {
+    const normalizedPhone = normalizePhone(phone) || phone;
+    const active = this.mediaProcessing.get(normalizedPhone);
+    if (!active) return;
+
+    this.mediaProcessing.delete(normalizedPhone);
+    console.log('[DOC_CONTEXT_GUARD_RELEASED]', {
+      phone: normalizedPhone,
+      type: active.type,
+      reason,
+      duration_ms: Date.now() - active.startedAt
+    });
+  }
+
+  isMediaProcessing(phone) {
+    const normalizedPhone = normalizePhone(phone) || phone;
+    const active = this.mediaProcessing.get(normalizedPhone);
+    if (!active) return false;
+
+    if (Date.now() - active.startedAt > this.MEDIA_PROCESSING_TTL_MS) {
+      this.mediaProcessing.delete(normalizedPhone);
+      console.warn('[DOC_CONTEXT_GUARD_RELEASED]', {
+        phone: normalizedPhone,
+        type: active.type,
+        reason: 'ttl_expired'
+      });
+      return false;
+    }
+
+    return true;
+  }
+
   /**
    * Processa mensagem recebida
    */
@@ -62,9 +105,6 @@ class MessageController {
     try {
       const normalizedPhone = normalizePhone(phone) || phone;
       console.log(`[MESSAGE] v2 - Recebida mensagem de ${normalizedPhone}: ${message?.substring(0, 30)}`);
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'messageController.js:62', message: 'handleIncomingMessage entry', data: { phone: String(phone).substring(0, 20), normalizedPhone: normalizedPhone ? String(normalizedPhone).substring(0, 20) : null, messagePreview: message ? String(message).trim().substring(0, 30) : null }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
-      // #endregion
 
       // IMPORTANTE: Primeiro verifica se é membro de clínica (clinic_members)
       // Isso tem prioridade sobre o estado de onboarding para evitar que membros
@@ -101,15 +141,8 @@ class MessageController {
       } else {
         // Não é membro, verifica se está em processo de onboarding
         const isOnboarding = await onboardingFlowService.ensureOnboardingState(normalizedPhone);
-        const onboardingStep = onboardingFlowService.getOnboardingStep(normalizedPhone);
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'messageController.js:84', message: 'isOnboarding check', data: { normalizedPhone: normalizedPhone ? String(normalizedPhone).substring(0, 20) : null, isOnboarding, onboardingStep, messagePreview: message ? String(message).trim().substring(0, 20) : null }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'B' }) }).catch(() => { });
-        // #endregion
         if (isOnboarding) {
           const result = await onboardingFlowService.processOnboarding(normalizedPhone, message);
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'messageController.js:92', message: 'processOnboarding resultado', data: { resultType: result == null ? 'null' : typeof result, resultPreview: typeof result === 'string' ? result.substring(0, 80) : null, hasResult: !!result }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'B' }) }).catch(() => { });
-          // #endregion
 
           // Se o onboarding retornou null, significa que foi finalizado e a mensagem deve ser processada normalmente
           if (result === null) {
@@ -149,16 +182,10 @@ class MessageController {
 
       // Se não encontrou usuário e não é mensagem de teste, faz busca mais robusta
       if (!user) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'messageController.js:103', message: 'Usuário não encontrado, buscando em clinic_members', data: { phone: normalizedPhone }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
-        // #endregion
         // Busca adicional em clinic_members incluindo membros não confirmados
         // Isso garante que encontramos membros recém-cadastrados que ainda não confirmaram
         const clinicMemberService = require('../services/clinicMemberService');
         const member = await clinicMemberService.findMemberByPhone(normalizedPhone);
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'messageController.js:107', message: 'Resultado busca adicional em clinic_members', data: { found: !!member, memberId: member?.id, clinicId: member?.clinic_id, phoneInDb: member?.telefone }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
-        // #endregion
 
         if (member && member.clinic_id) {
           // Encontrou membro! Busca o profile da clínica
@@ -233,6 +260,14 @@ class MessageController {
 
       if (this.pendingEdits.has(normalizedPhone)) {
         return await this.editHandler.handleEditConfirmation(normalizedPhone, message, user);
+      }
+
+      if (this.isMediaProcessing(normalizedPhone)) {
+        console.log('[DOC_CONTEXT_GUARD_BLOCK_TEXT]', {
+          phone: normalizedPhone,
+          message: (message || '').substring(0, 80)
+        });
+        return 'Recebi seu documento e ainda estou analisando. Já te respondo em instantes.';
       }
 
       // Verifica se está no fluxo de adicionar membro
@@ -325,8 +360,8 @@ class MessageController {
       }
 
       // Verifica se estamos aguardando dados (ex: valor)
-      if (this.awaitingData.has(phone)) {
-        return await this.handleAwaitingData(phone, message, intent, user);
+      if (this.awaitingData.has(normalizedPhone)) {
+        return await this.handleAwaitingData(normalizedPhone, message, intent, user);
       }
 
       // Roteia para handlers baseado no intent
@@ -517,9 +552,6 @@ class MessageController {
         return this.helpHandler.handleHelp();
 
       case 'apenas_valor':
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'messageController.js:465', message: 'routeIntent apenas_valor', data: { valor: intent.dados?.valor, phone: String(phone).substring(0, 20) }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
-        // #endregion
         return await this.handleOnlyValue(intent, phone);
 
       case 'apenas_procedimento':
@@ -624,121 +656,138 @@ class MessageController {
    */
   async handleImageMessage(phone, mediaUrl, caption, messageKey = null) {
     const normalizedPhone = normalizePhone(phone) || phone;
+    this.startMediaProcessing(normalizedPhone, 'image');
 
-    if (mdrChatFlowService.isActive(normalizedPhone)) {
-      const user = await userController.findUserByPhone(normalizedPhone);
-      if (user) {
-        const mdrResponse = await mdrChatFlowService.handleMedia({
-          phone: normalizedPhone,
-          user,
-          mediaUrl
-        });
-        if (mdrResponse) {
-          return mdrResponse;
+    try {
+      if (mdrChatFlowService.isActive(normalizedPhone)) {
+        const user = await userController.findUserByPhone(normalizedPhone);
+        if (user) {
+          const mdrResponse = await mdrChatFlowService.handleMedia({
+            phone: normalizedPhone,
+            user,
+            mediaUrl
+          });
+          if (mdrResponse) {
+            return mdrResponse;
+          }
         }
       }
-    }
 
-    // Se está em onboarding, processa no onboarding
-    if (await onboardingFlowService.ensureOnboardingState(normalizedPhone)) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'messageController.js:361', message: 'Onboarding detected, calling processOnboarding', data: { hasMessageKey: !!messageKey, messageKeyPreview: messageKey ? String(messageKey).substring(0, 20) : 'null', hasMediaUrl: !!mediaUrl }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
-      // #endregion
-      return await onboardingFlowService.processOnboarding(
-        normalizedPhone,
-        caption || '',
-        mediaUrl,
-        null,
-        messageKey
-      );
-    }
+      // Se está em onboarding, processa no onboarding
+      if (await onboardingFlowService.ensureOnboardingState(normalizedPhone)) {
+        return await onboardingFlowService.processOnboarding(
+          normalizedPhone,
+          caption || '',
+          mediaUrl,
+          null,
+          messageKey
+        );
+      }
 
-    return await this.documentHandler.handleImageMessage(phone, mediaUrl, caption, messageKey);
+      return await this.documentHandler.handleImageMessage(phone, mediaUrl, caption, messageKey);
+    } finally {
+      this.stopMediaProcessing(normalizedPhone);
+    }
   }
 
   async handleImageMessageWithBuffer(phone, imageBuffer, mimeType, caption, messageKey = null) {
     const normalizedPhone = normalizePhone(phone) || phone;
+    this.startMediaProcessing(normalizedPhone, 'image_buffer');
 
-    if (await onboardingFlowService.ensureOnboardingState(normalizedPhone)) {
-      return await onboardingFlowService.processOnboarding(
-        normalizedPhone,
-        caption || '',
-        null,
-        null,
-        messageKey,
-        imageBuffer,
-        mimeType
-      );
+    try {
+      if (await onboardingFlowService.ensureOnboardingState(normalizedPhone)) {
+        return await onboardingFlowService.processOnboarding(
+          normalizedPhone,
+          caption || '',
+          null,
+          null,
+          messageKey,
+          imageBuffer,
+          mimeType
+        );
+      }
+
+      return await this.documentHandler.handleImageMessageWithBuffer(phone, imageBuffer, mimeType, caption);
+    } finally {
+      this.stopMediaProcessing(normalizedPhone);
     }
-
-    return await this.documentHandler.handleImageMessageWithBuffer(phone, imageBuffer, mimeType, caption);
   }
 
   async handleDocumentMessage(phone, mediaUrl, fileName, messageKey = null) {
     const normalizedPhone = normalizePhone(phone) || phone;
+    this.startMediaProcessing(normalizedPhone, 'document');
 
-    if (mdrChatFlowService.isActive(normalizedPhone)) {
-      const user = await userController.findUserByPhone(normalizedPhone);
-      if (user) {
-        const mdrResponse = await mdrChatFlowService.handleMedia({
-          phone: normalizedPhone,
-          user,
-          mediaUrl
-        });
-        if (mdrResponse) {
-          return mdrResponse;
+    try {
+      if (mdrChatFlowService.isActive(normalizedPhone)) {
+        const user = await userController.findUserByPhone(normalizedPhone);
+        if (user) {
+          const mdrResponse = await mdrChatFlowService.handleMedia({
+            phone: normalizedPhone,
+            user,
+            mediaUrl
+          });
+          if (mdrResponse) {
+            return mdrResponse;
+          }
         }
       }
-    }
 
-    // Se está em onboarding, processa no onboarding
-    if (await onboardingFlowService.ensureOnboardingState(normalizedPhone)) {
-      return await onboardingFlowService.processOnboarding(
-        normalizedPhone,
-        '',
-        mediaUrl,
-        fileName,
-        messageKey
-      );
-    }
+      // Se está em onboarding, processa no onboarding
+      if (await onboardingFlowService.ensureOnboardingState(normalizedPhone)) {
+        return await onboardingFlowService.processOnboarding(
+          normalizedPhone,
+          '',
+          mediaUrl,
+          fileName,
+          messageKey
+        );
+      }
 
-    return await this.documentHandler.handleDocumentMessage(phone, mediaUrl, fileName, messageKey);
+      return await this.documentHandler.handleDocumentMessage(phone, mediaUrl, fileName, messageKey);
+    } finally {
+      this.stopMediaProcessing(normalizedPhone);
+    }
   }
 
   async handleDocumentMessageWithBuffer(phone, docBuffer, mimeType, fileName, messageKey = null) {
     const normalizedPhone = normalizePhone(phone) || phone;
+    this.startMediaProcessing(normalizedPhone, 'document_buffer');
 
-    if (await onboardingFlowService.ensureOnboardingState(normalizedPhone)) {
-      return await onboardingFlowService.processOnboarding(
-        normalizedPhone,
-        '',
-        null,
-        fileName,
-        messageKey,
-        docBuffer,
-        mimeType
-      );
+    try {
+      if (await onboardingFlowService.ensureOnboardingState(normalizedPhone)) {
+        return await onboardingFlowService.processOnboarding(
+          normalizedPhone,
+          '',
+          null,
+          fileName,
+          messageKey,
+          docBuffer,
+          mimeType
+        );
+      }
+
+      const documentService = require('../services/documentService');
+      const user = await userController.findUserByPhone(normalizedPhone);
+      if (!user) {
+        await onboardingFlowService.startNewOnboarding(normalizedPhone);
+        return null;
+      }
+
+      const result = await documentService.processDocumentFromBuffer(docBuffer, mimeType, fileName);
+      const response = documentService.formatDocumentSummary(result);
+
+      if (result.transacoes && result.transacoes.length > 0) {
+        this.pendingDocumentTransactions.set(normalizedPhone, {
+          user,
+          transacoes: result.transacoes,
+          timestamp: Date.now()
+        });
+      }
+
+      return response;
+    } finally {
+      this.stopMediaProcessing(normalizedPhone);
     }
-
-    const documentService = require('../services/documentService');
-    const user = await userController.findUserByPhone(phone);
-    if (!user) {
-      await onboardingFlowService.startNewOnboarding(phone);
-      return null;
-    }
-
-    const result = await documentService.processDocumentFromBuffer(docBuffer, mimeType, fileName);
-    const response = documentService.formatDocumentSummary(result);
-
-    if (result.transacoes && result.transacoes.length > 0) {
-      this.pendingDocumentTransactions.set(phone, {
-        user,
-        transacoes: result.transacoes,
-        timestamp: Date.now()
-      });
-    }
-
-    return response;
   }
 
   /**

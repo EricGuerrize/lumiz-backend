@@ -54,7 +54,7 @@ class DocumentService {
     }
 
     // Padrão: assume JPEG
-    console.log('[DOC] ⚠️ Tipo não identificado pelos magic numbers, usando JPEG como padrão');
+    // console.log('[DOC] ⚠️ Tipo não identificado pelos magic numbers, usando JPEG como padrão');
     return { mimeType: 'image/jpeg', fileExtension: 'JPG' };
   }
 
@@ -66,17 +66,39 @@ class DocumentService {
    */
   async processImage(imageBufferOrUrl, messageKey = null) {
     try {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'documentService.js:67',message:'processImage entry',data:{hasUrl:typeof imageBufferOrUrl==='string',urlPreview:typeof imageBufferOrUrl==='string'?imageBufferOrUrl.substring(0,50):'buffer',messageKey:messageKey?String(messageKey).substring(0,20):'null'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
       console.log('[DOC] Iniciando processamento com Google Vision...');
 
       let imageBuffer;
+      let downloadSource = 'none';
 
-      // Se recebeu uma string (URL), faz o download
-      if (typeof imageBufferOrUrl === 'string') {
+      // ESTRATÉGIA DE DOWNLOAD REVISADA:
+      // 1. Prioridade: messageKey (mais confiável via Evolution API)
+      // 2. Fallback: URL direta (pode expirar rápido)
+
+      // Se temos messageKey, tentamos baixar via API primeiro
+      if (messageKey) {
+        try {
+          console.log('[DOC] Tentando baixar mídia via Evolution API (messageKey prioritário)...');
+          // Lazy load para evitar dependência circular se houver
+          const evolutionService = require('./evolutionService');
+          const mediaResponse = await evolutionService.downloadMedia(messageKey, 'image');
+
+          if (mediaResponse && mediaResponse.data) {
+            imageBuffer = mediaResponse.data;
+            downloadSource = 'evolution_api';
+            console.log('[DOC] ✅ Arquivo baixado via Evolution API');
+            console.log('[DOC] Tamanho:', imageBuffer.length, 'bytes');
+          }
+        } catch (evolutionError) {
+          console.warn('[DOC] ⚠️ Falha ao baixar via Evolution API:', evolutionError.message);
+          console.log('[DOC] Tentando fallback para URL direta...');
+        }
+      }
+
+      // Se não conseguiu via API (ou não tinha key) e temos URL, tenta baixar da URL
+      if ((!imageBuffer || imageBuffer.length === 0) && typeof imageBufferOrUrl === 'string') {
         const imageUrl = imageBufferOrUrl;
-        console.log('[DOC] Baixando imagem da URL:', imageUrl.substring(0, 100) + '...');
+        console.log('[DOC] Baixando mídia da URL (fallback):', imageUrl.substring(0, 100) + '...');
 
         try {
           const response = await axios.get(imageUrl, {
@@ -90,73 +112,22 @@ class DocumentService {
           });
 
           imageBuffer = Buffer.from(response.data);
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'documentService.js:89',message:'Buffer after URL download',data:{bufferLength:imageBuffer.length,firstBytes:Array.from(imageBuffer.slice(0,8)).map(b=>'0x'+b.toString(16).padStart(2,'0').toUpperCase()).join(' ')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-          // #endregion
+          downloadSource = 'direct_url';
 
-          // Verifica se o buffer baixado é válido
-          const { mimeType } = this.detectImageType(imageBuffer);
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'documentService.js:92',message:'MIME type detected',data:{mimeType:mimeType,willValidate:true},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-          // #endregion
-          if (mimeType === 'image/jpeg' && imageBuffer.length > 0) {
-            // Se detectou JPEG mas os bytes não são FF D8 FF, pode ser falso positivo do default
-            // Mas detectImageType retorna JPEG como default, então precisamos checar os bytes
-            if (imageBuffer[0] !== 0xFF || imageBuffer[1] !== 0xD8) {
-              console.log('[DOC] ⚠️ Buffer baixado não parece ser um JPEG válido (magic numbers incorretos)');
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'documentService.js:96',message:'JPEG validation failed',data:{firstByte:'0x'+imageBuffer[0].toString(16),secondByte:'0x'+imageBuffer[1].toString(16),willSetNull:true},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-              // #endregion
-              imageBuffer = null; // Força fallback
-            } else {
-              console.log('[DOC] ✅ Arquivo baixado via URL e validado');
-            }
-          } else if (mimeType === 'application/pdf' || mimeType === 'image/png' || mimeType === 'image/webp') {
-            console.log('[DOC] ✅ Arquivo baixado via URL e validado:', mimeType);
-          } else {
-            console.log('[DOC] ⚠️ Tipo de arquivo suspeito:', mimeType);
-            // Não anula imageBuffer aqui para dar uma chance, mas o log avisa
-          }
+          console.log('[DOC] ✅ Arquivo baixado via URL direta');
 
         } catch (downloadError) {
-          console.error('[DOC] ⚠️ Erro ao baixar via URL direta:', downloadError.message);
-          console.warn('[DOC_URL_DOWNLOAD_FAILED]', {
-            hasMessageKey: !!messageKey,
-            message: downloadError.message
-          });
+          console.error('[DOC] ❌ Erro fatal: Falha ao baixar via URL também:', downloadError.message);
           imageBuffer = null;
         }
-      } else {
-        // Já é um buffer
+      } else if (!imageBuffer && Buffer.isBuffer(imageBufferOrUrl)) {
+        // Já era um buffer desde o início
         imageBuffer = imageBufferOrUrl;
-      }
-
-      // Fallback: Se não tem buffer válido e tem messageKey, tenta Evolution API
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/59a99cd5-7421-4f77-be12-78a36db4788f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'documentService.js:119',message:'Checking fallback condition',data:{hasBuffer:!!imageBuffer,bufferLength:imageBuffer?.length||0,hasMessageKey:!!messageKey,willTryFallback:(!imageBuffer||imageBuffer.length===0)&&!!messageKey},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
-      if ((!imageBuffer || imageBuffer.length === 0) && messageKey) {
-        try {
-          console.log('[DOC] URL falhou -> tentando baixar via Evolution API com messageKey (fallback)...');
-          // Lazy load para evitar dependência circular se houver
-          const evolutionService = require('./evolutionService');
-          const mediaResponse = await evolutionService.downloadMedia(messageKey, 'image');
-
-          if (mediaResponse && mediaResponse.data) {
-            imageBuffer = mediaResponse.data;
-            console.log('[DOC] ✅ Arquivo baixado via Evolution API');
-            console.log('[DOC] Tamanho:', imageBuffer.length, 'bytes');
-            console.log('[DOC_FALLBACK_MESSAGEKEY_SUCCESS]');
-          }
-        } catch (evolutionError) {
-          console.log('[DOC] ❌ Erro ao baixar via Evolution API:', evolutionError.message);
-        }
-      } else if ((!imageBuffer || imageBuffer.length === 0) && !messageKey) {
-        console.warn('[DOC] URL falhou e não há messageKey para fallback de mídia.');
+        downloadSource = 'buffer_direct';
       }
 
       if (!imageBuffer || imageBuffer.length === 0) {
-        throw new Error('Não foi possível obter a imagem (URL falhou e fallback falhou)');
+        throw new Error('Não foi possível obter a mídia (todas as tentativas falharam)');
       }
 
       console.log('[DOC] Tamanho do buffer final:', imageBuffer.length, 'bytes');
@@ -174,7 +145,7 @@ class DocumentService {
 
       // Valida qualidade da imagem antes de processar
       const validation = validateImage(imageBuffer, mimeType);
-      
+
       if (!validation.valid) {
         console.log('[DOC] ❌ Imagem reprovada na validação:', validation.error);
         return {
