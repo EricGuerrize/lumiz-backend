@@ -1,3 +1,6 @@
+// IMPORTANT: Make sure to import `instrument.js` at the top of your file.
+require("./instrument");
+
 const express = require('express');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
@@ -40,15 +43,7 @@ const reminderService = require('./services/reminderService');
 const nudgeService = require('./services/nudgeService');
 const insightService = require('./services/insightService');
 
-// Inicializa Sentry se DSN estiver configurado
-if (process.env.SENTRY_DSN) {
-  Sentry.init({
-    dsn: process.env.SENTRY_DSN,
-    tracesSampleRate: 1.0,
-    environment: process.env.NODE_ENV || 'development'
-  });
-  console.log('[SERVER] Sentry inicializado');
-}
+// Sentry initialization is now handled in instrument.js
 
 // Cron Job para limpeza de tokens expirados (roda todo dia à meia-noite)
 cron.schedule('0 0 * * *', async () => {
@@ -221,7 +216,7 @@ app.get('/health', async (req, res) => {
     const supabase = require('./db/supabase');
     const { error: dbError } = await supabase.from('profiles').select('id').limit(1);
     const dbLatency = Date.now() - dbStart;
-    
+
     if (dbError) {
       health.checks.database = { status: 'error', latency: dbLatency, error: dbError.message };
       criticalFailures++;
@@ -368,6 +363,9 @@ app.get('/', (req, res) => {
     }
   });
 });
+
+// The error handler must be registered before any other error middleware and after all controllers
+Sentry.setupExpressErrorHandler(app);
 
 // Global error handler (must be last middleware)
 const errorHandler = require('./middleware/errorHandler');

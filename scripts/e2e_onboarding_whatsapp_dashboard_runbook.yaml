@@ -1,0 +1,105 @@
+name: e2e_onboarding_whatsapp_dashboard
+version: 1
+goal:
+  - validar onboarding completo via WhatsApp
+  - validar envio de imagem/pdf no onboarding
+  - validar confirmacao de extracao com sim/nao
+  - validar registro diario pos-onboarding
+  - validar reflexo no dashboard
+
+preconditions:
+  - railway_deploy_branch: main
+  - env_required:
+      - SUPABASE_URL
+      - SUPABASE_SERVICE_ROLE_KEY
+      - EVOLUTION_API_URL
+      - EVOLUTION_API_KEY
+      - EVOLUTION_INSTANCE_NAME
+      - GEMINI_API_KEY
+  - redis_degraded_mode_if_unstable:
+      - REDIS_QUEUE_ENABLED=false
+      - REDIS_CACHE_ENABLED=false
+  - manager_member_confirmed: true
+  - dashboard_login_ok: true
+
+test_cases:
+  - id: 1
+    name: onboarding_basico
+    action: concluir onboarding do inicio ao fim
+    expected: envia handoff final sem travar
+  - id: 2
+    name: venda_simples_onboarding
+    action: enviar "Botox 1200 pix"
+    expected: confirmacao clara e registro de teste
+  - id: 3
+    name: custo_simples_onboarding
+    action: enviar "Aluguel 4000"
+    expected: classifica fixo, confirma e avanca
+  - id: 4
+    name: imagem_onboarding
+    action: enviar foto de nota/cupom
+    expected: OCR extrai e pede confirmacao ou fallback claro
+  - id: 5
+    name: pdf_onboarding
+    action: enviar PDF de nota fiscal
+    expected: extrai transacao e pergunta SIM/NAO
+  - id: 6
+    name: confirmar_pdf_sim
+    action: responder "sim" apos extracao
+    expected: registra transacao e nao desvia para MDR
+  - id: 7
+    name: cancelar_pdf_nao
+    action: responder "nao" apos extracao
+    expected: cancela pendencia sem registrar
+  - id: 8
+    name: registro_diario_venda
+    action: enviar "vendi 1500 no pix"
+    expected: confirma e salva em atendimentos
+  - id: 9
+    name: registro_diario_custo
+    action: enviar "paguei internet 320"
+    expected: confirma e salva em contas_pagar
+  - id: 10
+    name: reflexo_dashboard
+    action: abrir dashboard apos casos 8 e 9
+    expected: dados visiveis sem 403/500/js_error
+
+evidence_required:
+  - whatsapp_screenshot
+  - railway_log_excerpt
+  - supabase_row_evidence
+  - dashboard_screenshot_when_applicable
+
+log_filters:
+  - "[WEBHOOK]"
+  - "[MESSAGE]"
+  - "[ONBOARDING]"
+  - "[DOC]"
+  - "[MDR]"
+  - "Erro"
+  - "Exception"
+  - "Unhandled"
+
+acceptance_criteria:
+  - all_10_cases_executed_with_evidence: true
+  - case_6_mandatory_pass: true
+  - no_critical_bot_outage: true
+  - dashboard_reflects_updates_within_seconds: 60
+
+supabase_queries_file: scripts/e2e-validation-queries.sql
+
+evidence_template:
+  case_id: null
+  start_time: null
+  end_time: null
+  phone_tested: null
+  message_sent: null
+  bot_response_summary: null
+  result: PASS
+  evidence:
+    whatsapp_screenshot: null
+    railway_log_excerpt: null
+    supabase_query_or_row: null
+    dashboard_screenshot: null
+  notes: null
+
