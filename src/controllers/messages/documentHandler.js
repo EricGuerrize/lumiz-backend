@@ -1,7 +1,9 @@
 const userController = require('../userController');
 const onboardingFlowService = require('../../services/onboardingFlowService');
+const onboardingService = require('../../services/onboardingService');
 const documentService = require('../../services/documentService');
 const userRateLimit = require('../../middleware/userRateLimit');
+const { normalizePhone } = require('../../utils/phone');
 
 /**
  * Handler para documentos e imagens
@@ -9,6 +11,84 @@ const userRateLimit = require('../../middleware/userRateLimit');
 class DocumentHandler {
   constructor(pendingDocumentTransactions) {
     this.pendingDocumentTransactions = pendingDocumentTransactions;
+    this.PENDING_CONFIRMATION_TTL_MS = 15 * 60 * 1000;
+  }
+
+  normalizePhoneKey(phone) {
+    return normalizePhone(phone) || phone;
+  }
+
+  async persistPendingConfirmation(phone, user, transacoes) {
+    try {
+      const normalizedPhone = this.normalizePhoneKey(phone);
+      const state = await onboardingService.getState(normalizedPhone);
+      if (!state?.id) return;
+
+      const newData = {
+        ...(state.data || {}),
+        realtime: {
+          ...(state.data?.realtime || {}),
+          pending_document_confirmation: {
+            tipo: 'doc_confirmation',
+            created_at: new Date().toISOString(),
+            user_id: user?.id || null,
+            transacoes: Array.isArray(transacoes) ? transacoes : []
+          }
+        }
+      };
+
+      await onboardingService.updateRecord(state.id, { data: newData });
+    } catch (error) {
+      console.warn('[DOC_CONFIRM] Falha ao persistir pending de documento:', error.message);
+    }
+  }
+
+  async clearPersistedPendingConfirmation(phone) {
+    try {
+      const normalizedPhone = this.normalizePhoneKey(phone);
+      const state = await onboardingService.getState(normalizedPhone);
+      if (!state?.id) return;
+
+      const realtime = { ...(state.data?.realtime || {}) };
+      if (!realtime.pending_document_confirmation) return;
+      delete realtime.pending_document_confirmation;
+
+      const newData = {
+        ...(state.data || {}),
+        realtime
+      };
+
+      await onboardingService.updateRecord(state.id, { data: newData });
+    } catch (error) {
+      console.warn('[DOC_CONFIRM] Falha ao limpar pending persistido:', error.message);
+    }
+  }
+
+  async getPersistedPendingConfirmation(phone) {
+    try {
+      const normalizedPhone = this.normalizePhoneKey(phone);
+      const state = await onboardingService.getState(normalizedPhone);
+      const pending = state?.data?.realtime?.pending_document_confirmation;
+
+      if (!pending || !Array.isArray(pending.transacoes) || pending.transacoes.length === 0) {
+        return null;
+      }
+
+      const createdAt = pending.created_at ? new Date(pending.created_at).getTime() : 0;
+      if (!createdAt || Number.isNaN(createdAt)) {
+        return null;
+      }
+
+      if (Date.now() - createdAt > this.PENDING_CONFIRMATION_TTL_MS) {
+        await this.clearPersistedPendingConfirmation(normalizedPhone);
+        return null;
+      }
+
+      return pending;
+    } catch (error) {
+      console.warn('[DOC_CONFIRM] Falha ao ler pending persistido:', error.message);
+      return null;
+    }
   }
 
   /**
@@ -29,20 +109,21 @@ class DocumentHandler {
    */
   async handleDocumentMessage(phone, mediaUrl, fileName, messageKey = null) {
     try {
+      const normalizedPhone = this.normalizePhoneKey(phone);
       // Verifica rate limit antes de processar
-      const rateLimitError = await this.checkDocumentRateLimit(phone);
+      const rateLimitError = await this.checkDocumentRateLimit(normalizedPhone);
       if (rateLimitError) {
         return rateLimitError;
       }
 
       // Verifica se usuário está cadastrado
-      if (await onboardingFlowService.ensureOnboardingState(phone)) {
+      if (await onboardingFlowService.ensureOnboardingState(normalizedPhone)) {
         return 'Complete seu cadastro primeiro! 😊\n\nQual o nome da sua clínica?';
       }
 
-      const user = await userController.findUserByPhone(phone);
+      const user = await userController.findUserByPhone(normalizedPhone);
       if (!user) {
-        await onboardingFlowService.startNewOnboarding(phone);
+        await onboardingFlowService.startNewOnboarding(normalizedPhone);
         return `Oi, prazer! Sou a Lumiz 👋\n\nSou a IA que vai organizar o financeiro da sua clínica — direto pelo WhatsApp.\n\nAntes de começarmos, veja este vídeo rapidinho para entender como eu te ajudo a controlar tudo sem planilhas.\n\nVou te ajudar a cuidar das finanças da sua clínica de forma simples, automática e sem complicação.\n\nPara começar seu teste, qual é o nome da sua clínica?`;
       }
 
@@ -55,11 +136,12 @@ class DocumentHandler {
       }
 
       if (result.transacoes && result.transacoes.length > 0) {
-        this.pendingDocumentTransactions.set(phone, {
+        this.pendingDocumentTransactions.set(normalizedPhone, {
           user,
           transacoes: result.transacoes,
           timestamp: Date.now()
         });
+        await this.persistPendingConfirmation(normalizedPhone, user, result.transacoes);
       }
 
       return response;
@@ -74,15 +156,16 @@ class DocumentHandler {
    */
   async handleImageMessage(phone, mediaUrl, caption, messageKey = null) {
     try {
+      const normalizedPhone = this.normalizePhoneKey(phone);
       // Verifica rate limit antes de processar
-      const rateLimitError = await this.checkDocumentRateLimit(phone);
+      const rateLimitError = await this.checkDocumentRateLimit(normalizedPhone);
       if (rateLimitError) {
         return rateLimitError;
       }
 
       // Verifica se está em onboarding
-      if (await onboardingFlowService.ensureOnboardingState(phone)) {
-        const step = onboardingFlowService.getOnboardingStep(phone);
+      if (await onboardingFlowService.ensureOnboardingState(normalizedPhone)) {
+        const step = onboardingFlowService.getOnboardingStep(normalizedPhone);
 
         // Se está no step de primeira venda ou custos, processa a imagem
         if (step === 'primeira_venda' || step === 'primeiro_custo' || step === 'segundo_custo') {
@@ -105,7 +188,7 @@ class DocumentHandler {
             } else {
               mensagemSimulada = `${transacao.categoria || transacao.descricao || 'Custo'} ${transacao.valor}`;
             }
-            return await onboardingFlowService.processOnboarding(phone, mensagemSimulada);
+            return await onboardingFlowService.processOnboarding(normalizedPhone, mensagemSimulada);
           }
 
           return 'Não consegui identificar esse documento 🤔\n\nPode me enviar uma foto mais clara ou descrever a transação em texto?';
@@ -114,9 +197,9 @@ class DocumentHandler {
         return 'Complete seu cadastro primeiro! 😊';
       }
 
-      const user = await userController.findUserByPhone(phone);
+      const user = await userController.findUserByPhone(normalizedPhone);
       if (!user) {
-        await onboardingFlowService.startNewOnboarding(phone);
+        await onboardingFlowService.startNewOnboarding(normalizedPhone);
         return `Oi, prazer! Sou a Lumiz 👋\n\nSou a IA que vai organizar o financeiro da sua clínica — direto pelo WhatsApp.\n\nAntes de começarmos, veja este vídeo rapidinho para entender como eu te ajudo a controlar tudo sem planilhas.\n\nVou te ajudar a cuidar das finanças da sua clínica de forma simples, automática e sem complicação.\n\nPara começar seu teste, qual é o nome da sua clínica?`;
       }
 
@@ -129,11 +212,12 @@ class DocumentHandler {
       }
 
       if (result.transacoes && result.transacoes.length > 0) {
-        this.pendingDocumentTransactions.set(phone, {
+        this.pendingDocumentTransactions.set(normalizedPhone, {
           user,
           transacoes: result.transacoes,
           timestamp: Date.now()
         });
+        await this.persistPendingConfirmation(normalizedPhone, user, result.transacoes);
       }
 
       return response;
@@ -148,9 +232,10 @@ class DocumentHandler {
    */
   async handleImageMessageWithBuffer(phone, imageBuffer, mimeType, caption) {
     try {
+      const normalizedPhone = this.normalizePhoneKey(phone);
       // Verifica se está em onboarding
-      if (await onboardingFlowService.ensureOnboardingState(phone)) {
-        const step = onboardingFlowService.getOnboardingStep(phone);
+      if (await onboardingFlowService.ensureOnboardingState(normalizedPhone)) {
+        const step = onboardingFlowService.getOnboardingStep(normalizedPhone);
         if (step === 'primeira_venda' || step === 'primeiro_custo' || step === 'segundo_custo') {
           const result = await documentService.processImageFromBuffer(imageBuffer, mimeType);
           if (result.transacoes && result.transacoes.length > 0) {
@@ -161,15 +246,15 @@ class DocumentHandler {
             } else {
               mensagemSimulada = `${transacao.categoria || transacao.descricao || 'Custo'} ${transacao.valor}`;
             }
-            return await onboardingFlowService.processOnboarding(phone, mensagemSimulada);
+            return await onboardingFlowService.processOnboarding(normalizedPhone, mensagemSimulada);
           }
           return 'Complete seu cadastro primeiro! 😊';
         }
       }
 
-      const user = await userController.findUserByPhone(phone);
+      const user = await userController.findUserByPhone(normalizedPhone);
       if (!user) {
-        await onboardingFlowService.startNewOnboarding(phone);
+        await onboardingFlowService.startNewOnboarding(normalizedPhone);
         return `Oi, prazer! Sou a Lumiz 👋\n\nSou a IA que vai organizar o financeiro da sua clínica — direto pelo WhatsApp.\n\nAntes de começarmos, veja este vídeo rapidinho para entender como eu te ajudo a controlar tudo sem planilhas.\n\nVou te ajudar a cuidar das finanças da sua clínica de forma simples, automática e sem complicação.\n\nPara começar seu teste, qual é o nome da sua clínica?`;
       }
 
@@ -185,11 +270,12 @@ class DocumentHandler {
       }
 
       // Armazena transações pendentes de confirmação
-      this.pendingDocumentTransactions.set(phone, {
+      this.pendingDocumentTransactions.set(normalizedPhone, {
         user,
         transacoes: result.transacoes,
         timestamp: Date.now()
       });
+      await this.persistPendingConfirmation(normalizedPhone, user, result.transacoes);
 
       return documentService.formatDocumentSummary(result);
     } catch (error) {
@@ -202,9 +288,21 @@ class DocumentHandler {
    * Processa confirmação de transações de documento
    */
   async handleDocumentConfirmation(phone, message, user) {
-    const pending = this.pendingDocumentTransactions.get(phone);
+    const normalizedPhone = this.normalizePhoneKey(phone);
+    let pending = this.pendingDocumentTransactions.get(normalizedPhone);
+
     if (!pending) {
-      return 'Não encontrei transações pendentes. Pode enviar novamente?';
+      const persistedPending = await this.getPersistedPendingConfirmation(normalizedPhone);
+      if (persistedPending) {
+        pending = {
+          user,
+          transacoes: persistedPending.transacoes,
+          timestamp: new Date(persistedPending.created_at).getTime()
+        };
+        this.pendingDocumentTransactions.set(normalizedPhone, pending);
+      } else {
+        return 'Não encontrei confirmação pendente dessa nota. Reenvie o PDF.';
+      }
     }
 
     const messageLower = message.toLowerCase().trim();
@@ -231,13 +329,15 @@ class DocumentHandler {
         }
       }
 
-      this.pendingDocumentTransactions.delete(phone);
-      return `✅ *${pending.transacoes.length} transação(ões) registrada(s)!*\n\nQuer ver seu saldo? Digite "saldo"`;
+      this.pendingDocumentTransactions.delete(normalizedPhone);
+      await this.clearPersistedPendingConfirmation(normalizedPhone);
+      return `✅ *${pending.transacoes.length} transação(ões) registrada(s) da nota fiscal!*\n\nQuer ver seu saldo? Digite "saldo"`;
     }
 
     // Cancelamento
     if (messageLower === 'não' || messageLower === 'nao' || messageLower === 'n' || messageLower === 'cancelar' || messageLower === '2') {
-      this.pendingDocumentTransactions.delete(phone);
+      this.pendingDocumentTransactions.delete(normalizedPhone);
+      await this.clearPersistedPendingConfirmation(normalizedPhone);
       return 'Transações canceladas ❌\n\nSe quiser registrar, é só me enviar novamente!';
     }
 
@@ -246,4 +346,3 @@ class DocumentHandler {
 }
 
 module.exports = DocumentHandler;
-

@@ -208,6 +208,29 @@ class MessageController {
         return await this.documentHandler.handleDocumentConfirmation(normalizedPhone, message, user);
       }
 
+      const normalizedMessage = (message || '').trim().toLowerCase();
+      const looksLikeYesNoDocumentReply = [
+        'sim', 's', 'confirmar', '1',
+        'não', 'nao', 'n', 'cancelar', '2'
+      ].includes(normalizedMessage);
+
+      if (looksLikeYesNoDocumentReply) {
+        const persistedPending = await this.documentHandler.getPersistedPendingConfirmation(normalizedPhone);
+        if (persistedPending) {
+          console.warn('[DOC_CONFIRM_DIAG] Pending de documento recuperado via persistência', {
+            phone: normalizedPhone,
+            transacoes: persistedPending.transacoes?.length || 0,
+            created_at: persistedPending.created_at
+          });
+          return await this.documentHandler.handleDocumentConfirmation(normalizedPhone, message, user);
+        }
+
+        console.warn('[DOC_CONFIRM_DIAG] Resposta SIM/NAO sem pending de documento ativo', {
+          phone: normalizedPhone,
+          message: normalizedMessage
+        });
+      }
+
       if (this.pendingEdits.has(normalizedPhone)) {
         return await this.editHandler.handleEditConfirmation(normalizedPhone, message, user);
       }

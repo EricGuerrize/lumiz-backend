@@ -56,7 +56,7 @@ class MdrChatFlowService {
       return await this.startFlow({ phone: normalizedPhone, user });
     }
 
-    if (lower.includes('revisar taxas') || lower === 'revisar' || lower === 'sim') {
+    if (lower.includes('revisar taxas') || lower === 'revisar') {
       return await this.handleOcrFollowup({ phone: normalizedPhone, user, message: lower });
     }
 
