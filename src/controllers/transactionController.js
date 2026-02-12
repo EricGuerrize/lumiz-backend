@@ -2,6 +2,7 @@ const supabase = require('../db/supabase');
 const userController = require('./userController');
 const mdrService = require('../services/mdrService');
 const mdrPricingService = require('../services/mdrPricingService');
+const notificationService = require('../services/notificationService');
 const { sanitizeClientName } = require('../utils/procedureKeywords');
 
 class TransactionController {
@@ -15,7 +16,7 @@ class TransactionController {
         return await this.createAtendimento(userId, { valor, categoria, descricao, data, forma_pagamento, parcelas, bandeira_cartao });
       } else {
         // CUSTO = Criar conta a pagar
-        return await this.createContaPagar(userId, { valor, categoria, descricao, data, parcelas });
+        return await this.createContaPagar(userId, { valor, categoria, descricao, data, tipo, parcelas });
       }
     } catch (error) {
       console.error('Erro ao criar transação:', error);
@@ -79,7 +80,9 @@ class TransactionController {
         mdrConfig
       });
 
-      const custoEstimado = pricing.valorBruto * 0.1;
+      // Nao estimar custo automaticamente (evita "chute" financeiro).
+      // Custo so deve existir quando informado de forma explicita.
+      const custoEstimado = 0;
       const hoje = new Date().toISOString().split('T')[0];
       const hasFutureReceipt = pricing.recebimentoPrevisto > hoje;
       const statusPagto = hasFutureReceipt || formaPagamentoNormalizada === 'parcelado' ? 'agendado' : 'pago';
@@ -244,6 +247,9 @@ class TransactionController {
 
           if (error) throw error;
           contasCriadas.push(conta);
+
+          // Alerta de variacao para custos fixos (nao bloqueia fluxo)
+          await this._notifyFixedCostChangeIfNeeded(userId, conta);
         }
 
         console.log(`[FINANCEIRO] ${contasCriadas.length} contas a pagar criadas (parceladas)`);
@@ -268,6 +274,7 @@ class TransactionController {
 
       if (error) throw error;
       console.log('Conta a pagar criada:', conta.id);
+      await this._notifyFixedCostChangeIfNeeded(userId, conta);
       return conta;
     } catch (error) {
       console.error('Erro ao criar conta a pagar:', error);
@@ -505,7 +512,9 @@ class TransactionController {
         const updates = {};
         if (valor !== undefined) {
           updates.valor_total = valor;
-          updates.custo_total = valor * 0.1; // Recalcula custo
+          // Nao recalcula custo automaticamente ao editar valor.
+          // Mantem 0 ate existir custo real informado.
+          updates.custo_total = 0;
         }
         if (data !== undefined) updates.data = data;
         if (descricao !== undefined) updates.observacoes = descricao;
@@ -818,6 +827,54 @@ class TransactionController {
         text.includes('unknown column')
       )
     );
+  }
+
+  _isFixedCostType(typeValue) {
+    const normalized = String(typeValue || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+    return normalized === 'fixo' || normalized === 'fixa';
+  }
+
+  async _getPreviousFixedCost(userId, currentConta) {
+    const { data: previousRows, error } = await supabase
+      .from('contas_pagar')
+      .select('id, valor, data')
+      .eq('user_id', userId)
+      .eq('categoria', currentConta.categoria || 'Outros')
+      .in('tipo', ['fixo', 'fixa'])
+      .neq('id', currentConta.id)
+      .order('data', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (error) {
+      throw error;
+    }
+
+    return previousRows?.[0] || null;
+  }
+
+  async _notifyFixedCostChangeIfNeeded(userId, conta) {
+    if (!conta || !this._isFixedCostType(conta.tipo)) return;
+
+    try {
+      const previous = await this._getPreviousFixedCost(userId, conta);
+      if (!previous) return;
+
+      await notificationService.notifyFixedCostChange({
+        userId,
+        category: conta.categoria || 'Outros',
+        currentValue: conta.valor,
+        previousValue: previous.valor,
+        date: conta.data
+      });
+    } catch (error) {
+      // Nao deve quebrar registro financeiro por falha de alerta
+      console.error('[FIXED_COST_ALERT] Falha ao processar alerta de variacao:', error);
+    }
   }
 }
 
