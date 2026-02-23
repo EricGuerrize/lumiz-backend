@@ -27,10 +27,20 @@ create index if not exists learned_knowledge_clinic_idx
 alter table learned_knowledge enable row level security;
 
 -- Apenas o serviço backend (service_role) pode ler/escrever
-create policy "service role full access" on learned_knowledge
-  for all
-  using (auth.role() = 'service_role')
-  with check (auth.role() = 'service_role');
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public'
+      and tablename  = 'learned_knowledge'
+      and policyname = 'service role full access'
+  ) then
+    create policy "service role full access" on learned_knowledge
+      for all
+      using (auth.role() = 'service_role')
+      with check (auth.role() = 'service_role');
+  end if;
+end $$;
 
 -- Função RPC para busca por similaridade
 create or replace function match_learned_knowledge(
