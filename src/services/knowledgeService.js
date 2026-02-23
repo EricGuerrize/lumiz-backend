@@ -2,6 +2,13 @@ const supabase = require('../db/supabase');
 const embeddingService = require('./embeddingService');
 
 class KnowledgeService {
+    constructor() {
+        // Quando a tabela learned_knowledge não existe no banco, evita fazer
+        // chamadas de embedding (API paga) a cada mensagem. O flag é resetado
+        // a cada reinicialização do processo.
+        this._tableAvailable = true;
+    }
+
     /**
      * Salva um novo conhecimento a partir de uma interação confirmada
      * @param {string} content - Texto original da mensagem
@@ -47,11 +54,13 @@ class KnowledgeService {
      * @returns {Promise<Array>}
      */
     async searchSimilarity(text, clinicId = null, threshold = 0.8) {
+        // Tabela indisponível (ex: migration ainda não rodou) — pula sem chamar embedding
+        if (!this._tableAvailable) return [];
+
         try {
             const embedding = await embeddingService.generate(text);
             if (!embedding) return [];
 
-            // Chama a função RPC match_learned_knowledge que criamos no SQL
             const { data, error } = await supabase.rpc('match_learned_knowledge', {
                 query_embedding: embedding,
                 match_threshold: threshold,
@@ -60,7 +69,12 @@ class KnowledgeService {
             });
 
             if (error) {
-                console.error('[KNOWLEDGE] Erro ao buscar similaridade:', error.message);
+                if (error.message && error.message.includes('does not exist')) {
+                    this._tableAvailable = false;
+                    console.warn('[KNOWLEDGE] Tabela learned_knowledge não existe. Busca semântica desativada até reiniciar.');
+                } else {
+                    console.error('[KNOWLEDGE] Erro ao buscar similaridade:', error.message);
+                }
                 return [];
             }
 
