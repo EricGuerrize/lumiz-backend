@@ -555,10 +555,7 @@ module.exports = {
     documentReceivedSimple({ valor }) {
         return (
             `Recebi ✅ Vou organizar isso rapidinho.\n\n` +
-            `Encontrei: ${formatarMoeda(Number(valor))}.\n` +
-            `Isso é um custo fixo ou variável?\n\n` +
-            `1️⃣ Fixo\n` +
-            `2️⃣ Variável`
+            `Encontrei: ${formatarMoeda(Number(valor))}.`
         );
     },
 

@@ -101,9 +101,9 @@ EXTRAÇÃO:
 - transacoes: array de transações encontradas:
   - tipo: "entrada" (recebi dinheiro) ou "saida" (paguei dinheiro)
   - valor: número (positivo)
-  - categoria: nome da pessoa/empresa ou descrição curta
+  - categoria: CATEGORIA DE NEGÓCIO (use uma destas: "Aluguel", "Salários", "Insumos", "Fornecedores", "Internet / Telefone", "Água / Luz / Gás", "Impostos", "Marketing", "Equipamentos", "Serviços", "Outros") — NUNCA use nomes de pessoas ou empresas como categoria
   - data: YYYY-MM-DD
-  - descricao: detalhes adicionais
+  - descricao: detalhes adicionais (pode incluir nome do fornecedor/destinatário aqui)
 
 ${REGRAS_EXTRACAO}
 
@@ -128,9 +128,9 @@ EXTRAÇÃO:
 - transacoes: array de transações encontradas:
   - tipo: "entrada" (recebi dinheiro) ou "saida" (paguei dinheiro)
   - valor: número (positivo)
-  - categoria: nome da pessoa/empresa ou descrição curta
+  - categoria: CATEGORIA DE NEGÓCIO (use uma destas: "Aluguel", "Salários", "Insumos", "Fornecedores", "Internet / Telefone", "Água / Luz / Gás", "Impostos", "Marketing", "Equipamentos", "Serviços", "Outros") — NUNCA use nomes de pessoas ou empresas como categoria
   - data: YYYY-MM-DD
-  - descricao: detalhes adicionais
+  - descricao: detalhes adicionais (pode incluir nome do fornecedor/destinatário aqui)
 
 ${REGRAS_EXTRACAO}
 

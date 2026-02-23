@@ -265,7 +265,7 @@ class GoogleVisionService {
     const { buildDocumentExtractionPrompt } = require('../config/prompts');
     
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const geminiModel = genAI.getGenerativeModel({ model: process.env.GEMINI_MODEL || 'gemini-flash-latest' });
+    const geminiModel = genAI.getGenerativeModel({ model: process.env.GEMINI_MODEL || 'gemini-2.0-flash' });
     
     // Usa prompt centralizado para consistência
     const prompt = buildDocumentExtractionPrompt(fullText);
