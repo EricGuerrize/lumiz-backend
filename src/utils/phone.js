@@ -125,10 +125,65 @@ function getPhoneVariants(phone) {
     return Array.from(variants);
 }
 
+/**
+ * Extrai telefone brasileiro válido de um JID do WhatsApp.
+ * Exemplos de entrada: 5565999999999@s.whatsapp.net, +55 (65) 99999-9999
+ * @param {string} jidOrPhone
+ * @returns {string|null} - Apenas dígitos, com DDI 55 (ex: 5565999999999)
+ */
+function extractPhoneFromJid(jidOrPhone) {
+    if (!jidOrPhone || typeof jidOrPhone !== 'string') return null;
+
+    const localPart = jidOrPhone.split('@')[0];
+    const digits = localPart.replace(/\D/g, '');
+    if (!digits) return null;
+
+    if (digits.startsWith('55') && (digits.length === 12 || digits.length === 13)) {
+        return digits;
+    }
+
+    if (digits.length === 10 || digits.length === 11) {
+        return `55${digits}`;
+    }
+
+    return null;
+}
+
+/**
+ * Extrai telefone do payload de webhook da Evolution.
+ * Prioriza campos com número real do remetente antes de remoteJid.
+ * @param {object} body
+ * @returns {string|null}
+ */
+function extractPhoneFromWebhookBody(body) {
+    if (!body || typeof body !== 'object') return null;
+
+    const key = body?.data?.key || {};
+    const sender = body?.sender;
+
+    const candidates = [
+        key.senderPn,
+        key.participant,
+        typeof sender === 'string' ? sender : sender?.id,
+        typeof sender === 'object' ? sender?.jid : null,
+        typeof sender === 'object' ? sender?.number : null,
+        key.remoteJid
+    ];
+
+    for (const candidate of candidates) {
+        const phone = extractPhoneFromJid(candidate);
+        if (phone) return phone;
+    }
+
+    return null;
+}
+
 module.exports = {
     normalizePhone,
     formatPhone,
     isValidPhone,
     getLocalNumber,
-    getPhoneVariants
+    getPhoneVariants,
+    extractPhoneFromJid,
+    extractPhoneFromWebhookBody
 };

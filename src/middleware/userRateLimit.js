@@ -1,4 +1,5 @@
 const rateLimit = require('express-rate-limit');
+const { extractPhoneFromWebhookBody } = require('../utils/phone');
 
 /**
  * Rate limiting por usuário e telefone (além de IP)
@@ -246,9 +247,8 @@ class UserRateLimit {
       max = 30,
       message = 'Muitas mensagens enviadas. Aguarde um momento.',
       extractPhone = (req) => {
-        // Extrai telefone do body do webhook
-        const phone = req.body?.data?.key?.remoteJid?.split('@')[0];
-        return phone;
+        // Extrai telefone do body do webhook (compatível com remoteJid @lid)
+        return extractPhoneFromWebhookBody(req.body);
       }
     } = options;
 

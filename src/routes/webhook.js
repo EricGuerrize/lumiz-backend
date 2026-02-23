@@ -6,6 +6,7 @@ const evolutionService = require('../services/evolutionService');
 const userController = require('../controllers/userController');
 const registrationTokenService = require('../services/registrationTokenService');
 const userRateLimit = require('../middleware/userRateLimit');
+const { extractPhoneFromWebhookBody } = require('../utils/phone');
 
 // Rate limiting específico para webhook (30 req/min por IP)
 // Configuração segura que funciona mesmo com trust proxy
@@ -90,10 +91,10 @@ const webhookHandler = async (req, res) => {
         return res.status(200).json({ status: 'ignored', reason: 'own message' });
       }
 
-      // Valida e sanitiza telefone
-      const phone = key.remoteJid?.split('@')[0];
-      if (!phone || phone.length < 10 || phone.length > 20) {
-        console.log('[WEBHOOK] Telefone inválido:', phone);
+      // Valida e sanitiza telefone (suporta payloads com remoteJid=@lid)
+      const phone = extractPhoneFromWebhookBody(req.body);
+      if (!phone) {
+        console.log('[WEBHOOK] Telefone inválido. remoteJid:', key.remoteJid, 'senderPn:', key.senderPn || 'N/A');
         return res.status(200).json({ status: 'ignored', reason: 'invalid phone' });
       }
 
