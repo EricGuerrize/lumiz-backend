@@ -167,8 +167,15 @@ class DocumentHandler {
       if (await onboardingFlowService.ensureOnboardingState(normalizedPhone)) {
         const step = onboardingFlowService.getOnboardingStep(normalizedPhone);
 
-        // Se está no step de primeira venda ou custos, processa a imagem
-        if (step === 'primeira_venda' || step === 'primeiro_custo' || step === 'segundo_custo') {
+        // AHA_COSTS_UPLOAD: repassa a mídia diretamente ao onboarding
+        if (step === 'AHA_COSTS_UPLOAD') {
+          return await onboardingFlowService.processOnboarding(
+            normalizedPhone, '', mediaUrl, null, messageKey, null, null
+          );
+        }
+
+        // AHA_REVENUE: processa imagem e simula texto com o valor extraído
+        if (step === 'AHA_REVENUE') {
           const result = await documentService.processImage(mediaUrl, messageKey);
 
           if (result.processor === 'tesseract') {
@@ -177,17 +184,9 @@ class DocumentHandler {
 
           if (result.transacoes && result.transacoes.length > 0) {
             const transacao = result.transacoes[0];
-            let mensagemSimulada = '';
-            if (transacao.tipo === 'entrada') {
-              mensagemSimulada = `${transacao.categoria || 'Venda'} ${transacao.valor}`;
-              if (transacao.cliente) {
-                mensagemSimulada += ` cliente ${transacao.cliente}`;
-              } else if (transacao.descricao) {
-                mensagemSimulada += ` ${transacao.descricao}`;
-              }
-            } else {
-              mensagemSimulada = `${transacao.categoria || transacao.descricao || 'Custo'} ${transacao.valor}`;
-            }
+            let mensagemSimulada = `${transacao.categoria || 'Venda'} ${transacao.valor}`;
+            if (transacao.cliente) mensagemSimulada += ` cliente ${transacao.cliente}`;
+            else if (transacao.descricao) mensagemSimulada += ` ${transacao.descricao}`;
             return await onboardingFlowService.processOnboarding(normalizedPhone, mensagemSimulada);
           }
 
@@ -236,20 +235,28 @@ class DocumentHandler {
       // Verifica se está em onboarding
       if (await onboardingFlowService.ensureOnboardingState(normalizedPhone)) {
         const step = onboardingFlowService.getOnboardingStep(normalizedPhone);
-        if (step === 'primeira_venda' || step === 'primeiro_custo' || step === 'segundo_custo') {
+
+        // AHA_COSTS_UPLOAD: repassa o buffer diretamente ao onboarding
+        if (step === 'AHA_COSTS_UPLOAD') {
+          return await onboardingFlowService.processOnboarding(
+            normalizedPhone, '', null, null, null, imageBuffer, mimeType
+          );
+        }
+
+        // AHA_REVENUE: processa buffer e simula texto com o valor extraído
+        if (step === 'AHA_REVENUE') {
           const result = await documentService.processImageFromBuffer(imageBuffer, mimeType);
           if (result.transacoes && result.transacoes.length > 0) {
             const transacao = result.transacoes[0];
-            let mensagemSimulada = '';
-            if (transacao.tipo === 'entrada') {
-              mensagemSimulada = `${transacao.categoria || 'Venda'} ${transacao.valor}`;
-            } else {
-              mensagemSimulada = `${transacao.categoria || transacao.descricao || 'Custo'} ${transacao.valor}`;
-            }
+            let mensagemSimulada = transacao.tipo === 'entrada'
+              ? `${transacao.categoria || 'Venda'} ${transacao.valor}`
+              : `${transacao.categoria || transacao.descricao || 'Custo'} ${transacao.valor}`;
             return await onboardingFlowService.processOnboarding(normalizedPhone, mensagemSimulada);
           }
-          return 'Complete seu cadastro primeiro! 😊';
+          return 'Não consegui identificar esse documento 🤔\n\nPode me enviar uma foto mais clara ou descrever a transação em texto?';
         }
+
+        return 'Complete seu cadastro primeiro! 😊';
       }
 
       const user = await userController.findUserByPhone(normalizedPhone);
