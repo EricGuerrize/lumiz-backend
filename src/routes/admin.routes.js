@@ -1,0 +1,115 @@
+const express = require('express');
+const router = express.Router();
+const supabase = require('../db/supabase');
+const betaFeedbackService = require('../services/betaFeedbackService');
+const { authenticateFlexible } = require('../middleware/authMiddleware');
+
+// Verifica se o usuário autenticado é admin
+async function requireAdmin(req, res, next) {
+  try {
+    const { data: role } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', req.user.id)
+      .maybeSingle();
+
+    if (role?.role !== 'admin') {
+      return res.status(403).json({ error: 'Acesso restrito' });
+    }
+    next();
+  } catch {
+    return res.status(403).json({ error: 'Acesso restrito' });
+  }
+}
+
+router.use(authenticateFlexible);
+router.use(requireAdmin);
+
+// GET /api/admin/stats
+// Cards de resumo: usuários, feedbacks por tipo
+router.get('/stats', async (req, res) => {
+  try {
+    const [{ count: totalUsers }, feedbackStats] = await Promise.all([
+      supabase.from('profiles').select('*', { count: 'exact', head: true }),
+      betaFeedbackService.stats()
+    ]);
+
+    // Usuários ativos nos últimos 7 dias via conversation_history
+    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: recentIds } = await supabase
+      .from('conversation_history')
+      .select('user_id')
+      .gte('created_at', since);
+
+    const activeThisWeek = new Set((recentIds || []).map(r => r.user_id)).size;
+
+    res.json({
+      totalUsers: totalUsers || 0,
+      activeThisWeek,
+      feedback: feedbackStats
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/users
+// Lista todos os usuários beta com status e última atividade
+router.get('/users', async (req, res) => {
+  try {
+    const { data: profiles, error } = await supabase
+      .from('profiles')
+      .select('id, nome_completo, telefone, nome_clinica, created_at, beta_started_at, beta_expires_at, beta_blocked_at, is_active')
+      .order('created_at', { ascending: false })
+      .limit(200);
+
+    if (error) throw error;
+
+    // Última mensagem de cada usuário
+    const ids = (profiles || []).map(p => p.id);
+    let lastMessages = [];
+    if (ids.length > 0) {
+      const { data } = await supabase
+        .from('conversation_history')
+        .select('user_id, created_at, user_message')
+        .in('user_id', ids)
+        .order('created_at', { ascending: false });
+
+      // Pega só a última de cada user_id
+      const seen = new Set();
+      lastMessages = (data || []).filter(row => {
+        if (seen.has(row.user_id)) return false;
+        seen.add(row.user_id);
+        return true;
+      });
+    }
+
+    const lastMap = Object.fromEntries(lastMessages.map(m => [m.user_id, m]));
+
+    const result = (profiles || []).map(p => ({
+      ...p,
+      last_message_at: lastMap[p.id]?.created_at || null,
+      last_message:    lastMap[p.id]?.user_message?.substring(0, 60) || null
+    }));
+
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/feedback?type=&limit=&offset=
+router.get('/feedback', async (req, res) => {
+  try {
+    const limit  = Math.min(Number(req.query.limit  || 50), 200);
+    const offset = Number(req.query.offset || 0);
+    const type   = req.query.type || null;
+
+    const data = await betaFeedbackService.list({ limit, offset, type });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+module.exports = router;

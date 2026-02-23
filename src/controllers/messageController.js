@@ -26,6 +26,7 @@ const ScheduleHandler = require('./messages/scheduleHandler');
 const InsightsHandler = require('./messages/insightsHandler');
 const MemberHandler = require('./messages/memberHandler');
 const mdrChatFlowService = require('../services/mdrChatFlowService');
+const betaFeedbackService = require('../services/betaFeedbackService');
 
 /**
  * MessageController refatorado - Orquestrador principal
@@ -317,7 +318,7 @@ class MessageController {
       }
 
       // Tenta heurística primeiro (economiza ~60% das chamadas Gemini)
-      let intent = await intentHeuristicService.detectIntent(message);
+      let intent = await intentHeuristicService.detectIntent(message, user?.id || null);
       let usedHeuristic = false;
 
       // Se heurística não funcionou ou confiança baixa, chama Gemini
@@ -364,8 +365,26 @@ class MessageController {
         return await this.handleAwaitingData(normalizedPhone, message, intent, user);
       }
 
+      // Captura feedback explícito ("feedback: ..." ou "sugestão: ...")
+      const msgLowerFeedback = message.toLowerCase().trim();
+      if (msgLowerFeedback.startsWith('feedback:') || msgLowerFeedback.startsWith('sugestão:') || msgLowerFeedback.startsWith('sugestao:')) {
+        betaFeedbackService.capture({ phone: normalizedPhone, type: 'explicit', message });
+        return 'Anotado, obrigado! 👍';
+      }
+
       // Roteia para handlers baseado no intent
       let response = await this.routeIntent(intent, user, normalizedPhone, message);
+
+      // Captura falhas de entendimento como feedback passivo
+      if (intent.intencao === 'erro' || intent.intencao === 'mensagem_ambigua') {
+        betaFeedbackService.capture({
+          phone: normalizedPhone,
+          type: 'failed_intent',
+          message,
+          intent: intent.intencao,
+          botResponse: response
+        });
+      }
 
       // Salva conversa no histórico
       if (response && response !== null) {
