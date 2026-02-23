@@ -8,6 +8,21 @@ const registrationTokenService = require('../services/registrationTokenService')
 const userRateLimit = require('../middleware/userRateLimit');
 const { extractPhoneFromWebhookBody } = require('../utils/phone');
 
+// Deduplicação de mensagens: previne reprocessamento quando a Evolution reenvia o webhook
+// por timeout. Guarda IDs processados por 5 minutos em memória.
+const _processedMsgIds = new Map(); // messageId -> timestamp
+const MSG_DEDUP_TTL = 5 * 60 * 1000; // 5 minutos
+
+function isMessageAlreadyProcessed(messageId) {
+  const now = Date.now();
+  for (const [id, ts] of _processedMsgIds.entries()) {
+    if (now - ts > MSG_DEDUP_TTL) _processedMsgIds.delete(id);
+  }
+  if (_processedMsgIds.has(messageId)) return true;
+  _processedMsgIds.set(messageId, now);
+  return false;
+}
+
 // Rate limiting específico para webhook (30 req/min por IP)
 // Configuração segura que funciona mesmo com trust proxy
 const webhookLimiter = rateLimit({
@@ -89,6 +104,13 @@ const webhookHandler = async (req, res) => {
 
       if (key.fromMe) {
         return res.status(200).json({ status: 'ignored', reason: 'own message' });
+      }
+
+      // Ignora mensagens já processadas (a Evolution reenvia o webhook quando o servidor
+      // demora mais de ~30s para responder — a dedup evita processar a mesma msg duas vezes)
+      if (key.id && isMessageAlreadyProcessed(key.id)) {
+        console.log(`[WEBHOOK] ⚠️ Mensagem duplicada ignorada: ${key.id}`);
+        return res.status(200).json({ status: 'ignored', reason: 'duplicate message' });
       }
 
       // Valida e sanitiza telefone (suporta payloads com remoteJid=@lid)

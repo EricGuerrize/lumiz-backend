@@ -4,8 +4,9 @@ require('dotenv').config();
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// Timeout para chamadas do Gemini (30 segundos)
-const GEMINI_TIMEOUT_MS = 30000;
+// Timeout para chamadas do Gemini (55 segundos — acima disto a Evolution já terá reenviado,
+// mas a deduplicação em webhook.js garante que a mensagem não será processada duas vezes)
+const GEMINI_TIMEOUT_MS = 55000;
 
 class GeminiService {
   constructor() {
