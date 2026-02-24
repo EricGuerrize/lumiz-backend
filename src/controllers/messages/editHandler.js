@@ -1,5 +1,6 @@
 const transactionController = require('../transactionController');
 const supabase = require('../../db/supabase');
+const conversationRuntimeStateService = require('../../services/conversationRuntimeStateService');
 const { formatarMoeda } = require('../../utils/currency');
 
 /**
@@ -8,6 +9,23 @@ const { formatarMoeda } = require('../../utils/currency');
 class EditHandler {
   constructor(pendingEdits) {
     this.pendingEdits = pendingEdits;
+    this.RUNTIME_FLOW = 'edit_flow';
+    this.RUNTIME_TTL_MS = 10 * 60 * 1000;
+  }
+
+  async setPendingEdit(phone, pending) {
+    this.pendingEdits.set(phone, pending);
+    await conversationRuntimeStateService.upsert(phone, this.RUNTIME_FLOW, pending, this.RUNTIME_TTL_MS);
+  }
+
+  async clearPendingEdit(phone) {
+    this.pendingEdits.delete(phone);
+    await conversationRuntimeStateService.clear(phone, this.RUNTIME_FLOW);
+  }
+
+  restorePendingEdit(phone, pending) {
+    if (!phone || !pending) return;
+    this.pendingEdits.set(phone, pending);
   }
 
   /**
@@ -46,7 +64,7 @@ class EditHandler {
     }
 
     // Senão, pergunta o que quer editar
-    this.pendingEdits.set(phone, {
+    await this.setPendingEdit(phone, {
       user,
       transacao,
       tipo: atendimento ? 'atendimento' : 'conta',
@@ -71,13 +89,26 @@ class EditHandler {
    * Processa confirmação de edição
    */
   async handleEditConfirmation(phone, message, user) {
-    const pending = this.pendingEdits.get(phone);
+    let pending = this.pendingEdits.get(phone);
+    if (!pending) {
+      const persisted = await conversationRuntimeStateService.get(phone, this.RUNTIME_FLOW);
+      if (persisted?.payload) {
+        pending = persisted.payload;
+        this.pendingEdits.set(phone, pending);
+      }
+    }
+
     if (!pending) {
       return 'Não encontrei edição pendente. Pode começar novamente?';
     }
 
     const messageLower = message.toLowerCase().trim();
     const { transacao, tipo } = pending;
+
+    if (['cancelar', 'sair', 'voltar', 'nao', 'não', '2'].includes(messageLower)) {
+      await this.clearPendingEdit(phone);
+      return 'Edição cancelada ✅';
+    }
 
     // Detecta campo e valor
     let campo = null;
@@ -139,7 +170,7 @@ class EditHandler {
         throw error;
       }
 
-      this.pendingEdits.delete(phone);
+      await this.clearPendingEdit(phone);
       return `✅ *Transação editada!*\n\n${campo} atualizado para: ${novoValor}`;
     } catch (error) {
       console.error('Erro ao editar transação:', error);
@@ -181,5 +212,4 @@ class EditHandler {
 }
 
 module.exports = EditHandler;
-
 

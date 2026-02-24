@@ -305,8 +305,12 @@ class IntentHeuristicService {
 
 
     // Detecta "apenas_valor" primeiro (só número)
+    // IMPORTANTE: não tratar tokens de opção (1/2/3/4) como valor isolado.
     const apenasValorMatch = original.trim().match(/^\d+([.,]\d+)?\s*$/);
     if (apenasValorMatch) {
+      if (['1', '2', '3', '4'].includes(original.trim())) {
+        return null;
+      }
       const valor = this.extractValue(original);
       if (valor) {
         return {

@@ -5,6 +5,7 @@
 
 const clinicMemberService = require('../../services/clinicMemberService');
 const onboardingCopy = require('../../copy/onboardingWhatsappCopy');
+const conversationRuntimeStateService = require('../../services/conversationRuntimeStateService');
 const { normalizePhone } = require('../../utils/phone');
 
 class MemberHandler {
@@ -13,6 +14,39 @@ class MemberHandler {
     this.addMemberStates = new Map();
     // Estado para fluxo de remoção de membro
     this.removeMemberStates = new Map();
+    this.ADD_FLOW = 'member_add';
+    this.REMOVE_FLOW = 'member_remove';
+    this.TTL_MS = 10 * 60 * 1000;
+  }
+
+  async setAddMemberState(phone, state) {
+    this.addMemberStates.set(phone, state);
+    await conversationRuntimeStateService.upsert(phone, this.ADD_FLOW, state, this.TTL_MS);
+  }
+
+  async clearAddMemberState(phone) {
+    this.addMemberStates.delete(phone);
+    await conversationRuntimeStateService.clear(phone, this.ADD_FLOW);
+  }
+
+  async setRemoveMemberState(phone, state) {
+    this.removeMemberStates.set(phone, state);
+    await conversationRuntimeStateService.upsert(phone, this.REMOVE_FLOW, state, this.TTL_MS);
+  }
+
+  async clearRemoveMemberState(phone) {
+    this.removeMemberStates.delete(phone);
+    await conversationRuntimeStateService.clear(phone, this.REMOVE_FLOW);
+  }
+
+  restoreAddMemberState(phone, state) {
+    if (!phone || !state) return;
+    this.addMemberStates.set(phone, state);
+  }
+
+  restoreRemoveMemberState(phone, state) {
+    if (!phone || !state) return;
+    this.removeMemberStates.set(phone, state);
   }
 
   /**
@@ -29,7 +63,7 @@ class MemberHandler {
     }
     
     // Inicia estado de adição
-    this.addMemberStates.set(normalizedPhone, {
+    await this.setAddMemberState(normalizedPhone, {
       step: 'ROLE',
       clinicId: user.id,
       timestamp: Date.now()
@@ -47,7 +81,7 @@ class MemberHandler {
     
     // Expira após 10 minutos
     if (state && Date.now() - state.timestamp > 10 * 60 * 1000) {
-      this.addMemberStates.delete(normalizedPhone);
+      void this.clearAddMemberState(normalizedPhone);
       return false;
     }
     
@@ -69,7 +103,7 @@ class MemberHandler {
     
     // Permite cancelar
     if (['cancelar', 'sair', 'voltar'].includes(messageLower)) {
-      this.addMemberStates.delete(normalizedPhone);
+      await this.clearAddMemberState(normalizedPhone);
       return '❌ Cadastro cancelado.';
     }
     
@@ -84,7 +118,7 @@ class MemberHandler {
         return await this.handlePhone(normalizedPhone, message.trim(), state);
         
       default:
-        this.addMemberStates.delete(normalizedPhone);
+        await this.clearAddMemberState(normalizedPhone);
         return null;
     }
   }
@@ -113,7 +147,7 @@ class MemberHandler {
     state.role = role;
     state.step = 'NAME';
     state.timestamp = Date.now();
-    this.addMemberStates.set(phone, state);
+    await this.setAddMemberState(phone, state);
     
     return onboardingCopy.addMemberNameQuestion();
   }
@@ -126,7 +160,7 @@ class MemberHandler {
     state.name = name;
     state.step = 'PHONE';
     state.timestamp = Date.now();
-    this.addMemberStates.set(phone, state);
+    await this.setAddMemberState(phone, state);
     
     return onboardingCopy.addMemberPhoneQuestion();
   }
@@ -150,7 +184,7 @@ class MemberHandler {
     });
     
     // Limpa estado
-    this.addMemberStates.delete(phone);
+    await this.clearAddMemberState(phone);
     
     if (!result.success) {
       if (result.error === 'PHONE_ALREADY_LINKED') {
@@ -261,7 +295,7 @@ class MemberHandler {
     }
 
     // Inicia estado de remoção
-    this.removeMemberStates.set(normalizedPhone, {
+    await this.setRemoveMemberState(normalizedPhone, {
       step: 'SELECT',
       clinicId: user.id,
       members: removableMembers,
@@ -293,7 +327,7 @@ class MemberHandler {
 
     // Expira após 10 minutos
     if (state && Date.now() - state.timestamp > 10 * 60 * 1000) {
-      this.removeMemberStates.delete(normalizedPhone);
+      void this.clearRemoveMemberState(normalizedPhone);
       return false;
     }
 
@@ -315,7 +349,7 @@ class MemberHandler {
 
     // Permite cancelar
     if (['cancelar', 'sair', 'voltar'].includes(messageLower)) {
-      this.removeMemberStates.delete(normalizedPhone);
+      await this.clearRemoveMemberState(normalizedPhone);
       return '❌ Remoção cancelada.';
     }
 
@@ -331,7 +365,7 @@ class MemberHandler {
       state.selectedMember = selectedMember;
       state.step = 'CONFIRM';
       state.timestamp = Date.now();
-      this.removeMemberStates.set(normalizedPhone, state);
+      await this.setRemoveMemberState(normalizedPhone, state);
 
       return onboardingCopy.removeMemberConfirmation(selectedMember.nome, selectedMember.telefone);
     }
@@ -344,7 +378,7 @@ class MemberHandler {
         // Remove o membro
         const result = await clinicMemberService.removeMember(state.selectedMember.id, normalizedPhone);
 
-        this.removeMemberStates.delete(normalizedPhone);
+        await this.clearRemoveMemberState(normalizedPhone);
 
         if (result.success) {
           return onboardingCopy.removeMemberSuccess(state.selectedMember.nome);
@@ -354,7 +388,7 @@ class MemberHandler {
       }
 
       if (isNo) {
-        this.removeMemberStates.delete(normalizedPhone);
+        await this.clearRemoveMemberState(normalizedPhone);
         return '❌ Remoção cancelada.';
       }
 

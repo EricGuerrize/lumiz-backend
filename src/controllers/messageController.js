@@ -7,6 +7,8 @@ const conversationHistoryService = require('../services/conversationHistoryServi
 const analyticsService = require('../services/analyticsService');
 const pdfQueueService = require('../services/pdfQueueService');
 const intentHeuristicService = require('../services/intentHeuristicService');
+const conversationRuntimeStateService = require('../services/conversationRuntimeStateService');
+const cacheService = require('../services/cacheService');
 const supabase = require('../db/supabase');
 const { normalizePhone } = require('../utils/phone');
 const { formatarMoeda } = require('../utils/currency');
@@ -43,6 +45,7 @@ class MessageController {
     this.mediaProcessing = new Map();
     this.MEDIA_PROCESSING_TTL_MS = 60 * 1000;
     this.AWAITING_DATA_TTL_MS = 10 * 60 * 1000;
+    this.RUNTIME_AWAITING_FLOW = 'awaiting_data';
 
     // Inicializa handlers com referências aos Maps
     this.transactionHandler = new TransactionHandler(this.pendingTransactions);
@@ -57,6 +60,83 @@ class MessageController {
     this.scheduleHandler = new ScheduleHandler();
     this.insightsHandler = new InsightsHandler();
     this.memberHandler = new MemberHandler();
+  }
+
+  async setAwaitingData(phone, pending, ttlMs = this.AWAITING_DATA_TTL_MS) {
+    const payload = {
+      ...(pending || {}),
+      timestamp: pending?.timestamp || Date.now()
+    };
+    this.awaitingData.set(phone, payload);
+    await conversationRuntimeStateService.upsert(phone, this.RUNTIME_AWAITING_FLOW, payload, ttlMs);
+  }
+
+  async clearAwaitingData(phone) {
+    this.awaitingData.delete(phone);
+    await conversationRuntimeStateService.clear(phone, this.RUNTIME_AWAITING_FLOW);
+  }
+
+  isOptionToken(messageLower) {
+    return [
+      '1', '2', '3', '4',
+      'sim', 's',
+      'nao', 'não', 'n',
+      'confirmar', 'cancelar'
+    ].includes(String(messageLower || '').trim());
+  }
+
+  hasPendingConversationContext(phone) {
+    return (
+      this.pendingTransactions.has(phone) ||
+      this.pendingDocumentTransactions.has(phone) ||
+      this.pendingEdits.has(phone) ||
+      this.awaitingData.has(phone) ||
+      this.memberHandler.isAddingMember(phone) ||
+      this.memberHandler.isRemovingMember(phone) ||
+      this.memberHandler.hasPendingTransfer(phone) ||
+      mdrChatFlowService.isActive(phone)
+    );
+  }
+
+  getOrphanOptionReplyMessage() {
+    return 'Não encontrei confirmação pendente agora. Se era confirmação, repita o último comando. Se era valor, envie com contexto (ex: _R$ 100_ ou _Insumos R$ 100_).';
+  }
+
+  async rehydrateRuntimeStates(phone) {
+    const runtimeStates = await conversationRuntimeStateService.getAllActive(phone);
+    if (!Array.isArray(runtimeStates) || runtimeStates.length === 0) {
+      return;
+    }
+
+    const byFlow = new Map();
+    for (const state of runtimeStates) {
+      if (!state?.flow || !state?.payload) continue;
+      byFlow.set(state.flow, state.payload);
+    }
+
+    if (!this.pendingTransactions.has(phone) && byFlow.has('tx_confirm')) {
+      this.transactionHandler.restorePendingTransaction(phone, byFlow.get('tx_confirm'));
+    }
+
+    if (!this.awaitingData.has(phone) && byFlow.has(this.RUNTIME_AWAITING_FLOW)) {
+      this.awaitingData.set(phone, byFlow.get(this.RUNTIME_AWAITING_FLOW));
+    }
+
+    if (!this.pendingEdits.has(phone) && byFlow.has('edit_flow')) {
+      this.editHandler.restorePendingEdit(phone, byFlow.get('edit_flow'));
+    }
+
+    if (!this.memberHandler.isAddingMember(phone) && byFlow.has('member_add')) {
+      this.memberHandler.restoreAddMemberState(phone, byFlow.get('member_add'));
+    }
+
+    if (!this.memberHandler.isRemovingMember(phone) && byFlow.has('member_remove')) {
+      this.memberHandler.restoreRemoveMemberState(phone, byFlow.get('member_remove'));
+    }
+
+    if (!mdrChatFlowService.isActive(phone) && byFlow.has('mdr_flow')) {
+      mdrChatFlowService.restoreState(phone, byFlow.get('mdr_flow'));
+    }
   }
 
   startMediaProcessing(phone, type = 'document') {
@@ -228,6 +308,8 @@ class MessageController {
         return await this.handleSecondaryMemberConfirmation(user, normalizedPhone, message);
       }
 
+      await this.rehydrateRuntimeStates(normalizedPhone);
+
       // Verifica estados pendentes
       if (this.pendingTransactions.has(normalizedPhone)) {
         return await this.transactionHandler.handleConfirmation(normalizedPhone, message, user);
@@ -316,6 +398,10 @@ class MessageController {
         if (isGreeting) {
           return await onboardingFlowService.startIntroFlow(normalizedPhone);
         }
+      }
+
+      if (this.isOptionToken(normalizedMessage) && !this.hasPendingConversationContext(normalizedPhone)) {
+        return this.getOrphanOptionReplyMessage();
       }
 
       // Tenta heurística primeiro (economiza ~60% das chamadas Gemini)
@@ -451,7 +537,7 @@ class MessageController {
 
         // Se não tem valor E não tem categoria: pergunta ambos
         if (!temValor && !temCategoria) {
-          this.awaitingData.set(phone, {
+          await this.setAwaitingData(phone, {
             intent: intent,
             stage: 'awaiting_category_and_value',
             timestamp: Date.now()
@@ -464,7 +550,7 @@ class MessageController {
 
         // Se tem categoria mas não tem valor: pergunta apenas o valor
         if (temCategoria && !temValor) {
-          this.awaitingData.set(phone, {
+          await this.setAwaitingData(phone, {
             intent: intent,
             stage: 'awaiting_value',
             timestamp: Date.now()
@@ -474,7 +560,7 @@ class MessageController {
 
         // Se tem valor mas não tem categoria: pergunta apenas a categoria
         if (temValor && !temCategoria) {
-          this.awaitingData.set(phone, {
+          await this.setAwaitingData(phone, {
             intent: intent,
             stage: 'awaiting_category',
             timestamp: Date.now()
@@ -587,7 +673,7 @@ class MessageController {
         return this.helpHandler.handleHelp();
 
       case 'apenas_valor':
-        this.awaitingData.set(phone, {
+        await this.setAwaitingData(phone, {
           intent: intent,
           stage: 'awaiting_type_for_value',
           timestamp: Date.now()
@@ -595,7 +681,7 @@ class MessageController {
         return await this.handleOnlyValue(intent, phone);
 
       case 'apenas_procedimento':
-        this.awaitingData.set(phone, {
+        await this.setAwaitingData(phone, {
           intent: intent,
           stage: 'awaiting_value_for_category',
           timestamp: Date.now()
@@ -624,14 +710,14 @@ class MessageController {
 
     const pendingAgeMs = Date.now() - (pendingData.timestamp || 0);
     if (pendingAgeMs > this.AWAITING_DATA_TTL_MS) {
-      this.awaitingData.delete(phone);
+      await this.clearAwaitingData(phone);
       return 'Esse pedido anterior expirou. Me manda de novo em uma mensagem só, tipo: _Insumos R$ 500_ ou _Botox R$ 2800_.';
     }
 
     const messageLower = message.toLowerCase().trim();
 
     if (['cancelar', 'não', 'nao', 'desfazer'].includes(messageLower)) {
-      this.awaitingData.delete(phone);
+      await this.clearAwaitingData(phone);
       return 'Entendido, cancelei o registro incompleto. 👍';
     }
 
@@ -659,7 +745,7 @@ class MessageController {
       if (Number.isFinite(valorDetectado) && valorDetectado > 0) {
         intent.dados.valor = valorDetectado;
         console.log('[CONTROLLER] Novo comando completo detectado, descartando espera anterior');
-        this.awaitingData.delete(phone);
+        await this.clearAwaitingData(phone);
         return await this.transactionHandler.handleTransactionRequest(user, intent, phone, message);
       }
     }
@@ -667,7 +753,7 @@ class MessageController {
     // Cenário 2: Apenas valor
     if (intent.intencao === 'apenas_valor' && intent.dados.valor) {
       pendingData.intent.dados.valor = intent.dados.valor;
-      this.awaitingData.delete(phone);
+      await this.clearAwaitingData(phone);
       console.log(`[CONTROLLER] Valor ${intent.dados.valor} recebido via apenas_valor`);
       return await this.transactionHandler.handleTransactionRequest(user, pendingData.intent, phone, message);
     }
@@ -676,7 +762,7 @@ class MessageController {
     if (intent.intencao === 'apenas_procedimento' && intent.dados.categoria) {
       pendingData.intent.dados.categoria = intent.dados.categoria;
       console.log('[CONTROLLER] Novo comando completo detectado, descartando espera anterior');
-      this.awaitingData.delete(phone);
+      await this.clearAwaitingData(phone);
       return await this.transactionHandler.handleTransactionRequest(user, pendingData.intent, phone, message);
     }
 
@@ -685,7 +771,7 @@ class MessageController {
     if (valorFallback && Number.isFinite(valorFallback) && valorFallback > 0) {
       const pendingIntent = pendingData.intent;
       pendingIntent.dados.valor = valorFallback;
-      this.awaitingData.delete(phone);
+      await this.clearAwaitingData(phone);
       console.log(`[CONTROLLER] Valor ${valorFallback} recebido via moneyParser fallback`);
       return await this.transactionHandler.handleTransactionRequest(user, pendingIntent, phone, message);
     }
@@ -696,7 +782,7 @@ class MessageController {
   async handleAwaitingTypeForValue(phone, message, intent, user, pendingData) {
     const pendingValue = Number(pendingData?.intent?.dados?.valor);
     if (!Number.isFinite(pendingValue) || pendingValue <= 0) {
-      this.awaitingData.delete(phone);
+      await this.clearAwaitingData(phone);
       return 'Perdi o valor anterior aqui. Me manda de novo a transação completa, tipo: _Insumos R$ 500_.';
     }
 
@@ -727,7 +813,7 @@ class MessageController {
         mergedIntent.dados.data = this.getTodayDate();
       }
 
-      this.awaitingData.delete(phone);
+      await this.clearAwaitingData(phone);
       return await this.transactionHandler.handleTransactionRequest(user, mergedIntent, phone, message);
     }
 
@@ -741,7 +827,7 @@ class MessageController {
           data: this.getTodayDate()
         }
       };
-      this.awaitingData.delete(phone);
+      await this.clearAwaitingData(phone);
       return await this.transactionHandler.handleTransactionRequest(user, entradaIntent, phone, message);
     }
 
@@ -761,7 +847,7 @@ class MessageController {
           data: this.getTodayDate()
         }
       };
-      this.awaitingData.delete(phone);
+      await this.clearAwaitingData(phone);
       return await this.transactionHandler.handleTransactionRequest(user, saidaIntent, phone, message);
     }
 
@@ -775,7 +861,7 @@ class MessageController {
           data: this.getTodayDate()
         }
       };
-      this.awaitingData.delete(phone);
+      await this.clearAwaitingData(phone);
       return await this.transactionHandler.handleTransactionRequest(user, entradaIntent, phone, message);
     }
 
@@ -802,7 +888,7 @@ class MessageController {
       }
     };
 
-    this.awaitingData.delete(phone);
+    await this.clearAwaitingData(phone);
     return await this.transactionHandler.handleTransactionRequest(user, entradaIntent, phone, message);
   }
 

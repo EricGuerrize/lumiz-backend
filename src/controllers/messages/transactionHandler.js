@@ -1,6 +1,7 @@
 const transactionController = require('../transactionController');
 const analyticsService = require('../../services/analyticsService');
 const knowledgeService = require('../../services/knowledgeService');
+const conversationRuntimeStateService = require('../../services/conversationRuntimeStateService');
 const crypto = require('crypto');
 const { formatarMoeda } = require('../../utils/currency');
 const {
@@ -15,6 +16,23 @@ const { sanitizeClientName } = require('../../utils/procedureKeywords');
 class TransactionHandler {
   constructor(pendingTransactions) {
     this.pendingTransactions = pendingTransactions;
+    this.RUNTIME_FLOW = 'tx_confirm';
+    this.RUNTIME_TTL_MS = 15 * 60 * 1000;
+  }
+
+  async setPendingTransaction(phone, pending, ttlMs = this.RUNTIME_TTL_MS) {
+    this.pendingTransactions.set(phone, pending);
+    await conversationRuntimeStateService.upsert(phone, this.RUNTIME_FLOW, pending, ttlMs);
+  }
+
+  async clearPendingTransaction(phone) {
+    this.pendingTransactions.delete(phone);
+    await conversationRuntimeStateService.clear(phone, this.RUNTIME_FLOW);
+  }
+
+  restorePendingTransaction(phone, pending) {
+    if (!phone || !pending) return;
+    this.pendingTransactions.set(phone, pending);
   }
 
   /**
@@ -48,7 +66,7 @@ class TransactionHandler {
     if (tipo === 'entrada') {
       const paymentCheck = this.resolvePaymentRequirements(normalizedData, originalText);
       if (paymentCheck.needsInput) {
-        this.pendingTransactions.set(phone, {
+        await this.setPendingTransaction(phone, {
           user,
           dados: paymentCheck.dados,
           originalText,
@@ -61,7 +79,7 @@ class TransactionHandler {
     }
 
     // Armazena a transação pendente
-    this.pendingTransactions.set(phone, {
+    await this.setPendingTransaction(phone, {
       user,
       dados: normalizedData,
       originalText,
@@ -76,7 +94,15 @@ class TransactionHandler {
    * Processa confirmação de transação
    */
   async handleConfirmation(phone, message, user) {
-    const pending = this.pendingTransactions.get(phone);
+    let pending = this.pendingTransactions.get(phone);
+    if (!pending) {
+      const persisted = await conversationRuntimeStateService.get(phone, this.RUNTIME_FLOW);
+      if (persisted?.payload) {
+        pending = persisted.payload;
+        this.pendingTransactions.set(phone, pending);
+      }
+    }
+
     if (!pending) {
       return 'Não encontrei nenhuma transação pendente. Pode enviar novamente?';
     }
@@ -90,10 +116,10 @@ class TransactionHandler {
         messageLower === 'não' ||
         messageLower === '2'
       ) {
-        this.pendingTransactions.delete(phone);
+        await this.clearPendingTransaction(phone);
         return 'Registro cancelado ❌\n\nSe quiser registrar, é só me enviar novamente com os dados corretos!';
       }
-      return this.handlePendingPaymentStep(phone, pending, messageLower);
+      return await this.handlePendingPaymentStep(phone, pending, messageLower);
     }
 
     // Confirmação
@@ -167,7 +193,7 @@ class TransactionHandler {
         ).catch(err => console.error('[KNOWLEDGE] Erro ao salvar transação:', err.message));
       }
 
-      this.pendingTransactions.delete(phone);
+      await this.clearPendingTransaction(phone);
 
       const emoji = tipo === 'entrada' ? '💰' : '💸';
       const tipoTexto = tipo === 'entrada' ? 'Venda' : 'Custo';
@@ -200,7 +226,7 @@ class TransactionHandler {
           source: 'whatsapp'
         });
       } catch (e) { }
-      this.pendingTransactions.delete(phone);
+      await this.clearPendingTransaction(phone);
       return 'Registro cancelado ❌\n\nSe quiser registrar, é só me enviar novamente com os dados corretos!';
     }
 
@@ -394,7 +420,7 @@ class TransactionHandler {
     };
   }
 
-  handlePendingPaymentStep(phone, pending, messageLower) {
+  async handlePendingPaymentStep(phone, pending, messageLower) {
     const current = pending.dados || {};
 
     if (pending.stage === 'awaiting_mixed_total') {
@@ -415,12 +441,12 @@ class TransactionHandler {
       const cardPart = paymentSplit.find((part) => part.metodo === 'parcelado');
       if (cardPart && (!cardPart.parcelas || cardPart.parcelas < 2)) {
         pending.stage = 'awaiting_mixed_installments';
-        this.pendingTransactions.set(phone, pending);
+        await this.setPendingTransaction(phone, pending);
         return 'Na parte do cartão, em quantas parcelas foi? (ex: 6x)';
       }
 
       pending.stage = 'confirm';
-      this.pendingTransactions.set(phone, pending);
+      await this.setPendingTransaction(phone, pending);
       return this.buildConfirmationMessage(pending.dados);
     }
 
@@ -440,7 +466,7 @@ class TransactionHandler {
         )
       };
       pending.stage = 'confirm';
-      this.pendingTransactions.set(phone, pending);
+      await this.setPendingTransaction(phone, pending);
       return this.buildConfirmationMessage(pending.dados);
     }
 
@@ -453,13 +479,13 @@ class TransactionHandler {
       if (method === 'parcelado') {
         pending.dados = { ...current, forma_pagamento: 'parcelado', parcelas: null };
         pending.stage = 'awaiting_installments';
-        this.pendingTransactions.set(phone, pending);
+        await this.setPendingTransaction(phone, pending);
         return 'Em quantas parcelas foi no cartão? (ex: 3x)';
       }
 
       pending.dados = { ...current, forma_pagamento: method, parcelas: null };
       pending.stage = 'confirm';
-      this.pendingTransactions.set(phone, pending);
+      await this.setPendingTransaction(phone, pending);
       return this.buildConfirmationMessage(pending.dados);
     }
 
@@ -472,13 +498,13 @@ class TransactionHandler {
       if (cardType === 'parcelado') {
         pending.dados = { ...current, forma_pagamento: 'parcelado', parcelas: null };
         pending.stage = 'awaiting_installments';
-        this.pendingTransactions.set(phone, pending);
+        await this.setPendingTransaction(phone, pending);
         return 'Em quantas parcelas foi no cartão? (ex: 3x)';
       }
 
       pending.dados = { ...current, forma_pagamento: 'credito_avista', parcelas: null };
       pending.stage = 'confirm';
-      this.pendingTransactions.set(phone, pending);
+      await this.setPendingTransaction(phone, pending);
       return this.buildConfirmationMessage(pending.dados);
     }
 
@@ -494,12 +520,12 @@ class TransactionHandler {
         pending.dados = { ...current, forma_pagamento: 'parcelado', parcelas: installments };
       }
       pending.stage = 'confirm';
-      this.pendingTransactions.set(phone, pending);
+      await this.setPendingTransaction(phone, pending);
       return this.buildConfirmationMessage(pending.dados);
     }
 
     pending.stage = 'confirm';
-    this.pendingTransactions.set(phone, pending);
+    await this.setPendingTransaction(phone, pending);
     return this.buildConfirmationMessage(pending.dados);
   }
 

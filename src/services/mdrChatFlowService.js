@@ -1,6 +1,7 @@
 const { normalizePhone } = require('../utils/phone');
 const mdrService = require('./mdrService');
 const onboardingService = require('./onboardingService');
+const conversationRuntimeStateService = require('./conversationRuntimeStateService');
 const mdrCopy = require('../copy/mdrWhatsappCopy');
 
 const STEP = {
@@ -18,6 +19,32 @@ const STEP = {
 class MdrChatFlowService {
   constructor() {
     this.states = new Map();
+    this.RUNTIME_FLOW = 'mdr_flow';
+    this.RUNTIME_TTL_MS = 20 * 60 * 1000;
+  }
+
+  async setState(phone, state, persist = true) {
+    const normalized = normalizePhone(phone) || phone;
+    if (!normalized || !state) return;
+    this.states.set(normalized, state);
+    if (persist) {
+      await conversationRuntimeStateService.upsert(normalized, this.RUNTIME_FLOW, state, this.RUNTIME_TTL_MS);
+    }
+  }
+
+  async clearState(phone, persist = true) {
+    const normalized = normalizePhone(phone) || phone;
+    if (!normalized) return;
+    this.states.delete(normalized);
+    if (persist) {
+      await conversationRuntimeStateService.clear(normalized, this.RUNTIME_FLOW);
+    }
+  }
+
+  restoreState(phone, state) {
+    const normalized = normalizePhone(phone) || phone;
+    if (!normalized || !state) return;
+    this.states.set(normalized, state);
   }
 
   isActive(phone) {
@@ -81,12 +108,12 @@ class MdrChatFlowService {
       provider: state.provider || null
     });
 
-    this.states.delete(normalizedPhone);
+    await this.clearState(normalizedPhone);
     return mdrCopy.ocrReceived({ provider: state.provider });
   }
 
   async startFlow({ phone, user }) {
-    this.states.set(phone, {
+    await this.setState(phone, {
       step: STEP.CHOOSE_METHOD,
       userId: user.id
     });
@@ -98,7 +125,7 @@ class MdrChatFlowService {
     const lower = message.toLowerCase();
 
     if (this.isCancel(lower)) {
-      this.states.delete(phone);
+      await this.clearState(phone);
       return mdrCopy.cancelled();
     }
 
@@ -115,22 +142,26 @@ class MdrChatFlowService {
 
         if (choice === 'manual') {
           state.step = STEP.PROVIDER_MANUAL;
+          await this.setState(phone, state);
           return mdrCopy.askProvider();
         }
 
         state.step = STEP.PROVIDER_OCR;
+        await this.setState(phone, state);
         return mdrCopy.askProvider();
       }
 
       case STEP.PROVIDER_MANUAL: {
         state.provider = message;
         state.step = STEP.MANUAL_RATES;
+        await this.setState(phone, state);
         return mdrCopy.manualRatesRequest();
       }
 
       case STEP.PROVIDER_OCR: {
         state.provider = message;
         state.step = STEP.OCR_WAIT_IMAGE;
+        await this.setState(phone, state);
         return mdrCopy.ocrRequest();
       }
 
@@ -138,6 +169,7 @@ class MdrChatFlowService {
         state.rawText = message;
         state.parsed = this._parseManualRates(message);
         state.step = STEP.REVIEW_MANUAL;
+        await this.setState(phone, state);
         return mdrCopy.manualReview({
           provider: state.provider,
           rawText: state.rawText,
@@ -157,10 +189,12 @@ class MdrChatFlowService {
 
         if (choice === 'edit') {
           state.step = STEP.MANUAL_RATES;
+          await this.setState(phone, state);
           return mdrCopy.manualRatesRequest();
         }
 
         state.step = STEP.SETTLEMENT_MANUAL;
+        await this.setState(phone, state);
         return mdrCopy.settlementQuestion();
       }
 
@@ -197,7 +231,7 @@ class MdrChatFlowService {
         });
 
         await this._markConfigured(phone, config.id, settlementMode);
-        this.states.delete(phone);
+        await this.clearState(phone);
         return mdrCopy.done();
       }
 
@@ -213,10 +247,12 @@ class MdrChatFlowService {
 
         if (choice === 'edit') {
           state.step = STEP.OCR_WAIT_IMAGE;
+          await this.setState(phone, state);
           return mdrCopy.ocrRequest();
         }
 
         state.step = STEP.SETTLEMENT_OCR;
+        await this.setState(phone, state);
         return mdrCopy.settlementQuestion();
       }
 
@@ -239,12 +275,12 @@ class MdrChatFlowService {
           await this._markConfigured(phone, state.configId, settlementMode);
         }
 
-        this.states.delete(phone);
+        await this.clearState(phone);
         return mdrCopy.done();
       }
 
       default:
-        this.states.delete(phone);
+        await this.clearState(phone);
         return null;
     }
   }
@@ -259,7 +295,7 @@ class MdrChatFlowService {
 
     if (lower.includes('revisar taxas') || lower === 'revisar') {
       const resumo = this._formatRates(config);
-      this.states.set(phone, {
+      await this.setState(phone, {
         step: STEP.OCR_REVIEW,
         configId: config.id,
         provider: config.provider,
@@ -270,7 +306,7 @@ class MdrChatFlowService {
 
     if (lower === 'sim') {
       const resumo = this._formatRates(config);
-      this.states.set(phone, {
+      await this.setState(phone, {
         step: STEP.SETTLEMENT_OCR,
         configId: config.id,
         provider: config.provider,
