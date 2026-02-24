@@ -28,7 +28,9 @@ class IntentHeuristicService {
       registrar_saida: [
         'insumos', 'marketing', 'aluguel', 'energia', 'internet', 'material',
         'produto', 'fornecedor', 'boleto', 'conta', 'paguei', 'gastei', 'comprei',
-        'pagar', 'despesa', 'custo', 'gasto', 'conta de', 'salário', 'salario'
+        'pagar', 'despesa', 'custo', 'gasto', 'conta de', 'salário', 'salario',
+        'luz', 'agua', 'água', 'telefone', 'celular', 'gas', 'gás', 'condominio',
+        'condomínio', 'manutencao', 'manutenção'
       ],
       consultar_saldo: [
         'saldo', 'resumo', 'lucro', 'quanto tenho', 'quanto sobrou', 'sobra',
@@ -240,9 +242,10 @@ class IntentHeuristicService {
       'Salários': ['salário', 'salario', 'salarios', 'salários'],
       'Marketing': ['marketing', 'publicidade', 'anúncio', 'anuncio'],
       'Impostos': ['imposto', 'taxa', 'tributo'],
-      'Energia': ['energia', 'luz', 'eletricidade'],
-      'Internet': ['internet', 'wi-fi', 'wifi'],
-      'Fornecedor': ['fornecedor', 'compra', 'comprei']
+      'Energia': ['energia', 'luz', 'eletricidade', 'agua', 'água', 'gas', 'gás'],
+      'Internet': ['internet', 'wi-fi', 'wifi', 'telefone', 'celular'],
+      'Fornecedor': ['fornecedor', 'compra', 'comprei'],
+      'Outros': ['condominio', 'condomínio', 'manutencao', 'manutenção']
     };
 
     for (const [cat, keywords] of Object.entries(costKeywords)) {
@@ -260,9 +263,10 @@ class IntentHeuristicService {
   /**
    * Detecta intent usando heurística
    * @param {string} message - Mensagem do usuário
+   * @param {string|null} clinicId - ID da clínica para busca semântica
    * @returns {Object|null} - Intent detectado ou null se não conseguir
    */
-  async detectIntent(message) {
+  async detectIntent(message, clinicId = null) {
     if (!message || typeof message !== 'string') {
       return null;
     }
@@ -272,9 +276,14 @@ class IntentHeuristicService {
 
     // 1. Tenta Busca Semântica primeiro (Aprendizado Autônomo)
     try {
-      const similarInteractions = await knowledgeService.searchSimilarity(original, null, 0.95);
+      const similarInteractions = await knowledgeService.searchSimilarity(original, clinicId, 0.95);
       if (similarInteractions && similarInteractions.length > 0) {
         const bestMatch = similarInteractions[0];
+        console.log('[KNOWLEDGE][LEARNED_HIT]', {
+          clinicId: clinicId || null,
+          intentName: bestMatch.intent_name,
+          similarity: bestMatch.similarity
+        });
         console.log(`[HEURISTIC] Aprendizado encontrado: "${bestMatch.content}" -> ${bestMatch.intent_name}`);
         return {
           intencao: bestMatch.intent_name,

@@ -42,6 +42,7 @@ class MessageController {
     this.pendingEdits = new Map();
     this.mediaProcessing = new Map();
     this.MEDIA_PROCESSING_TTL_MS = 60 * 1000;
+    this.AWAITING_DATA_TTL_MS = 10 * 60 * 1000;
 
     // Inicializa handlers com referências aos Maps
     this.transactionHandler = new TransactionHandler(this.pendingTransactions);
@@ -427,8 +428,20 @@ class MessageController {
     switch (intent.intencao) {
       case 'registrar_entrada':
       case 'registrar_saida':
+        if (!intent.dados) {
+          intent.dados = {};
+        }
+
+        if (!Number.isFinite(Number(intent.dados.valor)) || Number(intent.dados.valor) <= 0) {
+          const valorFallback = extractPrimaryMonetaryValue(message);
+          if (Number.isFinite(valorFallback) && valorFallback > 0) {
+            intent.dados.valor = valorFallback;
+            console.log(`[CONTROLLER] Valor ${valorFallback} recuperado via fallback em routeIntent`);
+          }
+        }
+
         const tipo = intent.intencao === 'registrar_entrada' ? 'venda' : 'custo';
-        const temValor = intent.dados.valor && intent.dados.valor > 0;
+        const temValor = Number.isFinite(Number(intent.dados.valor)) && Number(intent.dados.valor) > 0;
         const temCategoria = intent.dados.categoria && intent.dados.categoria.trim().length > 0;
 
         // Se tem ambos, processa normalmente
@@ -440,6 +453,7 @@ class MessageController {
         if (!temValor && !temCategoria) {
           this.awaitingData.set(phone, {
             intent: intent,
+            stage: 'awaiting_category_and_value',
             timestamp: Date.now()
           });
           const exemplos = tipo === 'venda'
@@ -452,6 +466,7 @@ class MessageController {
         if (temCategoria && !temValor) {
           this.awaitingData.set(phone, {
             intent: intent,
+            stage: 'awaiting_value',
             timestamp: Date.now()
           });
           return `Entendi que é uma ${tipo} de *${intent.dados.categoria}*, mas qual o valor? 💰\n\nPode mandar só o número (ex: R$ 500).`;
@@ -461,6 +476,7 @@ class MessageController {
         if (temValor && !temCategoria) {
           this.awaitingData.set(phone, {
             intent: intent,
+            stage: 'awaiting_category',
             timestamp: Date.now()
           });
           const exemplos = tipo === 'venda'
@@ -571,9 +587,19 @@ class MessageController {
         return this.helpHandler.handleHelp();
 
       case 'apenas_valor':
+        this.awaitingData.set(phone, {
+          intent: intent,
+          stage: 'awaiting_type_for_value',
+          timestamp: Date.now()
+        });
         return await this.handleOnlyValue(intent, phone);
 
       case 'apenas_procedimento':
+        this.awaitingData.set(phone, {
+          intent: intent,
+          stage: 'awaiting_value_for_category',
+          timestamp: Date.now()
+        });
         return await this.handleOnlyProcedure(intent, phone);
 
       case 'mensagem_ambigua':
@@ -592,6 +618,16 @@ class MessageController {
    */
   async handleAwaitingData(phone, message, intent, user) {
     const pendingData = this.awaitingData.get(phone);
+    if (!pendingData) {
+      return 'Não encontrei nenhum registro pendente agora. Me manda a transação completa, tipo: _Botox R$ 2800_.';
+    }
+
+    const pendingAgeMs = Date.now() - (pendingData.timestamp || 0);
+    if (pendingAgeMs > this.AWAITING_DATA_TTL_MS) {
+      this.awaitingData.delete(phone);
+      return 'Esse pedido anterior expirou. Me manda de novo em uma mensagem só, tipo: _Insumos R$ 500_ ou _Botox R$ 2800_.';
+    }
+
     const messageLower = message.toLowerCase().trim();
 
     if (['cancelar', 'não', 'nao', 'desfazer'].includes(messageLower)) {
@@ -599,11 +635,33 @@ class MessageController {
       return 'Entendido, cancelei o registro incompleto. 👍';
     }
 
+    if (pendingData.stage === 'awaiting_type_for_value') {
+      return await this.handleAwaitingTypeForValue(phone, message, intent, user, pendingData);
+    }
+
+    if (pendingData.stage === 'awaiting_value_for_category') {
+      return await this.handleAwaitingValueForCategory(phone, message, intent, user, pendingData);
+    }
+
+    if (!pendingData.intent) {
+      pendingData.intent = { dados: {} };
+    }
+    if (!pendingData.intent.dados) {
+      pendingData.intent.dados = {};
+    }
+
     // Cenário 1: Comando completo agora
-    if ((intent.intencao === 'registrar_entrada' || intent.intencao === 'registrar_saida') && intent.dados.valor) {
-      console.log('[CONTROLLER] Novo comando completo detectado, descartando espera anterior');
-      this.awaitingData.delete(phone);
-      return await this.transactionHandler.handleTransactionRequest(user, intent, phone, message);
+    if (intent.intencao === 'registrar_entrada' || intent.intencao === 'registrar_saida') {
+      const valorDetectado = Number.isFinite(Number(intent?.dados?.valor)) && Number(intent.dados.valor) > 0
+        ? Number(intent.dados.valor)
+        : extractPrimaryMonetaryValue(message);
+
+      if (Number.isFinite(valorDetectado) && valorDetectado > 0) {
+        intent.dados.valor = valorDetectado;
+        console.log('[CONTROLLER] Novo comando completo detectado, descartando espera anterior');
+        this.awaitingData.delete(phone);
+        return await this.transactionHandler.handleTransactionRequest(user, intent, phone, message);
+      }
     }
 
     // Cenário 2: Apenas valor
@@ -611,6 +669,14 @@ class MessageController {
       pendingData.intent.dados.valor = intent.dados.valor;
       this.awaitingData.delete(phone);
       console.log(`[CONTROLLER] Valor ${intent.dados.valor} recebido via apenas_valor`);
+      return await this.transactionHandler.handleTransactionRequest(user, pendingData.intent, phone, message);
+    }
+
+    // Cenário 2.1: Apenas categoria/procedimento
+    if (intent.intencao === 'apenas_procedimento' && intent.dados.categoria) {
+      pendingData.intent.dados.categoria = intent.dados.categoria;
+      console.log('[CONTROLLER] Novo comando completo detectado, descartando espera anterior');
+      this.awaitingData.delete(phone);
       return await this.transactionHandler.handleTransactionRequest(user, pendingData.intent, phone, message);
     }
 
@@ -625,6 +691,147 @@ class MessageController {
     }
 
     return 'Não consegui identificar o valor 🤔\n\nMe manda só o número, tipo: _R$ 500_ ou _R$ 1500.50_';
+  }
+
+  async handleAwaitingTypeForValue(phone, message, intent, user, pendingData) {
+    const pendingValue = Number(pendingData?.intent?.dados?.valor);
+    if (!Number.isFinite(pendingValue) || pendingValue <= 0) {
+      this.awaitingData.delete(phone);
+      return 'Perdi o valor anterior aqui. Me manda de novo a transação completa, tipo: _Insumos R$ 500_.';
+    }
+
+    if (intent.intencao === 'registrar_entrada' || intent.intencao === 'registrar_saida') {
+      const mergedIntent = {
+        ...intent,
+        dados: {
+          ...(intent.dados || {}),
+          valor: Number.isFinite(Number(intent?.dados?.valor)) && Number(intent.dados.valor) > 0
+            ? Number(intent.dados.valor)
+            : pendingValue
+        }
+      };
+
+      if (intent.intencao === 'registrar_saida') {
+        mergedIntent.dados.tipo = 'saida';
+        if (!mergedIntent.dados.categoria) {
+          mergedIntent.dados.categoria = this.resolveCostCategory(message, intent);
+        }
+      } else {
+        mergedIntent.dados.tipo = 'entrada';
+        if (!mergedIntent.dados.categoria) {
+          mergedIntent.dados.categoria = 'Procedimento';
+        }
+      }
+
+      if (!mergedIntent.dados.data) {
+        mergedIntent.dados.data = this.getTodayDate();
+      }
+
+      this.awaitingData.delete(phone);
+      return await this.transactionHandler.handleTransactionRequest(user, mergedIntent, phone, message);
+    }
+
+    if (intent.intencao === 'apenas_procedimento' && intent?.dados?.categoria) {
+      const entradaIntent = {
+        intencao: 'registrar_entrada',
+        dados: {
+          tipo: 'entrada',
+          valor: pendingValue,
+          categoria: intent.dados.categoria,
+          data: this.getTodayDate()
+        }
+      };
+      this.awaitingData.delete(phone);
+      return await this.transactionHandler.handleTransactionRequest(user, entradaIntent, phone, message);
+    }
+
+    const messageLower = String(message || '').toLowerCase().trim();
+    const isExpense = this.isExpenseTypeMessage(messageLower);
+    const isEntry = this.isEntryTypeMessage(messageLower);
+    const categoriaCusto = this.resolveCostCategory(message, intent);
+    const hasSpecificCostCategory = categoriaCusto !== 'Outros';
+
+    if (isExpense || (!isEntry && hasSpecificCostCategory)) {
+      const saidaIntent = {
+        intencao: 'registrar_saida',
+        dados: {
+          tipo: 'saida',
+          valor: pendingValue,
+          categoria: categoriaCusto,
+          data: this.getTodayDate()
+        }
+      };
+      this.awaitingData.delete(phone);
+      return await this.transactionHandler.handleTransactionRequest(user, saidaIntent, phone, message);
+    }
+
+    if (isEntry) {
+      const entradaIntent = {
+        intencao: 'registrar_entrada',
+        dados: {
+          tipo: 'entrada',
+          valor: pendingValue,
+          categoria: intent?.dados?.categoria || 'Procedimento',
+          data: this.getTodayDate()
+        }
+      };
+      this.awaitingData.delete(phone);
+      return await this.transactionHandler.handleTransactionRequest(user, entradaIntent, phone, message);
+    }
+
+    return 'Perfeito. Agora me diz se foi *venda* ou *gasto*.';
+  }
+
+  async handleAwaitingValueForCategory(phone, message, intent, user, pendingData) {
+    const categoria = pendingData?.intent?.dados?.categoria || 'Procedimento';
+    const valor = Number.isFinite(Number(intent?.dados?.valor)) && Number(intent.dados.valor) > 0
+      ? Number(intent.dados.valor)
+      : extractPrimaryMonetaryValue(message);
+
+    if (!Number.isFinite(valor) || valor <= 0) {
+      return `Perfeito, entendi *${categoria}*. Agora me manda só o valor (ex: _R$ 500_).`;
+    }
+
+    const entradaIntent = {
+      intencao: 'registrar_entrada',
+      dados: {
+        tipo: 'entrada',
+        valor,
+        categoria,
+        data: this.getTodayDate()
+      }
+    };
+
+    this.awaitingData.delete(phone);
+    return await this.transactionHandler.handleTransactionRequest(user, entradaIntent, phone, message);
+  }
+
+  isExpenseTypeMessage(messageLower) {
+    const expenseHints = ['gasto', 'custo', 'despesa', 'saida', 'saída', 'paguei', 'comprei'];
+    return expenseHints.some((token) => messageLower.includes(token));
+  }
+
+  isEntryTypeMessage(messageLower) {
+    const entryHints = ['venda', 'receita', 'entrada', 'entrou', 'ganhei', 'recebi'];
+    return entryHints.some((token) => messageLower.includes(token));
+  }
+
+  resolveCostCategory(message, intent) {
+    const intentCategory = intent?.dados?.categoria;
+    if (typeof intentCategory === 'string' && intentCategory.trim().length > 0) {
+      return intentCategory.trim();
+    }
+
+    const costInfo = intentHeuristicService.extractCostInfo(message || '');
+    if (costInfo?.categoria && costInfo.categoria !== 'Outros') {
+      return costInfo.categoria;
+    }
+
+    return 'Outros';
+  }
+
+  getTodayDate() {
+    return new Date().toISOString().split('T')[0];
   }
 
   /**
@@ -826,7 +1033,7 @@ class MessageController {
    */
   async handleOnlyValue(intent, phone) {
     const valor = intent.dados.valor;
-    return `Entendi, *${formatarMoeda(valor)}* 💰\n\nMas isso foi uma venda ou um gasto?\n\nMe conta mais, tipo:\n_"Botox ${formatarMoeda(valor)}"_ se foi uma venda\n_"Insumos ${formatarMoeda(valor)}"_ se foi um custo`;
+    return `Entendi, *${formatarMoeda(valor)}* 💰\n\nIsso foi *venda* ou *gasto*?\n\nResponde com uma palavra:\n• venda\n• gasto`;
   }
 
   async handleOnlyProcedure(intent, phone) {
