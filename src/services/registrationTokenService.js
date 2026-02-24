@@ -7,12 +7,39 @@ class RegistrationTokenService {
     return process.env.DASHBOARD_URL || 'https://lumiz-financeiro.vercel.app';
   }
 
-  buildSetupLink(token) {
+  getDashboardSetupRoute() {
+    const configuredRoute = String(process.env.DASHBOARD_SETUP_ROUTE || '').trim();
+    if (!configuredRoute) return '/setup-account';
+    return configuredRoute.startsWith('/') ? configuredRoute : `/${configuredRoute}`;
+  }
+
+  buildModernSetupLink(token) {
     return `${this.getDashboardBaseUrl()}/setup?token=${encodeURIComponent(token)}`;
   }
 
   buildLegacySetupLink(phone, token) {
     return `${this.getDashboardBaseUrl()}/setup-account?phone=${encodeURIComponent(phone)}&token=${token}`;
+  }
+
+  buildSetupLink(phone, token) {
+    const route = this.getDashboardSetupRoute();
+
+    if (route === '/setup') {
+      return this.buildModernSetupLink(token);
+    }
+
+    // Rota legada /setup-account exige phone+token.
+    if (route === '/setup-account') {
+      return this.buildLegacySetupLink(phone, token);
+    }
+
+    const baseUrl = this.getDashboardBaseUrl();
+    const url = new URL(`${baseUrl}${route}`);
+    url.searchParams.set('token', token);
+    if (phone) {
+      url.searchParams.set('phone', phone);
+    }
+    return url.toString();
   }
 
   /**
@@ -52,7 +79,8 @@ class RegistrationTokenService {
         phone: normalizedPhone,
         clinicId,
         expiresAt: expiresAt.toISOString(),
-        registrationLink: this.buildSetupLink(token),
+        registrationLink: this.buildSetupLink(normalizedPhone, token),
+        modernRegistrationLink: this.buildModernSetupLink(token),
         legacyRegistrationLink: this.buildLegacySetupLink(normalizedPhone, token)
       };
     } catch (error) {
@@ -70,12 +98,41 @@ class RegistrationTokenService {
         .from('setup_tokens')
         .select('*')
         .eq('token', token)
-        .eq('usado', false)
-        .gt('expira_em', new Date().toISOString())
-        .single();
+        .maybeSingle();
 
-      if (error || !data) {
-        return { valid: false, phone: null, clinicId: null };
+      if (error && error.code !== 'PGRST116') {
+        console.error('[REG_TOKEN] Erro ao buscar token:', error);
+        return { valid: false, phone: null, clinicId: null, expired: false, reason: 'lookup_error' };
+      }
+
+      if (!data) {
+        return { valid: false, phone: null, clinicId: null, expired: false, reason: 'not_found' };
+      }
+
+      if (data.usado) {
+        return {
+          valid: false,
+          phone: null,
+          clinicId: null,
+          expired: false,
+          reason: 'already_used'
+        };
+      }
+
+      const expiresAt = data.expira_em ? new Date(data.expira_em) : null;
+      const isExpired = !expiresAt || Number.isNaN(expiresAt.getTime())
+        ? true
+        : expiresAt.getTime() <= Date.now();
+
+      if (isExpired) {
+        return {
+          valid: false,
+          phone: null,
+          clinicId: null,
+          expired: true,
+          reason: 'expired',
+          expiresAt: data.expira_em || null
+        };
       }
 
       // Extrai dados do formato:
@@ -83,7 +140,7 @@ class RegistrationTokenService {
       // phone_5511999999999|clinic_<uuid>
       const phoneMatch = data.email?.match(/^phone_([^|]+)(?:\|clinic_(.+))?$/);
       if (!phoneMatch) {
-        return { valid: false, phone: null, clinicId: null };
+        return { valid: false, phone: null, clinicId: null, expired: false, reason: 'invalid_marker_format' };
       }
 
       return {
@@ -92,11 +149,13 @@ class RegistrationTokenService {
         clinicId: phoneMatch[2] || null,
         token,
         tokenId: data.id,
-        expiresAt: data.expira_em || null
+        expiresAt: data.expira_em || null,
+        expired: false,
+        reason: null
       };
     } catch (error) {
       console.error('[REG_TOKEN] Erro ao validar token:', error);
-      return { valid: false, phone: null, clinicId: null };
+      return { valid: false, phone: null, clinicId: null, expired: false, reason: 'unexpected_error' };
     }
   }
 

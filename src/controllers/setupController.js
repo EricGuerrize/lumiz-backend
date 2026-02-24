@@ -19,7 +19,14 @@ class SetupController {
       const tokenInfo = await registrationTokenService.validateSetupToken(token);
 
       if (!tokenInfo.valid) {
-        return res.status(400).json({ valid: false, error: 'Token inválido ou expirado' });
+        const isExpired = tokenInfo.expired === true;
+        return res.status(400).json({
+          valid: false,
+          expired: isExpired,
+          reason: tokenInfo.reason || null,
+          expiresAt: tokenInfo.expiresAt || null,
+          error: isExpired ? 'Token expirado' : 'Token inválido ou já utilizado'
+        });
       }
 
       const { data: profile } = await supabase
@@ -61,9 +68,13 @@ class SetupController {
 
       const tokenInfo = await registrationTokenService.validateSetupToken(parsed.data.token);
       if (!tokenInfo.valid) {
+        const isExpired = tokenInfo.expired === true;
         return res.status(400).json({
           success: false,
-          error: 'Token inválido ou expirado'
+          expired: isExpired,
+          reason: tokenInfo.reason || null,
+          expiresAt: tokenInfo.expiresAt || null,
+          error: isExpired ? 'Token expirado' : 'Token inválido ou já utilizado'
         });
       }
 
