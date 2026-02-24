@@ -273,12 +273,34 @@ module.exports = {
         );
     },
 
+    // Compatibilidade para retomada de onboarding com tipo pré-definido
+    ahaCostsUploadFixed() {
+        return (
+            `Agora me manda um custo fixo (Ex: Aluguel, conta de luz).\n` +
+            `Pode ser texto, foto ou PDF.`
+        );
+    },
+
+    ahaCostsUploadVariable() {
+        return (
+            `Agora me manda um custo variável (Ex: Compra de insumos, injetáveis).\n` +
+            `Pode ser texto, foto ou PDF.`
+        );
+    },
+
     ahaCostsClassify() {
         return (
             `Esse custo é mais:\n\n` +
             `1️⃣ 🧱 Fixo (todo mês)\n` +
             `2️⃣ 🧪 Variável (depende do mês)\n` +
             `3️⃣ Não sei`
+        );
+    },
+
+    ahaCostsDontKnow() {
+        return (
+            `Tranquilo 👍\n\n` +
+            `Me diz em uma frase o que é esse custo (ex: "aluguel da clínica" ou "compra de insumos"), que eu classifico pra você.`
         );
     },
 

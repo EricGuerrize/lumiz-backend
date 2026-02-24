@@ -178,9 +178,22 @@ function extractSaleHeuristics(text = '') {
     };
 }
 
+function getLocalIsoDate(date = new Date()) {
+    const d = date instanceof Date ? date : new Date(date);
+    if (isNaN(d.getTime())) return null;
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
 function formatDate(date) {
     if (!date) return 'Hoje';
     if (typeof date === 'string') {
+        const isoDateMatch = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (isoDateMatch) {
+            return `${isoDateMatch[3]}/${isoDateMatch[2]}/${isoDateMatch[1]}`;
+        }
         try {
             const d = new Date(date);
             if (isNaN(d.getTime())) return 'Hoje';
@@ -255,8 +268,12 @@ function calculateSummaryFromOnboardingData(onboarding) {
         }
     }
 
-    // Também considera o pending_cost se foi salvo (para compatibilidade)
-    if (pendingCost?.saved && pendingCost?.valor) {
+    // Também considera o pending_cost se foi salvo (para compatibilidade),
+    // evitando dupla contagem quando ele já está no array saved_costs.
+    const pendingAlreadyCounted = pendingCost?.savedId &&
+        savedCosts.some((cost) => cost?.savedId && cost.savedId === pendingCost.savedId);
+
+    if (pendingCost?.saved && pendingCost?.valor && !pendingAlreadyCounted) {
         if (pendingCost.tipo === 'fixa') {
             custosFixos += pendingCost.valor;
         } else if (pendingCost.tipo === 'variavel') {
@@ -280,7 +297,7 @@ async function calculateMonthlySummary(userId) {
     const year = now.getFullYear();
     const month = now.getMonth() + 1;
     const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-    const endDate = new Date(year, month, 0).toISOString().split('T')[0];
+    const endDate = getLocalIsoDate(new Date(year, month, 0));
 
     // Busca entradas (atendimentos)
     const { data: atendimentos, error: atendError } = await supabase
@@ -591,7 +608,7 @@ class OnboardingStateHandlers {
             parcelas: heur.parcelas,
             payment_split: heur.payment_split || null,
             bandeira_cartao: null,
-            data: new Date().toISOString().split('T')[0],
+            data: getLocalIsoDate(),
             original_text: messageTrimmed
         };
 
@@ -884,8 +901,43 @@ class OnboardingStateHandlers {
         }), true);
     }
 
-    // handleAhaCostsIntro foi removido pois agora o fluxo vai direto para UPLOAD
-    // A mensagem de intro já pede o upload
+    async handleAhaCostsIntro(onboarding, _messageTrimmed, respond) {
+        // Compatibilidade com estados legados que ainda apontam para AHA_COSTS_INTRO
+        onboarding.step = 'AHA_COSTS_UPLOAD';
+        return await respond(onboardingCopy.ahaCostsIntro(), true);
+    }
+
+    async handleAhaCostsDocumentType(onboarding, messageTrimmed, respond) {
+        // Step legado: redireciona para categoria a partir do tipo escolhido
+        if (!onboarding.data.pending_cost) {
+            onboarding.step = 'AHA_COSTS_UPLOAD';
+            return await respond(onboardingCopy.costErrorRetry());
+        }
+
+        const costType = validateChoice(messageTrimmed, {
+            'fixo': ['1', 'fixo'],
+            'variável': ['2', 'variável', 'variavel'],
+            'não_sei': ['3', 'não sei', 'nao sei']
+        });
+
+        if (costType === 'não_sei') {
+            onboarding.step = 'AHA_COSTS_CLASSIFY_HELP';
+            return await respond(onboardingCopy.ahaCostsDontKnow(), true);
+        }
+
+        if (!costType) {
+            return await respond(onboardingCopy.invalidChoice());
+        }
+
+        onboarding.data.pending_cost.tipo = costType === 'fixo' ? 'fixa' : 'variavel';
+        onboarding.step = 'AHA_COSTS_CATEGORY';
+        return await respond(
+            onboarding.data.pending_cost.tipo === 'fixa'
+                ? onboardingCopy.ahaCostsCategoryQuestionFixed()
+                : onboardingCopy.ahaCostsCategoryQuestionVariable(),
+            true
+        );
+    }
 
     async handleAhaCostsUpload(onboarding, messageTrimmed, mediaUrl, fileName, messageKey, mediaBuffer, mimeType, respond) {
 
@@ -903,7 +955,7 @@ class OnboardingStateHandlers {
                 valor: valorFromText,
                 tipo: knownType === 'fixo' ? 'fixa' : (knownType === 'variável' ? 'variavel' : null),
                 descricao: messageTrimmed,
-                data: new Date().toISOString().split('T')[0],
+                data: getLocalIsoDate(),
                 original_text: messageTrimmed,
                 forma_pagamento: paymentInfo.forma_pagamento,
                 parcelas: paymentInfo.parcelas
@@ -995,7 +1047,7 @@ class OnboardingStateHandlers {
                         valor: transacao.valor,
                         categoria: transacao.categoria || 'Outros',
                         descricao: transacao.descricao || fileName || 'Documento',
-                        data: transacao.data || new Date().toISOString().split('T')[0],
+                        data: transacao.data || getLocalIsoDate(),
                         fornecedor: transacao.categoria || '—'
                     };
 
@@ -1003,7 +1055,7 @@ class OnboardingStateHandlers {
                         valor: transacao.valor,
                         tipo: knownType === 'fixo' ? 'fixa' : (knownType === 'variável' ? 'variavel' : null),
                         descricao: transacao.descricao || fileName || 'Documento',
-                        data: transacao.data || new Date().toISOString().split('T')[0],
+                        data: transacao.data || getLocalIsoDate(),
                         categoria: transacao.categoria || null
                     };
 
@@ -1324,14 +1376,15 @@ class OnboardingStateHandlers {
                 userId: onboarding.data.userId || null,
                 source: 'whatsapp'
             });
-            await respond(
+            return await respond(
                 onboardingCopy.ahaCostsRegistered() +
                 '\n\n' +
-                onboardingCopy.ahaSummary(summary),
+                onboardingCopy.ahaSummary(summary) +
+                '\n\n' +
+                onboardingCopy.balanceQuestion(),
                 true,
                 true
             );
-            return await respond(onboardingCopy.balanceQuestion(), true, true);
         }
 
         return await respond(onboardingCopy.invalidChoice());
@@ -1414,7 +1467,7 @@ class OnboardingStateHandlers {
         // Detecta se a mensagem parece ser uma transação (venda ou custo)
         // Se for, finaliza onboarding automaticamente e processa como transação normal
         const intentHeuristicService = require('./intentHeuristicService');
-        const intent = await intentHeuristicService.detectIntent(messageTrimmed);
+        const intent = await intentHeuristicService.detectIntent(messageTrimmed, onboarding.data?.userId || null);
 
         // Verifica se detectou intent de transação
         const isTransaction = intent && (intent.intencao === 'registrar_entrada' || intent.intencao === 'registrar_saida');
@@ -1498,7 +1551,7 @@ class OnboardingStateHandlers {
         // Detecta se a mensagem parece ser uma transação (venda ou custo)
         // Se for, finaliza onboarding automaticamente e processa como transação normal
         const intentHeuristicService = require('./intentHeuristicService');
-        const intent = await intentHeuristicService.detectIntent(messageTrimmed);
+        const intent = await intentHeuristicService.detectIntent(messageTrimmed, onboarding.data?.userId || null);
 
         // Verifica se detectou intent de transação
         const isTransaction = intent && (intent.intencao === 'registrar_entrada' || intent.intencao === 'registrar_saida');
@@ -1659,9 +1712,12 @@ class OnboardingFlowService {
         this.handlers = new OnboardingStateHandlers(this);
 
         // Correção #2: Limpeza automática de estados antigos
-        setInterval(() => {
+        this.cleanupInterval = setInterval(() => {
             this.cleanupOldStates();
         }, STATE_CLEANUP_INTERVAL_MS);
+        if (typeof this.cleanupInterval.unref === 'function') {
+            this.cleanupInterval.unref();
+        }
     }
 
     cleanupOldStates() {
