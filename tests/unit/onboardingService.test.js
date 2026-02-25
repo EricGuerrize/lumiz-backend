@@ -18,24 +18,33 @@ jest.mock('../../src/db/supabase', () => {
     from: jest.fn((table) => ({
       select: jest.fn(() => ({
         eq: jest.fn(() => ({
+          order: jest.fn(() => ({
+            limit: jest.fn(() => ({
+              maybeSingle: jest.fn(() => Promise.resolve({ data: null, error: null }))
+            }))
+          })),
           single: jest.fn(() => Promise.resolve({ data: null, error: null }))
         })),
         single: jest.fn(() => Promise.resolve({ data: null, error: null }))
       })),
       insert: jest.fn(() => ({
         select: jest.fn(() => ({
-          single: jest.fn(() => Promise.resolve({ 
-            data: { id: 'test-id', phone: '5511999999999' }, 
-            error: null 
+          single: jest.fn(() => Promise.resolve({
+            data: { id: 'test-id', phone: '5511999999999', stage: 'phase1', phase: 1, steps: [], data: {}, progress_percent: 9, completed: false },
+            error: null
+          })),
+          maybeSingle: jest.fn(() => Promise.resolve({
+            data: { id: 'test-id', phone: '5511999999999', stage: 'phase1', phase: 1, steps: [], data: {}, progress_percent: 9, completed: false },
+            error: null
           }))
         }))
       })),
       update: jest.fn(() => ({
         eq: jest.fn(() => ({
           select: jest.fn(() => ({
-            single: jest.fn(() => Promise.resolve({ 
-              data: { id: 'test-id', phone: '5511999999999' }, 
-              error: null 
+            single: jest.fn(() => Promise.resolve({
+              data: { id: 'test-id', phone: '5511999999999' },
+              error: null
             }))
           }))
         }))
@@ -50,7 +59,7 @@ describe('OnboardingService', () => {
   describe('ensureState', () => {
     it('should create state if it does not exist', async () => {
       const state = await onboardingService.ensureState(TEST_PHONE);
-      
+
       expect(state).toBeDefined();
       expect(state.phone).toBe(TEST_PHONE);
       expect(state.stage).toBeDefined();
@@ -66,7 +75,7 @@ describe('OnboardingService', () => {
   describe('getDefaultSteps', () => {
     it('should return default steps blueprint', () => {
       const steps = onboardingService.getDefaultSteps();
-      
+
       expect(Array.isArray(steps)).toBe(true);
       expect(steps.length).toBeGreaterThan(0);
       expect(steps[0].status).toBe('completed'); // First step should be completed
@@ -76,7 +85,7 @@ describe('OnboardingService', () => {
   describe('getDefaultData', () => {
     it('should return default data structure', () => {
       const data = onboardingService.getDefaultData();
-      
+
       expect(data).toBeDefined();
       expect(data.phase1).toBeDefined();
       expect(data.phase2).toBeDefined();

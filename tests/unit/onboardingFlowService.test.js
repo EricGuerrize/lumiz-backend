@@ -42,7 +42,8 @@ describe('OnboardingFlowService - Funções Utilitárias', () => {
     test('deve extrair valor de "Botox 2800"', async () => {
       const phone = '5511999999999';
       await onboardingFlowService.startIntroFlow(phone);
-      await onboardingFlowService.processOnboarding(phone, '1'); // Consent
+      await onboardingFlowService.processOnboarding(phone, '1'); // START → CONSENT
+      await onboardingFlowService.processOnboarding(phone, '1'); // CONSENT → PROFILE_NAME
       await onboardingFlowService.processOnboarding(phone, 'Maria Silva'); // Nome
       await onboardingFlowService.processOnboarding(phone, 'Clínica Teste'); // Clínica
       await onboardingFlowService.processOnboarding(phone, '1'); // Role
@@ -50,8 +51,8 @@ describe('OnboardingFlowService - Funções Utilitárias', () => {
       await onboardingFlowService.processOnboarding(phone, '1'); // Context how
 
       const response = await onboardingFlowService.processOnboarding(phone, 'Botox 2800 pix');
-      expect(response).toContain('2800');
-      expect(response).toContain('Vou registrar assim');
+      expect(response).toContain('2.800,00');
+      expect(response).toContain('Tá ok?');
     });
 
     test('deve extrair valor de "2000" mesmo parecendo ano', async () => {
@@ -61,21 +62,23 @@ describe('OnboardingFlowService - Funções Utilitárias', () => {
       const phone = '5511999999977';
       await onboardingFlowService.startIntroFlow(phone);
       // Pula steps iniciais
-      await onboardingFlowService.processOnboarding(phone, '1');
-      await onboardingFlowService.processOnboarding(phone, 'T');
-      await onboardingFlowService.processOnboarding(phone, 'C');
-      await onboardingFlowService.processOnboarding(phone, '1'); // Context
-      await onboardingFlowService.processOnboarding(phone, '1'); // Context
-      await onboardingFlowService.processOnboarding(phone, '1'); // Context
+      await onboardingFlowService.processOnboarding(phone, '1'); // START → CONSENT
+      await onboardingFlowService.processOnboarding(phone, '1'); // CONSENT → PROFILE_NAME
+      await onboardingFlowService.processOnboarding(phone, 'Teste'); // Nome
+      await onboardingFlowService.processOnboarding(phone, 'Clínica'); // Clínica
+      await onboardingFlowService.processOnboarding(phone, '1'); // Role
+      await onboardingFlowService.processOnboarding(phone, '1'); // Context why
+      await onboardingFlowService.processOnboarding(phone, '1'); // Context how
 
       const response = await onboardingFlowService.processOnboarding(phone, 'Consultoria 2000');
-      expect(response).toContain('2000');
+      expect(response).toContain('2.000,00');
     });
 
     test('deve extrair valor de "R$ 1.500,50"', async () => {
       const phone = '5511999999998';
       await onboardingFlowService.startIntroFlow(phone);
-      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '1'); // START → CONSENT
+      await onboardingFlowService.processOnboarding(phone, '1'); // CONSENT → PROFILE_NAME
       await onboardingFlowService.processOnboarding(phone, 'João Silva');
       await onboardingFlowService.processOnboarding(phone, 'Clínica Teste');
       await onboardingFlowService.processOnboarding(phone, '1');
@@ -83,34 +86,36 @@ describe('OnboardingFlowService - Funções Utilitárias', () => {
       await onboardingFlowService.processOnboarding(phone, '1');
 
       const response = await onboardingFlowService.processOnboarding(phone, 'R$ 1.500,50 pix');
-      expect(response).toContain('1500.50');
+      expect(response).toContain('1.500,50');
     });
 
     test('deve rejeitar valor muito alto (> R$ 10.000.000)', async () => {
       const phone = '5511999999997';
       await onboardingFlowService.startIntroFlow(phone);
-      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '1'); // START → CONSENT
+      await onboardingFlowService.processOnboarding(phone, '1'); // CONSENT → PROFILE_NAME
       await onboardingFlowService.processOnboarding(phone, 'Teste');
       await onboardingFlowService.processOnboarding(phone, 'Clínica');
       await onboardingFlowService.processOnboarding(phone, '1');
       await onboardingFlowService.processOnboarding(phone, '1');
       await onboardingFlowService.processOnboarding(phone, '1');
 
-      const response = await onboardingFlowService.processOnboarding(phone, 'Botox 99999999');
+      const response = await onboardingFlowService.processOnboarding(phone, 'Botox R$ 99.999.999,00');
       expect(response).toContain('muito alto');
     });
 
     test('deve rejeitar valor muito baixo (< R$ 0,01)', async () => {
       const phone = '5511999999996';
       await onboardingFlowService.startIntroFlow(phone);
-      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '1'); // START → CONSENT
+      await onboardingFlowService.processOnboarding(phone, '1'); // CONSENT → PROFILE_NAME
       await onboardingFlowService.processOnboarding(phone, 'Teste');
       await onboardingFlowService.processOnboarding(phone, 'Clínica');
       await onboardingFlowService.processOnboarding(phone, '1');
       await onboardingFlowService.processOnboarding(phone, '1');
       await onboardingFlowService.processOnboarding(phone, '1');
 
-      const response = await onboardingFlowService.processOnboarding(phone, 'Botox 0.001');
+      const response = await onboardingFlowService.processOnboarding(phone, 'Botox R$ 0,001');
       expect(response).toContain('muito baixo');
     });
   });
@@ -119,7 +124,8 @@ describe('OnboardingFlowService - Funções Utilitárias', () => {
     test('deve rejeitar nome muito curto', async () => {
       const phone = '5511999999995';
       await onboardingFlowService.startIntroFlow(phone);
-      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '1'); // START → CONSENT
+      await onboardingFlowService.processOnboarding(phone, '1'); // CONSENT → PROFILE_NAME
 
       const response = await onboardingFlowService.processOnboarding(phone, 'A');
       expect(response).toContain('muito curto');
@@ -128,7 +134,8 @@ describe('OnboardingFlowService - Funções Utilitárias', () => {
     test('deve rejeitar nome só com números', async () => {
       const phone = '5511999999994';
       await onboardingFlowService.startIntroFlow(phone);
-      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '1'); // START → CONSENT
+      await onboardingFlowService.processOnboarding(phone, '1'); // CONSENT → PROFILE_NAME
 
       const response = await onboardingFlowService.processOnboarding(phone, '123');
       expect(response).toContain('inválido');
@@ -137,7 +144,8 @@ describe('OnboardingFlowService - Funções Utilitárias', () => {
     test('deve rejeitar nome só com símbolos', async () => {
       const phone = '5511999999993';
       await onboardingFlowService.startIntroFlow(phone);
-      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '1'); // START → CONSENT
+      await onboardingFlowService.processOnboarding(phone, '1'); // CONSENT → PROFILE_NAME
 
       const response = await onboardingFlowService.processOnboarding(phone, '!!!');
       expect(response).toContain('inválido');
@@ -146,7 +154,8 @@ describe('OnboardingFlowService - Funções Utilitárias', () => {
     test('deve aceitar nome válido', async () => {
       const phone = '5511999999992';
       await onboardingFlowService.startIntroFlow(phone);
-      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '1'); // START → CONSENT
+      await onboardingFlowService.processOnboarding(phone, '1'); // CONSENT → PROFILE_NAME
 
       const response = await onboardingFlowService.processOnboarding(phone, 'Maria Silva');
       expect(response).toContain('nome da sua clínica');
@@ -157,7 +166,8 @@ describe('OnboardingFlowService - Funções Utilitárias', () => {
     test('deve extrair nome do cliente de "Maria botox 2800"', async () => {
       const phone = '5511999999991';
       await onboardingFlowService.startIntroFlow(phone);
-      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '1'); // START → CONSENT
+      await onboardingFlowService.processOnboarding(phone, '1'); // CONSENT → PROFILE_NAME
       await onboardingFlowService.processOnboarding(phone, 'Teste');
       await onboardingFlowService.processOnboarding(phone, 'Clínica');
       await onboardingFlowService.processOnboarding(phone, '1');
@@ -165,13 +175,15 @@ describe('OnboardingFlowService - Funções Utilitárias', () => {
       await onboardingFlowService.processOnboarding(phone, '1');
 
       const response = await onboardingFlowService.processOnboarding(phone, 'Maria botox 2800 pix');
-      expect(response).toContain('Maria');
+      expect(response).toContain('2.800,00');
+      expect(response).toContain('Tá ok?');
     });
 
     test('deve detectar forma de pagamento PIX', async () => {
       const phone = '5511999999990';
       await onboardingFlowService.startIntroFlow(phone);
-      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '1'); // START → CONSENT
+      await onboardingFlowService.processOnboarding(phone, '1'); // CONSENT → PROFILE_NAME
       await onboardingFlowService.processOnboarding(phone, 'Teste');
       await onboardingFlowService.processOnboarding(phone, 'Clínica');
       await onboardingFlowService.processOnboarding(phone, '1');
@@ -179,13 +191,14 @@ describe('OnboardingFlowService - Funções Utilitárias', () => {
       await onboardingFlowService.processOnboarding(phone, '1');
 
       const response = await onboardingFlowService.processOnboarding(phone, 'Botox 2800 pix');
-      expect(response).toContain('pix');
+      expect(response).toContain('PIX');
     });
 
     test('deve detectar parcelas de "Botox 2800 3x"', async () => {
       const phone = '5511999999989';
       await onboardingFlowService.startIntroFlow(phone);
-      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '1'); // START → CONSENT
+      await onboardingFlowService.processOnboarding(phone, '1'); // CONSENT → PROFILE_NAME
       await onboardingFlowService.processOnboarding(phone, 'Teste');
       await onboardingFlowService.processOnboarding(phone, 'Clínica');
       await onboardingFlowService.processOnboarding(phone, '1');

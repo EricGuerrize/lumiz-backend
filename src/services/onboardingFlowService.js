@@ -595,7 +595,7 @@ class OnboardingStateHandlers {
 
         const heur = extractSaleHeuristics(messageTrimmed);
         const valorFonte = heur.valor_total || extractBestAmountFromText(messageTrimmed);
-        const valorResult = validateAndExtractValue(String(valorFonte || messageTrimmed), onboardingCopy.ahaRevenueMissingValue());
+        const valorResult = validateAndExtractValue(messageTrimmed, onboardingCopy.ahaRevenueMissingValue());
         if (!valorResult.valid) {
             return await respond(valorResult.error);
         }
