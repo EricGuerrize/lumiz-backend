@@ -532,7 +532,6 @@ class OnboardingStateHandlers {
 
         onboarding.data.role = role;
         onboarding.step = 'CONTEXT_WHY';
-        console.log('[ONBOARDING] PROFILE_ROLE → CONTEXT_WHY, role:', role);
         return await respond(onboardingCopy.contextWhyQuestion(), true);
     }
 
@@ -731,12 +730,11 @@ class OnboardingStateHandlers {
                         if (result.success) {
                             const memberCacheKey = `phone:profile:${normalizedMemberPhone}`;
                             await cacheService.delete(memberCacheKey);
-                            console.log(`[ONBOARDING] Cache invalidado para membro: ${normalizedMemberPhone}`);
                         }
                     }
 
                     if (membersToAdd.length > 0) {
-                        console.log(`[ONBOARDING] ${membersToAdd.length} membros adicionais cadastrados para clínica ${userId}`);
+                        // members added successfully
                     }
 
                     // Também invalida cache do telefone principal após criar membros
@@ -747,7 +745,7 @@ class OnboardingStateHandlers {
                     console.error('[ONBOARDING] Erro ao criar clinic_members:', memberError);
                 }
             } else if (onboarding.data.members_saved_early) {
-                console.log('[ONBOARDING] Membros já foram salvos antecipadamente em PROFILE_ADD_MEMBER, pulando duplicação');
+                // members already saved early, skipping duplication
             }
 
             // Durante onboarding: transações são apenas de TESTE (não salvas no banco)
@@ -766,7 +764,6 @@ class OnboardingStateHandlers {
                     properties: { valor: sale.valor, is_test: true }
                 });
 
-                console.log('[ONBOARDING] Venda registrada como TESTE (não salva no banco):', sale);
             } else {
                 // Se não tem userId, não pode continuar
                 return await respond(onboardingCopy.userCreationError());
@@ -1026,7 +1023,7 @@ class OnboardingStateHandlers {
                     )
                     : documentService.processImage(mediaUrl, messageKey || null);
                 const timeoutPromise = new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error('Timeout ao processar documento')), 30000)
+                    setTimeout(() => reject(new Error('Timeout ao processar documento')), 60000)
                 );
 
                 const result = await Promise.race([processPromise, timeoutPromise]);
@@ -1328,7 +1325,6 @@ class OnboardingStateHandlers {
                     properties: { valor: cost.valor, tipo: cost.tipo, is_test: true }
                 });
 
-                console.log('[ONBOARDING] Custo registrado como TESTE (não salva no banco):', cost);
             } else {
                 // Se não tem userId, não pode continuar
                 return await respond(onboardingCopy.userCreationError());
@@ -1731,7 +1727,7 @@ class OnboardingFlowService {
             }
         }
         if (cleaned > 0) {
-            console.log(`[ONBOARDING] Limpeza automática: ${cleaned} estados antigos removidos`);
+            // old in-memory states cleaned up
         }
     }
 

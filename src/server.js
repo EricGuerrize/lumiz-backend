@@ -297,19 +297,9 @@ app.get('/api/cron/reminders', async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    console.log('[CRON] Iniciando verificação de lembretes, nudges, insights e DDA...');
     const reminders = await reminderService.checkAndSendReminders();
     const nudges = await nudgeService.checkAndSendNudges();
     const insights = await insightService.generateDailyInsights();
-
-    // Consulta DDA (boletos automáticos) - apenas se configurado
-    let ddaResults = [];
-    try {
-      const ddaService = require('./services/ddaService');
-      ddaResults = await ddaService.executarConsultaAutomatica();
-    } catch (error) {
-      console.log('[CRON] DDA não configurado ou erro:', error.message);
-    }
 
     res.json({
       status: 'success',
@@ -317,11 +307,9 @@ app.get('/api/cron/reminders', async (req, res) => {
       reminders_sent: reminders.length,
       nudge_sent: nudges.length,
       insights_generated: insights.length,
-      dda_consultas: ddaResults.length,
       reminders,
       nudges,
-      insights,
-      dda_results: ddaResults
+      insights
     });
   } catch (error) {
     console.error('[CRON] Erro:', error);
