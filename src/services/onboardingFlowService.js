@@ -1621,15 +1621,16 @@ class OnboardingStateHandlers {
         return await respond(onboardingCopy.mdrSetupUpload(), true);
     }
 
-    async handleMdrSetupUpload(onboarding, messageTrimmed, mediaUrl, respond, respondAndClear) {
+    async handleMdrSetupUpload(onboarding, messageTrimmed, mediaUrl, respond, respondAndClear, mediaBuffer) {
         const text = normalizeText(messageTrimmed || '');
         const skipKeywords = ['2', 'pular', 'depois', 'cancelar', 'cancela', 'nao', 'não'];
+        const hasMedia = !!(mediaUrl || mediaBuffer);
 
-        if (!mediaUrl && skipKeywords.some((kw) => text === kw || text.includes(kw))) {
+        if (!hasMedia && skipKeywords.some((kw) => text === kw || text.includes(kw))) {
             return await respondAndClear(onboardingCopy.mdrSetupSkip());
         }
 
-        if (mediaUrl) {
+        if (hasMedia) {
             const current = onboarding.data.mdr_current || 1;
             const total = onboarding.data.mdr_count || 1;
 
@@ -2169,7 +2170,7 @@ class OnboardingFlowService {
                 case 'MDR_SETUP_QUESTION':
                     return await handlers.handleMdrSetupQuestion(onboarding, messageTrimmed, respond);
                 case 'MDR_SETUP_UPLOAD':
-                    return await handlers.handleMdrSetupUpload(onboarding, messageTrimmed, mediaUrl, respond, respondAndClear);
+                    return await handlers.handleMdrSetupUpload(onboarding, messageTrimmed, mediaUrl, respond, respondAndClear, mediaBuffer);
                 case 'MDR_SETUP_COMPLETE':
                     return await handlers.handleMdrSetupComplete(respond, respondAndClear);
                 default:
