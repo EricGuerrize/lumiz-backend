@@ -25,11 +25,6 @@ class OpenAIService {
     }
 
     try {
-      console.log('[OPENAI] ========================================');
-      console.log('[OPENAI] Processando imagem/PDF com OpenAI...');
-      console.log('[OPENAI] MIME Type:', mimeType);
-      console.log('[OPENAI] Tamanho:', imageBuffer.length, 'bytes');
-      console.log('[OPENAI] ========================================');
 
       // Converte buffer para base64
       const base64Image = imageBuffer.toString('base64');
@@ -75,8 +70,6 @@ REGRAS IMPORTANTES:
 RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
 `;
 
-      console.log('[OPENAI] Chamando GPT-4 Vision API...');
-      
       const response = await retryWithBackoff(
         () => withTimeout(
           this.client.chat.completions.create({
@@ -109,17 +102,12 @@ RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
       );
 
       const content = response.choices[0].message.content;
-      console.log('[OPENAI] ✅ Resposta recebida, tamanho:', content.length, 'caracteres');
-      console.log('[OPENAI] Primeiros 200 caracteres:', content.substring(0, 200));
 
       // Remove markdown code blocks se houver
       const jsonText = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
 
       try {
         const parsed = JSON.parse(jsonText);
-        console.log('[OPENAI] ✅ JSON parseado com sucesso');
-        console.log('[OPENAI] Tipo documento:', parsed.tipo_documento);
-        console.log('[OPENAI] Número de transações:', parsed.transacoes?.length || 0);
         return parsed;
       } catch (parseError) {
         console.error('[OPENAI] ❌ Erro ao fazer parse do JSON:', parseError.message);

@@ -336,7 +336,6 @@ RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
   }
   async processDocument(buffer, mimeType, prompt) {
     try {
-      console.log(`[GEMINI] Processando documento multimodal (${mimeType})...`);
 
       const parts = [
         { text: prompt },

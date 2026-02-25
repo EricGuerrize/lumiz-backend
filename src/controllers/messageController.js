@@ -145,7 +145,6 @@ class MessageController {
       startedAt: Date.now(),
       type
     });
-    console.log('[DOC_CONTEXT_GUARD_ACTIVE]', { phone: normalizedPhone, type });
   }
 
   stopMediaProcessing(phone, reason = 'completed') {
@@ -154,12 +153,6 @@ class MessageController {
     if (!active) return;
 
     this.mediaProcessing.delete(normalizedPhone);
-    console.log('[DOC_CONTEXT_GUARD_RELEASED]', {
-      phone: normalizedPhone,
-      type: active.type,
-      reason,
-      duration_ms: Date.now() - active.startedAt
-    });
   }
 
   isMediaProcessing(phone) {
@@ -169,11 +162,6 @@ class MessageController {
 
     if (Date.now() - active.startedAt > this.MEDIA_PROCESSING_TTL_MS) {
       this.mediaProcessing.delete(normalizedPhone);
-      console.warn('[DOC_CONTEXT_GUARD_RELEASED]', {
-        phone: normalizedPhone,
-        type: active.type,
-        reason: 'ttl_expired'
-      });
       return false;
     }
 
@@ -328,18 +316,8 @@ class MessageController {
       if (looksLikeYesNoDocumentReply) {
         const persistedPending = await this.documentHandler.getPersistedPendingConfirmation(normalizedPhone);
         if (persistedPending) {
-          console.warn('[DOC_CONFIRM_DIAG] Pending de documento recuperado via persistência', {
-            phone: normalizedPhone,
-            transacoes: persistedPending.transacoes?.length || 0,
-            created_at: persistedPending.created_at
-          });
           return await this.documentHandler.handleDocumentConfirmation(normalizedPhone, message, user);
         }
-
-        console.warn('[DOC_CONFIRM_DIAG] Resposta SIM/NAO sem pending de documento ativo', {
-          phone: normalizedPhone,
-          message: normalizedMessage
-        });
       }
 
       if (this.pendingEdits.has(normalizedPhone)) {
@@ -347,10 +325,6 @@ class MessageController {
       }
 
       if (this.isMediaProcessing(normalizedPhone)) {
-        console.log('[DOC_CONTEXT_GUARD_BLOCK_TEXT]', {
-          phone: normalizedPhone,
-          message: (message || '').substring(0, 80)
-        });
         return 'Recebi seu documento e ainda estou analisando. Já te respondo em instantes.';
       }
 
