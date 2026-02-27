@@ -28,6 +28,8 @@ class EnvValidator {
     this.validateOptional('GOOGLE_VISION_API_KEY', 'API Key do Google Vision (opcional)');
     this.validateOptional('REDIS_URL', 'URL do Redis (opcional, mas recomendado para cache/filas)');
     this.validateOptional('SENTRY_DSN', 'DSN do Sentry (opcional, mas recomendado para produção)');
+    this.validateOptional('CRON_SECRET', 'Segredo para endpoints de cron (recomendado em produção)');
+    this.validateOptional('METRICS_TOKEN', 'Token para endpoint de métricas (recomendado em produção)');
 
     // Validações específicas
     this.validateUrl('SUPABASE_URL');
@@ -35,6 +37,7 @@ class EnvValidator {
     if (process.env.REDIS_URL) {
       this.validateRedisUrl('REDIS_URL');
     }
+    this.validateSensitivePlaceholders();
 
     // Retorna resultado
     return {
@@ -90,6 +93,50 @@ class EnvValidator {
   }
 
   /**
+   * Detecta placeholders inseguros como "sua_chave_aqui" ou "change_me"
+   */
+  isPlaceholder(value) {
+    if (!value || typeof value !== 'string') return false;
+    const normalized = value.trim().toLowerCase();
+    const known = [
+      'sua_chave_aqui',
+      'sua_chave_evolution',
+      'nome_da_instancia',
+      'https://sua-evolution-api.com',
+      'https://seu-projeto.supabase.co',
+      'sua_key',
+      'sua_secret',
+      'change_me',
+      'changeme',
+      'replace_me',
+      'test',
+      'example'
+    ];
+
+    if (known.includes(normalized)) return true;
+    return normalized.includes('sua_') || normalized.includes('example') || normalized.includes('placeholder');
+  }
+
+  validateNotPlaceholder(key, description) {
+    const value = process.env[key];
+    if (!value) return;
+    if (this.isPlaceholder(value)) {
+      this.errors.push(`❌ ${key} (${description}) está com valor placeholder/inseguro`);
+    }
+  }
+
+  validateSensitivePlaceholders() {
+    if (process.env.NODE_ENV !== 'production') return;
+
+    this.validateNotPlaceholder('SUPABASE_SERVICE_ROLE_KEY', 'Service Role Key do Supabase');
+    this.validateNotPlaceholder('EVOLUTION_API_KEY', 'API Key da Evolution API');
+    this.validateNotPlaceholder('GEMINI_API_KEY', 'API Key do Gemini');
+    this.validateNotPlaceholder('OPENAI_API_KEY', 'API Key da OpenAI');
+    this.validateNotPlaceholder('CRON_SECRET', 'Segredo de cron');
+    this.validateNotPlaceholder('METRICS_TOKEN', 'Token de métricas');
+  }
+
+  /**
    * Valida e retorna erro se inválido
    */
   validateOrThrow() {
@@ -138,6 +185,10 @@ class EnvValidator {
       sentry: {
         dsn: process.env.SENTRY_DSN || null
       },
+      security: {
+        cronSecret: process.env.CRON_SECRET || null,
+        metricsToken: process.env.METRICS_TOKEN || null
+      },
       nodeEnv: process.env.NODE_ENV || 'development',
       port: parseInt(process.env.PORT || '3000', 10)
     };
@@ -174,5 +225,4 @@ module.exports = {
   config: validator.getConfig(),
   validate: () => validator.validateOrThrow()
 };
-
 

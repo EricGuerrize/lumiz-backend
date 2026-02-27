@@ -65,6 +65,16 @@ As demais variáveis já estão configuradas no arquivo `.env`.
 npm install
 ```
 
+### Verificações de governança (migrations + RLS)
+
+```bash
+npm run check:migrations
+npm run check:rls
+```
+
+- `check:migrations` valida padrão e ordenação de arquivos em `supabase/migrations`.
+- `check:rls` executa regressão RLS via `scripts/security/rls-regression.sql` quando `STAGING_DB_URL` estiver configurada.
+
 ### 5. Iniciar o servidor
 
 Modo desenvolvimento (com auto-reload):
@@ -76,6 +86,11 @@ Modo produção:
 ```bash
 npm start
 ```
+
+## Segurança de Segredos
+
+- Playbook de rotação trimestral: `docs/SECRETS_ROTATION.md`
+- Variáveis recomendadas no `.env`: `CRON_SECRET` e `METRICS_TOKEN`
 
 ## Testando a aplicação
 

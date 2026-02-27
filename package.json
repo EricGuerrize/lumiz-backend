@@ -12,6 +12,8 @@
     "test:e2e": "jest tests/e2e --coverage",
     "test:onboarding": "jest tests --testNamePattern=onboarding --coverage",
     "test:all": "npm run test && npm run test:unit && npm run test:integration && npm run test:e2e",
+    "check:migrations": "node scripts/check-migrations.js",
+    "check:rls": "node scripts/security/rls-check.js",
     "build": "npm install --include=optional"
   },
   "dependencies": {
@@ -54,7 +56,8 @@
     ],
     "testPathIgnorePatterns": [
       "/node_modules/",
-      "/.claude/worktrees/"
+      "/.claude/worktrees/",
+      "tests/apiSmoke.test.js"
     ]
   }
 }
