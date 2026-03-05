@@ -10,6 +10,10 @@
 
 const onboardingFlowService = require('../../src/services/onboardingFlowService');
 const cacheService = require('../../src/services/cacheService');
+const { normalizePhone } = require('../../src/utils/phone');
+
+// Helper: state is stored under normalized phone (+55...)
+const nPhone = (p) => normalizePhone(p) || p;
 
 // Mock de serviços externos
 jest.mock('../../src/services/analyticsService', () => ({
@@ -81,9 +85,9 @@ describe('Onboarding - Concorrência e Performance', () => {
 
       // Verifica que cada telefone tem seu próprio estado
       phones.forEach(phone => {
-        const state = onboardingFlowService.onboardingStates.get(phone);
+        const state = onboardingFlowService.onboardingStates.get(nPhone(phone));
         expect(state).toBeDefined();
-        expect(state.data.telefone).toBe(phone);
+        expect(state.data.telefone).toBe(nPhone(phone)); // stored normalized
       });
     });
 
@@ -113,7 +117,7 @@ describe('Onboarding - Concorrência e Performance', () => {
 
       // Verifica que estados não se misturaram
       phones.forEach(phone => {
-        const state = onboardingFlowService.onboardingStates.get(phone);
+        const state = onboardingFlowService.onboardingStates.get(nPhone(phone));
         expect(state).toBeDefined();
         expect(state.step).toBe('CONSENT');
       });
@@ -126,17 +130,19 @@ describe('Onboarding - Concorrência e Performance', () => {
       await onboardingFlowService.startIntroFlow(phone1);
       await onboardingFlowService.startIntroFlow(phone2);
 
-      // Avança phone1
+      // Avança phone1 (START→CONSENT→PROFILE_NAME→name)
       await onboardingFlowService.processOnboarding(phone1, '1');
+      await onboardingFlowService.processOnboarding(phone1, '1'); // CONSENT
       await onboardingFlowService.processOnboarding(phone1, 'Maria');
 
       // Avança phone2 de forma diferente
       await onboardingFlowService.processOnboarding(phone2, '1');
+      await onboardingFlowService.processOnboarding(phone2, '1'); // CONSENT
       await onboardingFlowService.processOnboarding(phone2, 'João');
 
       // Estados devem estar diferentes
-      const state1 = onboardingFlowService.onboardingStates.get(phone1);
-      const state2 = onboardingFlowService.onboardingStates.get(phone2);
+      const state1 = onboardingFlowService.onboardingStates.get(nPhone(phone1));
+      const state2 = onboardingFlowService.onboardingStates.get(nPhone(phone2));
 
       expect(state1.data.nome).toBe('Maria');
       expect(state2.data.nome).toBe('João');
@@ -149,22 +155,22 @@ describe('Onboarding - Concorrência e Performance', () => {
 
       // Cria estado ativo (recente)
       await onboardingFlowService.startIntroFlow(activePhone);
-      const activeState = onboardingFlowService.onboardingStates.get(activePhone);
+      const activeState = onboardingFlowService.onboardingStates.get(nPhone(activePhone));
       activeState.startTime = Date.now(); // Atual
 
       // Cria estado antigo (simula)
       await onboardingFlowService.startIntroFlow(oldPhone);
-      const oldState = onboardingFlowService.onboardingStates.get(oldPhone);
+      const oldState = onboardingFlowService.onboardingStates.get(nPhone(oldPhone));
       oldState.startTime = Date.now() - (25 * 60 * 60 * 1000); // 25 horas atrás
 
       // Executa limpeza
       onboardingFlowService.cleanupOldStates();
 
       // Estado ativo deve permanecer
-      expect(onboardingFlowService.onboardingStates.has(activePhone)).toBe(true);
+      expect(onboardingFlowService.onboardingStates.has(nPhone(activePhone))).toBe(true);
       
       // Estado antigo deve ser removido
-      expect(onboardingFlowService.onboardingStates.has(oldPhone)).toBe(false);
+      expect(onboardingFlowService.onboardingStates.has(nPhone(oldPhone))).toBe(false);
     });
 
     test('deve prevenir vazamento de cache entre usuários', async () => {
@@ -187,15 +193,17 @@ describe('Onboarding - Concorrência e Performance', () => {
 
       await onboardingFlowService.startIntroFlow(phone1);
       await onboardingFlowService.processOnboarding(phone1, '1');
+      await onboardingFlowService.processOnboarding(phone1, '1'); // CONSENT
       await onboardingFlowService.processOnboarding(phone1, 'Maria');
 
       await onboardingFlowService.startIntroFlow(phone2);
       await onboardingFlowService.processOnboarding(phone2, '1');
+      await onboardingFlowService.processOnboarding(phone2, '1'); // CONSENT
       await onboardingFlowService.processOnboarding(phone2, 'João');
 
       // Verifica que cache não vazou
-      const state1 = onboardingFlowService.onboardingStates.get(phone1);
-      const state2 = onboardingFlowService.onboardingStates.get(phone2);
+      const state1 = onboardingFlowService.onboardingStates.get(nPhone(phone1));
+      const state2 = onboardingFlowService.onboardingStates.get(nPhone(phone2));
 
       expect(state1.data.nome).toBe('Maria');
       expect(state2.data.nome).toBe('João');
@@ -210,7 +218,8 @@ describe('Onboarding - Concorrência e Performance', () => {
       const phone = '5511999999941';
 
       await onboardingFlowService.startIntroFlow(phone);
-      await onboardingFlowService.processOnboarding(phone, '1');
+      await onboardingFlowService.processOnboarding(phone, '1'); // START→CONSENT
+      await onboardingFlowService.processOnboarding(phone, '1'); // CONSENT→PROFILE_NAME
 
       // Envia duas mensagens simultaneamente
       const responses = await Promise.all([
@@ -225,7 +234,7 @@ describe('Onboarding - Concorrência e Performance', () => {
       });
 
       // Estado final deve ser consistente
-      const finalState = onboardingFlowService.onboardingStates.get(phone);
+      const finalState = onboardingFlowService.onboardingStates.get(nPhone(phone));
       expect(finalState).toBeDefined();
       // Nome deve ser um dos dois (último a processar)
       expect(['Maria', 'João']).toContain(finalState.data.nome);
@@ -264,19 +273,19 @@ describe('Onboarding - Concorrência e Performance', () => {
 
       await onboardingFlowService.startIntroFlow(phone);
       
-      const stateBefore = onboardingFlowService.onboardingStates.get(phone);
+      const stateBefore = onboardingFlowService.onboardingStates.get(nPhone(phone));
       const stepBefore = stateBefore.step;
 
       // Processa mensagem
       await onboardingFlowService.processOnboarding(phone, '1');
 
-      const stateAfter = onboardingFlowService.onboardingStates.get(phone);
+      const stateAfter = onboardingFlowService.onboardingStates.get(nPhone(phone));
       const stepAfter = stateAfter.step;
 
       // Step deve ter mudado
       expect(stepAfter).not.toBe(stepBefore);
-      // Estado deve estar consistente
-      expect(stateAfter.data.telefone).toBe(phone);
+      // Estado deve estar consistente (telefone é normalizado)
+      expect(stateAfter.data.telefone).toBe(nPhone(phone));
     });
 
     test('deve lidar com múltiplas atualizações de step simultâneas', async () => {
@@ -286,7 +295,7 @@ describe('Onboarding - Concorrência e Performance', () => {
       await onboardingFlowService.processOnboarding(phone, '1');
 
       // Tenta atualizar step múltiplas vezes simultaneamente
-      const state = onboardingFlowService.onboardingStates.get(phone);
+      const state = onboardingFlowService.onboardingStates.get(nPhone(phone));
       const originalStep = state.step;
 
       // Simula múltiplas atualizações
@@ -340,7 +349,7 @@ describe('Onboarding - Concorrência e Performance', () => {
       
       for (const phone of oldPhones) {
         await onboardingFlowService.startIntroFlow(phone);
-        const state = onboardingFlowService.onboardingStates.get(phone);
+        const state = onboardingFlowService.onboardingStates.get(nPhone(phone));
         state.startTime = Date.now() - (25 * 60 * 60 * 1000); // 25 horas atrás
       }
 

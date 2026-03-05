@@ -1,6 +1,11 @@
 const onboardingService = require('./onboardingService');
 const onboardingCopy = require('../copy/onboardingWhatsappCopy');
 const analyticsService = require('./analyticsService');
+
+// Fire-and-forget analytics helper — analytics failures must never crash the onboarding flow
+const safeTrack = async (event, payload) => {
+    try { await analyticsService.track(event, payload); } catch { /* silently ignored */ }
+};
 const cacheService = require('./cacheService');
 const { normalizePhone } = require('../utils/phone');
 const supabase = require('../db/supabase');
@@ -445,7 +450,7 @@ class OnboardingStateHandlers {
 
         if (choseYes) {
             onboarding.step = 'CONSENT';
-            await analyticsService.track('onboarding_consent_started', {
+            await safeTrack('onboarding_consent_started', {
                 phone: normalizedPhone,
                 source: 'whatsapp'
             });
@@ -465,7 +470,7 @@ class OnboardingStateHandlers {
 
         if (choseAuthorize) {
             onboarding.step = 'PROFILE_NAME';
-            await analyticsService.track('onboarding_consent_given', {
+            await safeTrack('onboarding_consent_given', {
                 phone: normalizedPhone,
                 source: 'whatsapp'
             });
@@ -580,7 +585,7 @@ class OnboardingStateHandlers {
         onboarding.data.context_payment = payment;
         onboarding.data.recebimento_preferencial = payment;
         onboarding.step = 'AHA_REVENUE';
-        await analyticsService.track('onboarding_context_collected', {
+        await safeTrack('onboarding_context_collected', {
             phone: normalizedPhone,
             source: 'whatsapp',
             properties: { why: onboarding.data.context_why, payment }
@@ -757,7 +762,7 @@ class OnboardingStateHandlers {
                 sale.isTest = true; // Flag indicando que é teste
 
                 // Track analytics mesmo sendo teste (para métricas)
-                await analyticsService.track('onboarding_revenue_registered', {
+                await safeTrack('onboarding_revenue_registered', {
                     phone: normalizedPhone,
                     userId,
                     source: 'whatsapp',
@@ -1318,7 +1323,7 @@ class OnboardingStateHandlers {
                 cost.isTest = true; // Flag indicando que é teste
 
                 // Track analytics mesmo sendo teste (para métricas)
-                await analyticsService.track('onboarding_cost_registered', {
+                await safeTrack('onboarding_cost_registered', {
                     phone: normalizedPhone,
                     userId,
                     source: 'whatsapp',
@@ -1367,7 +1372,7 @@ class OnboardingStateHandlers {
             onboarding.step = 'BALANCE_QUESTION';
             // Correção #2: Usa dados salvos (com flag saved) para calcular resumo
             const summary = calculateSummaryFromOnboardingData(onboarding);
-            await analyticsService.track('onboarding_summary_viewed', {
+            await safeTrack('onboarding_summary_viewed', {
                 phone: normalizedPhone,
                 userId: onboarding.data.userId || null,
                 source: 'whatsapp'
@@ -1388,7 +1393,7 @@ class OnboardingStateHandlers {
 
     async handleAhaSummary(onboarding, normalizedPhone, respond) {
         onboarding.step = 'BALANCE_QUESTION';
-        await analyticsService.track('onboarding_summary_viewed', {
+        await safeTrack('onboarding_summary_viewed', {
             phone: normalizedPhone,
             userId: onboarding.data.userId || null,
             source: 'whatsapp'
@@ -1766,7 +1771,7 @@ class OnboardingFlowService {
                     }
                 });
 
-                await analyticsService.track('onboarding_whatsapp_resumed', {
+                await safeTrack('onboarding_whatsapp_resumed', {
                     phone: normalizedPhone,
                     userId: persisted?.data?.userId || null,
                     source: 'whatsapp',
@@ -1814,7 +1819,7 @@ class OnboardingFlowService {
                         ...(legacyMdrSteps.has(persisted.step) ? { force_handoff: true } : {})
                     }
                 });
-                await analyticsService.track('onboarding_whatsapp_resumed', {
+                await safeTrack('onboarding_whatsapp_resumed', {
                     phone: normalizedPhone,
                     userId: persisted?.data?.userId || null,
                     source: 'whatsapp',
@@ -1834,7 +1839,7 @@ class OnboardingFlowService {
             }
         });
 
-        await analyticsService.track('onboarding_whatsapp_started', {
+        await safeTrack('onboarding_whatsapp_started', {
             phone: normalizedPhone,
             source: 'whatsapp'
         });
@@ -2077,7 +2082,7 @@ class OnboardingFlowService {
                 console.error('[ONBOARDING] Falha ao limpar estado:', e?.message || e);
             }
             this.onboardingStates.delete(normalizedPhone);
-            await analyticsService.track('onboarding_whatsapp_completed', {
+            await safeTrack('onboarding_whatsapp_completed', {
                 phone: normalizedPhone,
                 userId: onboarding?.data?.userId || null,
                 source: 'whatsapp',
