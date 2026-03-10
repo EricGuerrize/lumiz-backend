@@ -161,13 +161,16 @@ function extractPhoneFromWebhookBody(body) {
     const key = body?.data?.key || {};
     const sender = body?.sender;
 
+    // IMPORTANT: body.sender in Evolution API is the bot's own instance number,
+    // NOT the message sender. key.remoteJid is the actual conversation partner.
+    // For incoming messages (fromMe=false), remoteJid is the user who sent the message.
     const candidates = [
         key.senderPn,
         key.participant,
+        key.remoteJid,
         typeof sender === 'string' ? sender : sender?.id,
         typeof sender === 'object' ? sender?.jid : null,
         typeof sender === 'object' ? sender?.number : null,
-        key.remoteJid
     ];
 
     for (const candidate of candidates) {
