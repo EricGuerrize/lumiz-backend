@@ -624,7 +624,11 @@ class OnboardingService {
     try {
       // Normaliza telefone para garantir consistência
       const { normalizePhone } = require('../utils/phone');
-      const normalizedPhone = normalizePhone(phone) || phone;
+      const normalizedPhone = normalizePhone(phone);
+      if (!normalizedPhone) {
+        console.warn('[ONBOARDING] getWhatsappState: telefone inválido ignorado:', phone);
+        return null;
+      }
       const state = await this.getRawState(normalizedPhone);
       if (!state) return null;
 
@@ -649,7 +653,11 @@ class OnboardingService {
     try {
       // Normaliza telefone para garantir consistência
       const { normalizePhone } = require('../utils/phone');
-      const normalizedPhone = normalizePhone(phone) || phone;
+      const normalizedPhone = normalizePhone(phone);
+      if (!normalizedPhone) {
+        console.warn('[ONBOARDING] upsertWhatsappState: telefone inválido ignorado:', phone);
+        return null;
+      }
       const state = await this.ensureState(normalizedPhone);
       const whatsappPayload = {
         step: step || null,
@@ -678,7 +686,11 @@ class OnboardingService {
     try {
       // Normaliza telefone para garantir consistência
       const { normalizePhone } = require('../utils/phone');
-      const normalizedPhone = normalizePhone(phone) || phone;
+      const normalizedPhone = normalizePhone(phone);
+      if (!normalizedPhone) {
+        console.warn('[ONBOARDING] clearWhatsappState: telefone inválido ignorado:', phone);
+        return null;
+      }
       const state = await this.getRawState(normalizedPhone);
       if (!state) return null;
 

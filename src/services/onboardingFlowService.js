@@ -1987,14 +1987,24 @@ class OnboardingFlowService {
             }
 
             const persist = async () => {
-                try {
-                    await onboardingService.upsertWhatsappState(normalizedPhone, {
-                        step: onboarding.step,
-                        data: onboarding.data
-                    });
-                    this.persistTimers.delete(normalizedPhone);
-                } catch (e) {
-                    console.error('[ONBOARDING] Falha ao persistir estado:', e?.message || e);
+                const MAX_RETRIES = 3;
+                for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+                    try {
+                        await onboardingService.upsertWhatsappState(normalizedPhone, {
+                            step: onboarding.step,
+                            data: onboarding.data
+                        });
+                        this.persistTimers.delete(normalizedPhone);
+                        return;
+                    } catch (e) {
+                        if (attempt === MAX_RETRIES) {
+                            console.error(`[ONBOARDING] Falha ao persistir estado após ${MAX_RETRIES} tentativas:`, e?.message || e);
+                            return;
+                        }
+                        const backoff = Math.pow(2, attempt - 1) * 500; // 500ms, 1s, 2s
+                        console.warn(`[ONBOARDING] Tentativa ${attempt}/${MAX_RETRIES} falhou, retry em ${backoff}ms:`, e?.message || e);
+                        await new Promise(r => setTimeout(r, backoff));
+                    }
                 }
             };
 
