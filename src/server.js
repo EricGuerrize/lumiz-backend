@@ -1,5 +1,7 @@
 // IMPORTANT: Make sure to import `instrument.js` at the top of your file.
 require("./instrument");
+// Suprime console.log/debug/info em produção para evitar vazamento de PII no stdout
+require('./utils/safeLogger');
 
 const express = require('express');
 const cors = require('cors');
@@ -106,14 +108,29 @@ if (process.env.NODE_ENV === 'production') {
   console.log('[SERVER] Trust proxy configurado: true (desenvolvimento)');
 }
 
-// Configuração CORS para permitir o frontend
-const allowedOrigins = [
-  'https://lumiz-financeiro.vercel.app',
-  'http://localhost:5173'
-];
+// Configuração CORS — produção lê de FRONTEND_URL no .env (diretriz 1.2 do SECURITY_ROADMAP)
+const buildCorsOrigins = () => {
+  const origins = [];
+
+  // Origem de produção: obrigatório via env em produção
+  const frontendUrl = process.env.FRONTEND_URL || process.env.DASHBOARD_URL;
+  if (frontendUrl) {
+    origins.push(frontendUrl);
+  } else if (process.env.NODE_ENV === 'production') {
+    console.warn('[CORS] ⚠️  FRONTEND_URL não definida em produção — CORS bloqueará o dashboard');
+  }
+
+  // Localhost liberado apenas fora de produção
+  if (process.env.NODE_ENV !== 'production') {
+    origins.push(/^http:\/\/localhost(:\d+)?$/);
+    origins.push(/^http:\/\/127\.0\.0\.1(:\d+)?$/);
+  }
+
+  return origins;
+};
 
 app.use(cors({
-  origin: allowedOrigins,
+  origin: buildCorsOrigins(),
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-user-phone']
@@ -140,15 +157,8 @@ const limiter = rateLimit({
   }
 });
 
-// Rate limiting mais restritivo para webhook (pode receber muitas mensagens)
-const webhookLimiter = rateLimit({
-  windowMs: 1 * 60 * 1000, // 1 minuto
-  max: 30, // máximo 30 mensagens por minuto por IP
-  message: 'Muitas mensagens recebidas, aguarde um momento.',
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
+// Nota: o rate limiter do webhook (30 req/min) é aplicado diretamente em
+// src/routes/webhook.js junto com o phoneRateLimiter — não precisa de um global aqui.
 app.use(limiter);
 console.log('[SERVER] Rate limiting por IP configurado (100 req/15min por IP)');
 
