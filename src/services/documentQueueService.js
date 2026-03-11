@@ -239,6 +239,10 @@ class DocumentQueueService {
             categoria: transacao.categoria,
             descricao: transacao.descricao,
             data: transacao.data || new Date().toISOString().split('T')[0],
+            // Parcelas e datas exatas extraídas pelo OCR/LLM de visão do documento.
+            // Ex: nota fiscal com boleto 30/60/90/120 → parcelas=4, condicoes_pagamento=[...4 datas...]
+            parcelas: transacao.parcelas || null,
+            condicoes_pagamento: transacao.condicoes_pagamento || null,
             origem: 'document_queue'
           });
           

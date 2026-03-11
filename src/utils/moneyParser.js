@@ -51,6 +51,20 @@ function extractInstallments(text) {
     return Number.isFinite(value) ? value : null;
   }
 
+  // Jargão financeiro: "30/60/90/120" ou "30/60" (dias de vencimento = parcelas)
+  // Cada segmento deve ser > 12 para não confundir com datas (dd/mm)
+  const slashMatches = raw.match(/\b\d{1,3}(?:\/\d{1,3})+\b/g);
+  if (slashMatches) {
+    for (const match of slashMatches) {
+      const parts = match.split('/').map(Number);
+      const allAbove12 = parts.every(v => v > 12);
+      const ascending = parts.every((v, i) => i === 0 || v > parts[i - 1]);
+      if (allAbove12 && ascending && parts.length >= 2) {
+        return parts.length;
+      }
+    }
+  }
+
   return null;
 }
 

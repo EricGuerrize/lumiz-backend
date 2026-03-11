@@ -22,9 +22,14 @@ module.exports = {
 
     startHowItWorks() {
         return (
-            `Em 3 minutos você me manda 1 venda e 1 custo (texto, foto ou PDF).\n` +
-            `Eu organizo tudo e já te mostro quanto entrou e quanto saiu.\n\n` +
-            `Posso começar?\n\n` +
+            `Claro! A Lumiz é sua assistente financeira aqui no WhatsApp 💜\n\n` +
+            `*Como funciona no dia a dia:*\n` +
+            `Você me manda uma venda ou custo (texto, foto ou PDF). Eu organizo tudo automaticamente:\n` +
+            `• Valor, forma de pagamento e parcelas\n` +
+            `• Categorização automática (insumos, aluguel, procedimentos...)\n` +
+            `• Resumo do mês: quanto entrou, saiu e sobrou\n\n` +
+            `Sem planilhas. Sem apps extras. Tudo aqui no WhatsApp.\n\n` +
+            `Ficou claro? Posso começar o teste rápido (3 minutinhos)?\n\n` +
             `1️⃣ Sim!\n` +
             `2️⃣ Como a Lumiz funciona?`
         );

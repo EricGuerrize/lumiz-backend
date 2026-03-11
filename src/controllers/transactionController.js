@@ -8,7 +8,7 @@ const { sanitizeClientName } = require('../utils/procedureKeywords');
 class TransactionController {
   async createTransaction(userId, transactionData) {
     try {
-      const { tipo, valor, categoria, descricao, data, forma_pagamento, parcelas, bandeira_cartao } = transactionData;
+      const { tipo, valor, categoria, descricao, data, forma_pagamento, parcelas, bandeira_cartao, condicoes_pagamento } = transactionData;
       console.log('Criando transação para usuário:', userId);
 
       if (tipo === 'entrada') {
@@ -16,7 +16,8 @@ class TransactionController {
         return await this.createAtendimento(userId, { valor, categoria, descricao, data, forma_pagamento, parcelas, bandeira_cartao });
       } else {
         // CUSTO = Criar conta a pagar
-        return await this.createContaPagar(userId, { valor, categoria, descricao, data, tipo, parcelas });
+        // condicoes_pagamento: array de datas exatas de vencimento, vindo do OCR (parcelas de boleto)
+        return await this.createContaPagar(userId, { valor, categoria, descricao, data, tipo, parcelas, condicoes_pagamento });
       }
     } catch (error) {
       console.error('Erro ao criar transação:', error);
@@ -210,20 +211,33 @@ class TransactionController {
     }
   }
 
-  async createContaPagar(userId, { valor, categoria, descricao, data, tipo, parcelas }) {
+  async createContaPagar(userId, { valor, categoria, descricao, data, tipo, parcelas, condicoes_pagamento }) {
     try {
       // === GERAÇÃO DE PARCELAS (CUSTOS) ===
-      // Se for parcelado, cria múltiplas entradas em contas_pagar
+      // Contexto: clínicas de estética frequentemente pagam insumos em boleto parcelado
+      // (ex: "30/60/90/120" = 4 saídas futuras). Cada parcela vira um registro separado.
+      // condicoes_pagamento: array de datas exatas (YYYY-MM-DD) vindas do OCR ou do LLM.
+      //   Quando presente, tem prioridade sobre o cálculo de meses.
+      //   Quando ausente, calcula adicionando 1, 2, 3... meses a partir da data base.
 
       if (parcelas && parcelas > 1) {
-        console.log(`[FINANCEIRO] Gerando ${parcelas} parcelas de custo`);
-        const valorParcela = valor / parcelas;
+        console.log(`[FINANCEIRO] Gerando ${parcelas} parcela(s) de custo — condicoes_pagamento: ${condicoes_pagamento ? 'fornecidas' : 'calculadas'}`);
+        const valorParcela = Number((valor / parcelas).toFixed(2));
         const dataBase = new Date(data || new Date());
         const contasCriadas = [];
 
         for (let i = 0; i < parcelas; i++) {
-          const dataVencimento = new Date(dataBase);
-          dataVencimento.setMonth(dataVencimento.getMonth() + i);
+          // Prioridade 1: data exata extraída do documento (OCR) ou calculada pelo LLM
+          // Prioridade 2: fallback — adiciona (i+1) meses a partir da data base
+          //   (i+1 porque para boleto 30/60/90 o primeiro vencimento é em ~30 dias, não hoje)
+          let dataVencStr;
+          if (Array.isArray(condicoes_pagamento) && condicoes_pagamento[i]) {
+            dataVencStr = condicoes_pagamento[i];
+          } else {
+            const dataVenc = new Date(dataBase);
+            dataVenc.setMonth(dataVenc.getMonth() + (i + 1));
+            dataVencStr = dataVenc.toISOString().split('T')[0];
+          }
 
           const descricaoParcela = `${descricao || categoria || 'Despesa'} (${i + 1}/${parcelas})`;
 
@@ -233,13 +247,11 @@ class TransactionController {
               user_id: userId,
               descricao: descricaoParcela,
               valor: valorParcela,
-              data: dataVencimento.toISOString().split('T')[0],
-              tipo: tipo || 'fixa', // Usa tipo passado ou 'fixa' como padrão
+              data: dataVencStr,
+              tipo: tipo || 'variavel',
               categoria: categoria || 'Outros',
-              status_pagamento: i === 0 ? 'pago' : 'pendente', // Primeira parcela paga, resto pendente? Ou tudo pago?
-              // Assumindo que se registrou "Gastei", já pagou a primeira ou tudo se for cartão.
-              // Mas para controle financeiro, cartão de crédito é dívida futura.
-              // Vamos marcar como 'pendente' as futuras para aparecerem no fluxo de caixa futuro.
+              // Todas as parcelas são PENDENTES — são pagamentos futuros (boleto/cartão a prazo)
+              status_pagamento: 'pendente',
               observacoes: `Parcela ${i + 1} de ${parcelas}`
             }])
             .select()
@@ -252,7 +264,7 @@ class TransactionController {
           await this._notifyFixedCostChangeIfNeeded(userId, conta);
         }
 
-        console.log(`[FINANCEIRO] ${contasCriadas.length} contas a pagar criadas (parceladas)`);
+        console.log(`[FINANCEIRO] ${contasCriadas.length} conta(s) a pagar criadas (parceladas)`);
         return contasCriadas[0]; // Retorna a primeira para referência
       }
 
@@ -261,13 +273,13 @@ class TransactionController {
         .from('contas_pagar')
         .insert([{
           user_id: userId,
-          descricao: categoria || 'Despesa',
+          descricao: descricao || categoria || 'Despesa',
           valor: valor,
           data: data || new Date().toISOString().split('T')[0],
-          tipo: tipo || 'fixa', // Usa tipo passado ou 'fixa' como padrão
+          tipo: tipo || 'variavel',
           categoria: categoria || 'Outros',
           status_pagamento: 'pago',
-          observacoes: descricao || null
+          observacoes: null
         }])
         .select()
         .single();

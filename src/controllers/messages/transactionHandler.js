@@ -179,7 +179,11 @@ class TransactionHandler {
           valor: Math.abs(valor),
           descricao: descricao || categoria,
           data,
-          categoria
+          categoria,
+          // Parcelas e datas de vencimento extraídas pelo LLM de classificação de intenção.
+          // Ex: "30/60/90/120" → parcelas=4, datas_vencimento=[...4 datas...]
+          parcelas: pending.dados.parcelas || null,
+          condicoes_pagamento: pending.dados.datas_vencimento || null
         });
       }
 
