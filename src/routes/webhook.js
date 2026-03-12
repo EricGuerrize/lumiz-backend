@@ -67,6 +67,8 @@ const webhookHandler = async (req, res) => {
       return res.status(413).json({ status: 'error', reason: 'Request too large' });
     }
 
+    console.error('[WEBHOOK] evento recebido:', event, '| remoteJid:', req.body?.data?.key?.remoteJid, '| fromMe:', req.body?.data?.key?.fromMe);
+
     if (event === 'messages.upsert') {
       if (!data || typeof data !== 'object') {
         console.error('[WEBHOOK] ❌ Data inválida ou ausente');
@@ -95,7 +97,7 @@ const webhookHandler = async (req, res) => {
       // Valida e sanitiza telefone (suporta payloads com remoteJid=@lid)
       const phone = extractPhoneFromWebhookBody(req.body);
       if (!phone) {
-        console.log('[WEBHOOK] Telefone inválido. remoteJid:', key.remoteJid, 'senderPn:', key.senderPn || 'N/A');
+        console.error('[WEBHOOK] ❌ Telefone inválido. remoteJid:', key.remoteJid, 'senderPn:', key.senderPn || 'N/A', 'sender:', JSON.stringify(req.body.sender)?.substring(0, 100));
         return res.status(200).json({ status: 'ignored', reason: 'invalid phone' });
       }
 
