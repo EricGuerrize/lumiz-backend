@@ -97,6 +97,10 @@ const webhookHandler = async (req, res) => {
       // Valida e sanitiza telefone (suporta payloads com remoteJid=@lid)
       const phone = extractPhoneFromWebhookBody(req.body);
       if (!phone) {
+        const isLid = String(key.remoteJid).endsWith('@lid');
+        if (isLid) {
+          console.error('[WEBHOOK] ❌ @lid sem phone resolvido. Payload completo:', JSON.stringify(req.body).substring(0, 2000));
+        }
         console.error('[WEBHOOK] ❌ Telefone inválido. remoteJid:', key.remoteJid, 'senderPn:', key.senderPn || 'N/A', 'sender:', JSON.stringify(req.body.sender)?.substring(0, 100));
         return res.status(200).json({ status: 'ignored', reason: 'invalid phone' });
       }
