@@ -382,9 +382,9 @@ class MessageController {
       let intent = await intentHeuristicService.detectIntent(message, user?.id || null);
       let usedHeuristic = false;
 
-      // Opção A: mensagens curtas/simples sem keyword → resposta imediata sem chamar Gemini
+      // Opção A: mensagens curtas (≤2 palavras) → confiar na heurística, não chamar Gemini
       const palavras = message.trim().split(/\s+/);
-      const mensagemSimples = palavras.length <= 2 && !intent;
+      const mensagemSimples = palavras.length <= 2;
 
       // Se heurística não funcionou ou confiança baixa, chama Gemini
       if (!mensagemSimples && (!intent || intent.confidence < 0.7)) {
