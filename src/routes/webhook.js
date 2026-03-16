@@ -100,7 +100,7 @@ const webhookHandler = async (req, res) => {
       // Ignora mensagens já processadas (a Evolution reenvia o webhook quando o servidor
       // demora mais de ~30s para responder — a dedup evita processar a mesma msg duas vezes)
       if (key.id && isMessageAlreadyProcessed(key.id)) {
-        console.log(`[WEBHOOK] ⚠️ Mensagem duplicada ignorada: ${key.id}`);
+        console.error(`[WEBHOOK] ⚠️ Mensagem duplicada ignorada: ${key.id}`);
         return res.status(200).json({ status: 'ignored', reason: 'duplicate message' });
       }
 
@@ -210,7 +210,7 @@ const webhookHandler = async (req, res) => {
             }
           } else if (messageText) {
             // Mensagem de texto normal
-            console.log(`[WEBHOOK] [MSG] ${phone}: ${messageText.substring(0, 50)}`);
+            console.error(`[WEBHOOK] [MSG] ${phone}: ${messageText.substring(0, 50)}`);
             try {
               response = await messageController.handleIncomingMessage(phone, messageText);
             } catch (msgError) {

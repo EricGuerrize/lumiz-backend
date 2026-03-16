@@ -116,8 +116,13 @@ const buildCorsOrigins = () => {
   const frontendUrl = process.env.FRONTEND_URL || process.env.DASHBOARD_URL;
   if (frontendUrl) {
     origins.push(frontendUrl);
-  } else if (process.env.NODE_ENV === 'production') {
-    console.warn('[CORS] ⚠️  FRONTEND_URL não definida em produção — CORS bloqueará o dashboard');
+  } else {
+    // Fallback: sem FRONTEND_URL configurada, libera todas as origens para não quebrar
+    // o dashboard. Em produção, configure FRONTEND_URL para restringir corretamente.
+    if (process.env.NODE_ENV === 'production') {
+      console.warn('[CORS] ⚠️  FRONTEND_URL não definida — liberando todas as origens. Configure FRONTEND_URL para restringir.');
+    }
+    return true; // cors({ origin: true }) reflete a origem do request (permite tudo)
   }
 
   // Localhost liberado apenas fora de produção
@@ -146,10 +151,8 @@ const limiter = rateLimit({
   legacyHeaders: false,
   skip: (req) => {
     // Ignora rate limit global para webhooks (tem limites próprios em webhook.js)
-    if (req.url.startsWith('/api/webhook')) {
-      return true;
-    }
-    return false;
+    // Usa req.path (sem query string) para evitar edge cases com query strings
+    return req.path.startsWith('/api/webhook');
   },
   // Garante que usa o IP correto mesmo com proxy
   keyGenerator: (req) => {
