@@ -378,6 +378,21 @@ class MessageController {
         return this.getOrphanOptionReplyMessage();
       }
 
+      // Atalhos rápidos: comandos simples respondidos sem chamar Gemini ou heurística
+      const msgSimples = message.trim().toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const saudacoes = ['oi', 'oii', 'oiii', 'ola', 'opa', 'hey', 'eai', 'e ai', 'salve', 'alo',
+        'bom dia', 'boa tarde', 'boa noite', 'tudo bem', 'td bem'];
+      if (saudacoes.includes(msgSimples)) {
+        return this.helpHandler.handleGreeting();
+      }
+      if (['ajuda', 'help', 'comandos'].includes(msgSimples)) {
+        return this.helpHandler.handleHelp();
+      }
+      if (['dashboard', 'link', 'painel'].includes(msgSimples)) {
+        return this.helpHandler.handleDashboard();
+      }
+
       // Tenta heurística primeiro (economiza ~60% das chamadas Gemini)
       let intent = await intentHeuristicService.detectIntent(message, user?.id || null);
       let usedHeuristic = false;
