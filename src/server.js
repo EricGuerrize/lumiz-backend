@@ -1,7 +1,5 @@
 // IMPORTANT: Make sure to import `instrument.js` at the top of your file.
 require("./instrument");
-// Suprime console.log/debug/info em produção para evitar vazamento de PII no stdout
-require('./utils/safeLogger');
 
 const express = require('express');
 const cors = require('cors');
