@@ -144,6 +144,13 @@ const limiter = rateLimit({
   message: 'Muitas requisições deste IP, tente novamente em alguns minutos.',
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => {
+    // Ignora rate limit global para webhooks (tem limites próprios em webhook.js)
+    if (req.url.startsWith('/api/webhook')) {
+      return true;
+    }
+    return false;
+  },
   // Garante que usa o IP correto mesmo com proxy
   keyGenerator: (req) => {
     // Tenta pegar o IP real do header X-Forwarded-For ou usa req.ip

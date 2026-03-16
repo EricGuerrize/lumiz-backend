@@ -23,11 +23,12 @@ function isMessageAlreadyProcessed(messageId) {
   return false;
 }
 
-// Rate limiting específico para webhook (30 req/min por IP)
-// Configuração segura que funciona mesmo com trust proxy
+// Rate limiting específico para webhook (limitado por IP)
+// Usado principalmente para evitar DDoS, mas deve ser alto o suficiente
+// porque todo o tráfego legítimo vem de 1 ou poucos IPs da Evolution API.
 const webhookLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minuto
-  max: 30, // máximo 30 mensagens por minuto por IP
+  max: 300, // aumentado de 30 para 300 para não bloquear a Evolution API
   message: 'Muitas mensagens recebidas, aguarde um momento.',
   standardHeaders: true,
   legacyHeaders: false,
