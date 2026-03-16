@@ -52,6 +52,12 @@ const phoneRateLimiter = userRateLimit.phoneRateLimitMiddleware({
 });
 
 // Handler comum para processar webhooks
+function normalizeFromMeFlag(value) {
+  if (value === true || value === 'true' || value === 1 || value === '1') return true;
+  if (value === false || value === 'false' || value === 0 || value === '0') return false;
+  return false;
+}
+
 const webhookHandler = async (req, res) => {
   try {
     // Validação de entrada
@@ -68,7 +74,9 @@ const webhookHandler = async (req, res) => {
       return res.status(413).json({ status: 'error', reason: 'Request too large' });
     }
 
-    console.error('[WEBHOOK] evento recebido:', event, '| remoteJid:', req.body?.data?.key?.remoteJid, '| fromMe:', req.body?.data?.key?.fromMe);
+    const incomingKey = req.body?.data?.key;
+    const fromMeFlag = normalizeFromMeFlag(incomingKey?.fromMe);
+    console.error('[WEBHOOK] evento recebido:', event, '| remoteJid:', incomingKey?.remoteJid, '| fromMe:', fromMeFlag, '| rawFromMe:', incomingKey?.fromMe);
 
     if (event === 'messages.upsert') {
       if (!data || typeof data !== 'object') {
@@ -84,7 +92,8 @@ const webhookHandler = async (req, res) => {
         return res.status(200).json({ status: 'ignored', reason: 'invalid structure' });
       }
 
-      if (key.fromMe) {
+      const isFromMe = normalizeFromMeFlag(key?.fromMe);
+      if (isFromMe) {
         return res.status(200).json({ status: 'ignored', reason: 'own message' });
       }
 
