@@ -382,8 +382,12 @@ class MessageController {
       let intent = await intentHeuristicService.detectIntent(message, user?.id || null);
       let usedHeuristic = false;
 
+      // Opção A: mensagens curtas/simples sem keyword → resposta imediata sem chamar Gemini
+      const palavras = message.trim().split(/\s+/);
+      const mensagemSimples = palavras.length <= 2 && !intent;
+
       // Se heurística não funcionou ou confiança baixa, chama Gemini
-      if (!intent || intent.confidence < 0.7) {
+      if (!mensagemSimples && (!intent || intent.confidence < 0.7)) {
         // Busca contexto histórico (RAG) - só se for chamar Gemini e se usuário existir
         let recentHistory = [];
         let similarExamples = [];
@@ -394,10 +398,15 @@ class MessageController {
           ]);
         }
 
-        const geminiIntent = await geminiService.processMessage(message, {
-          recentMessages: recentHistory,
-          similarExamples: similarExamples
-        });
+        // Opção B: timeout de 6s no Gemini — se demorar, cai no ambíguo
+        const GEMINI_TIMEOUT_MS = 6000;
+        const geminiIntent = await Promise.race([
+          geminiService.processMessage(message, {
+            recentMessages: recentHistory,
+            similarExamples: similarExamples
+          }),
+          new Promise(resolve => setTimeout(() => resolve(null), GEMINI_TIMEOUT_MS))
+        ]);
 
         // Se Gemini retornou, usa ele; senão, tenta usar heurística mesmo com baixa confiança
         if (geminiIntent && geminiIntent.intencao) {
@@ -414,6 +423,13 @@ class MessageController {
             source: 'fallback'
           };
         }
+      } else if (!intent) {
+        // Mensagem simples sem match — resposta imediata
+        intent = {
+          intencao: 'mensagem_ambigua',
+          dados: {},
+          source: 'fallback'
+        };
       } else {
         usedHeuristic = true;
       }
