@@ -70,13 +70,18 @@ class IntentHeuristicService {
         'insights', 'dicas', 'sugestoes', 'sugestões', 'recomendacoes', 'recomendações',
         'sugestão', 'sugestao', 'recomendação', 'recomendacao'
       ],
+      ver_dashboard: [
+        'dashboard', 'link', 'qual o link', 'acesso', 'painel', 'site', 'app',
+        'abrir dashboard', 'link do dashboard', 'como acesso', 'como entro'
+      ],
       ajuda: [
         'ajuda', 'como usar', 'exemplos', 'o que você faz', 'como funciona',
         'help', 'comandos', 'o que posso fazer'
       ],
       saudacao: [
-        'oi', 'olá', 'ola', 'bom dia', 'boa tarde', 'boa noite', 'hey', 'e aí',
-        'e ai', 'tudo bem', 'td bem'
+        'oi', 'oii', 'oiii', 'olá', 'ola', 'bom dia', 'boa tarde', 'boa noite',
+        'hey', 'e aí', 'e ai', 'tudo bem', 'td bem', 'na vdd', 'na verdade',
+        'opa', 'eai', 'salve', 'alo', 'alô'
       ],
       desfazer: [
         'cancelar', 'desfazer', 'apagar última', 'apagar ultima', 'errei',

@@ -645,6 +645,9 @@ class MessageController {
         }
         return this.helpHandler.handleGreeting();
 
+      case 'ver_dashboard':
+        return this.helpHandler.handleDashboard();
+
       case 'ajuda':
         return this.helpHandler.handleHelp();
 

@@ -31,10 +31,18 @@ class HelpHandler {
   }
 
   /**
+   * Envia link do dashboard
+   */
+  handleDashboard() {
+    const url = process.env.DASHBOARD_URL || 'https://lumiz-financeiro.vercel.app';
+    return `Aqui está seu acesso ao dashboard 🌐\n\n${url}\n\nPor lá você visualiza relatórios, gráficos e o histórico completo das suas movimentações!`;
+  }
+
+  /**
    * Mensagem de saudação
    */
   handleGreeting() {
-    return `Oi! Tudo bem? Sou a *Lumiz* 💜\n\nTo aqui pra te ajudar a organizar as finanças da sua clínica de um jeito simples!\n\nPode me mandar:\n• Uma venda que você fez hoje\n• Um custo que precisa registrar\n• Ou me perguntar como está o caixa\n\nÉ só escrever naturalmente, tipo:\n_"Fiz um botox hoje, R$ 2800"_\n_"Comprei insumos por R$ 1500"_\n_"Como tá meu saldo?"_\n\nBora começar? 😊`;
+    return `Oi! Tudo bem? Sou a *Lumiz* 💜\n\nTo aqui pra te ajudar a organizar as finanças da sua clínica de um jeito simples!\n\nPode me mandar:\n• Uma venda que você fez hoje\n• Um custo que precisa registrar\n• Ou me perguntar como está o caixa\n\nÉ só escrever naturalmente, tipo:\n_"Fiz um botox hoje, R$ 2800"_\n_"Comprei insumos por R$ 1500"_\n_"Como tá meu saldo?"_\n\nMe manda uma transação quando quiser! 💜`;
   }
 
   /**
@@ -72,8 +80,11 @@ class HelpHandler {
         response += `Entendi o número, mas não sei o que é. Isso foi uma venda ou um gasto?\n\n`;
         response += `Exemplo:\n_"Botox ${message}"_ se foi venda\n_"Insumos ${message}"_ se foi custo\n\n`;
       } else {
-        response += `Tenta me explicar de um jeito mais simples! Por exemplo:\n`;
-        response += `_"Fiz um botox de 2800"_ ou _"Gastei 3200 em insumos"_\n\n`;
+        response += `Posso te ajudar com:\n`;
+        response += `• Registrar vendas: _"Botox 2800"_\n`;
+        response += `• Registrar custos: _"Insumos 1500"_\n`;
+        response += `• Ver saldo: _"saldo"_\n`;
+        response += `• Ver histórico: _"histórico"_\n\n`;
       }
 
       // Sugere baseado no histórico se tiver

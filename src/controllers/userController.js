@@ -849,7 +849,7 @@ class UserController {
         const confirmationMessage = `*CADASTRO CONCLUÍDO COM SUCESSO!*\n\n` +
           `Seu email foi vinculado ao seu WhatsApp!\n\n` +
           `Agora você tem acesso completo:\n` +
-          `🌐 lumiz-financeiro.vercel.app\n\n` +
+          `🌐 https://lumiz-financeiro.vercel.app\n\n` +
           `*Pronto pra começar?* 🚀\n\n` +
           `Me manda sua primeira venda assim:\n` +
           `_"Botox 2800 paciente Maria"_\n\n` +
