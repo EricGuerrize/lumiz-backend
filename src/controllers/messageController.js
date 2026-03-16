@@ -388,8 +388,10 @@ class MessageController {
         let recentHistory = [];
         let similarExamples = [];
         if (user && user.id) {
-          recentHistory = await conversationHistoryService.getRecentHistory(user.id, 5);
-          similarExamples = await conversationHistoryService.findSimilarExamples(message, user.id, 3);
+          [recentHistory, similarExamples] = await Promise.all([
+            conversationHistoryService.getRecentHistory(user.id, 5),
+            conversationHistoryService.findSimilarExamples(message, user.id, 3)
+          ]);
         }
 
         const geminiIntent = await geminiService.processMessage(message, {

@@ -274,29 +274,7 @@ class IntentHeuristicService {
     const normalized = this.normalizeText(message);
     const original = String(message).trim();
 
-    // 1. Tenta Busca Semântica primeiro (Aprendizado Autônomo)
-    try {
-      const similarInteractions = await knowledgeService.searchSimilarity(original, clinicId, 0.95);
-      if (similarInteractions && similarInteractions.length > 0) {
-        const bestMatch = similarInteractions[0];
-        console.log('[KNOWLEDGE][LEARNED_HIT]', {
-          clinicId: clinicId || null,
-          intentName: bestMatch.intent_name,
-          similarity: bestMatch.similarity
-        });
-        console.log(`[HEURISTIC] Aprendizado encontrado: "${bestMatch.content}" -> ${bestMatch.intent_name}`);
-        return {
-          intencao: bestMatch.intent_name,
-          dados: { ...bestMatch.metadata, learned: true },
-          confidence: bestMatch.similarity,
-          source: 'learned'
-        };
-      }
-    } catch (e) {
-      console.error('[HEURISTIC] Erro na busca semântica:', e.message);
-    }
-
-    // 2. Verifica cache de heurística tradicional
+    // 1. Verifica cache (instantâneo — evita qualquer processamento redundante)
     const cacheKey = `intent:${normalized}`;
     const cached = await cacheService.get(cacheKey);
     if (cached) {
@@ -345,8 +323,28 @@ class IntentHeuristicService {
       }
     }
 
-    // Se não detectou, retorna null (fallback para Gemini)
+    // Se não detectou com confiança suficiente, tenta busca semântica (Aprendizado Autônomo)
+    // Feito APÓS keyword matching para não penalizar msgs que já têm match rápido
     if (!detectedIntent || confidence < MIN_CONFIDENCE) {
+      try {
+        const similarInteractions = await knowledgeService.searchSimilarity(original, clinicId, 0.95);
+        if (similarInteractions && similarInteractions.length > 0) {
+          const bestMatch = similarInteractions[0];
+          console.log('[KNOWLEDGE][LEARNED_HIT]', {
+            clinicId: clinicId || null,
+            intentName: bestMatch.intent_name,
+            similarity: bestMatch.similarity
+          });
+          return {
+            intencao: bestMatch.intent_name,
+            dados: { ...bestMatch.metadata, learned: true },
+            confidence: bestMatch.similarity,
+            source: 'learned'
+          };
+        }
+      } catch (e) {
+        console.error('[HEURISTIC] Erro na busca semântica:', e.message);
+      }
       return null;
     }
 
