@@ -58,6 +58,35 @@ function normalizeFromMeFlag(value) {
   return false;
 }
 
+function normalizeEvolutionWebhookBody(rawBody) {
+  if (!rawBody || typeof rawBody !== 'object') {
+    return { ok: false, reason: 'invalid_body', event: null, data: null, body: rawBody };
+  }
+
+  // Formato 1 (esperado historicamente): { event, data }
+  if (typeof rawBody.event === 'string' && rawBody.data && typeof rawBody.data === 'object') {
+    return { ok: true, reason: 'event_data', event: rawBody.event, data: rawBody.data, body: rawBody };
+  }
+
+  // Formato 2: { data: { key, message } } sem event (algumas configs não enviam event)
+  if (rawBody.data && typeof rawBody.data === 'object' && rawBody.data.key && rawBody.data.message) {
+    return { ok: true, reason: 'data_key_message', event: 'messages.upsert', data: rawBody.data, body: rawBody };
+  }
+
+  // Formato 3: payload “flat”: { key, message }
+  if (rawBody.key && rawBody.message) {
+    return { ok: true, reason: 'flat_key_message', event: 'messages.upsert', data: rawBody, body: rawBody };
+  }
+
+  // Formato 4: alguns providers enviam array/messages
+  const firstMessage = Array.isArray(rawBody.messages) ? rawBody.messages[0] : null;
+  if (firstMessage && firstMessage.key && firstMessage.message) {
+    return { ok: true, reason: 'messages_array', event: 'messages.upsert', data: firstMessage, body: rawBody };
+  }
+
+  return { ok: false, reason: 'unrecognized_shape', event: null, data: null, body: rawBody };
+}
+
 const webhookHandler = async (req, res) => {
   try {
     // Validação de entrada
@@ -66,7 +95,13 @@ const webhookHandler = async (req, res) => {
       return res.status(400).json({ status: 'error', reason: 'Invalid request body' });
     }
 
-    const { event, data } = req.body;
+    const normalized = normalizeEvolutionWebhookBody(req.body);
+    if (!normalized.ok) {
+      console.error('[WEBHOOK] ❌ Payload não reconhecido. reason=', normalized.reason, 'keys=', Object.keys(req.body || {}).slice(0, 30));
+      return res.status(200).json({ status: 'ignored', reason: 'unrecognized payload shape' });
+    }
+
+    const { event, data } = normalized;
 
     // Valida tamanho máximo do body (proteção adicional)
     const bodySize = JSON.stringify(req.body).length;
@@ -74,7 +109,7 @@ const webhookHandler = async (req, res) => {
       return res.status(413).json({ status: 'error', reason: 'Request too large' });
     }
 
-    const incomingKey = req.body?.data?.key;
+    const incomingKey = data?.key;
     const fromMeFlag = normalizeFromMeFlag(incomingKey?.fromMe);
     console.error('[WEBHOOK] evento recebido:', event, '| remoteJid:', incomingKey?.remoteJid, '| fromMe:', fromMeFlag, '| rawFromMe:', incomingKey?.fromMe);
 
@@ -105,7 +140,7 @@ const webhookHandler = async (req, res) => {
       }
 
       // Valida e sanitiza telefone (suporta payloads com remoteJid=@lid)
-      const phone = extractPhoneFromWebhookBody(req.body);
+      const phone = extractPhoneFromWebhookBody(normalized.body);
       if (!phone) {
         const isLid = String(key.remoteJid).endsWith('@lid');
         if (isLid) {

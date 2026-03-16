@@ -3,6 +3,7 @@ const router = express.Router();
 const supabase = require('../db/supabase');
 const betaFeedbackService = require('../services/betaFeedbackService');
 const { authenticateFlexible } = require('../middleware/authMiddleware');
+const evolutionService = require('../services/evolutionService');
 
 // Verifica se o usuário autenticado é admin
 async function requireAdmin(req, res, next) {
@@ -24,6 +25,32 @@ async function requireAdmin(req, res, next) {
 
 router.use(authenticateFlexible);
 router.use(requireAdmin);
+
+// GET /api/admin/diagnostics/evolution
+// Diagnóstico rápido de conectividade/config (não expõe secrets)
+router.get('/diagnostics/evolution', async (req, res) => {
+  const baseUrl = process.env.EVOLUTION_API_URL || null;
+  const instanceName = process.env.EVOLUTION_INSTANCE_NAME || null;
+  const hasApiKey = !!process.env.EVOLUTION_API_KEY;
+
+  const diagnostics = {
+    configured: !!baseUrl && !!instanceName && hasApiKey,
+    baseUrl,
+    instanceName,
+    hasApiKey,
+    connectionState: null,
+    error: null
+  };
+
+  try {
+    const status = await evolutionService.getInstanceStatus();
+    diagnostics.connectionState = status;
+  } catch (err) {
+    diagnostics.error = err?.response?.data || err?.message || 'unknown error';
+  }
+
+  res.json(diagnostics);
+});
 
 // GET /api/admin/stats
 // Cards de resumo: usuários, feedbacks por tipo

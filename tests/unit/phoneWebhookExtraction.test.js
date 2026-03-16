@@ -31,4 +31,16 @@ describe('extractPhoneFromWebhookBody', () => {
 
     expect(extractPhoneFromWebhookBody(body)).toBe('5565992556938');
   });
+
+  test('suporta payload flat: key.remoteJid no root', () => {
+    const body = {
+      key: {
+        remoteJid: '5565992556938@s.whatsapp.net',
+        fromMe: false
+      },
+      message: { conversation: 'oi' }
+    };
+
+    expect(extractPhoneFromWebhookBody(body)).toBe('5565992556938');
+  });
 });

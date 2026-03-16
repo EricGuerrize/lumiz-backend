@@ -158,7 +158,10 @@ function extractPhoneFromJid(jidOrPhone) {
 function extractPhoneFromWebhookBody(body) {
     if (!body || typeof body !== 'object') return null;
 
-    const key = body?.data?.key || {};
+    // Suporta dois formatos:
+    // - body.data.key (formato "by events")
+    // - body.key (formato "flat")
+    const key = body?.data?.key || body?.key || {};
     const sender = body?.sender;
 
     // IMPORTANT: body.sender in Evolution API is the bot's own instance number,
