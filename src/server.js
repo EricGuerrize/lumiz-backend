@@ -416,11 +416,11 @@ Endpoints:
       process.exit(0);
     });
 
-    // Força shutdown após 10 segundos
+    // Força shutdown após 30 segundos (tempo para LLM completar requests em andamento)
     setTimeout(() => {
       console.error('[SHUTDOWN] Forçando shutdown após timeout');
       process.exit(1);
-    }, 10000);
+    }, 30000);
   };
 
   process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
