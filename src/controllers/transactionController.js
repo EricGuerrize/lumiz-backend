@@ -235,7 +235,7 @@ class TransactionController {
             dataVencStr = condicoes_pagamento[i];
           } else {
             const dataVenc = new Date(dataBase);
-            dataVenc.setMonth(dataVenc.getMonth() + (i + 1));
+            dataVenc.setDate(dataVenc.getDate() + (30 * (i + 1)));
             dataVencStr = dataVenc.toISOString().split('T')[0];
           }
 

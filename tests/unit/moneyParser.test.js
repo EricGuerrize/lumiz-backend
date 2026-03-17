@@ -1,5 +1,7 @@
 const {
   extractInstallments,
+  extractInstallmentDays,
+  calcularVencimentosBoleto,
   extractPrimaryMonetaryValue,
   recoverValueWithInstallmentsContext
 } = require('../../src/utils/moneyParser');
@@ -37,5 +39,46 @@ describe('moneyParser', () => {
 
   it('recovers value when parsed value is incorrectly taken from installments', () => {
     expect(recoverValueWithInstallmentsContext('botox 2000 3x', 3, 3)).toBe(2000);
+  });
+});
+
+describe('extractInstallmentDays', () => {
+  it('30/60/90/120 → [30, 60, 90, 120]', () => {
+    expect(extractInstallmentDays('pago em 30/60/90/120')).toEqual([30, 60, 90, 120]);
+  });
+
+  it('30/60 → [30, 60]', () => {
+    expect(extractInstallmentDays('boleto 30/60')).toEqual([30, 60]);
+  });
+
+  it('28/56 → [28, 56]', () => {
+    expect(extractInstallmentDays('28/56')).toEqual([28, 56]);
+  });
+
+  it('texto normal sem padrão → null', () => {
+    expect(extractInstallmentDays('comprei insumos')).toBeNull();
+  });
+
+  it('3x cartão (não é slash) → null', () => {
+    expect(extractInstallmentDays('3x cartão')).toBeNull();
+  });
+});
+
+describe('calcularVencimentosBoleto', () => {
+  it('2026-03-01 + [30,60,90,120] → datas corretas', () => {
+    expect(calcularVencimentosBoleto('2026-03-01', [30, 60, 90, 120])).toEqual([
+      '2026-03-31',
+      '2026-04-30',
+      '2026-05-30',
+      '2026-06-29'
+    ]);
+  });
+
+  it('dataBase inválida → null', () => {
+    expect(calcularVencimentosBoleto('nao-e-data', [30, 60])).toBeNull();
+  });
+
+  it('dias vazio → null', () => {
+    expect(calcularVencimentosBoleto('2026-03-01', [])).toBeNull();
   });
 });

@@ -22,7 +22,9 @@ const {
 const {
     extractPrimaryMonetaryValue,
     extractMixedPaymentSplit,
-    extractInstallments
+    extractInstallments,
+    extractInstallmentDays,
+    calcularVencimentosBoleto
 } = require('../utils/moneyParser');
 
 // ============================================================
@@ -400,29 +402,42 @@ function inferCostTypeAndCategoryFromText(text = '', forcedType = null) {
 
 function extractCostPaymentDetails(text = '') {
     const normalized = normalizeText(text);
-    const installments = extractInstallments(normalized);
+    const hasBoleto = normalized.includes('boleto');
+    const installmentDays = extractInstallmentDays(normalized);
+    const installments = installmentDays ? installmentDays.length : extractInstallments(normalized);
     const hasCard = normalized.includes('cartao') || normalized.includes('cartão') || normalized.includes('credito') || normalized.includes('crédito') || installments > 1;
     const hasPix = normalized.includes('pix');
     const hasCash = normalized.includes('dinheiro') || normalized.includes('espécie') || normalized.includes('especie');
     const hasDebit = normalized.includes('debito') || normalized.includes('débito');
 
+    if (hasBoleto || installmentDays) {
+        const datas = installmentDays
+            ? calcularVencimentosBoleto(getLocalIsoDate(), installmentDays)
+            : null;
+        return {
+            forma_pagamento: 'boleto_parcelado',
+            parcelas: installments || null,
+            datas_vencimento: datas
+        };
+    }
     if (hasPix) {
-        return { forma_pagamento: 'pix', parcelas: null };
+        return { forma_pagamento: 'pix', parcelas: null, datas_vencimento: null };
     }
     if (hasCash) {
-        return { forma_pagamento: 'dinheiro', parcelas: null };
+        return { forma_pagamento: 'dinheiro', parcelas: null, datas_vencimento: null };
     }
     if (hasDebit) {
-        return { forma_pagamento: 'debito', parcelas: null };
+        return { forma_pagamento: 'debito', parcelas: null, datas_vencimento: null };
     }
     if (hasCard) {
         return {
             forma_pagamento: installments && installments > 1 ? 'parcelado' : 'credito_avista',
-            parcelas: installments && installments > 1 ? installments : null
+            parcelas: installments && installments > 1 ? installments : null,
+            datas_vencimento: null
         };
     }
 
-    return { forma_pagamento: null, parcelas: null };
+    return { forma_pagamento: null, parcelas: null, datas_vencimento: null };
 }
 
 // ============================================================
@@ -960,7 +975,8 @@ class OnboardingStateHandlers {
                 data: getLocalIsoDate(),
                 original_text: messageTrimmed,
                 forma_pagamento: paymentInfo.forma_pagamento,
-                parcelas: paymentInfo.parcelas
+                parcelas: paymentInfo.parcelas,
+                datas_vencimento: paymentInfo.datas_vencimento || null
             };
 
             if (!onboarding.data.pending_cost.tipo && inferredCost.tipo) {

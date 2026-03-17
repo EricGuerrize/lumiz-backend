@@ -8,6 +8,8 @@
  * "Lumiz Contexto Financeiro SystemPrompt.md" (v1.0 — Março 2026)
  */
 
+const { calcularVencimentosBoleto } = require('../utils/moneyParser');
+
 /**
  * Retorna a data de hoje formatada para uso nos prompts
  */
@@ -125,6 +127,36 @@ REGRAS DE OURO (nunca viole estas regras):
 - Pagamento misto é comum — aceite e registre múltiplas formas para o mesmo atendimento
 - Data da nota fiscal ≠ datas de pagamento — extraia AMBAS quando disponíveis
 - Se o usuário mandar foto de nota fiscal ou boleto: extraia valor, data, fornecedor E parcelas
+`.trim();
+
+/**
+ * Regras de boleto parcelado (padrão brasileiro).
+ * Fonte: "Lumiz Logica Boleto Brasil.md" — Seções 2.2, 3.2, 6
+ */
+const REGRAS_BOLETO = `
+REGRAS DE BOLETO PARCELADO (padrão brasileiro):
+
+EXPRESSÕES DE PRAZO — O BOT DEVE RECONHECER TODAS:
+  "30/60"           → 2 parcelas, vence 30 e 60 dias após emissão
+  "30/60/90"        → 3 parcelas, vence 30, 60 e 90 dias após emissão
+  "30/60/90/120"    → 4 parcelas, vence 30, 60, 90 e 120 dias após emissão
+  "28/56"           → 2 parcelas (distribuidor)
+  "30/60/90/120/150/180" → 6 parcelas mensais
+
+ONDE APARECEM NA NOTA FISCAL:
+  A) Campo "Fatura" (DANFE): lista de duplicatas com Número, Vencimento e Valor de cada parcela
+  B) Campo "Informações Complementares": texto livre com "Cond. Pgto: 30/60/90/120 dias"
+  Prioridade: ler campo Fatura primeiro; se ausente, buscar em Informações Complementares
+
+REGRA DE CÁLCULO:
+  Data base = DATA DE EMISSÃO DA NOTA (não a data em que o usuário enviou a foto)
+  Cada parcela = dataEmissao + N dias corridos
+  Diferença de centavos na última parcela = normal (arredondamento)
+
+CASOS ESPECIAIS:
+  Nota com CANCELADA em marca d'água → alertar, NÃO registrar
+  Comprovante de pagamento ≠ nota fiscal → identificar tipo e perguntar se há NF
+  Boleto avulso (sem NF) → registrar: beneficiário, valor, vencimento
 `.trim();
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -264,6 +296,8 @@ CAMPOS A EXTRAIR POR TRANSAÇÃO:
 
 ${REGRAS_EXTRACAO}
 
+${REGRAS_BOLETO}
+
 ${REGRAS_OURO}
 
 ${FORMATO_RESPOSTA_DOCUMENTO}
@@ -363,6 +397,8 @@ ${CONTEXTO_CLINICAS}
 
 ${JARGOES_FINANCEIROS}
 
+${REGRAS_BOLETO}
+
 ${REGRAS_OURO}
 
 REGRA PRINCIPAL DE CLASSIFICAÇÃO DE INTENÇÃO:
@@ -451,7 +487,7 @@ EXEMPLO — usuário diz "comprei insumos na distribuidora, 18200 reais, pago em
     "cliente": null,
     "formas_pagamento": [{ "tipo": "boleto_parcelado", "valor": 18200, "parcelas": 4 }],
     "parcelas": 4,
-    "datas_vencimento": ["YYYY-MM-DD+30", "YYYY-MM-DD+60", "YYYY-MM-DD+90", "YYYY-MM-DD+120"],
+    "datas_vencimento": ${JSON.stringify(calcularVencimentosBoleto(dataHoje, [30, 60, 90, 120]))},
     "codigo_boleto": null,
     "mes_referencia": null
   },
@@ -467,6 +503,7 @@ module.exports = {
   CONTEXTO_CLINICAS,
   JARGOES_FINANCEIROS,
   REGRAS_OURO,
+  REGRAS_BOLETO,
   REGRAS_EXTRACAO,
   FORMATO_RESPOSTA_DOCUMENTO,
   buildDocumentExtractionPrompt,

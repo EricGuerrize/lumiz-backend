@@ -68,6 +68,48 @@ function extractInstallments(text) {
   return null;
 }
 
+/**
+ * Detecta padrão de dias de vencimento de boleto parcelado (ex: "30/60/90/120")
+ * e retorna o array de dias, ou null se não encontrado.
+ * @param {string} text
+ * @returns {number[]|null}
+ */
+function extractInstallmentDays(text) {
+  const raw = normalizeText(text);
+  const slashMatches = raw.match(/\b\d{1,3}(?:\/\d{1,3})+\b/g);
+  if (slashMatches) {
+    for (const match of slashMatches) {
+      const parts = match.split('/').map(Number);
+      const allAbove12 = parts.every(v => v > 12);
+      const ascending = parts.every((v, i) => i === 0 || v > parts[i - 1]);
+      if (allAbove12 && ascending && parts.length >= 2) {
+        return parts;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Calcula datas de vencimento de boleto parcelado somando dias corridos à data base.
+ * @param {string|Date} dataBase - Data base (string ISO ou objeto Date)
+ * @param {number[]} dias - Array de dias corridos, ex: [30, 60, 90, 120]
+ * @returns {string[]|null} - Array de datas no formato YYYY-MM-DD, ou null
+ */
+function calcularVencimentosBoleto(dataBase, dias) {
+  if (!Array.isArray(dias) || !dias.length) return null;
+  const base = dataBase instanceof Date ? dataBase : new Date(dataBase + 'T12:00:00');
+  if (isNaN(base.getTime())) return null;
+  return dias.map(d => {
+    const dt = new Date(base);
+    dt.setDate(dt.getDate() + d);
+    const y = dt.getFullYear();
+    const m = String(dt.getMonth() + 1).padStart(2, '0');
+    const day = String(dt.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  });
+}
+
 function isLikelyDateToken(rawText, start, end) {
   const before = rawText.slice(Math.max(0, start - 4), start);
   const after = rawText.slice(end, Math.min(rawText.length, end + 4));
@@ -294,6 +336,8 @@ module.exports = {
   parseBrazilianNumber,
   extractThousandWordValue,
   extractInstallments,
+  extractInstallmentDays,
+  calcularVencimentosBoleto,
   extractMonetaryCandidates,
   extractPrimaryMonetaryValue,
   recoverValueWithInstallmentsContext,
