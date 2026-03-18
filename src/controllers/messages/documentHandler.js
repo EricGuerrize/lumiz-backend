@@ -331,7 +331,9 @@ class DocumentHandler {
             valor: Math.abs(transacao.valor),
             descricao: transacao.descricao || transacao.categoria,
             data: transacao.data || new Date().toISOString().split('T')[0],
-            categoria: transacao.categoria || 'Documento'
+            categoria: transacao.categoria || 'Documento',
+            parcelas: transacao.parcelas || null,
+            condicoes_pagamento: transacao.condicoes_pagamento || null
           });
         }
       }

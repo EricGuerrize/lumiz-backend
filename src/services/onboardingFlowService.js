@@ -1677,6 +1677,9 @@ class OnboardingStateHandlers {
     }
 
     _formatCostPaymentText(cost = {}) {
+        if (cost.forma_pagamento === 'boleto_parcelado') {
+            return cost.parcelas ? `Boleto ${cost.parcelas}x` : 'Boleto parcelado';
+        }
         if (cost.forma_pagamento === 'parcelado') {
             return cost.parcelas ? `Cartão ${cost.parcelas}x` : 'Cartão parcelado';
         }

@@ -282,7 +282,21 @@ class DocumentService {
       if (t.descricao) {
         message += `   📝 ${t.descricao}\n`;
       }
-      message += `   📅 ${dataFormatada}\n\n`;
+      message += `   📅 ${dataFormatada}\n`;
+      if (t.parcelas && t.parcelas > 1) {
+        message += `   🗓 *${t.parcelas}x boleto*`;
+        if (Array.isArray(t.condicoes_pagamento) && t.condicoes_pagamento.length) {
+          const datas = t.condicoes_pagamento.map(d => {
+            try {
+              const [ano, mes, dia] = d.split('-');
+              return `${dia}/${mes}`;
+            } catch { return d; }
+          }).join(', ');
+          message += ` — venc: ${datas}`;
+        }
+        message += `\n`;
+      }
+      message += `\n`;
     });
 
     if (result.transacoes.length === 1) {
