@@ -283,6 +283,14 @@ class DocumentQueueService {
    * Callback quando o job falha
    */
   handleJobFailure(job, error) {
+    console.error('[DOC_QUEUE] Job FAILED permanentemente', {
+      jobId: job?.id,
+      phone: job?.data?.phone,
+      mediaUrl: job?.data?.mediaUrl,
+      attempts: job?.attemptsMade,
+      error: error?.message
+    });
+
     const callback = this.completionCallbacks.get(job?.id);
     if (callback) {
       try {

@@ -151,10 +151,14 @@ class CacheService {
     }
 
     try {
-      const keys = await this.client.keys(pattern);
-      if (keys.length === 0) {
-        return 0;
-      }
+      const keys = [];
+      let cursor = '0';
+      do {
+        const [nextCursor, batch] = await this.client.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+        cursor = nextCursor;
+        keys.push(...batch);
+      } while (cursor !== '0');
+      if (keys.length === 0) return 0;
       return await this.client.del(...keys);
     } catch (error) {
       console.error(`[CACHE] Erro ao deletar padrão ${pattern}:`, error.message);

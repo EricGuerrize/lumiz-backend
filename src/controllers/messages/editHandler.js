@@ -15,6 +15,7 @@ class EditHandler {
 
   async setPendingEdit(phone, pending) {
     this.pendingEdits.set(phone, pending);
+    setTimeout(() => this.pendingEdits.delete(phone), this.RUNTIME_TTL_MS);
     await conversationRuntimeStateService.upsert(phone, this.RUNTIME_FLOW, pending, this.RUNTIME_TTL_MS);
   }
 
@@ -26,6 +27,7 @@ class EditHandler {
   restorePendingEdit(phone, pending) {
     if (!phone || !pending) return;
     this.pendingEdits.set(phone, pending);
+    setTimeout(() => this.pendingEdits.delete(phone), this.RUNTIME_TTL_MS);
   }
 
   /**

@@ -22,6 +22,7 @@ class TransactionHandler {
 
   async setPendingTransaction(phone, pending, ttlMs = this.RUNTIME_TTL_MS) {
     this.pendingTransactions.set(phone, pending);
+    setTimeout(() => this.pendingTransactions.delete(phone), ttlMs);
     await conversationRuntimeStateService.upsert(phone, this.RUNTIME_FLOW, pending, ttlMs);
   }
 
@@ -33,6 +34,7 @@ class TransactionHandler {
   restorePendingTransaction(phone, pending) {
     if (!phone || !pending) return;
     this.pendingTransactions.set(phone, pending);
+    setTimeout(() => this.pendingTransactions.delete(phone), this.RUNTIME_TTL_MS);
   }
 
   /**
@@ -100,6 +102,7 @@ class TransactionHandler {
       if (persisted?.payload) {
         pending = persisted.payload;
         this.pendingTransactions.set(phone, pending);
+        setTimeout(() => this.pendingTransactions.delete(phone), this.RUNTIME_TTL_MS);
       }
     }
 

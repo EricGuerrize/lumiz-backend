@@ -18,6 +18,11 @@ class DocumentHandler {
     return normalizePhone(phone) || phone;
   }
 
+  _setPendingDoc(normalizedPhone, value) {
+    this.pendingDocumentTransactions.set(normalizedPhone, value);
+    setTimeout(() => this.pendingDocumentTransactions.delete(normalizedPhone), this.PENDING_CONFIRMATION_TTL_MS);
+  }
+
   async persistPendingConfirmation(phone, user, transacoes) {
     try {
       const normalizedPhone = this.normalizePhoneKey(phone);
@@ -136,7 +141,7 @@ class DocumentHandler {
       }
 
       if (result.transacoes && result.transacoes.length > 0) {
-        this.pendingDocumentTransactions.set(normalizedPhone, {
+        this._setPendingDoc(normalizedPhone, {
           user,
           transacoes: result.transacoes,
           timestamp: Date.now()
@@ -211,7 +216,7 @@ class DocumentHandler {
       }
 
       if (result.transacoes && result.transacoes.length > 0) {
-        this.pendingDocumentTransactions.set(normalizedPhone, {
+        this._setPendingDoc(normalizedPhone, {
           user,
           transacoes: result.transacoes,
           timestamp: Date.now()
@@ -277,7 +282,7 @@ class DocumentHandler {
       }
 
       // Armazena transações pendentes de confirmação
-      this.pendingDocumentTransactions.set(normalizedPhone, {
+      this._setPendingDoc(normalizedPhone, {
         user,
         transacoes: result.transacoes,
         timestamp: Date.now()
@@ -306,7 +311,7 @@ class DocumentHandler {
           transacoes: persistedPending.transacoes,
           timestamp: new Date(persistedPending.created_at).getTime()
         };
-        this.pendingDocumentTransactions.set(normalizedPhone, pending);
+        this._setPendingDoc(normalizedPhone, pending);
       } else {
         return 'Não encontrei confirmação pendente dessa nota. Reenvie o PDF.';
       }

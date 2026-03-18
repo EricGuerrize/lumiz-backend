@@ -1457,9 +1457,12 @@ class OnboardingStateHandlers {
 
         onboarding.data.initial_balance = saldo;
 
-        // Se user já existe, atualiza?
-        // O script diz "As transações reais serão salvas apenas após você concluir o cadastro".
-        // Vou assumir que o saldo também será aplicado ao criar a conta defitiniva ou finalizar.
+        if (onboarding.data.userId) {
+          await supabase
+            .from('profiles')
+            .update({ initial_balance: saldo })
+            .eq('id', onboarding.data.userId);
+        }
 
         return await respondAndClear(
             onboardingCopy.balanceConfirmation(saldo) +

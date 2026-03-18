@@ -1104,6 +1104,7 @@ class MessageController {
           transacoes: result.transacoes,
           timestamp: Date.now()
         });
+        setTimeout(() => this.pendingDocumentTransactions.delete(normalizedPhone), 30 * 60 * 1000);
       }
 
       return response;

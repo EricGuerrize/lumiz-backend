@@ -159,6 +159,8 @@ class TransactionController {
 
       if (procError) {
         console.error('Erro ao criar procedimento do atendimento:', procError);
+        await supabase.from('atendimentos').delete().eq('id', atendimento.id);
+        throw procError;
       }
 
       // === GERAÇÃO DE PARCELAS (VENDAS) ===
@@ -198,7 +200,10 @@ class TransactionController {
         }
 
         if (parcelasError) {
-          console.error('[FINANCEIRO] Erro ao gerar parcelas:', parcelasError);
+          console.error('[FINANCEIRO] Erro ao gerar parcelas — fazendo rollback:', parcelasError);
+          await supabase.from('atendimento_procedimentos').delete().eq('atendimento_id', atendimento.id);
+          await supabase.from('atendimentos').delete().eq('id', atendimento.id);
+          throw parcelasError;
         } else {
           console.log('[FINANCEIRO] Parcelas geradas com sucesso');
         }
@@ -257,7 +262,14 @@ class TransactionController {
             .select()
             .single();
 
-          if (error) throw error;
+          if (error) {
+            console.error('[FINANCEIRO] Erro ao criar parcela de custo — fazendo rollback:', error);
+            if (contasCriadas.length > 0) {
+              const ids = contasCriadas.map(c => c.id);
+              await supabase.from('contas_pagar').delete().in('id', ids);
+            }
+            throw error;
+          }
           contasCriadas.push(conta);
 
           // Alerta de variacao para custos fixos (nao bloqueia fluxo)
