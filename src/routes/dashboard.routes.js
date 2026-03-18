@@ -30,7 +30,8 @@ router.get('/summary', async (req, res) => {
       custos: balance.saidas,
       lucro: lucro,
       margemLucro: parseFloat(margemPercentual),
-      saldo: balance.saldo
+      saldo: balance.saldo,
+      initialBalance: parseFloat(req.user.initial_balance || 0)
     });
   } catch (error) {
     console.error('Error getting summary:', error);
@@ -488,6 +489,29 @@ router.get('/stats/kpis', async (req, res) => {
   } catch (error) {
     console.error('Error getting KPIs:', error);
     res.status(500).json({ error: 'Failed to get KPIs' });
+  }
+});
+
+// PATCH /api/dashboard/profile/initial-balance - Atualizar saldo inicial
+router.patch('/profile/initial-balance', async (req, res) => {
+  try {
+    const { initial_balance } = req.body;
+
+    if (typeof initial_balance !== 'number' || isNaN(initial_balance)) {
+      return res.status(400).json({ error: 'initial_balance deve ser um número' });
+    }
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({ initial_balance })
+      .eq('id', req.user.id);
+
+    if (error) throw error;
+
+    res.json({ message: 'Saldo inicial atualizado com sucesso', initial_balance });
+  } catch (error) {
+    console.error('Error updating initial balance:', error);
+    res.status(500).json({ error: 'Failed to update initial balance' });
   }
 });
 
