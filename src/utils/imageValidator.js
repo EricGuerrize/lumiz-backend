@@ -54,6 +54,7 @@ function getJpegDimensions(buffer) {
       } else {
         // Marker with length
         const length = buffer.readUInt16BE(offset + 2);
+        if (length < 2) break; // Comprimento inválido — evita loop infinito com JPEG corrompido
         offset += 2 + length;
       }
     }

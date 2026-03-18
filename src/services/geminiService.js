@@ -347,11 +347,14 @@ RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
         }
       ];
 
-      const result = await retryWithBackoff(
-        () => this.generateWithFallback(parts),
-        1,
-        0
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error(`Timeout ao processar documento (${GEMINI_TIMEOUT_MS / 1000}s)`)), GEMINI_TIMEOUT_MS)
       );
+
+      const result = await Promise.race([
+        retryWithBackoff(() => this.generateWithFallback(parts), 1, 0),
+        timeoutPromise
+      ]);
 
       const response = await result.response;
       const text = response.text();

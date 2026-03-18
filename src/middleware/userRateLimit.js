@@ -67,7 +67,7 @@ class UserRateLimit {
           this.memoryStore.delete(key);
         }
       }
-    }, 60 * 1000); // Limpa a cada 1 minuto
+    }, 60 * 1000).unref(); // unref: não impede graceful shutdown
   }
 
   /**

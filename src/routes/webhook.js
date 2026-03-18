@@ -13,13 +13,17 @@ const { extractPhoneFromWebhookBody } = require('../utils/phone');
 const _processedMsgIds = new Map(); // messageId -> timestamp
 const MSG_DEDUP_TTL = 5 * 60 * 1000; // 5 minutos
 
-function isMessageAlreadyProcessed(messageId) {
+// Cleanup periódico garantido — independente do volume de tráfego
+const _dedupCleanupInterval = setInterval(() => {
   const now = Date.now();
   for (const [id, ts] of _processedMsgIds.entries()) {
     if (now - ts > MSG_DEDUP_TTL) _processedMsgIds.delete(id);
   }
+}, MSG_DEDUP_TTL).unref(); // unref: não impede graceful shutdown
+
+function isMessageAlreadyProcessed(messageId) {
   if (_processedMsgIds.has(messageId)) return true;
-  _processedMsgIds.set(messageId, now);
+  _processedMsgIds.set(messageId, Date.now());
   return false;
 }
 

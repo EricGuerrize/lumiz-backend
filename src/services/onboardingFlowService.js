@@ -410,12 +410,14 @@ function extractCostPaymentDetails(text = '') {
     const hasCash = normalized.includes('dinheiro') || normalized.includes('espécie') || normalized.includes('especie');
     const hasDebit = normalized.includes('debito') || normalized.includes('débito');
 
-    if (hasBoleto || installmentDays) {
+    // Boleto parcelado: requer palavra "boleto" + padrão de dias (30/60/90) OU só padrão de dias
+    // Sem padrão de dias, "boleto" sozinho não classifica como parcelado (pode ser "pago no boleto à vista")
+    if (installmentDays || (hasBoleto && !hasCard)) {
         const datas = installmentDays
             ? calcularVencimentosBoleto(getLocalIsoDate(), installmentDays)
             : null;
         return {
-            forma_pagamento: 'boleto_parcelado',
+            forma_pagamento: installmentDays || installments > 1 ? 'boleto_parcelado' : 'boleto',
             parcelas: installments || null,
             datas_vencimento: datas
         };

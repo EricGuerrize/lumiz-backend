@@ -140,7 +140,7 @@ class TransactionHandler {
           userId: user?.id || null,
           source: 'whatsapp'
         });
-      } catch (e) { }
+      } catch (e) { console.warn('[ANALYTICS] Falha ao registrar confirmação de transação:', e.message); }
 
       const { tipo, valor, categoria, descricao, data, forma_pagamento, parcelas, bandeira_cartao, nome_cliente, payment_split } = pending.dados;
 
@@ -232,7 +232,7 @@ class TransactionHandler {
           userId: user?.id || null,
           source: 'whatsapp'
         });
-      } catch (e) { }
+      } catch (e) { console.warn('[ANALYTICS] Falha ao registrar cancelamento de transação:', e.message); }
       await this.clearPendingTransaction(phone);
       return 'Registro cancelado ❌\n\nSe quiser registrar, é só me enviar novamente com os dados corretos!';
     }

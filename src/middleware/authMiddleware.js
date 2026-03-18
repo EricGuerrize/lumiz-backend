@@ -32,7 +32,8 @@ const authenticateToken = async (req, res, next) => {
         const variants = getPhoneVariants(authPhone);
         let phoneQuery = supabase.from('profiles').select('*');
         phoneQuery = variants.length ? phoneQuery.in('telefone', variants) : phoneQuery.eq('telefone', authPhone);
-        const { data: phoneProfile } = await phoneQuery.maybeSingle();
+        const { data: phoneProfile, error: phoneError } = await phoneQuery.maybeSingle();
+        if (phoneError) console.error('[AUTH] Erro ao buscar perfil por telefone:', phoneError.message);
         if (phoneProfile) {
           req.user = phoneProfile;
           req.authUser = user;
@@ -99,7 +100,8 @@ const authenticateFlexible = async (req, res, next) => {
       let query = supabase.from('profiles').select('*');
       query = variants.length ? query.in('telefone', variants) : query.eq('telefone', phone);
 
-      const { data: profile } = await query.maybeSingle();
+      const { data: profile, error: profileLookupError } = await query.maybeSingle();
+      if (profileLookupError) console.error('[AUTH] Erro ao buscar perfil por telefone:', profileLookupError.message);
 
       if (profile) {
         req.user = profile;

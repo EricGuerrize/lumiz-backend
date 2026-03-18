@@ -1,11 +1,20 @@
 const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
 
+const SUPABASE_FETCH_TIMEOUT_MS = 15000; // 15s por tentativa
+
 // Retry fetch wrapper para lidar com falhas intermitentes de rede
 const fetchWithRetry = async (url, options, retries = 3, delay = 1000) => {
   for (let i = 0; i < retries; i++) {
     try {
-      const response = await fetch(url, options);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), SUPABASE_FETCH_TIMEOUT_MS);
+      let response;
+      try {
+        response = await fetch(url, { ...options, signal: controller.signal });
+      } finally {
+        clearTimeout(timeoutId);
+      }
       return response;
     } catch (error) {
       // Se é o último retry, lança o erro

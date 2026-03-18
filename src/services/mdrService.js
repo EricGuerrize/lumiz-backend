@@ -230,11 +230,13 @@ class MdrService {
   }
 
   async getLatestConfig(phone, userId) {
+    if (!userId && !phone) return null;
+
     // Try cache first
-    const cacheKey = userId 
+    const cacheKey = userId
       ? `user:config:mdr:${userId}`
       : `phone:config:mdr:${phone}`;
-    
+
     const cached = await cacheService.get(cacheKey);
     if (cached) {
       return cached;
@@ -267,6 +269,8 @@ class MdrService {
   }
 
   async getJobs(phone, userId) {
+    if (!userId && !phone) return [];
+
     let query = supabase
       .from('ocr_jobs')
       .select('*')

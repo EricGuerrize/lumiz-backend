@@ -407,10 +407,14 @@ class MessageController {
         let recentHistory = [];
         let similarExamples = [];
         if (user && user.id) {
-          [recentHistory, similarExamples] = await Promise.all([
+          const [historyResult, examplesResult] = await Promise.allSettled([
             conversationHistoryService.getRecentHistory(user.id, 5),
             conversationHistoryService.findSimilarExamples(message, user.id, 3)
           ]);
+          if (historyResult.status === 'fulfilled') recentHistory = historyResult.value;
+          else console.warn('[RAG] Falha ao buscar histórico:', historyResult.reason?.message);
+          if (examplesResult.status === 'fulfilled') similarExamples = examplesResult.value;
+          else console.warn('[RAG] Falha ao buscar exemplos:', examplesResult.reason?.message);
         }
 
         // Opção B: timeout de 6s no Gemini — se demorar, cai no ambíguo

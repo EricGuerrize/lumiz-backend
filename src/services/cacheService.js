@@ -88,7 +88,13 @@ class CacheService {
     try {
       const value = await this.client.get(key);
       if (value) {
-        return JSON.parse(value);
+        try {
+          return JSON.parse(value);
+        } catch (parseError) {
+          console.error(`[CACHE] Valor corrompido na chave ${key} — descartando:`, value?.substring(0, 100));
+          await this.client.del(key).catch(() => {});
+          return null;
+        }
       }
       return null;
     } catch (error) {
