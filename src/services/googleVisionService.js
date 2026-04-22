@@ -281,8 +281,8 @@ class GoogleVisionService {
         IMAGE_PROCESSING_TIMEOUT_MS,
         'Timeout ao processar texto com Gemini (60s)'
       ),
-      2,
-      1000
+      4, // maxRetries aumentado para combater o 429 freq do Gemini Free (delay será de 3s, 6s, 12s, 24s)
+      3000 // initialDelayMs de 3 seg
     );
     const geminiDuration = Date.now() - startTime;
     console.log('[VISION] ✅ Resposta do Gemini recebida em', geminiDuration, 'ms');
