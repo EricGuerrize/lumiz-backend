@@ -116,8 +116,7 @@ class TransactionHandler {
       if (
         messageLower === 'cancelar' ||
         messageLower === 'nao' ||
-        messageLower === 'não' ||
-        messageLower === '2'
+        messageLower === 'não'
       ) {
         await this.clearPendingTransaction(phone);
         return 'Registro cancelado ❌\n\nSe quiser registrar, é só me enviar novamente com os dados corretos!';
