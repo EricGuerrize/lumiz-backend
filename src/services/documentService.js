@@ -288,9 +288,20 @@ class DocumentService {
         if (Array.isArray(t.condicoes_pagamento) && t.condicoes_pagamento.length) {
           const datas = t.condicoes_pagamento.map(d => {
             try {
-              const [ano, mes, dia] = d.split('-');
-              return `${dia}/${mes}`;
-            } catch { return d; }
+              let dateStr = d;
+              if (typeof d === 'object' && d !== null) {
+                // Se Gemini retornar um objeto no lugar de string
+                dateStr = d.data || d.vencimento || d.data_vencimento || JSON.stringify(d);
+              }
+              dateStr = String(dateStr);
+              if (dateStr.includes('-')) {
+                const parts = dateStr.split('-');
+                if (parts.length === 3) {
+                  return `${parts[2]}/${parts[1]}`;
+                }
+              }
+              return dateStr;
+            } catch { return String(d); }
           }).join(', ');
           message += ` — venc: ${datas}`;
         }

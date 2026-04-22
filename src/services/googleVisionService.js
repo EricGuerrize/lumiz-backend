@@ -276,7 +276,8 @@ class GoogleVisionService {
     
     const startTime = Date.now();
     let geminiResult;
-    let currentModel = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+    // O modelo 2.5-flash possui muito mais cota e evita os 429 constantes do 2.0-flash
+    let currentModel = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
     
     try {
       geminiResult = await retryWithBackoff(
@@ -285,14 +286,14 @@ class GoogleVisionService {
           IMAGE_PROCESSING_TIMEOUT_MS,
           `Timeout ao processar texto com Gemini ${currentModel} (60s)`
         ),
-        6, // Aumentado para 6 tentativas de 5s, 10s, 20s... totalizando ~5 min de resiliência
-        5000 // initialDelayMs de 5 seg (mais agressivo na espera)
+        4, // 4 tentativas
+        1500 // Delay de 1.5s (rápido o suficiente para o WhatsApp não parecer lento)
       );
     } catch (error) {
-      // Se falhou 429 no 2.0-flash, tenta o 2.5-flash como fallback (outra cota/geração)
-      if (currentModel === 'gemini-2.0-flash' && (error.message.includes('429') || error.message.includes('Resource exhausted'))) {
-        console.warn(`[VISION] Gemini 2.0-flash esgotado (429). Tentando FALLBACK com gemini-2.5-flash...`);
-        currentModel = 'gemini-2.5-flash';
+      // Se falhou 429 no 2.5-flash, tenta o 2.0-flash como fallback
+      if (currentModel === 'gemini-2.5-flash' && (error.message.includes('429') || error.message.includes('Resource exhausted'))) {
+        console.warn(`[VISION] Gemini 2.5-flash esgotado (429). Tentando FALLBACK com gemini-2.0-flash...`);
+        currentModel = 'gemini-2.0-flash';
         geminiResult = await retryWithBackoff(
           () => withTimeout(
             genAI.getGenerativeModel({ model: currentModel }).generateContent(prompt),
