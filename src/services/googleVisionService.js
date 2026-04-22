@@ -282,7 +282,10 @@ class GoogleVisionService {
     try {
       geminiResult = await retryWithBackoff(
         () => withTimeout(
-          genAI.getGenerativeModel({ model: currentModel }).generateContent(prompt),
+          genAI.getGenerativeModel({ 
+            model: currentModel,
+            generationConfig: { temperature: 0.1, responseMimeType: "application/json" }
+          }).generateContent(prompt),
           IMAGE_PROCESSING_TIMEOUT_MS,
           `Timeout ao processar texto com Gemini ${currentModel} (60s)`
         ),
@@ -296,7 +299,10 @@ class GoogleVisionService {
         currentModel = 'gemini-2.0-flash';
         geminiResult = await retryWithBackoff(
           () => withTimeout(
-            genAI.getGenerativeModel({ model: currentModel }).generateContent(prompt),
+            genAI.getGenerativeModel({ 
+              model: currentModel,
+              generationConfig: { temperature: 0.1, responseMimeType: "application/json" }
+            }).generateContent(prompt),
             IMAGE_PROCESSING_TIMEOUT_MS,
             `Timeout no fallback com ${currentModel} (60s)`
           ),
