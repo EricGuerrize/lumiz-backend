@@ -13,7 +13,7 @@ class GeminiService {
     const configuredModel = process.env.GEMINI_MODEL;
     // Ordem: modelo configurado via env → modelos estáveis conhecidos
     // 'gemini-flash-latest' removido: alias inválido que causava timeouts
-    const fallbackModels = ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-flash'];
+    const fallbackModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.0-flash-lite'];
     this.modelCandidates = [configuredModel, ...fallbackModels]
       .filter(Boolean)
       .filter((model, index, self) => self.indexOf(model) === index);
@@ -24,7 +24,10 @@ class GeminiService {
 
     for (const modelName of this.modelCandidates) {
       try {
-        const model = genAI.getGenerativeModel({ model: modelName });
+        const model = genAI.getGenerativeModel({ 
+          model: modelName,
+          generationConfig: { responseMimeType: "application/json" }
+        });
         const result = await retryWithBackoff(
           () => withTimeout(
             model.generateContent(payload),
