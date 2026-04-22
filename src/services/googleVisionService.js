@@ -262,13 +262,13 @@ class GoogleVisionService {
     }
     
     const { GoogleGenerativeAI } = require('@google/generative-ai');
-    const { buildDocumentExtractionPrompt } = require('../config/prompts');
-    
+    const { buildDocumentExtractionPromptSlim } = require('../config/prompts');
+
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const geminiModel = genAI.getGenerativeModel({ model: process.env.GEMINI_MODEL || 'gemini-2.0-flash' });
-    
-    // Usa prompt centralizado para consistência
-    const prompt = buildDocumentExtractionPrompt(fullText);
+
+    // Prompt compacto: texto já extraído pelo Vision, contexto de negócio desnecessário aqui
+    const prompt = buildDocumentExtractionPromptSlim(fullText);
 
     console.log('[VISION] Processando texto com Gemini para extrair dados...');
     console.log('[VISION] Tamanho do prompt:', prompt.length, 'caracteres');

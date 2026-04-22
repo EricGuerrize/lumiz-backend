@@ -497,6 +497,32 @@ EXEMPLO — usuário diz "comprei insumos na distribuidora, 18200 reais, pago em
 `.trim();
 }
 
+/**
+ * Prompt compacto para quando o texto já foi extraído via OCR (Google Vision).
+ * Omite contexto de negócio e exemplos — reduz ~70% de tokens vs buildDocumentExtractionPrompt.
+ * Use apenas quando textoExtraido já está disponível.
+ */
+function buildDocumentExtractionPromptSlim(textoExtraido) {
+  const dataHoje = getDataHoje();
+  return `TAREFA: Extrair dados financeiros estruturados do texto abaixo.
+DATA DE HOJE: ${dataHoje}
+
+TEXTO DO DOCUMENTO:
+${textoExtraido}
+
+REGRAS:
+- Boleto/NF/Fatura/Recibo → tipo "saida". Comprovante PIX enviado → "saida". Recebido → "entrada".
+- Valores sempre positivos. Data de emissão no formato YYYY-MM-DD.
+- Categoria (use exatamente uma): "Aluguel"|"Salários"|"Insumos"|"Fornecedores"|"Internet / Telefone"|"Água / Luz / Gás"|"Impostos"|"Marketing"|"Equipamentos"|"Serviços"|"Outros"
+- NUNCA use nomes de pessoas ou empresas como categoria.
+- BOLETO PARCELADO: "30/60"=2x, "30/60/90"=3x, "30/60/90/120"=4x. Calcule cada vencimento somando os dias à data de emissão. Campo "Fatura" no DANFE: liste cada parcela em condicoes_pagamento.
+- Se não houver parcelamento: parcelas=1, condicoes_pagamento=null.
+- Nota com "CANCELADA": alerte na descricao, NÃO registre como transação válida.
+
+RETORNE APENAS JSON (sem texto fora do JSON):
+{"tipo_documento":"nota_fiscal"|"boleto"|"comprovante_pix"|"extrato"|"fatura"|"recibo"|"nao_identificado","transacoes":[{"tipo":"entrada"|"saida","valor":0.00,"categoria":"","data":"YYYY-MM-DD","descricao":"","parcelas":1,"condicoes_pagamento":null}]}`.trim();
+}
+
 module.exports = {
   PERSONA,
   TIPOS_DOCUMENTO,
@@ -507,6 +533,7 @@ module.exports = {
   REGRAS_EXTRACAO,
   FORMATO_RESPOSTA_DOCUMENTO,
   buildDocumentExtractionPrompt,
+  buildDocumentExtractionPromptSlim,
   buildMdrExtractionPrompt,
   buildIntentClassificationPrompt,
   getDataHoje
