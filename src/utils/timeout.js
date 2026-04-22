@@ -43,7 +43,14 @@ function isRetriableError(error) {
   }
   
   // Rate Limit / Quota limits via error message (API clients that throw errors without response property)
-  if (error.message && (error.message.includes('429') || error.message.includes('Too Many Requests') || error.message.includes('Resource exhausted') || error.message.toLowerCase().includes('rate limit'))) {
+  const lowerMsg = error.message ? error.message.toLowerCase() : '';
+  if (
+    lowerMsg.includes('429') || 
+    lowerMsg.includes('too many requests') || 
+    lowerMsg.includes('resource exhausted') || 
+    lowerMsg.includes('rate limit') ||
+    lowerMsg.includes('quota exceeded')
+  ) {
     return true;
   }
   

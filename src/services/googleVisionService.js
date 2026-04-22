@@ -275,17 +275,40 @@ class GoogleVisionService {
     console.log('[VISION] Tamanho do texto extraído:', fullText.length, 'caracteres');
     
     const startTime = Date.now();
-    const geminiResult = await retryWithBackoff(
-      () => withTimeout(
-        geminiModel.generateContent(prompt),
-        IMAGE_PROCESSING_TIMEOUT_MS,
-        'Timeout ao processar texto com Gemini (60s)'
-      ),
-      4, // maxRetries aumentado para combater o 429 freq do Gemini Free (delay será de 3s, 6s, 12s, 24s)
-      3000 // initialDelayMs de 3 seg
-    );
+    let geminiResult;
+    let currentModel = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+    
+    try {
+      geminiResult = await retryWithBackoff(
+        () => withTimeout(
+          genAI.getGenerativeModel({ model: currentModel }).generateContent(prompt),
+          IMAGE_PROCESSING_TIMEOUT_MS,
+          `Timeout ao processar texto com Gemini ${currentModel} (60s)`
+        ),
+        6, // Aumentado para 6 tentativas de 5s, 10s, 20s... totalizando ~5 min de resiliência
+        5000 // initialDelayMs de 5 seg (mais agressivo na espera)
+      );
+    } catch (error) {
+      // Se falhou 429 no 2.0-flash, tenta o 1.5-flash como fallback (outra cota/menos congestionado)
+      if (currentModel === 'gemini-2.0-flash' && (error.message.includes('429') || error.message.includes('Resource exhausted'))) {
+        console.warn(`[VISION] Gemini 2.0-flash esgotado (429). Tentando FALLBACK com gemini-1.5-flash...`);
+        currentModel = 'gemini-1.5-flash';
+        geminiResult = await retryWithBackoff(
+          () => withTimeout(
+            genAI.getGenerativeModel({ model: currentModel }).generateContent(prompt),
+            IMAGE_PROCESSING_TIMEOUT_MS,
+            `Timeout no fallback com ${currentModel} (60s)`
+          ),
+          3,
+          2000
+        );
+      } else {
+        throw error;
+      }
+    }
+    
     const geminiDuration = Date.now() - startTime;
-    console.log('[VISION] ✅ Resposta do Gemini recebida em', geminiDuration, 'ms');
+    console.log(`[VISION] ✅ Resposta do Gemini (${currentModel}) recebida em`, geminiDuration, 'ms');
     
     const response = await geminiResult.response;
     const text = response.text();
