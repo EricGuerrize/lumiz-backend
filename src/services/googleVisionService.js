@@ -289,10 +289,10 @@ class GoogleVisionService {
         5000 // initialDelayMs de 5 seg (mais agressivo na espera)
       );
     } catch (error) {
-      // Se falhou 429 no 2.0-flash, tenta o 1.5-flash como fallback (outra cota/menos congestionado)
+      // Se falhou 429 no 2.0-flash, tenta o 2.5-flash como fallback (outra cota/geração)
       if (currentModel === 'gemini-2.0-flash' && (error.message.includes('429') || error.message.includes('Resource exhausted'))) {
-        console.warn(`[VISION] Gemini 2.0-flash esgotado (429). Tentando FALLBACK com gemini-1.5-flash...`);
-        currentModel = 'gemini-1.5-flash';
+        console.warn(`[VISION] Gemini 2.0-flash esgotado (429). Tentando FALLBACK com gemini-2.5-flash...`);
+        currentModel = 'gemini-2.5-flash';
         geminiResult = await retryWithBackoff(
           () => withTimeout(
             genAI.getGenerativeModel({ model: currentModel }).generateContent(prompt),
