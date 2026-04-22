@@ -39,8 +39,9 @@ class GeminiService {
         lastError = error;
         const message = String(error?.message || '').toLowerCase();
         const modelNotFound = message.includes('not found') || message.includes('not supported');
-        if (modelNotFound) {
-          console.warn(`[GEMINI] Modelo indisponível (${modelName}), tentando próximo fallback...`);
+        const isRateLimit = error?.status === 429 || message.includes('429') || message.includes('resource exhausted') || message.includes('too many requests');
+        if (modelNotFound || isRateLimit) {
+          console.warn(`[GEMINI] Modelo ${modelName} indisponível (${isRateLimit ? 'rate limit' : 'não encontrado'}), tentando próximo fallback...`);
           continue;
         }
         throw error;
@@ -352,7 +353,7 @@ RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
       );
 
       const result = await Promise.race([
-        retryWithBackoff(() => this.generateWithFallback(parts), 1, 0),
+        retryWithBackoff(() => this.generateWithFallback(parts), 3, 2000),
         timeoutPromise
       ]);
 
