@@ -402,7 +402,7 @@ class MessageController {
       const mensagemSimples = palavras.length <= 2;
 
       // Se heurística não funcionou ou confiança baixa, chama Gemini
-      if (!mensagemSimples && (!intent || intent.confidence < 0.7)) {
+      if (!intent || intent.confidence < 0.7) {
         // Busca contexto histórico (RAG) - só se for chamar Gemini e se usuário existir
         let recentHistory = [];
         let similarExamples = [];
@@ -593,31 +593,12 @@ class MessageController {
 
       case 'relatorio_mensal':
         if (intent.dados?.formato === 'pdf' || message.toLowerCase().includes('pdf')) {
-          await pdfQueueService.addJob('monthly_report_pdf', {
-            userId: user.id,
-            phone: phone,
-            params: intent.dados
-          });
-          return null; // PDF será enviado via fila
+          return await this.exportHandler.handleExportData(user, phone, { ...intent.dados, formato: 'pdf' });
         }
         return await this.queryHandler.handleMonthlyReport(user, intent.dados);
 
       case 'exportar_dados':
-        const formato = intent.dados?.formato || (message.toLowerCase().includes('excel') || message.toLowerCase().includes('planilha') || message.toLowerCase().includes('csv') ? 'excel' : 'pdf');
-        if (formato === 'excel' || formato === 'csv') {
-          await pdfQueueService.addJob('export_data_excel', {
-            userId: user.id,
-            phone: phone,
-            params: { ...intent.dados, formato }
-          });
-          return null;
-        }
-        await pdfQueueService.addJob('export_data_pdf', {
-          userId: user.id,
-          phone: phone,
-          params: intent.dados
-        });
-        return null;
+        return await this.exportHandler.handleExportData(user, phone, intent.dados);
 
       case 'comparar_meses':
         if (intent.dados?.periodo1 || intent.dados?.periodo2) {

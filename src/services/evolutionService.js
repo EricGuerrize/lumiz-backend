@@ -210,7 +210,8 @@ class EvolutionService {
 
       const payload = {
         number: phone,
-        text: message
+        text: message,
+        delay: 0
       };
 
       // Adiciona retry com timeout
@@ -285,7 +286,8 @@ class EvolutionService {
         media: base64Data,
         mediatype: 'document',
         mimetype: mimeType,
-        fileName: fileName
+        fileName: fileName,
+        delay: 0
       };
 
       const response = await retryWithBackoff(
@@ -318,7 +320,8 @@ class EvolutionService {
         number: phone,
         media: videoUrl,
         mediatype: 'video',
-        caption: caption
+        caption: caption,
+        delay: 0
       };
 
       const response = await retryWithBackoff(
@@ -353,7 +356,8 @@ class EvolutionService {
       const url = `${this.baseUrl}/chat/sendPresence/${this.instanceName}`;
       const payload = {
         number: phone,
-        presence: presence
+        presence: presence,
+        delay: 0
       };
 
       await this.axiosInstance.post(url, payload, {

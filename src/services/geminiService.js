@@ -1,3 +1,4 @@
+
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { withTimeout, retryWithBackoff } = require('../utils/timeout');
 require('dotenv').config();
@@ -123,7 +124,7 @@ INTENÇÕES:
 - stats_hoje: vendas hoje, faturamento hoje, quanto fiz hoje, faturamento do dia, resultado de hoje, como foi hoje, balanço de hoje
 - ranking_procedimentos: qual mais vendido, procedimento mais vendido, ranking, top procedimentos, melhores procedimentos, mais atendido
 - marcar_parcela_paga: recebi parcela, paguei parcela, parcela paga, recebeu parcela, baixar parcela, quitar parcela
-- exportar_dados: exportar, baixar relatório, me manda pdf, excel, planilha, download, gerar relatório
+- exportar_dados: exportar, baixar relatório, me manda pdf, excel, planilha, download, gerar relatório, gerar pdf
 - consultar_agenda: agenda, agendamentos, compromissos, consultas marcadas, ver agenda
 - consultar_meta: meta, minha meta, progresso, objetivo, quanto falta, atingir meta
 - insights: insights, dicas, sugestoes, sugestões, recomendacoes, recomendações

@@ -100,8 +100,8 @@ class IntentHeuristicService {
         'quero faturar', 'meta para', 'objetivo para'
       ],
       exportar_dados: [
-        'exportar', 'baixar relatório', 'baixar relatorio', 'me manda pdf',
-        'excel', 'planilha', 'download', 'gerar relatório', 'gerar relatorio'
+        'exportar', 'baixar relatório', 'baixar relatorio', 'me manda pdf', 'mandar pdf',
+        'excel', 'planilha', 'download', 'gerar relatório', 'gerar relatorio', 'gerar pdf', 'pdf'
       ],
       adicionar_numero: [
         'cadastrar número', 'cadastrar numero', 'adicionar número', 'adicionar numero',
@@ -327,6 +327,7 @@ class IntentHeuristicService {
         }
 
         detectedIntent = intent;
+        console.log(`[HEURISTIC] Match encontrado: ${intent} (confiança: ${confidence})`);
         break; // Primeira match vence
       }
     }

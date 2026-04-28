@@ -36,7 +36,7 @@ class ExportHandler {
 
       const pdfBuffer = await pdfService.generateMonthlyReportPDF(user.id, year, month);
       const base64Pdf = pdfBuffer.toString('base64');
-      const mesNome = now.toLocaleDateString('pt-BR', { month: 'long' });
+      const mesNome = new Date(year, month - 1, 1).toLocaleDateString('pt-BR', { month: 'long' });
       const fileName = `Relatorio_${mesNome}_${year}.pdf`;
 
       await evolutionService.sendMessage(
@@ -45,7 +45,7 @@ class ExportHandler {
       );
 
       // Envia PDF via Evolution API
-      await evolutionService.sendMedia(phone, base64Pdf, 'application/pdf', fileName);
+      await evolutionService.sendDocument(phone, base64Pdf, fileName, 'application/pdf');
 
       return null; // Já enviou via media
     } catch (error) {
@@ -72,9 +72,14 @@ class ExportHandler {
       const year = dados?.ano || now.getFullYear();
       const month = dados?.mes || now.getMonth() + 1;
 
-      const excelBuffer = await excelService.generateMonthlyExcel(user.id, year, month);
+      let excelBuffer;
+      if (formato === 'csv') {
+        excelBuffer = await excelService.generateCSVReport(user.id, year, month);
+      } else {
+        excelBuffer = await excelService.generateExcelReport(user.id, year, month);
+      }
       const base64Excel = excelBuffer.toString('base64');
-      const mesNome = now.toLocaleDateString('pt-BR', { month: 'long' });
+      const mesNome = new Date(year, month - 1, 1).toLocaleDateString('pt-BR', { month: 'long' });
       const extension = formato === 'csv' ? 'csv' : 'xlsx';
       const fileName = `Relatorio_${mesNome}_${year}.${extension}`;
       const mimeType = formato === 'csv' ? 'text/csv' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -84,7 +89,7 @@ class ExportHandler {
         `✅ *Planilha gerada!*\n\nEnviando arquivo...`
       );
 
-      await evolutionService.sendMedia(phone, base64Excel, mimeType, fileName);
+      await evolutionService.sendDocument(phone, base64Excel, fileName, mimeType);
 
       return null; // Já enviou via media
     } catch (error) {
