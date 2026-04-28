@@ -350,7 +350,7 @@ class EvolutionService {
    */
   async sendPresenceUpdate(phone, presence = 'composing') {
     try {
-      const url = `${this.baseUrl}/chat/sendPresenceUpdate/${this.instanceName}`;
+      const url = `${this.baseUrl}/chat/sendPresence/${this.instanceName}`;
       const payload = {
         number: phone,
         presence: presence
