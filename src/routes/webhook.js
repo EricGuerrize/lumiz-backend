@@ -164,137 +164,103 @@ const webhookHandler = async (req, res) => {
       const documentMessage = message.documentMessage;
 
       if (phone) {
-        // Processa e envia resposta
-        try {
-          let response = '';
+        // Responde 200 OK imediatamente para a Evolution API
+        // Isso previne timeouts, reenvios e o erro "Aguardando mensagem" no WhatsApp
+        res.status(200).json({ status: 'received' });
 
-          if (imageMessage) {
-            // Mensagem com imagem
+        // Processa em segundo plano para não segurar a conexão
+        (async () => {
+          try {
+            // Envia sinal de "digitando..." para feedback visual imediato
+            await evolutionService.sendPresenceUpdate(phone, 'composing');
 
-            const caption = imageMessage.caption || '';
-            const messageKey = key;
+            let response = '';
 
-            // PRIORIDADE 1: Se tem base64 no webhook (Webhook Base64 ativado), usa diretamente
-            // Tenta diferentes nomes de campos que podem conter base64
-            let base64Data = imageMessage.media || imageMessage.base64 || imageMessage.mediaBase64 || imageMessage.data;
+            if (imageMessage) {
+              // Mensagem com imagem
+              const caption = imageMessage.caption || '';
+              const messageKey = key;
+              let base64Data = imageMessage.media || imageMessage.base64 || imageMessage.mediaBase64 || imageMessage.data;
 
-            if (base64Data) {
-              try {
-                // Remove data URL prefix se existir (data:image/jpeg;base64,)
-                if (typeof base64Data === 'string' && base64Data.includes(',')) {
-                  base64Data = base64Data.split(',')[1];
-                }
-
-                const imageBuffer = Buffer.from(base64Data, 'base64');
-                const mimeType = imageMessage.mimetype || 'image/jpeg';
-
-                // Processa diretamente com o buffer
-                response = await messageController.handleImageMessageWithBuffer(phone, imageBuffer, mimeType, caption, messageKey);
-              } catch (imgError) {
-                console.error(`[WEBHOOK] [IMG] ❌ Erro ao processar base64:`, imgError.message);
-                console.error(`[WEBHOOK] [IMG] Stack:`, imgError.stack);
-                response = 'Erro ao processar imagem 😢\n\nTente enviar novamente ou registre manualmente.';
-              }
-            } else {
-              // PRIORIDADE 2: Tenta URL ou download via API (quando Webhook Base64 está desativado)
-              const mediaUrl = imageMessage.url || imageMessage.directPath;
-
-              if (!mediaUrl) {
-                console.error('[WEBHOOK] [IMG] ❌ Erro: URL, directPath e base64 estão vazios!');
-                console.error('[WEBHOOK] [IMG] imageMessage completo:', JSON.stringify(imageMessage, null, 2).substring(0, 1000));
-                response = 'Não consegui acessar a imagem 😢\n\nA Evolution API não forneceu a mídia.\n\nVerifique a configuração do webhook na Evolution API.\n\nTente enviar novamente ou registre manualmente.';
-              } else {
+              if (base64Data) {
                 try {
-                  response = await messageController.handleImageMessage(phone, mediaUrl, caption, messageKey);
+                  if (typeof base64Data === 'string' && base64Data.includes(',')) {
+                    base64Data = base64Data.split(',')[1];
+                  }
+                  const imageBuffer = Buffer.from(base64Data, 'base64');
+                  const mimeType = imageMessage.mimetype || 'image/jpeg';
+                  response = await messageController.handleImageMessageWithBuffer(phone, imageBuffer, mimeType, caption, messageKey);
                 } catch (imgError) {
-                  console.error(`[WEBHOOK] [IMG] ❌ Erro ao processar imagem:`, imgError.message);
-                  console.error(`[WEBHOOK] [IMG] Stack:`, imgError.stack);
+                  console.error(`[WEBHOOK] [IMG] ❌ Erro ao processar base64:`, imgError.message);
                   response = 'Erro ao processar imagem 😢\n\nTente enviar novamente ou registre manualmente.';
                 }
-              }
-            }
-          } else if (documentMessage) {
-            // Mensagem com documento (PDF, etc)
-            const caption = documentMessage.caption || '';
-            const fileName = documentMessage.fileName || 'documento';
-            const messageKey = key;
-
-            // Tenta obter Base64 (igual imagens)
-            let base64Data = documentMessage.media || documentMessage.base64 || documentMessage.mediaBase64 || documentMessage.data;
-
-            if (base64Data) {
-              try {
-                // Remove data URL prefix
-                if (typeof base64Data === 'string' && base64Data.includes(',')) {
-                  base64Data = base64Data.split(',')[1];
-                }
-
-                const docBuffer = Buffer.from(base64Data, 'base64');
-                const mimeType = documentMessage.mimetype || 'application/pdf';
-
-                response = await messageController.handleDocumentMessageWithBuffer(phone, docBuffer, mimeType, fileName, messageKey);
-              } catch (docError) {
-                console.error(`[WEBHOOK] [DOC] ❌ Erro ao processar base64:`, docError.message);
-                response = 'Erro ao processar documento 😢';
-              }
-            } else {
-              // Fallback URL
-              const mediaUrl = documentMessage.url || documentMessage.directPath;
-              try {
-                response = await messageController.handleDocumentMessage(phone, mediaUrl, fileName, messageKey);
-              } catch (docError) {
-                console.error(`[WEBHOOK] [DOC] Erro ao processar documento:`, docError.message);
-                response = 'Erro ao processar documento 😢\n\nTente enviar uma foto ou registre manualmente.';
-              }
-            }
-          } else if (messageText) {
-            // Mensagem de texto normal
-            console.error(`[WEBHOOK] [MSG] ${phone}: ${messageText.substring(0, 50)}`);
-            try {
-              response = await messageController.handleIncomingMessage(phone, messageText);
-            } catch (msgError) {
-              console.error(`[WEBHOOK] [MSG] Erro ao processar mensagem:`, msgError.message);
-              response = 'Erro ao processar mensagem 😢\n\nTente novamente.';
-            }
-          }
-
-          // Garante que response é uma string válida antes de enviar
-          if (response && typeof response === 'string' && response.trim().length > 0) {
-            try {
-              await evolutionService.sendMessage(phone, response);
-            } catch (sendError) {
-              // Não tenta enviar mensagem de erro se o número é inválido
-              if (sendError.code === 'INVALID_PHONE') {
-                console.error(`[WEBHOOK] ❌ Número de telefone inválido: ${phone}`);
               } else {
-                console.error(`[WEBHOOK] ❌ Erro ao enviar resposta:`, sendError.message);
-                // Só tenta enviar mensagem de erro se o número é válido
-                if (evolutionService.validatePhoneNumber(phone)) {
+                const mediaUrl = imageMessage.url || imageMessage.directPath;
+                if (!mediaUrl) {
+                  response = 'Não consegui acessar a imagem 😢\n\nA Evolution API não forneceu a mídia.';
+                } else {
                   try {
-                    await evolutionService.sendMessage(phone, 'Ops, tive um probleminha 😅\n\nTente novamente em alguns instantes.');
-                  } catch (retryError) {
-                    console.error('[WEBHOOK] ❌ Erro ao enviar mensagem de erro:', retryError.message);
+                    response = await messageController.handleImageMessage(phone, mediaUrl, caption, messageKey);
+                  } catch (imgError) {
+                    console.error(`[WEBHOOK] [IMG] ❌ Erro ao processar imagem:`, imgError.message);
+                    response = 'Erro ao processar imagem 😢';
                   }
                 }
               }
+            } else if (documentMessage) {
+              // Mensagem com documento
+              const fileName = documentMessage.fileName || 'documento';
+              const messageKey = key;
+              let base64Data = documentMessage.media || documentMessage.base64 || documentMessage.mediaBase64 || documentMessage.data;
+
+              if (base64Data) {
+                try {
+                  if (typeof base64Data === 'string' && base64Data.includes(',')) {
+                    base64Data = base64Data.split(',')[1];
+                  }
+                  const docBuffer = Buffer.from(base64Data, 'base64');
+                  const mimeType = documentMessage.mimetype || 'application/pdf';
+                  response = await messageController.handleDocumentMessageWithBuffer(phone, docBuffer, mimeType, fileName, messageKey);
+                } catch (docError) {
+                  console.error(`[WEBHOOK] [DOC] ❌ Erro ao processar base64:`, docError.message);
+                  response = 'Erro ao processar documento 😢';
+                }
+              } else {
+                const mediaUrl = documentMessage.url || documentMessage.directPath;
+                try {
+                  response = await messageController.handleDocumentMessage(phone, mediaUrl, fileName, messageKey);
+                } catch (docError) {
+                  console.error(`[WEBHOOK] [DOC] Erro ao processar documento:`, docError.message);
+                  response = 'Erro ao processar documento 😢';
+                }
+              }
+            } else if (messageText) {
+              // Mensagem de texto normal
+              try {
+                response = await messageController.handleIncomingMessage(phone, messageText);
+              } catch (msgError) {
+                console.error(`[WEBHOOK] [MSG] Erro ao processar mensagem:`, msgError.message);
+                response = 'Erro ao processar mensagem 😢';
+              }
             }
-          } else if (response !== undefined && response !== '') {
-            console.error(`[WEBHOOK] Resposta inválida para ${phone}: tipo=${typeof response}`);
-          }
-        } catch (error) {
-          console.error('[WEBHOOK] ❌ Erro geral no processamento:', error.message);
-          console.error('[WEBHOOK] Stack:', error.stack);
-          // Tenta enviar mensagem de erro genérica apenas se o número é válido
-          if (phone && evolutionService.validatePhoneNumber(phone)) {
-            try {
+
+            // Envia a resposta final
+            if (response && typeof response === 'string' && response.trim().length > 0) {
+              await evolutionService.sendMessage(phone, response);
+            }
+
+            // Para o sinal de "digitando"
+            await evolutionService.sendPresenceUpdate(phone, 'paused');
+
+          } catch (bgError) {
+            console.error('[WEBHOOK] [BG] ❌ Erro no processamento em segundo plano:', bgError.message);
+            if (evolutionService.validatePhoneNumber(phone)) {
               await evolutionService.sendMessage(phone, 'Ops, tive um probleminha 😅\n\nTente novamente em alguns instantes.');
-            } catch (sendError) {
-              console.error('[WEBHOOK] ❌ Erro ao enviar mensagem de erro:', sendError.message);
             }
-          } else {
-            console.error('[WEBHOOK] ❌ Número de telefone inválido, não é possível enviar mensagem de erro');
           }
-        }
+        })();
+
+        return; // Sai do handler principal (já respondeu 200)
       }
     }
 

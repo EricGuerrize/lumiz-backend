@@ -342,6 +342,31 @@ class EvolutionService {
       throw error;
     }
   }
+
+  /**
+   * Envia atualização de presença (composing, recording, etc.)
+   * @param {string} phone - Número do telefone
+   * @param {string} presence - 'composing', 'recording', 'paused'
+   */
+  async sendPresenceUpdate(phone, presence = 'composing') {
+    try {
+      const url = `${this.baseUrl}/chat/sendPresenceUpdate/${this.instanceName}`;
+      const payload = {
+        number: phone,
+        presence: presence
+      };
+
+      await this.axiosInstance.post(url, payload, {
+        headers: {
+          'apikey': this.apiKey,
+          'Content-Type': 'application/json'
+        }
+      });
+    } catch (error) {
+      // Ignora erro de presença para não travar o fluxo principal
+      console.warn('[EVOLUTION] Erro ao enviar presence update (não crítico):', error.message);
+    }
+  }
 }
 
 module.exports = new EvolutionService();

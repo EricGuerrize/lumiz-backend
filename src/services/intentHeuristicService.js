@@ -19,6 +19,28 @@ class IntentHeuristicService {
   constructor() {
     // Palavras-chave para intents
     this.keywords = {
+      consultar_saldo: [
+        'saldo', 'resumo', 'lucro', 'quanto tenho', 'quanto sobrou', 'sobra',
+        'disponível', 'disponivel', 'caixa', 'dinheiro disponível'
+      ],
+      consultar_historico: [
+        'histórico', 'historico', 'últimas', 'ultimas', 'movimentações',
+        'movimentacoes', 'transações', 'transacoes', 'últimas vendas',
+        'ultimas vendas', 'últimos custos', 'ultimos custos'
+      ],
+      relatorio_mensal: [
+        'relatório', 'relatorio', 'mês', 'mes', 'mensal', 'relatório mensal',
+        'relatorio mensal', 'resumo mensal', 'faturamento mensal'
+      ],
+      stats_hoje: [
+        'vendas hoje', 'faturamento hoje', 'quanto fiz hoje', 'faturamento do dia',
+        'resultado de hoje', 'como foi hoje', 'balanço de hoje', 'hoje vendi',
+        'hoje faturado', 'vendas do dia'
+      ],
+      buscar_transacao: [
+        'buscar', 'encontrar', 'procurar', 'achar', 'mostrar transação',
+        'mostrar transacao', 'procurar transação', 'procurar transacao'
+      ],
       registrar_entrada: [
         'botox', 'preenchimento', 'harmonização', 'harmonizacao', 'bioestimulador',
         'fios', 'peeling', 'laser', 'paciente', 'cliente', 'procedimento',
@@ -31,24 +53,6 @@ class IntentHeuristicService {
         'pagar', 'despesa', 'custo', 'gasto', 'conta de', 'salário', 'salario',
         'luz', 'agua', 'água', 'telefone', 'celular', 'gas', 'gás', 'condominio',
         'condomínio', 'manutencao', 'manutenção'
-      ],
-      consultar_saldo: [
-        'saldo', 'resumo', 'lucro', 'quanto tenho', 'quanto sobrou', 'sobra',
-        'disponível', 'disponivel', 'caixa', 'dinheiro disponível'
-      ],
-      stats_hoje: [
-        'vendas hoje', 'faturamento hoje', 'quanto fiz hoje', 'faturamento do dia',
-        'resultado de hoje', 'como foi hoje', 'balanço de hoje', 'hoje vendi',
-        'hoje faturado', 'vendas do dia'
-      ],
-      consultar_historico: [
-        'histórico', 'historico', 'últimas', 'ultimas', 'movimentações',
-        'movimentacoes', 'transações', 'transacoes', 'últimas vendas',
-        'ultimas vendas', 'últimos custos', 'ultimos custos'
-      ],
-      relatorio_mensal: [
-        'relatório', 'relatorio', 'mês', 'mes', 'mensal', 'relatório mensal',
-        'relatorio mensal', 'resumo mensal', 'faturamento mensal'
       ],
       consultar_parcelas: [
         'parcelas', 'parcelado', 'cartão', 'cartao', 'receber', 'a receber',
@@ -90,10 +94,6 @@ class IntentHeuristicService {
       editar_transacao: [
         'editar última', 'editar ultima', 'corrigir última', 'corrigir ultima',
         'mudar última', 'mudar ultima', 'alterar última', 'alterar ultima'
-      ],
-      buscar_transacao: [
-        'buscar', 'encontrar', 'procurar', 'achar', 'mostrar transação',
-        'mostrar transacao', 'procurar transação', 'procurar transacao'
       ],
       definir_meta: [
         'minha meta é', 'minha meta e', 'definir meta', 'meta de', 'objetivo de',
@@ -312,9 +312,12 @@ class IntentHeuristicService {
     for (const [intent, keywords] of Object.entries(this.keywords)) {
       const matches = keywords.filter(kw => normalized.includes(kw));
       if (matches.length > 0) {
+        // Verifica se é um match exato (a mensagem é exatamente uma das palavras-chave)
+        const isExactMatch = keywords.some(kw => normalized === kw);
+        
         // Confiança baseada no número de matches e especificidade
         const matchRatio = matches.length / keywords.length;
-        const baseConfidence = Math.min(0.5 + (matchRatio * 0.4), 0.9);
+        let baseConfidence = isExactMatch ? 0.95 : Math.min(0.5 + (matchRatio * 0.4), 0.9);
 
         // Aumenta confiança se tiver valor numérico para transações
         if ((intent === 'registrar_entrada' || intent === 'registrar_saida') && this.extractValue(original)) {

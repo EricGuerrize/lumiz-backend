@@ -6,28 +6,27 @@ class HelpHandler {
    * Mostra ajuda
    */
   handleHelp() {
-    return `*COMANDOS DISPONÍVEIS*\n\n` +
-      `💰 *Registrar Vendas:*\n` +
+    return `COMANDOS DISPONÍVEIS\n\n` +
+      `💰 Registrar Vendas:\n` +
       `"Botox 2800"\n` +
       `"Preenchimento 3500 cliente Maria"\n\n` +
-      `💸 *Registrar Custos:*\n` +
+      `💸 Registrar Custos:\n` +
       `"Insumos 1500"\n` +
       `"Aluguel 2500"\n\n` +
-      `📊 *Consultas:*\n` +
+      `📊 Consultas:\n` +
       `"saldo" - Ver saldo atual\n` +
       `"histórico" - Últimas movimentações\n` +
       `"relatório" - Relatório mensal\n` +
       `"stats hoje" - Estatísticas do dia\n\n` +
-      `🔍 *Buscar:*\n` +
+      `🔍 Buscar:\n` +
       `"buscar botox" - Busca transações\n` +
       `"buscar 2800" - Busca por valor\n\n` +
-      `📄 *Documentos:*\n` +
+      `📄 Documentos:\n` +
       `Envie foto de boleto, nota fiscal ou extrato\n\n` +
-      `⚙️ *Outros:*\n` +
+      `⚙️ Outros:\n` +
       `"desfazer" - Remove última transação\n` +
       `"editar" - Edita uma transação\n` +
-      `"meta" - Ver progresso da meta\n\n` +
-      `Precisa de mais ajuda? É só perguntar! 😊`;
+      `"meta" - Ver progresso da meta`;
   }
 
   /**
@@ -81,10 +80,10 @@ class HelpHandler {
         response += `Exemplo:\n_"Botox ${message}"_ se foi venda\n_"Insumos ${message}"_ se foi custo\n\n`;
       } else {
         response += `Posso te ajudar com:\n`;
-        response += `• Registrar vendas: _"Botox 2800"_\n`;
-        response += `• Registrar custos: _"Insumos 1500"_\n`;
-        response += `• Ver saldo: _"saldo"_\n`;
-        response += `• Ver histórico: _"histórico"_\n\n`;
+        response += `• Registrar vendas: "Botox 2800"\n`;
+        response += `• Registrar custos: "Insumos 1500"\n`;
+        response += `• Ver saldo: "saldo"\n`;
+        response += `• Ver histórico: "histórico"\n\n`;
       }
 
       // Sugere baseado no histórico se tiver
