@@ -125,6 +125,79 @@ router.get('/users', async (req, res) => {
   }
 });
 
+// GET /api/admin/subscription-stats
+// Métricas de assinatura: totais + lista de clínicas com status de plano
+router.get('/subscription-stats', async (req, res) => {
+  try {
+    const { data: profiles, error } = await supabase
+      .from('profiles')
+      .select('id, nome_clinica, email, telefone, created_at, is_active')
+      .order('created_at', { ascending: false })
+      .limit(500);
+
+    if (error) throw error;
+
+    const ids = (profiles || []).map(p => p.id);
+
+    const [{ data: subscriptions }, lastMsgData] = await Promise.all([
+      supabase
+        .from('subscriptions')
+        .select('clinic_id, status, trial_ends_at, plan_expires_at')
+        .in('clinic_id', ids),
+      ids.length > 0
+        ? supabase
+            .from('conversation_history')
+            .select('user_id, created_at')
+            .in('user_id', ids)
+            .order('created_at', { ascending: false })
+        : Promise.resolve({ data: [] })
+    ]);
+
+    const subMap = Object.fromEntries((subscriptions || []).map(s => [s.clinic_id, s]));
+
+    const seen = new Set();
+    const lastMap = Object.fromEntries(
+      (lastMsgData.data || [])
+        .filter(row => { if (seen.has(row.user_id)) return false; seen.add(row.user_id); return true; })
+        .map(m => [m.user_id, m])
+    );
+
+    const now = Date.now();
+    const clinics = (profiles || []).map(p => {
+      const sub = subMap[p.id] || null;
+      const trialEndsAt = sub?.trial_ends_at ? new Date(sub.trial_ends_at) : null;
+      const daysRemaining = trialEndsAt
+        ? Math.max(0, Math.ceil((trialEndsAt.getTime() - now) / (1000 * 60 * 60 * 24)))
+        : null;
+      return {
+        id: p.id,
+        nome_clinica: p.nome_clinica,
+        email: p.email,
+        telefone: p.telefone,
+        created_at: p.created_at,
+        is_active: p.is_active,
+        status: sub?.status || null,
+        trial_ends_at: sub?.trial_ends_at || null,
+        plan_expires_at: sub?.plan_expires_at || null,
+        days_remaining: daysRemaining,
+        last_message_at: lastMap[p.id]?.created_at || null,
+      };
+    });
+
+    const summary = {
+      total: clinics.length,
+      trial: clinics.filter(c => c.status === 'trial').length,
+      paid: clinics.filter(c => c.status === 'paid').length,
+      expired: clinics.filter(c => c.status === 'expired' || c.status === 'cancelled').length,
+      no_plan: clinics.filter(c => !c.status).length,
+    };
+
+    res.json({ summary, clinics });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/admin/feedback?type=&limit=&offset=
 router.get('/feedback', async (req, res) => {
   try {

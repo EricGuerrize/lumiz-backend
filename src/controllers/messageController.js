@@ -1,3 +1,4 @@
+
 const geminiService = require('../services/geminiService');
 const evolutionService = require('../services/evolutionService');
 const userController = require('./userController');
@@ -182,6 +183,20 @@ class MessageController {
       const clinicMemberService = require('../services/clinicMemberService');
       const existingMember = await clinicMemberService.findMemberByPhone(normalizedPhone);
       console.log(`[MESSAGE] existingMember encontrado:`, existingMember ? `${existingMember.nome} (clinic_id: ${existingMember.clinic_id})` : 'NAO');
+
+      // Verifica assinatura ativa antes de processar qualquer mensagem
+      if (existingMember && existingMember.clinic_id) {
+        const subscriptionService = require('../services/subscriptionService');
+        const blocked = await subscriptionService.isBlocked(existingMember.clinic_id);
+        if (blocked) {
+          const paymentService = require('../services/paymentService');
+          const subscriptionCopy = require('../copy/subscriptionCopy');
+          const evolutionService = require('../services/evolutionService');
+          const paymentUrl = await paymentService.generatePaymentLink(existingMember.clinic_id);
+          await evolutionService.sendMessage(normalizedPhone, subscriptionCopy.subscriptionExpired(paymentUrl));
+          return;
+        }
+      }
 
       // Se é membro de uma clínica, verifica se está em onboarding ATIVO
       // Só limpa estado de onboarding se estiver em steps FINAIS (já completou o fluxo principal)

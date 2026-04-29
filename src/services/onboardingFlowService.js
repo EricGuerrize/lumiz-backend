@@ -2122,6 +2122,20 @@ class OnboardingFlowService {
                 source: 'whatsapp',
                 properties: { step: onboarding?.step || null }
             });
+
+            const clinicId = onboarding?.data?.userId;
+            if (clinicId) {
+                try {
+                    const subscriptionService = require('./subscriptionService');
+                    const evolutionSvc = require('./evolutionService');
+                    const subscriptionCopy = require('../copy/subscriptionCopy');
+                    await subscriptionService.startTrial(clinicId);
+                    await evolutionSvc.sendMessage(normalizedPhone, subscriptionCopy.trialStarted()).catch(() => {});
+                } catch (e) {
+                    console.error('[SUBSCRIPTION] Falha ao iniciar trial:', e?.message);
+                }
+            }
+
             return finalText;
         };
 

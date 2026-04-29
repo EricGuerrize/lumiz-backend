@@ -40,6 +40,7 @@ const authRoutes = require('./routes/auth.routes');
 const mdrRoutes = require('./routes/mdr.routes');
 const clinicMembersRoutes = require('./routes/clinicMembers.routes');
 const adminRoutes = require('./routes/admin.routes');
+const asaasWebhookRoutes = require('./routes/webhooks');
 const reminderService = require('./services/reminderService');
 const nudgeService = require('./services/nudgeService');
 const insightService = require('./services/insightService');
@@ -211,6 +212,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/mdr', mdrRoutes);
 app.use('/api/clinic-members', clinicMembersRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/webhooks', asaasWebhookRoutes);
 
 app.get('/health', async (req, res) => {
   const startTime = Date.now();
@@ -318,6 +320,8 @@ app.get('/api/cron/reminders', async (req, res) => {
     const reminders = await reminderService.checkAndSendReminders();
     const nudges = await nudgeService.checkAndSendNudges();
     const insights = await insightService.generateDailyInsights();
+    const trialReminderService = require('./services/trialReminderService');
+    const trialReminders = await trialReminderService.checkAndSendReminders();
 
     res.json({
       status: 'success',
@@ -325,9 +329,11 @@ app.get('/api/cron/reminders', async (req, res) => {
       reminders_sent: reminders.length,
       nudge_sent: nudges.length,
       insights_generated: insights.length,
+      trial_reminders_sent: trialReminders.length,
       reminders,
       nudges,
-      insights
+      insights,
+      trialReminders
     });
   } catch (error) {
     console.error('[CRON] Erro:', error);
