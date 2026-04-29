@@ -5,16 +5,13 @@ const betaFeedbackService = require('../services/betaFeedbackService');
 const { authenticateFlexible } = require('../middleware/authMiddleware');
 const evolutionService = require('../services/evolutionService');
 
-// Verifica se o usuário autenticado é admin
+// Verifica se o usuário autenticado é admin via RPC SECURITY DEFINER (bypassa RLS)
 async function requireAdmin(req, res, next) {
   try {
-    const { data: role } = await supabase
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', req.user.id)
-      .maybeSingle();
+    const { data: isAdmin, error } = await supabase
+      .rpc('is_user_admin', { p_user_id: req.user.id });
 
-    if (role?.role !== 'admin') {
+    if (error || !isAdmin) {
       return res.status(403).json({ error: 'Acesso restrito' });
     }
     next();
