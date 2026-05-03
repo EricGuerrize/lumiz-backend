@@ -1,0 +1,3 @@
+ALTER TABLE contas_pagar
+  ADD COLUMN IF NOT EXISTS data_vencimento DATE,
+  ADD COLUMN IF NOT EXISTS prioridade INTEGER DEFAULT 5;
