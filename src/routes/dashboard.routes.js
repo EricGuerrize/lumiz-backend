@@ -3,6 +3,10 @@ const router = express.Router();
 const supabase = require('../db/supabase');
 const transactionController = require('../controllers/transactionController');
 const cashflowService = require('../services/cashflowService');
+const simulatorService = require('../services/simulatorService');
+const pricingIntelligenceService = require('../services/pricingIntelligenceService');
+const emergencyModeService = require('../services/emergencyModeService');
+const exportService = require('../services/exportService');
 const userController = require('../controllers/userController');
 const { authenticateFlexible } = require('../middleware/authMiddleware');
 const { validate } = require('../middleware/validationMiddleware');
@@ -558,6 +562,69 @@ router.get('/calendar', async (req, res) => {
   } catch (error) {
     console.error('Error getting financial calendar:', error);
     res.status(500).json({ error: 'Failed to get financial calendar' });
+  }
+});
+
+// GET /api/dashboard/simulator/scenario - Simulador what-if
+router.get('/simulator/scenario', async (req, res) => {
+  try {
+    const result = await simulatorService.runScenario(req.user.id, {
+      extraRevenue: parseFloat(req.query.extra_revenue) || 0,
+      cutExpensePct: parseFloat(req.query.cut_expense_pct) || 0,
+      newFixedCost: parseFloat(req.query.new_fixed_cost) || 0,
+      month: req.query.month ? parseInt(req.query.month) : undefined,
+      year: req.query.year ? parseInt(req.query.year) : undefined,
+    });
+    res.json(result);
+  } catch (error) {
+    console.error('Error running simulator:', error);
+    res.status(500).json({ error: 'Failed to run scenario' });
+  }
+});
+
+// GET /api/dashboard/insights/pricing - Análise de precificação
+router.get('/insights/pricing', async (req, res) => {
+  try {
+    const months = Math.min(parseInt(req.query.months) || 3, 12);
+    const result = await pricingIntelligenceService.analyze(req.user.id, { months });
+    res.json(result);
+  } catch (error) {
+    console.error('Error getting pricing insights:', error);
+    res.status(500).json({ error: 'Failed to get pricing insights' });
+  }
+});
+
+// GET /api/dashboard/emergency/status - Status de caixa de emergência
+router.get('/emergency/status', async (req, res) => {
+  try {
+    const result = await emergencyModeService.getStatus(req.user.id);
+    res.json(result);
+  } catch (error) {
+    console.error('Error getting emergency status:', error);
+    res.status(500).json({ error: 'Failed to get emergency status' });
+  }
+});
+
+// GET /api/dashboard/export/report - Exportar relatório (PDF ou CSV)
+router.get('/export/report', async (req, res) => {
+  try {
+    const format = (req.query.format || 'csv').toLowerCase();
+    const monthStr = req.query.month; // YYYY-MM
+
+    if (format === 'pdf') {
+      const pdfBuffer = await exportService.exportPDF(req.user.id, monthStr);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="relatorio-${monthStr || 'atual'}.pdf"`);
+      res.send(pdfBuffer);
+    } else {
+      const csv = await exportService.exportCSV(req.user.id, monthStr);
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="relatorio-${monthStr || 'atual'}.csv"`);
+      res.send(csv);
+    }
+  } catch (error) {
+    console.error('Error exporting report:', error);
+    res.status(500).json({ error: 'Failed to export report' });
   }
 });
 

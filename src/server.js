@@ -45,6 +45,7 @@ const reminderService = require('./services/reminderService');
 const nudgeService = require('./services/nudgeService');
 const insightService = require('./services/insightService');
 const goalReminderService = require('./services/goalReminderService');
+const emergencyModeService = require('./services/emergencyModeService');
 
 // Sentry initialization is now handled in instrument.js
 
@@ -63,6 +64,16 @@ cron.schedule('0 0 * * *', async () => {
 
   } catch (error) {
     console.error('[CRON] Erro ao limpar tokens:', error);
+    if (process.env.SENTRY_DSN) Sentry.captureException(error);
+  }
+});
+// Cron de alerta de caixa negativo — todo dia às 8h
+cron.schedule('0 8 * * *', async () => {
+  console.log('[CRON] Verificando alertas de caixa negativo...');
+  try {
+    await emergencyModeService.checkAndAlert();
+  } catch (error) {
+    console.error('[CRON] Erro no alerta de emergência:', error);
     if (process.env.SENTRY_DSN) Sentry.captureException(error);
   }
 });
