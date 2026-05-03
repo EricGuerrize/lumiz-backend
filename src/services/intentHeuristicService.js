@@ -21,7 +21,8 @@ class IntentHeuristicService {
     this.keywords = {
       consultar_saldo: [
         'saldo', 'resumo', 'lucro', 'quanto tenho', 'quanto sobrou', 'sobra',
-        'disponível', 'disponivel', 'caixa', 'dinheiro disponível'
+        'disponível', 'disponivel', 'caixa', 'dinheiro disponível',
+        'balanço', 'balanco', 'resultado', 'fechamento', 'como estou', 'como tá', 'como ta'
       ],
       consultar_historico: [
         'histórico', 'historico', 'últimas', 'ultimas', 'movimentações',
@@ -45,14 +46,20 @@ class IntentHeuristicService {
         'botox', 'preenchimento', 'harmonização', 'harmonizacao', 'bioestimulador',
         'fios', 'peeling', 'laser', 'paciente', 'cliente', 'procedimento',
         'fiz um', 'realizei', 'atendi', 'vendi', 'fechei', 'fiz', 'atendimento',
-        'tox', 'preench', 'toxina', 'acido', 'ácido', 'hialurônico', 'hialuronico'
+        'tox', 'preench', 'toxina', 'acido', 'ácido', 'hialurônico', 'hialuronico',
+        'apliquei', 'bichectomia', 'rinoplastia', 'limpeza de pele', 'hidratacao',
+        'hidratação', 'micropigmentacao', 'micropigmentação', 'massagem', 'drenagem',
+        'entrada de', 'recebi de', 'venda de', 'receita de'
       ],
       registrar_saida: [
         'insumos', 'marketing', 'aluguel', 'energia', 'internet', 'material',
         'produto', 'fornecedor', 'boleto', 'conta', 'paguei', 'gastei', 'comprei',
         'pagar', 'despesa', 'custo', 'gasto', 'conta de', 'salário', 'salario',
         'luz', 'agua', 'água', 'telefone', 'celular', 'gas', 'gás', 'condominio',
-        'condomínio', 'manutencao', 'manutenção'
+        'condomínio', 'manutencao', 'manutenção',
+        'transferi', 'farmácia', 'farmacia', 'deposito', 'depósito', 'frete',
+        'equipamento', 'reparo', 'conserto', 'limpeza', 'seguro', 'licença', 'licenca',
+        'saida de', 'saída de', 'paguei o', 'paguei a', 'gastei com'
       ],
       consultar_parcelas: [
         'parcelas', 'parcelado', 'cartão', 'cartao', 'receber', 'a receber',

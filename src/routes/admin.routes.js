@@ -41,7 +41,10 @@ router.get('/diagnostics/evolution', async (req, res) => {
 
   try {
     const status = await evolutionService.getInstanceStatus();
-    diagnostics.connectionState = status;
+    // Evolution API v2 retorna { instance: { state: 'open' } }
+    // Normaliza para { state } para o frontend não precisar conhecer a estrutura interna
+    const state = status?.instance?.state || status?.state || null;
+    diagnostics.connectionState = { state };
   } catch (err) {
     diagnostics.error = err?.response?.data || err?.message || 'unknown error';
   }

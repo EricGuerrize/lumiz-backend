@@ -1,4 +1,5 @@
 
+
 const geminiService = require('../services/geminiService');
 const evolutionService = require('../services/evolutionService');
 const userController = require('./userController');
@@ -432,8 +433,8 @@ class MessageController {
           else console.warn('[RAG] Falha ao buscar exemplos:', examplesResult.reason?.message);
         }
 
-        // Opção B: timeout de 6s no Gemini — se demorar, cai no ambíguo
-        const GEMINI_TIMEOUT_MS = 6000;
+        // Opção B: timeout de 3s no Gemini — se demorar, cai no ambíguo
+        const GEMINI_TIMEOUT_MS = 3000;
         const geminiIntent = await Promise.race([
           geminiService.processMessage(message, {
             recentMessages: recentHistory,

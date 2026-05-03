@@ -474,7 +474,7 @@ class OnboardingStateHandlers {
             return await respond(onboardingCopy.consentQuestion(), true); // Persist imediato em transição de estado
         }
 
-        return await respond(onboardingCopy.invalidChoice());
+        return await respond(onboardingCopy.invalidChoice(`1️⃣ Sim!\n2️⃣ Como a Lumiz funciona?`));
     }
 
     async handleConsent(onboarding, messageTrimmed, normalizedPhone, respond) {
@@ -495,7 +495,7 @@ class OnboardingStateHandlers {
             return await respond(questionText, true);
         }
 
-        return await respond(onboardingCopy.invalidChoice());
+        return await respond(onboardingCopy.invalidChoice(`1️⃣ Autorizo\n2️⃣ Não`));
     }
 
     async handleProfileName(onboarding, messageTrimmed, respond) {
@@ -549,7 +549,7 @@ class OnboardingStateHandlers {
         });
 
         if (!role) {
-            return await respond(onboardingCopy.invalidChoice());
+            return await respond(onboardingCopy.invalidChoice(`1️⃣ 👑 Dona / gestora\n2️⃣ 🧾 Adm / financeiro\n3️⃣ 💬 Secretária\n4️⃣ ⚕️ Profissional (aplico)`));
         }
 
         onboarding.data.role = role;
@@ -577,7 +577,7 @@ class OnboardingStateHandlers {
         });
 
         if (!why) {
-            return await respond(onboardingCopy.invalidChoice());
+            return await respond(onboardingCopy.invalidChoice(`1️⃣ Organizar o dia a dia\n2️⃣ Ter clareza do mês\n3️⃣ Controlar custos`));
         }
 
         onboarding.data.context_why = why;
@@ -594,7 +594,7 @@ class OnboardingStateHandlers {
         });
 
         if (!payment) {
-            return await respond(onboardingCopy.invalidChoice());
+            return await respond(onboardingCopy.invalidChoice(`1️⃣ À vista (PIX / dinheiro)\n2️⃣ Cartão parcelado\n3️⃣ Meio a meio`));
         }
 
         // Mantém compatibilidade com campo antigo e novo
@@ -798,7 +798,7 @@ class OnboardingStateHandlers {
             return await respond(onboardingCopy.ahaRevenueRegistered() + '\n\n' + onboardingCopy.ahaCostsIntro(), true, true);
         }
 
-        return await respond(onboardingCopy.invalidChoice());
+        return await respond(onboardingCopy.invalidChoice(`1️⃣ Tá ok\n2️⃣ ✏️ Ajustar`));
     }
 
     async handleAhaRevenueAdjust(onboarding, messageTrimmed, respond) {
@@ -809,7 +809,7 @@ class OnboardingStateHandlers {
             'procedimento': ['4', 'procedimento', 'descricao', 'descrição']
         });
 
-        if (!choice) return await respond(onboardingCopy.invalidChoice());
+        if (!choice) return await respond(onboardingCopy.invalidChoice(onboardingCopy.ahaRevenueAdjustMenu()));
 
         if (choice === 'valor') {
             onboarding.step = 'AHA_REVENUE_ADJUST_VALUE';
@@ -861,7 +861,7 @@ class OnboardingStateHandlers {
             'parcelado': ['5', 'parcelado', 'cartao parcelado', 'cartão parcelado'],
             'misto': ['6', 'meio a meio', 'metade', '50/50']
         });
-        if (!choice) return await respond(onboardingCopy.invalidChoice());
+        if (!choice) return await respond(onboardingCopy.invalidChoice(`1️⃣ PIX\n2️⃣ Dinheiro\n3️⃣ Débito\n4️⃣ Crédito à vista\n5️⃣ Cartão parcelado\n6️⃣ Meio a meio`));
         if (!onboarding.data.pending_sale) onboarding.data.pending_sale = {};
         onboarding.data.pending_sale.forma_pagamento = choice;
         if (choice !== 'misto') onboarding.data.pending_sale.payment_split = null;
@@ -945,7 +945,7 @@ class OnboardingStateHandlers {
         }
 
         if (!costType) {
-            return await respond(onboardingCopy.invalidChoice());
+            return await respond(onboardingCopy.invalidChoice(onboardingCopy.ahaCostsClassify()));
         }
 
         onboarding.data.pending_cost.tipo = costType === 'fixo' ? 'fixa' : 'variavel';
@@ -1170,7 +1170,7 @@ class OnboardingStateHandlers {
         }
 
         if (!costType) {
-            return await respond(onboardingCopy.invalidChoice());
+            return await respond(onboardingCopy.invalidChoice(onboardingCopy.ahaCostsClassify()));
         }
 
         if (!onboarding.data.pending_cost) {
@@ -1406,7 +1406,7 @@ class OnboardingStateHandlers {
             );
         }
 
-        return await respond(onboardingCopy.invalidChoice());
+        return await respond(onboardingCopy.invalidChoice(`1️⃣ Tá ok\n2️⃣ ✏️ Ajustar`));
     }
 
     async handleAhaSummary(onboarding, normalizedPhone, respond) {
@@ -1438,7 +1438,7 @@ class OnboardingStateHandlers {
             );
         }
 
-        return await respond(onboardingCopy.invalidChoice());
+        return await respond(onboardingCopy.invalidChoice(`1️⃣ Sim, vou mandar\n2️⃣ Não agora, seguimos assim`));
     }
 
     async handleBalanceInput(onboarding, messageTrimmed, respond, respondAndClear) {
@@ -1632,7 +1632,7 @@ class OnboardingStateHandlers {
             return null;
         }
 
-        return await respond(onboardingCopy.invalidChoice());
+        return await respond(onboardingCopy.invalidChoice(`1️⃣ Configurar agora\n2️⃣ Pular por enquanto`));
     }
 
     async handleMdrSetupQuestion(onboarding, messageTrimmed, respond) {

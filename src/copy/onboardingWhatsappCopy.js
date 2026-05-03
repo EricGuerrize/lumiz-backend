@@ -518,8 +518,9 @@ module.exports = {
         );
     },
 
-    invalidChoice() {
-        return `Só pra eu seguir certinho: responde com uma das opções acima.`;
+    invalidChoice(menu) {
+        const base = `Só pra eu seguir certinho: responde com uma das opções 👇`;
+        return menu ? `${base}\n\n${menu}` : base;
     },
 
     // ============================================================
