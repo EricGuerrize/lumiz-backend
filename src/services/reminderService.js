@@ -1,236 +1,187 @@
 const supabase = require('../db/supabase');
 const evolutionService = require('./evolutionService');
-const { formatarMoeda } = require('../utils/currency');
+const copy = require('../copy/reminderWhatsappCopy');
+
+const JANELAS_PARCELA = [
+  { dias: -3, tipo: 'parcela_3d_antes' },
+  { dias: 0,  tipo: 'parcela_dia' },
+  { dias: 3,  tipo: 'parcela_atraso_3' },
+  { dias: 7,  tipo: 'parcela_atraso_7' },
+  { dias: 15, tipo: 'parcela_atraso_15' },
+];
+
+const JANELAS_CONTA = [
+  { dias: -3, tipo: 'conta_3d_antes' },
+  { dias: 0,  tipo: 'conta_dia' },
+  { dias: 3,  tipo: 'conta_atraso_3' },
+  { dias: 7,  tipo: 'conta_atraso_7' },
+  { dias: 15, tipo: 'conta_atraso_15' },
+];
 
 class ReminderService {
+  dateStr(offsetDays = 0) {
+    const d = new Date();
+    d.setDate(d.getDate() + offsetDays);
+    return d.toISOString().split('T')[0];
+  }
+
+  async alreadySent(referenciaId, tipoLembrete) {
+    const { data } = await supabase
+      .from('reminders_sent')
+      .select('id')
+      .eq('referencia_id', referenciaId)
+      .eq('tipo_lembrete', tipoLembrete)
+      .maybeSingle();
+    return !!data;
+  }
+
+  async markSent(userId, referenciaId, tipoLembrete) {
+    await supabase.from('reminders_sent').upsert(
+      { user_id: userId, referencia_id: referenciaId, tipo_lembrete: tipoLembrete },
+      { onConflict: 'referencia_id,tipo_lembrete' }
+    );
+  }
+
   async checkAndSendReminders() {
+    const remindersSent = [];
+
     try {
-      const today = new Date();
-      const currentDay = today.getDate();
-      const currentMonth = today.getMonth();
-      const currentYear = today.getFullYear();
-
-      console.log(`[LEMBRETES] Verificando parcelas para dia ${currentDay}...`);
-
-      // Busca todos os atendimentos parcelados
-      const { data: atendimentos, error } = await supabase
-        .from('atendimentos')
-        .select(`
-          *,
-          clientes (nome),
-          profiles (telefone, nome_completo)
-        `)
-        .eq('forma_pagamento', 'parcelado')
-        .not('parcelas', 'is', null);
-
-      if (error) throw error;
-
-      const remindersSent = [];
-
-      for (const atend of atendimentos || []) {
-        // Calcula qual parcela está vencendo hoje
-        const dataAtendimento = new Date(atend.data);
-        const diaVencimento = dataAtendimento.getDate();
-
-        // Se hoje é o dia do vencimento
-        if (currentDay === diaVencimento) {
-          // Calcula qual parcela estamos
-          const mesesDecorridos =
-            (currentYear - dataAtendimento.getFullYear()) * 12 +
-            (currentMonth - dataAtendimento.getMonth());
-
-          const parcelaAtual = mesesDecorridos + 1;
-
-          // Verifica se ainda há parcelas pendentes
-          if (parcelaAtual <= atend.parcelas) {
-            const valorParcela = parseFloat(atend.valor_total) / atend.parcelas;
-            const clienteNome = atend.clientes?.nome || 'Cliente';
-            const telefone = atend.profiles?.telefone;
-
-            if (telefone) {
-              const message = this.formatReminderMessage(
-                clienteNome,
-                valorParcela,
-                parcelaAtual,
-                atend.parcelas,
-                atend.bandeira_cartao
-              );
-
-              try {
-                await evolutionService.sendMessage(telefone, message);
-                remindersSent.push({
-                  atendimento_id: atend.id,
-                  cliente: clienteNome,
-                  parcela: parcelaAtual,
-                  valor: valorParcela
-                });
-                console.log(`[LEMBRETE] Enviado para ${telefone}: Parcela ${parcelaAtual}/${atend.parcelas}`);
-              } catch (sendError) {
-                console.error(`[LEMBRETE] Erro ao enviar para ${telefone}:`, sendError.message);
-              }
-            }
-          }
-        }
-      }
-
-      // Busca contas a pagar vencendo em 3 dias
-      const { data: contas, error: contasError } = await supabase
-        .from('contas_pagar')
-        .select(`
-          *,
-          profiles (telefone, nome_completo)
-        `)
-        .eq('status', 'pendente')
-        .lte('data_vencimento', this.getDateInDays(3))
-        .gte('data_vencimento', today.toISOString().split('T')[0]);
-
-      if (!contasError && contas) {
-        for (const conta of contas) {
-          const telefone = conta.profiles?.telefone;
-          if (telefone) {
-            const diasParaVencimento = Math.ceil(
-              (new Date(conta.data_vencimento) - today) / (1000 * 60 * 60 * 24)
-            );
-            const message = this.formatContaReminderMessage(
-              conta.descricao || conta.categoria,
-              parseFloat(conta.valor),
-              conta.data_vencimento,
-              diasParaVencimento
-            );
-
-            try {
-              await evolutionService.sendMessage(telefone, message);
-              remindersSent.push({
-                tipo: 'conta_pagar',
-                conta_id: conta.id,
-                descricao: conta.descricao,
-                valor: parseFloat(conta.valor),
-                vencimento: conta.data_vencimento
-              });
-              console.log(`[LEMBRETE] Conta enviada para ${telefone}: ${conta.descricao}`);
-            } catch (sendError) {
-              console.error(`[LEMBRETE] Erro ao enviar conta para ${telefone}:`, sendError.message);
-            }
-          }
-        }
-      }
-
+      await this._processarParcelas(remindersSent);
+      await this._processarContas(remindersSent);
       console.log(`[LEMBRETES] ${remindersSent.length} lembretes enviados`);
-      return remindersSent;
     } catch (error) {
       console.error('[LEMBRETES] Erro ao processar:', error);
       throw error;
     }
+
+    return remindersSent;
   }
 
-  getDateInDays(days) {
-    const date = new Date();
-    date.setDate(date.getDate() + days);
-    return date.toISOString().split('T')[0];
-  }
+  async _processarParcelas(remindersSent) {
+    for (const janela of JANELAS_PARCELA) {
+      const targetDate = this.dateStr(janela.dias);
 
-  formatContaReminderMessage(descricao, valor, dataVencimento, diasParaVencimento) {
-    const dataFormatada = new Date(dataVencimento).toLocaleDateString('pt-BR');
-    let message = `*LEMBRETE DE CONTA A PAGAR*\n\n`;
-    message += `Descrição: *${descricao}*\n`;
-    message += `Valor: *${formatarMoeda(valor)}*\n`;
-    message += `Vencimento: *${dataFormatada}*\n\n`;
-
-    if (diasParaVencimento === 0) {
-      message += `*Vence HOJE!*\n\n`;
-    } else if (diasParaVencimento === 1) {
-      message += `*Vence AMANHÃ!*\n\n`;
-    } else {
-      message += `*Vence em ${diasParaVencimento} dias*\n\n`;
-    }
-
-    message += `Para marcar como paga, digite "paguei ${descricao.toLowerCase()}".`;
-
-    return message;
-  }
-
-  formatReminderMessage(clienteNome, valorParcela, parcelaAtual, totalParcelas, bandeira) {
-    let message = `⏰ *LEMBRETE DE PARCELA*\n\n`;
-    message += `📋 Cliente: *${clienteNome}*\n`;
-    message += `💳 Parcela: *${parcelaAtual}/${totalParcelas}*\n`;
-    message += `💵 Valor: *${formatarMoeda(valorParcela)}*\n`;
-
-    if (bandeira) {
-      message += `🏷️ Bandeira: ${bandeira.toUpperCase()}\n`;
-    }
-
-    message += `\n📅 Vence *HOJE*\n\n`;
-
-    if (parcelaAtual === totalParcelas) {
-      message += `🎉 *Última parcela!*`;
-    } else {
-      const restantes = totalParcelas - parcelaAtual;
-      message += `📌 Faltam ${restantes} parcela${restantes > 1 ? 's' : ''}`;
-    }
-
-    return message;
-  }
-
-  // Função para buscar parcelas pendentes de um usuário (para relatórios)
-  async getPendingInstallments(userId) {
-    try {
-      const today = new Date();
-      const currentMonth = today.getMonth();
-      const currentYear = today.getFullYear();
-
-      const { data: atendimentos, error } = await supabase
-        .from('atendimentos')
+      const { data: parcelas, error } = await supabase
+        .from('parcelas')
         .select(`
-          *,
-          clientes (nome),
-          atendimento_procedimentos (
-            procedimentos (nome)
+          id, numero, valor, data_vencimento, paga, bandeira_cartao,
+          atendimentos!inner (
+            user_id, parcelas,
+            clientes (nome),
+            profiles (telefone)
           )
         `)
-        .eq('user_id', userId)
-        .eq('forma_pagamento', 'parcelado')
-        .not('parcelas', 'is', null);
+        .eq('paga', false)
+        .eq('data_vencimento', targetDate);
 
-      if (error) throw error;
+      if (error) { console.error('[LEMBRETES] Erro parcelas:', error.message); continue; }
 
-      const pendingInstallments = [];
+      for (const p of parcelas || []) {
+        const telefone = p.atendimentos?.profiles?.telefone;
+        if (!telefone) continue;
 
-      for (const atend of atendimentos || []) {
-        const dataAtendimento = new Date(atend.data);
-        const mesesDecorridos =
-          (currentYear - dataAtendimento.getFullYear()) * 12 +
-          (currentMonth - dataAtendimento.getMonth());
+        const sent = await this.alreadySent(p.id, janela.tipo);
+        if (sent) continue;
 
-        // Parcelas restantes
-        for (let i = mesesDecorridos; i < atend.parcelas; i++) {
-          const parcelaNum = i + 1;
-          const valorParcela = parseFloat(atend.valor_total) / atend.parcelas;
+        const clienteNome = p.atendimentos?.clientes?.nome || 'Cliente';
+        const totalParcelas = p.atendimentos?.parcelas || 1;
+        const valor = parseFloat(p.valor);
+        const diasAtraso = Math.abs(janela.dias);
 
-          // Calcula data de vencimento da parcela
-          const dataVencimento = new Date(dataAtendimento);
-          dataVencimento.setMonth(dataVencimento.getMonth() + i);
+        let message;
+        if (janela.dias < 0) {
+          message = copy.parcelaAntecipado(clienteNome, valor, p.numero, totalParcelas, diasAtraso);
+        } else if (janela.dias === 0) {
+          message = copy.parcelaNoDia(clienteNome, valor, p.numero, totalParcelas, p.bandeira_cartao);
+        } else {
+          message = copy.parcelaAtraso(clienteNome, valor, p.numero, totalParcelas, diasAtraso);
+        }
 
-          pendingInstallments.push({
-            atendimento_id: atend.id,
-            cliente: atend.clientes?.nome || 'Cliente',
-            procedimento: atend.atendimento_procedimentos?.[0]?.procedimentos?.nome || 'Procedimento',
-            parcela_atual: parcelaNum,
-            total_parcelas: atend.parcelas,
-            valor_parcela: valorParcela,
-            data_vencimento: dataVencimento,
-            bandeira: atend.bandeira_cartao
-          });
+        try {
+          await evolutionService.sendMessage(telefone, message);
+          await this.markSent(p.atendimentos.user_id, p.id, janela.tipo);
+          remindersSent.push({ tipo: janela.tipo, parcela_id: p.id, cliente: clienteNome, valor });
+          console.log(`[LEMBRETE] ${janela.tipo} → ${telefone}`);
+        } catch (err) {
+          console.error(`[LEMBRETE] Erro ao enviar ${janela.tipo}:`, err.message);
         }
       }
-
-      // Ordena por data de vencimento
-      pendingInstallments.sort((a, b) => a.data_vencimento - b.data_vencimento);
-
-      return pendingInstallments;
-    } catch (error) {
-      console.error('Erro ao buscar parcelas pendentes:', error);
-      throw error;
     }
+  }
+
+  async _processarContas(remindersSent) {
+    for (const janela of JANELAS_CONTA) {
+      const targetDate = this.dateStr(janela.dias);
+
+      const { data: contas, error } = await supabase
+        .from('contas_pagar')
+        .select(`*, profiles (telefone)`)
+        .eq('status_pagamento', 'pendente')
+        .eq('data_vencimento', targetDate);
+
+      if (error) { console.error('[LEMBRETES] Erro contas:', error.message); continue; }
+
+      for (const conta of contas || []) {
+        const telefone = conta.profiles?.telefone;
+        if (!telefone) continue;
+
+        const sent = await this.alreadySent(conta.id, janela.tipo);
+        if (sent) continue;
+
+        const descricao = conta.descricao || conta.categoria || 'Conta';
+        const valor = parseFloat(conta.valor);
+        const diasAtraso = Math.abs(janela.dias);
+
+        let message;
+        if (janela.dias < 0) {
+          message = copy.contaAntecipada(descricao, valor, conta.data_vencimento, diasAtraso);
+        } else if (janela.dias === 0) {
+          message = copy.contaNoDia(descricao, valor, conta.data_vencimento);
+        } else {
+          message = copy.contaAtraso(descricao, valor, diasAtraso);
+        }
+
+        try {
+          await evolutionService.sendMessage(telefone, message);
+          await this.markSent(conta.user_id, conta.id, janela.tipo);
+          remindersSent.push({ tipo: janela.tipo, conta_id: conta.id, descricao, valor });
+          console.log(`[LEMBRETE] ${janela.tipo} → ${telefone}`);
+        } catch (err) {
+          console.error(`[LEMBRETE] Erro ao enviar ${janela.tipo}:`, err.message);
+        }
+      }
+    }
+  }
+
+  // Kept for backward compatibility with installmentHandler
+  async getPendingInstallments(userId) {
+    const { data: parcelas, error } = await supabase
+      .from('parcelas')
+      .select(`
+        id, numero, valor, data_vencimento, bandeira_cartao,
+        atendimentos!inner (
+          user_id, parcelas,
+          clientes (nome),
+          atendimento_procedimentos (procedimentos (nome))
+        )
+      `)
+      .eq('paga', false)
+      .eq('atendimentos.user_id', userId)
+      .gte('data_vencimento', new Date().toISOString().split('T')[0])
+      .order('data_vencimento', { ascending: true });
+
+    if (error) throw error;
+
+    return (parcelas || []).map(p => ({
+      atendimento_id: p.atendimentos?.id,
+      cliente: p.atendimentos?.clientes?.nome || 'Cliente',
+      procedimento: p.atendimentos?.atendimento_procedimentos?.[0]?.procedimentos?.nome || 'Procedimento',
+      parcela_atual: p.numero,
+      total_parcelas: p.atendimentos?.parcelas || 1,
+      valor_parcela: parseFloat(p.valor),
+      data_vencimento: new Date(p.data_vencimento),
+      bandeira: p.bandeira_cartao,
+    }));
   }
 }
 

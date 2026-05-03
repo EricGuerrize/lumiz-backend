@@ -44,6 +44,7 @@ const asaasWebhookRoutes = require('./routes/webhooks');
 const reminderService = require('./services/reminderService');
 const nudgeService = require('./services/nudgeService');
 const insightService = require('./services/insightService');
+const goalReminderService = require('./services/goalReminderService');
 
 // Sentry initialization is now handled in instrument.js
 
@@ -65,6 +66,17 @@ cron.schedule('0 0 * * *', async () => {
     if (process.env.SENTRY_DSN) Sentry.captureException(error);
   }
 });
+// Cron de meta financeira — toda sexta às 18h
+cron.schedule('0 18 * * 5', async () => {
+  console.log('[CRON] Enviando acompanhamento semanal de metas...');
+  try {
+    await goalReminderService.checkAndSendGoalReminders();
+  } catch (error) {
+    console.error('[CRON] Erro no acompanhamento de metas:', error);
+    if (process.env.SENTRY_DSN) Sentry.captureException(error);
+  }
+});
+
 const redisCacheEnabled = readFlag('REDIS_CACHE_ENABLED', !!process.env.REDIS_URL);
 const redisQueueEnabled = readFlag('REDIS_QUEUE_ENABLED', !!process.env.REDIS_URL);
 console.log(`[SERVER] Redis runtime: cache=${redisCacheEnabled ? 'enabled' : 'disabled'}, queues=${redisQueueEnabled ? 'enabled' : 'disabled'}`);
@@ -322,6 +334,7 @@ app.get('/api/cron/reminders', async (req, res) => {
     const insights = await insightService.generateDailyInsights();
     const trialReminderService = require('./services/trialReminderService');
     const trialReminders = await trialReminderService.checkAndSendReminders();
+    const goalReminders = await goalReminderService.checkAndSendGoalReminders();
 
     res.json({
       status: 'success',
@@ -330,10 +343,12 @@ app.get('/api/cron/reminders', async (req, res) => {
       nudge_sent: nudges.length,
       insights_generated: insights.length,
       trial_reminders_sent: trialReminders.length,
+      goal_reminders_sent: goalReminders.length,
       reminders,
       nudges,
       insights,
-      trialReminders
+      trialReminders,
+      goalReminders
     });
   } catch (error) {
     console.error('[CRON] Erro:', error);
