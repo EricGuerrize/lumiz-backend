@@ -1,6 +1,7 @@
 const supabase = require('../db/supabase');
 const evolutionService = require('./evolutionService');
 const copy = require('../copy/reminderWhatsappCopy');
+const { alreadySent, markSent } = require('./reminderSentHelper');
 
 const JANELAS_PARCELA = [
   { dias: -3, tipo: 'parcela_3d_antes' },
@@ -25,22 +26,6 @@ class ReminderService {
     return d.toISOString().split('T')[0];
   }
 
-  async alreadySent(referenciaId, tipoLembrete) {
-    const { data } = await supabase
-      .from('reminders_sent')
-      .select('id')
-      .eq('referencia_id', referenciaId)
-      .eq('tipo_lembrete', tipoLembrete)
-      .maybeSingle();
-    return !!data;
-  }
-
-  async markSent(userId, referenciaId, tipoLembrete) {
-    await supabase.from('reminders_sent').upsert(
-      { user_id: userId, referencia_id: referenciaId, tipo_lembrete: tipoLembrete },
-      { onConflict: 'referencia_id,tipo_lembrete' }
-    );
-  }
 
   async checkAndSendReminders() {
     const remindersSent = [];
@@ -80,7 +65,7 @@ class ReminderService {
         const telefone = p.atendimentos?.profiles?.telefone;
         if (!telefone) continue;
 
-        const sent = await this.alreadySent(p.id, janela.tipo);
+        const sent = await alreadySent(p.id, janela.tipo);
         if (sent) continue;
 
         const clienteNome = p.atendimentos?.clientes?.nome || 'Cliente';
@@ -99,7 +84,7 @@ class ReminderService {
 
         try {
           await evolutionService.sendMessage(telefone, message);
-          await this.markSent(p.atendimentos.user_id, p.id, janela.tipo);
+          await markSent(p.atendimentos.user_id, p.id, janela.tipo);
           remindersSent.push({ tipo: janela.tipo, parcela_id: p.id, cliente: clienteNome, valor });
           console.log(`[LEMBRETE] ${janela.tipo} → ${telefone}`);
         } catch (err) {
@@ -125,7 +110,7 @@ class ReminderService {
         const telefone = conta.profiles?.telefone;
         if (!telefone) continue;
 
-        const sent = await this.alreadySent(conta.id, janela.tipo);
+        const sent = await alreadySent(conta.id, janela.tipo);
         if (sent) continue;
 
         const descricao = conta.descricao || conta.categoria || 'Conta';
@@ -143,7 +128,7 @@ class ReminderService {
 
         try {
           await evolutionService.sendMessage(telefone, message);
-          await this.markSent(conta.user_id, conta.id, janela.tipo);
+          await markSent(conta.user_id, conta.id, janela.tipo);
           remindersSent.push({ tipo: janela.tipo, conta_id: conta.id, descricao, valor });
           console.log(`[LEMBRETE] ${janela.tipo} → ${telefone}`);
         } catch (err) {
