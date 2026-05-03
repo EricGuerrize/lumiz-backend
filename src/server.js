@@ -384,7 +384,10 @@ app.get('/', (req, res) => {
         comparison: '/api/dashboard/stats/comparison',
         averages: '/api/dashboard/stats/averages',
         kpis: '/api/dashboard/stats/kpis',
-        user: '/api/dashboard/user'
+        user: '/api/dashboard/user',
+        contasPagar: '/api/dashboard/contas-a-pagar',
+        cashflowProjection: '/api/dashboard/cashflow/projection',
+        calendar: '/api/dashboard/calendar'
       },
       auth: {
         note: 'Use Authorization: Bearer <supabase_token> or x-user-phone header'

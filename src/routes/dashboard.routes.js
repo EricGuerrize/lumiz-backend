@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const supabase = require('../db/supabase');
 const transactionController = require('../controllers/transactionController');
+const cashflowService = require('../services/cashflowService');
 const userController = require('../controllers/userController');
 const { authenticateFlexible } = require('../middleware/authMiddleware');
 const { validate } = require('../middleware/validationMiddleware');
@@ -512,6 +513,51 @@ router.patch('/profile/initial-balance', async (req, res) => {
   } catch (error) {
     console.error('Error updating initial balance:', error);
     res.status(500).json({ error: 'Failed to update initial balance' });
+  }
+});
+
+// GET /api/dashboard/contas-a-pagar - Contas a pagar ordenadas por prioridade/urgência
+router.get('/contas-a-pagar', async (req, res) => {
+  try {
+    const { status, days_ahead, limit, offset } = req.query;
+    const result = await cashflowService.getContasPagarPriority(req.user.id, {
+      status: status || 'pendente',
+      daysAhead: parseInt(days_ahead) || 60,
+      limit: Math.min(parseInt(limit) || 50, 100),
+      offset: parseInt(offset) || 0,
+    });
+    res.json(result);
+  } catch (error) {
+    console.error('Error getting contas a pagar priority:', error);
+    res.status(500).json({ error: 'Failed to get contas a pagar' });
+  }
+});
+
+// GET /api/dashboard/cashflow/projection - Projeção de fluxo de caixa dia a dia
+router.get('/cashflow/projection', async (req, res) => {
+  try {
+    const days = Math.min(parseInt(req.query.days) || 30, 90);
+    const result = await cashflowService.getCashflowProjection(req.user.id, days);
+    res.json(result);
+  } catch (error) {
+    console.error('Error getting cashflow projection:', error);
+    res.status(500).json({ error: 'Failed to get cashflow projection' });
+  }
+});
+
+// GET /api/dashboard/calendar - Calendário financeiro preditivo
+router.get('/calendar', async (req, res) => {
+  try {
+    const now = new Date();
+    const startDate = req.query.start_date || now.toISOString().split('T')[0];
+    const defaultEnd = new Date(now);
+    defaultEnd.setDate(defaultEnd.getDate() + 30);
+    const endDate = req.query.end_date || defaultEnd.toISOString().split('T')[0];
+    const result = await cashflowService.getFinancialCalendar(req.user.id, startDate, endDate);
+    res.json(result);
+  } catch (error) {
+    console.error('Error getting financial calendar:', error);
+    res.status(500).json({ error: 'Failed to get financial calendar' });
   }
 });
 
