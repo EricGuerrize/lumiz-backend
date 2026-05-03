@@ -29,21 +29,21 @@ class PricingIntelligenceService {
 
     const { data, error } = await supabase
       .from('atendimentos')
-      .select('procedimento, valor')
+      .select('observacoes, valor_total')
       .eq('user_id', userId)
-      .gte('data_atendimento', sinceStr)
-      .not('procedimento', 'is', null);
+      .gte('data', sinceStr)
+      .not('observacoes', 'is', null);
 
     if (error) throw error;
 
-    // Group by procedure name
+    // Group by procedure description (observacoes)
     const groups = {};
     for (const row of data || []) {
-      const proc = (row.procedimento || '').trim();
+      const proc = (row.observacoes || '').trim();
       if (!proc) continue;
       if (!groups[proc]) groups[proc] = { count: 0, total: 0 };
       groups[proc].count++;
-      groups[proc].total += parseFloat(row.valor) || 0;
+      groups[proc].total += parseFloat(row.valor_total) || 0;
     }
 
     const procedures = Object.entries(groups).map(([name, { count, total }]) => {

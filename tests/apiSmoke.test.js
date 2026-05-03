@@ -26,8 +26,12 @@ async function runStep(label, fn) {
 
 async function run() {
   await runStep('GET /health', async () => {
-    const res = await request(app).get('/health').expect(200);
-    if (res.body.status !== 'ok') {
+    // 503 is acceptable locally when Evolution API / Redis are unreachable
+    const res = await request(app).get('/health');
+    if (![200, 503].includes(res.status)) {
+      throw new Error(`Unexpected status ${res.status}`);
+    }
+    if (!res.body.status) {
       throw new Error('Resposta inesperada do /health');
     }
   });
@@ -116,6 +120,97 @@ async function run() {
       .expect(200);
     if (!res.body.period || !res.body.summary || !res.body.events) {
       throw new Error('Shape inválida: esperado { period, summary, events }');
+    }
+  });
+
+  // --- Phase 3 ---
+
+  await runStep('GET /api/dashboard/simulator/scenario (baseline)', async () => {
+    const res = await request(app)
+      .get('/api/dashboard/simulator/scenario')
+      .set('x-user-phone', TEST_PHONE)
+      .expect(200);
+    const { baseline, projection, scenario } = res.body;
+    if (typeof baseline?.entradas !== 'number') throw new Error('baseline.entradas ausente ou não numérico');
+    if (typeof projection?.lucro !== 'number') throw new Error('projection.lucro ausente ou não numérico');
+    if (typeof projection?.margem !== 'number') throw new Error('projection.margem ausente');
+    if (!scenario) throw new Error('scenario ausente');
+  });
+
+  await runStep('GET /api/dashboard/simulator/scenario (extra_revenue=5000)', async () => {
+    const res = await request(app)
+      .get('/api/dashboard/simulator/scenario?extra_revenue=5000')
+      .set('x-user-phone', TEST_PHONE)
+      .expect(200);
+    const { baseline, projection } = res.body;
+    if (projection.entradas - baseline.entradas !== 5000) {
+      throw new Error(`extra_revenue não aplicado: baseline=${baseline.entradas} projection=${projection.entradas}`);
+    }
+    if (projection.deltaLucro !== 5000) {
+      throw new Error(`deltaLucro deveria ser 5000, recebeu ${projection.deltaLucro}`);
+    }
+  });
+
+  await runStep('GET /api/dashboard/insights/pricing', async () => {
+    const res = await request(app)
+      .get('/api/dashboard/insights/pricing')
+      .set('x-user-phone', TEST_PHONE)
+      .expect(200);
+    const { procedures, summary, period } = res.body;
+    if (!Array.isArray(procedures)) throw new Error('procedures não é array');
+    if (typeof summary?.abaixoMercado !== 'number') throw new Error('summary.abaixoMercado ausente');
+    if (!period?.since) throw new Error('period.since ausente');
+    // Validate shape of each procedure
+    for (const p of procedures) {
+      if (typeof p.avgTicket !== 'number') throw new Error(`avgTicket inválido em: ${p.procedimento}`);
+      if (!p.benchmark) throw new Error(`benchmark ausente em: ${p.procedimento}`);
+    }
+  });
+
+  await runStep('GET /api/dashboard/emergency/status', async () => {
+    const res = await request(app)
+      .get('/api/dashboard/emergency/status')
+      .set('x-user-phone', TEST_PHONE)
+      .expect(200);
+    const { alert, saldoAtual, saldoMinimo, diasAnalisados } = res.body;
+    if (typeof alert !== 'boolean') throw new Error('alert deve ser boolean');
+    if (typeof saldoAtual !== 'number') throw new Error('saldoAtual ausente');
+    if (typeof saldoMinimo !== 'number') throw new Error('saldoMinimo ausente');
+    if (diasAnalisados !== 30) throw new Error(`diasAnalisados deveria ser 30, recebeu ${diasAnalisados}`);
+    // Invariante: saldoMinimo <= saldoAtual
+    if (saldoMinimo > saldoAtual) throw new Error(`saldoMinimo (${saldoMinimo}) não pode ser maior que saldoAtual (${saldoAtual})`);
+    // alert=true implica saldoMinimo < 0
+    if (alert && saldoMinimo >= 0) throw new Error('alert=true mas saldoMinimo >= 0');
+  });
+
+  await runStep('GET /api/dashboard/export/report?format=csv', async () => {
+    const res = await request(app)
+      .get('/api/dashboard/export/report?format=csv')
+      .set('x-user-phone', TEST_PHONE)
+      .expect(200);
+    if (!res.headers['content-type'].includes('text/csv')) {
+      throw new Error(`Content-Type errado: ${res.headers['content-type']}`);
+    }
+    const lines = res.text.trim().split('\n');
+    // First line must be the header row
+    if (!lines[0].includes('tipo')) throw new Error('CSV sem header row');
+    // Must have TOTAL ENTRADAS footer
+    if (!res.text.includes('TOTAL ENTRADAS')) throw new Error('CSV sem footer de totais');
+  });
+
+  await runStep('GET /api/dashboard/export/report?format=pdf', async () => {
+    const res = await request(app)
+      .get('/api/dashboard/export/report?format=pdf')
+      .set('x-user-phone', TEST_PHONE)
+      .expect(200);
+    if (!res.headers['content-type'].includes('application/pdf')) {
+      throw new Error(`Content-Type errado: ${res.headers['content-type']}`);
+    }
+    // PDF magic bytes: %PDF
+    if (!res.body.toString('utf8', 0, 4).startsWith('%PDF') && !res.text?.startsWith('%PDF')) {
+      // Try buffer check
+      const buf = Buffer.from(res.body);
+      if (buf.slice(0, 4).toString() !== '%PDF') throw new Error('Resposta não é um PDF válido');
     }
   });
 
