@@ -84,6 +84,41 @@ async function run() {
     }
   });
 
+  await runStep('GET /api/dashboard/contas-a-pagar', async () => {
+    const res = await request(app)
+      .get('/api/dashboard/contas-a-pagar')
+      .set('x-user-phone', TEST_PHONE)
+      .expect(200);
+    if (!res.body.hasOwnProperty('total') || !Array.isArray(res.body.items)) {
+      throw new Error('Shape inválida: esperado { total, valorTotal, items[] }');
+    }
+  });
+
+  await runStep('GET /api/dashboard/cashflow/projection', async () => {
+    const res = await request(app)
+      .get('/api/dashboard/cashflow/projection?days=30')
+      .set('x-user-phone', TEST_PHONE)
+      .expect(200);
+    const { saldoAtual, summary, days } = res.body;
+    if (typeof saldoAtual !== 'number' || !summary || !Array.isArray(days)) {
+      throw new Error('Shape inválida: esperado { saldoAtual, summary, days[] }');
+    }
+    const expected = saldoAtual + summary.totalEntradas - summary.totalSaidas;
+    if (Math.abs(summary.saldoFinal - expected) > 0.01) {
+      throw new Error(`saldoFinal incorreto: ${summary.saldoFinal} !== ${expected}`);
+    }
+  });
+
+  await runStep('GET /api/dashboard/calendar', async () => {
+    const res = await request(app)
+      .get('/api/dashboard/calendar')
+      .set('x-user-phone', TEST_PHONE)
+      .expect(200);
+    if (!res.body.period || !res.body.summary || !res.body.events) {
+      throw new Error('Shape inválida: esperado { period, summary, events }');
+    }
+  });
+
   console.log('\n🎉 Smoke tests finalizados com sucesso!');
   process.exit(0);
 }
