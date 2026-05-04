@@ -11,6 +11,8 @@ const estoqueService = require('../services/estoqueService');
 const healthScoreService = require('../services/healthScoreService');
 const inadimplenciaService = require('../services/inadimplenciaService');
 const sazonalidadeService = require('../services/sazonalidadeService');
+const procedimentoCustoService = require('../services/procedimentoCustoService');
+const metaCaminhoService = require('../services/metaCaminhoService');
 const userController = require('../controllers/userController');
 const { authenticateFlexible } = require('../middleware/authMiddleware');
 const { validate } = require('../middleware/validationMiddleware');
@@ -837,6 +839,70 @@ router.get('/insights/sazonalidade', async (req, res) => {
   } catch (error) {
     console.error('Error getting sazonalidade insights:', error);
     res.status(500).json({ error: 'Failed to get sazonalidade insights' });
+  }
+});
+
+// GET /api/dashboard/insights/custo-procedimentos?months=3
+router.get('/insights/custo-procedimentos', async (req, res) => {
+  try {
+    const raw = req.query.months != null ? Number.parseInt(req.query.months, 10) : 3;
+    if (!Number.isInteger(raw) || raw < 1 || raw > 12) {
+      return res.status(400).json({ error: 'months deve ser inteiro entre 1 e 12' });
+    }
+    const result = await procedimentoCustoService.getCustoRealProcedimentos(req.user.id, raw);
+    res.json(result);
+  } catch (error) {
+    console.error('Error getting custo procedimentos:', error);
+    res.status(500).json({ error: 'Failed to get custo procedimentos' });
+  }
+});
+
+// GET /api/dashboard/insights/simular-desconto?procedimento_id=&desconto_pct=
+router.get('/insights/simular-desconto', async (req, res) => {
+  try {
+    const pid = req.query.procedimento_id || req.query.procedimentoId;
+    const rawPct = req.query.desconto_pct ?? req.query.descontoPct;
+    if (!pid || !/^[0-9a-f-]{36}$/i.test(String(pid))) {
+      return res.status(400).json({ error: 'procedimento_id (UUID) é obrigatório' });
+    }
+    const pct = Number.parseFloat(rawPct);
+    if (!Number.isFinite(pct) || pct < 1 || pct > 99) {
+      return res.status(400).json({ error: 'desconto_pct deve ser entre 1 e 99' });
+    }
+    const result = await procedimentoCustoService.simularImpactoDesconto(
+      req.user.id,
+      pid,
+      pct
+    );
+    res.json(result);
+  } catch (error) {
+    console.error('Error simular desconto:', error);
+    if (String(error.message || '').includes('não encontrado')) {
+      return res.status(404).json({ error: error.message });
+    }
+    res.status(500).json({ error: 'Failed to simular desconto' });
+  }
+});
+
+// GET /api/dashboard/goals/caminho
+router.get('/goals/caminho', async (req, res) => {
+  try {
+    const result = await metaCaminhoService.calcularCaminhoMeta(req.user.id);
+    res.json(result);
+  } catch (error) {
+    console.error('Error getting goals caminho:', error);
+    res.status(500).json({ error: 'Failed to get meta caminho' });
+  }
+});
+
+// GET /api/dashboard/emergency/detalhes
+router.get('/emergency/detalhes', async (req, res) => {
+  try {
+    const result = await emergencyModeService.getEmergenciaDetalhada(req.user.id);
+    res.json(result);
+  } catch (error) {
+    console.error('Error getting emergency detalhes:', error);
+    res.status(500).json({ error: 'Failed to get emergency detalhes' });
   }
 });
 

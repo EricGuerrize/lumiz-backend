@@ -1,5 +1,6 @@
 const supabase = require('../db/supabase');
 const cashflowService = require('./cashflowService');
+const transactionController = require('../controllers/transactionController');
 const evolutionService = require('./evolutionService');
 const copy = require('../copy/emergencyWhatsappCopy');
 
@@ -59,6 +60,125 @@ class EmergencyModeService {
 
     console.log(`[EMERGENCY] ${alertsSent.length} alertas enviados`);
     return alertsSent;
+  }
+
+  _dateStr(d) {
+    return d.toISOString().split('T')[0];
+  }
+
+  _addDays(date, days) {
+    const x = new Date(date);
+    x.setDate(x.getDate() + days);
+    return x;
+  }
+
+  _recLine(prioridade) {
+    const n = Number(prioridade) || 5;
+    if (n <= 2) return 'Pague primeiro';
+    if (n >= 4) return 'Pode aguardar';
+    return 'Prioridade média: acompanhe a data de vencimento';
+  }
+
+  /**
+   * Painel detalhado: status atual + prioridade de pagamentos + recebíveis + antecipação sugerida.
+   */
+  async getEmergenciaDetalhada(userId) {
+    const status = await this.getStatus(userId);
+
+    const today = new Date();
+    const todayStr = this._dateStr(today);
+    const end30 = this._dateStr(this._addDays(today, 30));
+    const end15 = this._dateStr(this._addDays(today, 15));
+    const end7 = this._dateStr(this._addDays(today, 7));
+
+    const { data: contas30, error: e1 } = await supabase
+      .from('contas_pagar')
+      .select(
+        'id, descricao, valor, data_vencimento, categoria, prioridade, status_pagamento'
+      )
+      .eq('user_id', userId)
+      .eq('status_pagamento', 'pendente')
+      .gte('data_vencimento', todayStr)
+      .lte('data_vencimento', end30)
+      .order('prioridade', { ascending: true })
+      .order('data_vencimento', { ascending: true });
+
+    if (e1) throw e1;
+
+    const prioridade_pagamentos = (contas30 || []).map((c) => ({
+      descricao: c.descricao,
+      valor: parseFloat(c.valor) || 0,
+      data_vencimento: c.data_vencimento,
+      categoria: c.categoria || null,
+      prioridade: Number(c.prioridade) || 5,
+      recomendacao: this._recLine(c.prioridade),
+    }));
+
+    const { data: parcelas15, error: e2 } = await supabase
+      .from('parcelas')
+      .select('valor, valor_liquido, data_vencimento, atendimentos!inner(user_id)')
+      .eq('paga', false)
+      .eq('atendimentos.user_id', userId)
+      .gte('data_vencimento', todayStr)
+      .lte('data_vencimento', end15);
+
+    if (e2) throw e2;
+
+    const total_a_receber = (parcelas15 || []).reduce(
+      (s, p) => s + parseFloat(p.valor_liquido ?? p.valor ?? 0),
+      0
+    );
+
+    const recebiveis_proximos_15d = {
+      total_a_receber: Math.round(total_a_receber * 100) / 100,
+      mensagem: `Nos próximos 15 dias entram R$ ${total_a_receber.toLocaleString('pt-BR', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })} de recebível`,
+    };
+
+    const balance = await transactionController.getBalance(userId);
+    const saldo_atual = parseFloat(balance.saldo) || 0;
+
+    const { data: contas7, error: e3 } = await supabase
+      .from('contas_pagar')
+      .select('valor')
+      .eq('user_id', userId)
+      .eq('status_pagamento', 'pendente')
+      .gte('data_vencimento', todayStr)
+      .lte('data_vencimento', end7);
+
+    if (e3) throw e3;
+
+    const total_contas_vencendo_7d = (contas7 || []).reduce(
+      (s, c) => s + parseFloat(c.valor || 0),
+      0
+    );
+
+    const gap = total_contas_vencendo_7d - saldo_atual;
+    const antecipacao_sugerida =
+      gap > 0
+        ? {
+            necessaria: true,
+            valor: Math.round(gap * 100) / 100,
+            mensagem: `Antecipe pelo menos R$ ${gap.toLocaleString('pt-BR', {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })} para cobrir os próximos 7 dias`,
+          }
+        : {
+            necessaria: false,
+            valor: 0,
+            mensagem: 'Caixa suficiente para os próximos 7 dias',
+          };
+
+    return {
+      ...status,
+      saldo_atual: Math.round(saldo_atual * 100) / 100,
+      prioridade_pagamentos,
+      recebiveis_proximos_15d,
+      antecipacao_sugerida,
+    };
   }
 }
 
