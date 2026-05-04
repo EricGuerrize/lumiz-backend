@@ -752,8 +752,8 @@ router.get('/goals/monthly', async (req, res) => {
   }
 });
 
-// PUT /api/dashboard/goals/monthly
-router.put('/goals/monthly', async (req, res) => {
+// PUT /api/dashboard/goals/monthly — POST espelha o mesmo handler (clientes legados / curl)
+async function upsertMonthlyGoal(req, res) {
   try {
     const { year, month, meta_receita } = req.body || {};
     const parsedYear = Number.parseInt(year, 10);
@@ -788,7 +788,10 @@ router.put('/goals/monthly', async (req, res) => {
     console.error('Error updating monthly goal:', error);
     res.status(500).json({ error: 'Failed to update monthly goal' });
   }
-});
+}
+
+router.put('/goals/monthly', upsertMonthlyGoal);
+router.post('/goals/monthly', upsertMonthlyGoal);
 
 // GET /api/dashboard/health/score
 router.get('/health/score', async (req, res) => {

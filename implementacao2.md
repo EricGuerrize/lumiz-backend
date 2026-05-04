@@ -226,6 +226,7 @@ POST /api/dashboard/estoque/entrada   body: procedimento_id, quantidade, custo_u
 |--------|---------|
 | `GET` | `goals/monthly?year=&month=` |
 | `PUT` | `goals/monthly` |
+| `POST` | `goals/monthly` *(mesmo corpo que `PUT`; alias para clientes legados)* |
 | `GET` | `health/score` |
 | `GET` | `inadimplencia/overview` |
 | `GET` | `inadimplencia/cliente/:clienteId` |
@@ -238,7 +239,7 @@ POST /api/dashboard/estoque/entrada   body: procedimento_id, quantidade, custo_u
 #### Validações principais (query / body)
 
 - **`GET goals/monthly`:** `year` e `month` inteiros obrigatórios; `month` ∈ `1..12`; `year` inteiro válido (sem clamp explícito de faixa).
-- **`PUT goals/monthly` *(JSON body)*:** `year`, `month` inteiros (`month` `1..12`); `meta_receita` número finito `>= 0`.
+- **`PUT` / `POST` `goals/monthly` *(JSON body)*:** `year`, `month` inteiros (`month` `1..12`); `meta_receita` número finito `>= 0`.
 - **`GET inadimplencia/cliente/:clienteId`:** `:clienteId` UUID (regex estrita); senão `400`.
 - **`GET insights/sazonalidade`:** se `months` for inteiro, clamp `2..24`; ausente → `12`.
 - **`GET insights/custo-procedimentos`:** `months` inteiro `1..12` (default `3` se omitido).
@@ -247,7 +248,7 @@ POST /api/dashboard/estoque/entrada   body: procedimento_id, quantidade, custo_u
 
 #### Notas
 
-- Phase 5: sem migration nova documentada aqui — assume `monthly_goals` já aplicada; GET meta devolve linha ou `{ year, month, meta_receita: 0 }`.
+- Phase 5: tabela `monthly_goals` — migration [`20260505000001_create_monthly_goals.sql`](supabase/migrations/20260505000001_create_monthly_goals.sql); após `db push`, GET meta devolve linha ou `{ year, month, meta_receita: 0 }` se não houver registo.
 - Phase 6: sem migration; campos usam dados já existentes (procedimentos, transações, parcelas, etc.).
 - **Testes:** a suite unitária completa pode falhar por testes não relacionados a este slice; para este escopo Phase 6, os testes de **`estoqueService`** e **`cashflowService`** estão verdes quando rodados isoladamente *(slice estoque + cashflow)*.
 
@@ -314,6 +315,7 @@ POST /api/dashboard/estoque/entrada
 # Phase 5
 GET /api/dashboard/goals/monthly
 PUT /api/dashboard/goals/monthly
+POST /api/dashboard/goals/monthly
 GET /api/dashboard/health/score
 GET /api/dashboard/inadimplencia/overview
 GET /api/dashboard/inadimplencia/cliente/:clienteId
@@ -360,5 +362,13 @@ projection.days[i].data  // CORRETO (não .date)
 // Cron secret — apenas via header
 req.headers['x-cron-secret']  // nunca req.query.secret
 ```
+
+## Handoff — backend / deploy
+
+**Onde registrar:** checklist operacional em **[`HANDOFF_BACKEND.md`](HANDOFF_BACKEND.md)** (prioridade para o agente de backend). Ponteiros para o frontend em [`lumiz-financeiro/HANDOFF_FRONTEND.md`](lumiz-financeiro/HANDOFF_FRONTEND.md).
+
+- [x] **Meta mensal HTTP** — `PUT` e **`POST`** em `/api/dashboard/goals/monthly` com o mesmo body (`year`, `month`, `meta_receita`). O cliente em [`lumiz-financeiro/src/services/dashboard-api.ts`](lumiz-financeiro/src/services/dashboard-api.ts) usa `PUT`.
+- [x] **Migration `monthly_goals`** — arquivo [`supabase/migrations/20260505000001_create_monthly_goals.sql`](supabase/migrations/20260505000001_create_monthly_goals.sql) (tabela + `UNIQUE (user_id, year, month)` + RLS). Falta aplicar em produção: `supabase db push` (ou SQL manual no dashboard Supabase).
+- [ ] **Deploy / sanidade** — Railway na mesma revisão que [`src/routes/dashboard.routes.js`](src/routes/dashboard.routes.js); validar rotas listadas em `HANDOFF_BACKEND.md` com token real após o push das migrations.
 
 - feito pelo Cursor no backend
