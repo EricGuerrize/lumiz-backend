@@ -8,6 +8,9 @@ const pricingIntelligenceService = require('../services/pricingIntelligenceServi
 const emergencyModeService = require('../services/emergencyModeService');
 const exportService = require('../services/exportService');
 const estoqueService = require('../services/estoqueService');
+const healthScoreService = require('../services/healthScoreService');
+const inadimplenciaService = require('../services/inadimplenciaService');
+const sazonalidadeService = require('../services/sazonalidadeService');
 const userController = require('../controllers/userController');
 const { authenticateFlexible } = require('../middleware/authMiddleware');
 const { validate } = require('../middleware/validationMiddleware');
@@ -717,6 +720,123 @@ router.get('/export/report', async (req, res) => {
   } catch (error) {
     console.error('Error exporting report:', error);
     res.status(500).json({ error: 'Failed to export report' });
+  }
+});
+
+// GET /api/dashboard/goals/monthly?year=2026&month=5
+router.get('/goals/monthly', async (req, res) => {
+  try {
+    const year = Number.parseInt(req.query.year, 10);
+    const month = Number.parseInt(req.query.month, 10);
+
+    if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+      return res.status(400).json({ error: 'year e month são obrigatórios (month: 1..12)' });
+    }
+
+    const { data, error } = await supabase
+      .from('monthly_goals')
+      .select('*')
+      .eq('user_id', req.user.id)
+      .eq('year', year)
+      .eq('month', month)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    res.json(data || { year, month, meta_receita: 0 });
+  } catch (error) {
+    console.error('Error getting monthly goal:', error);
+    res.status(500).json({ error: 'Failed to get monthly goal' });
+  }
+});
+
+// PUT /api/dashboard/goals/monthly
+router.put('/goals/monthly', async (req, res) => {
+  try {
+    const { year, month, meta_receita } = req.body || {};
+    const parsedYear = Number.parseInt(year, 10);
+    const parsedMonth = Number.parseInt(month, 10);
+    const parsedMeta = Number(meta_receita);
+
+    if (!Number.isInteger(parsedYear) || !Number.isInteger(parsedMonth) || parsedMonth < 1 || parsedMonth > 12) {
+      return res.status(400).json({ error: 'year e month são obrigatórios (month: 1..12)' });
+    }
+    if (!Number.isFinite(parsedMeta) || parsedMeta < 0) {
+      return res.status(400).json({ error: 'meta_receita deve ser número >= 0' });
+    }
+
+    const payload = {
+      user_id: req.user.id,
+      year: parsedYear,
+      month: parsedMonth,
+      meta_receita: parsedMeta,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase
+      .from('monthly_goals')
+      .upsert(payload, { onConflict: 'user_id,year,month' })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    res.json(data);
+  } catch (error) {
+    console.error('Error updating monthly goal:', error);
+    res.status(500).json({ error: 'Failed to update monthly goal' });
+  }
+});
+
+// GET /api/dashboard/health/score
+router.get('/health/score', async (req, res) => {
+  try {
+    const result = await healthScoreService.getScore(req.user.id);
+    res.json(result);
+  } catch (error) {
+    console.error('Error getting health score:', error);
+    res.status(500).json({ error: 'Failed to get health score' });
+  }
+});
+
+// GET /api/dashboard/inadimplencia/overview
+router.get('/inadimplencia/overview', async (req, res) => {
+  try {
+    const result = await inadimplenciaService.getOverview(req.user.id);
+    res.json(result);
+  } catch (error) {
+    console.error('Error getting inadimplencia overview:', error);
+    res.status(500).json({ error: 'Failed to get inadimplencia overview' });
+  }
+});
+
+// GET /api/dashboard/inadimplencia/cliente/:clienteId
+router.get('/inadimplencia/cliente/:clienteId', async (req, res) => {
+  try {
+    const { clienteId } = req.params;
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(clienteId)) {
+      return res.status(400).json({ error: 'clienteId inválido' });
+    }
+
+    const result = await inadimplenciaService.getDetalheCliente(req.user.id, clienteId);
+    res.json(result);
+  } catch (error) {
+    console.error('Error getting inadimplencia cliente:', error);
+    res.status(500).json({ error: 'Failed to get inadimplencia cliente' });
+  }
+});
+
+// GET /api/dashboard/insights/sazonalidade?months=12
+router.get('/insights/sazonalidade', async (req, res) => {
+  try {
+    const rawMonths = Number.parseInt(req.query.months, 10);
+    const months = Number.isInteger(rawMonths) ? Math.min(Math.max(rawMonths, 2), 24) : 12;
+    const result = await sazonalidadeService.getSazonalidade(req.user.id, months);
+    res.json(result);
+  } catch (error) {
+    console.error('Error getting sazonalidade insights:', error);
+    res.status(500).json({ error: 'Failed to get sazonalidade insights' });
   }
 });
 
