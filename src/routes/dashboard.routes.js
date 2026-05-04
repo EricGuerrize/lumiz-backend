@@ -566,13 +566,25 @@ router.get('/calendar', async (req, res) => {
 });
 
 // GET /api/dashboard/simulator/scenario - Simulador what-if
+// Query canônico: extra_revenue, cut_expense_pct, new_fixed_cost, month, year
+// Aliases (doc / PT): receita_extra, corte_custos_pct, custos_fixos
 router.get('/simulator/scenario', async (req, res) => {
   try {
-    const extraRevenue = Math.min(Math.max(parseFloat(req.query.extra_revenue) || 0, 0), 1_000_000);
-    const cutExpensePct = Math.min(Math.max(parseFloat(req.query.cut_expense_pct) || 0, 0), 100);
-    const newFixedCost = Math.min(Math.max(parseFloat(req.query.new_fixed_cost) || 0, 0), 1_000_000);
-    const month = req.query.month ? Math.min(Math.max(parseInt(req.query.month), 1), 12) : undefined;
-    const year = req.query.year ? Math.min(Math.max(parseInt(req.query.year), 2000), 2100) : undefined;
+    const q = req.query;
+    const firstNum = (keys) => {
+      for (const k of keys) {
+        if (q[k] != null && String(q[k]).length) {
+          const n = parseFloat(q[k]);
+          if (!Number.isNaN(n)) return n;
+        }
+      }
+      return 0;
+    };
+    const extraRevenue = Math.min(Math.max(firstNum(['extra_revenue', 'receita_extra']), 0), 1_000_000);
+    const cutExpensePct = Math.min(Math.max(firstNum(['cut_expense_pct', 'corte_custos_pct']), 0), 100);
+    const newFixedCost = Math.min(Math.max(firstNum(['new_fixed_cost', 'custos_fixos']), 0), 1_000_000);
+    const month = q.month ? Math.min(Math.max(parseInt(q.month, 10), 1), 12) : undefined;
+    const year = q.year ? Math.min(Math.max(parseInt(q.year, 10), 2000), 2100) : undefined;
     const result = await simulatorService.runScenario(req.user.id, { extraRevenue, cutExpensePct, newFixedCost, month, year });
     res.json(result);
   } catch (error) {
@@ -581,17 +593,22 @@ router.get('/simulator/scenario', async (req, res) => {
   }
 });
 
-// GET /api/dashboard/insights/pricing - Análise de precificação
-router.get('/insights/pricing', async (req, res) => {
+async function pricingInsightsHandler(req, res) {
   try {
-    const months = Math.min(parseInt(req.query.months) || 3, 12);
+    const months = Math.min(parseInt(req.query.months, 10) || 3, 12);
     const result = await pricingIntelligenceService.analyze(req.user.id, { months });
     res.json(result);
   } catch (error) {
     console.error('Error getting pricing insights:', error);
     res.status(500).json({ error: 'Failed to get pricing insights' });
   }
-});
+}
+
+// GET /api/dashboard/insights/pricing - Análise de precificação
+router.get('/insights/pricing', pricingInsightsHandler);
+
+// GET /api/dashboard/pricing/insights - mesmo handler (alias para doc / clientes legados)
+router.get('/pricing/insights', pricingInsightsHandler);
 
 // GET /api/dashboard/emergency/status - Status de caixa de emergência
 router.get('/emergency/status', async (req, res) => {

@@ -398,7 +398,12 @@ app.get('/', (req, res) => {
         user: '/api/dashboard/user',
         contasPagar: '/api/dashboard/contas-a-pagar',
         cashflowProjection: '/api/dashboard/cashflow/projection',
-        calendar: '/api/dashboard/calendar'
+        calendar: '/api/dashboard/calendar',
+        simulatorScenario: '/api/dashboard/simulator/scenario',
+        insightsPricing: '/api/dashboard/insights/pricing',
+        pricingInsightsAlias: '/api/dashboard/pricing/insights',
+        emergencyStatus: '/api/dashboard/emergency/status',
+        exportReport: '/api/dashboard/export/report'
       },
       auth: {
         note: 'Use Authorization: Bearer <supabase_token> or x-user-phone header'

@@ -105,6 +105,15 @@ describe('getCashflowProjection', () => {
     const result = await cashflowService.getCashflowProjection('user-1', 30);
     expect(result.days.every(d => d.entradas > 0 || d.saidas > 0)).toBe(true);
   });
+
+  it('cada dia expõe data e date (mesmo valor) para compatibilidade API/dashboard', async () => {
+    const result = await cashflowService.getCashflowProjection('user-1', 30);
+    expect(result.days.length).toBeGreaterThan(0);
+    for (const d of result.days) {
+      expect(d.data).toBe(d.date);
+      expect(d.data).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    }
+  });
 });
 
 describe('getFinancialCalendar', () => {
@@ -139,6 +148,16 @@ describe('getFinancialCalendar', () => {
   it('summary.diasComEventos bate com Object.keys(events).length', async () => {
     const result = await cashflowService.getFinancialCalendar('user-1', start, end);
     expect(result.summary.diasComEventos).toBe(Object.keys(result.events).length);
+  });
+
+  it('summary inclui aliases totalEntradas/totalSaidas/saldoFinal alinhados ao dashboard web', async () => {
+    const result = await cashflowService.getFinancialCalendar('user-1', start, end);
+    expect(result.summary.totalEntradas).toBe(result.summary.totalEntradasPrevistas);
+    expect(result.summary.totalSaidas).toBe(result.summary.totalSaidasPrevistas);
+    expect(result.summary.saldoFinal).toBeCloseTo(
+      result.summary.totalEntradasPrevistas - result.summary.totalSaidasPrevistas,
+      5
+    );
   });
 
   it('retorna period com start e end corretos', async () => {

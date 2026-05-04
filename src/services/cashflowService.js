@@ -118,7 +118,15 @@ class CashflowService {
     const days_arr = sortedDates.map(data => {
       const b = buckets[data];
       saldoAcumulado += b.entradas - b.saidas;
-      return { data, entradas: b.entradas, saidas: b.saidas, saldoAcumulado, eventos: b.eventos };
+      // `data` — usado por serviços internos (ex.: emergencyMode); `date` — contrato do dashboard web
+      return {
+        data,
+        date: data,
+        entradas: b.entradas,
+        saidas: b.saidas,
+        saldoAcumulado,
+        eventos: b.eventos,
+      };
     });
 
     const totalEntradas = days_arr.reduce((s, d) => s + d.entradas, 0);
@@ -126,7 +134,6 @@ class CashflowService {
 
     return {
       saldoAtual,
-      projectionDays: days,
       summary: { totalEntradas, totalSaidas, saldoFinal: saldoAtual + totalEntradas - totalSaidas },
       days: days_arr,
     };
@@ -212,8 +219,11 @@ class CashflowService {
           );
           if (!alreadyExists) {
             addEvent(dateStr, {
-              tipo: 'saida', descricao: categoria,
-              valor: medianValor, predicted: true,
+              tipo: 'saida',
+              id: `pred-${dateStr}-${categoria}`,
+              descricao: categoria,
+              valor: medianValor,
+              predicted: true,
             });
           }
         }
@@ -224,10 +234,18 @@ class CashflowService {
     const allEvents = Object.values(events).flat();
     const totalEntradasPrevistas = allEvents.filter(e => e.tipo === 'entrada').reduce((s, e) => s + e.valor, 0);
     const totalSaidasPrevistas = allEvents.filter(e => e.tipo === 'saida').reduce((s, e) => s + e.valor, 0);
+    const saldoFinalPrevisto = totalEntradasPrevistas - totalSaidasPrevistas;
 
     return {
       period: { start: startStr, end: endStr },
-      summary: { totalEntradasPrevistas, totalSaidasPrevistas, diasComEventos: Object.keys(events).length },
+      summary: {
+        totalEntradasPrevistas,
+        totalSaidasPrevistas,
+        totalEntradas: totalEntradasPrevistas,
+        totalSaidas: totalSaidasPrevistas,
+        saldoFinal: saldoFinalPrevisto,
+        diasComEventos: Object.keys(events).length,
+      },
       events,
     };
   }
