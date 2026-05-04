@@ -202,60 +202,54 @@ POST /api/dashboard/estoque/entrada   body: procedimento_id, quantidade, custo_u
 
 ---
 
-### ✅ Phase 5 — Meta Mensal Persistida + Health Score + Inadimplência + Sazonalidade
-**Status:** Backend implementado e validado. Sem novas migrations (tabela `monthly_goals` já aplicada).
+### ✅ Phase 5 & 6 — Dashboard backend (referência única)
 
-#### Serviços criados
-| Arquivo | O que faz |
-|---|---|
-| `src/services/healthScoreService.js` | Calcula score 0–100 com 4 componentes: margem do mês (40), pontualidade de recebimentos (30), cobertura de caixa 30 dias (20), tendência de receita vs mês anterior (10). Retorna `score`, `nivel`, `componentes` e `recomendacao`. |
-| `src/services/inadimplenciaService.js` | Consolida parcelas vencidas não pagas por cliente com classificação de risco (`baixo`, `medio`, `alto`) e detalha inadimplência por cliente. |
-| `src/services/sazonalidadeService.js` | Calcula sazonalidade mensal (receita/custos/lucro), identifica mês forte/fraco, média de receita e tendência por comparação de médias dos últimos 3 meses vs 3 anteriores. |
+**Escopo Phase 5:** meta mensal (GET/PUT), health score, inadimplência (overview + por cliente), sazonalidade.  
+**Escopo Phase 6:** custo real por procedimento, simulação de desconto, caminho da meta, emergência detalhada.  
+**Wire:** todas as rotas abaixo em `src/routes/dashboard.routes.js` (auth dashboard existente).
 
-#### Endpoints adicionados (`src/routes/dashboard.routes.js`)
-```
-GET /api/dashboard/goals/monthly?year=2026&month=5
-PUT /api/dashboard/goals/monthly
-GET /api/dashboard/health/score
-GET /api/dashboard/inadimplencia/overview
-GET /api/dashboard/inadimplencia/cliente/:clienteId
-GET /api/dashboard/insights/sazonalidade?months=12
-```
+#### Serviços
 
-#### Regras de validação aplicadas
-- `goals/monthly` (GET): `year` e `month` obrigatórios; `month` no range `1..12`
-- `goals/monthly` (PUT): `year`, `month`, `meta_receita >= 0`
-- `inadimplencia/cliente/:clienteId`: valida UUID; retorna `400` quando inválido
-- `insights/sazonalidade`: `months` com clamp `2..24` (default `12`)
+| Fase | Arquivo | Responsabilidade |
+|------|---------|------------------|
+| 5 | `src/services/healthScoreService.js` | `getScore(userId)` — score 0–100 (margem, pontualidade recebimentos, cobertura caixa ~30d, tendência vs mês anterior); `nivel`, `componentes`, `recomendacao`. Usa Supabase + `transactionController` para métricas do período corrente. |
+| 5 | `src/services/inadimplenciaService.js` | `getOverview`, `getDetalheCliente` — parcelas vencidas não pagas agregadas por cliente, risco `baixo` / `medio` / `alto`. |
+| 5 | `src/services/sazonalidadeService.js` | `getSazonalidade(userId, months)` — séries mensais receita/custo/lucro, mês forte/fraco, tendência (média últimos 3 vs 3 anteriores). |
+| 5 | *(sem service dedicado)* | Metas mensais: `dashboard.routes.js` faz `select` / `upsert` na tabela `monthly_goals` (`onConflict: user_id,year,month`, `updated_at`). |
+| 6 | `src/services/procedimentoCustoService.js` | `getCustoRealProcedimentos`, `simularImpactoDesconto` — médias por procedimento (material, MDR cartão), margem, preço mínimo; simulação de impacto do desconto. |
+| 6 | `src/services/metaCaminhoService.js` | `calcularCaminhoMeta` — meta do mês atual em `monthly_goals`, fallback `profiles.meta_mensal`; ritmo vs necessário, falta para bater meta, sugestões. |
+| 6 | `src/services/emergencyModeService.js` | `getEmergenciaDetalhada` — além do `getStatus` (cashflow 30d), prioriza `contas_pagar`, recebíveis ~15d, sugestão de antecipação; `getStatus` permanece para cron/WhatsApp. |
 
-#### Observações de implementação
-- Upsert de meta mensal com `onConflict: 'user_id,year,month'` e `updated_at`
-- GET de meta mensal retorna registro existente ou fallback `{ year, month, meta_receita: 0 }`
-- Sem alteração de comportamento das rotas existentes; apenas novas rotas adicionadas
+#### Rotas (caminhos relativos a `/api/dashboard`)
 
----
+| Método | Caminho |
+|--------|---------|
+| `GET` | `goals/monthly?year=&month=` |
+| `PUT` | `goals/monthly` |
+| `GET` | `health/score` |
+| `GET` | `inadimplencia/overview` |
+| `GET` | `inadimplencia/cliente/:clienteId` |
+| `GET` | `insights/sazonalidade?months=` *(opcional; default comportamental 12)* |
+| `GET` | `insights/custo-procedimentos?months=` *(opcional; default 3)* |
+| `GET` | `insights/simular-desconto?procedimento_id=&desconto_pct=` *(aliases: `procedimentoId`, `descontoPct`)* |
+| `GET` | `goals/caminho` |
+| `GET` | `emergency/detalhes` |
 
-### ✅ Phase 6 — Custo Real do Procedimento + Caminho da Meta + Emergência Detalhada
-**Status:** Backend puro (sem migration). Consumir via dashboard quando o frontend expuser telas.
+#### Validações principais (query / body)
 
-#### Serviços criados / estendidos
-| Arquivo | O que faz |
-|---|---|
-| `src/services/procedimentoCustoService.js` | `getCustoRealProcedimentos(userId, meses)`: médias de custo material, MDR em cartão, margem real, preço mínimo sem prejuízo, alertas de prejuízo. `simularImpactoDesconto(userId, procedimentoId, descontoPct)`: impacto de desconto na margem. |
-| `src/services/metaCaminhoService.js` | `calcularCaminhoMeta(userId)`: meta em `monthly_goals` (ou `profiles.meta_mensal`), falta a faturar, ritmo vs necessidade, sugestões de ação. |
-| `src/services/emergencyModeService.js` | `getEmergenciaDetalhada(userId)`: reaproveita `getStatus` + prioridade de `contas_pagar`, recebíveis 15 dias, antecipação sugerida (gap 7 dias vs saldo). `getStatus` inalterado para WhatsApp/cron. |
+- **`GET goals/monthly`:** `year` e `month` inteiros obrigatórios; `month` ∈ `1..12`; `year` inteiro válido (sem clamp explícito de faixa).
+- **`PUT goals/monthly` *(JSON body)*:** `year`, `month` inteiros (`month` `1..12`); `meta_receita` número finito `>= 0`.
+- **`GET inadimplencia/cliente/:clienteId`:** `:clienteId` UUID (regex estrita); senão `400`.
+- **`GET insights/sazonalidade`:** se `months` for inteiro, clamp `2..24`; ausente → `12`.
+- **`GET insights/custo-procedimentos`:** `months` inteiro `1..12` (default `3` se omitido).
+- **`GET insights/simular-desconto`:** `procedimento_id` string 36 chars (formato UUID com hífens); `desconto_pct` finito `1..99`; procedimento inexistente → `404` com mensagem do service.
+- **`GET health/score`**, **`GET inadimplencia/overview`**, **`GET goals/caminho`**, **`GET emergency/detalhes`:** sem parâmetros adicionais além do usuário autenticado.
 
-#### Endpoints adicionados (`src/routes/dashboard.routes.js`)
-```
-GET /api/dashboard/insights/custo-procedimentos?months=3
-GET /api/dashboard/insights/simular-desconto?procedimento_id=uuid&desconto_pct=10
-GET /api/dashboard/goals/caminho
-GET /api/dashboard/emergency/detalhes
-```
+#### Notas
 
-#### Validações
-- `months` em custo-procedimentos: inteiro `1..12`
-- `simular-desconto`: `procedimento_id` UUID; `desconto_pct` entre `1` e `99`
+- Phase 5: sem migration nova documentada aqui — assume `monthly_goals` já aplicada; GET meta devolve linha ou `{ year, month, meta_receita: 0 }`.
+- Phase 6: sem migration; campos usam dados já existentes (procedimentos, transações, parcelas, etc.).
+- **Testes:** a suite unitária completa pode falhar por testes não relacionados a este slice; para este escopo Phase 6, os testes de **`estoqueService`** e **`cashflowService`** estão verdes quando rodados isoladamente *(slice estoque + cashflow)*.
 
 ---
 
@@ -366,3 +360,5 @@ projection.days[i].data  // CORRETO (não .date)
 // Cron secret — apenas via header
 req.headers['x-cron-secret']  // nunca req.query.secret
 ```
+
+- feito pelo Cursor no backend
