@@ -1,4 +1,4 @@
-# Lumiz — Monitoramento de Implementação (Phases 1–4)
+# Lumiz — Monitoramento de Implementação (Phases 1–6)
 
 > **Última atualização:** 2026-05-04
 > **Repositório backend:** https://github.com/EricGuerrize/lumiz-backend
@@ -235,6 +235,30 @@ GET /api/dashboard/insights/sazonalidade?months=12
 
 ---
 
+### ✅ Phase 6 — Custo Real do Procedimento + Caminho da Meta + Emergência Detalhada
+**Status:** Backend puro (sem migration). Consumir via dashboard quando o frontend expuser telas.
+
+#### Serviços criados / estendidos
+| Arquivo | O que faz |
+|---|---|
+| `src/services/procedimentoCustoService.js` | `getCustoRealProcedimentos(userId, meses)`: médias de custo material, MDR em cartão, margem real, preço mínimo sem prejuízo, alertas de prejuízo. `simularImpactoDesconto(userId, procedimentoId, descontoPct)`: impacto de desconto na margem. |
+| `src/services/metaCaminhoService.js` | `calcularCaminhoMeta(userId)`: meta em `monthly_goals` (ou `profiles.meta_mensal`), falta a faturar, ritmo vs necessidade, sugestões de ação. |
+| `src/services/emergencyModeService.js` | `getEmergenciaDetalhada(userId)`: reaproveita `getStatus` + prioridade de `contas_pagar`, recebíveis 15 dias, antecipação sugerida (gap 7 dias vs saldo). `getStatus` inalterado para WhatsApp/cron. |
+
+#### Endpoints adicionados (`src/routes/dashboard.routes.js`)
+```
+GET /api/dashboard/insights/custo-procedimentos?months=3
+GET /api/dashboard/insights/simular-desconto?procedimento_id=uuid&desconto_pct=10
+GET /api/dashboard/goals/caminho
+GET /api/dashboard/emergency/detalhes
+```
+
+#### Validações
+- `months` em custo-procedimentos: inteiro `1..12`
+- `simular-desconto`: `procedimento_id` UUID; `desconto_pct` entre `1` e `99`
+
+---
+
 ## Frontend (lumiz-financeiro)
 
 **Commit:** `66ce7f7`
@@ -269,7 +293,7 @@ GET /api/dashboard/insights/sazonalidade?months=12
 
 ---
 
-## Resumo de todos os endpoints do backend (Phase 1–4)
+## Resumo de todos os endpoints do backend (Phase 1–6)
 
 ```
 # Phase 1 — Cron HTTP + outros crons no server.js
@@ -300,6 +324,12 @@ GET /api/dashboard/health/score
 GET /api/dashboard/inadimplencia/overview
 GET /api/dashboard/inadimplencia/cliente/:clienteId
 GET /api/dashboard/insights/sazonalidade
+
+# Phase 6
+GET /api/dashboard/insights/custo-procedimentos
+GET /api/dashboard/insights/simular-desconto
+GET /api/dashboard/goals/caminho
+GET /api/dashboard/emergency/detalhes
 ```
 
 ---
