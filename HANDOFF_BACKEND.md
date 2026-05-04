@@ -20,9 +20,9 @@ O código usa `monthly_goals` em:
 - [`src/routes/dashboard.routes.js`](src/routes/dashboard.routes.js) — `GET` / `PUT` / `POST` em `/goals/monthly`.
 - [`src/services/metaCaminhoService.js`](src/services/metaCaminhoService.js) — leitura da meta.
 
-**Migration adicionada:** [`supabase/migrations/20260505000001_create_monthly_goals.sql`](supabase/migrations/20260505000001_create_monthly_goals.sql) — tabela com `UNIQUE (user_id, year, month)`, FK para `profiles(id)`, RLS para `authenticated`.
+**Migration no repositório:** [`supabase/migrations/20260505000001_create_monthly_goals.sql`](supabase/migrations/20260505000001_create_monthly_goals.sql) — `UNIQUE (user_id, year, month)`, FK para `profiles(id)`, RLS para `authenticated`.
 
-**Ação em produção:** aplicar no Supabase (`supabase db push` ou executar o SQL no dashboard). Até lá, `GET`/`PUT`/`POST` de meta podem falhar com erro de relação inexistente.
+**Produção:** aplicada no projeto Supabase **Lumiz** (migration remota `create_monthly_goals`). **Outros ambientes** (local, branch preview): `supabase db push` ou executar o SQL no dashboard se a tabela ainda não existir.
 
 ---
 
@@ -42,11 +42,29 @@ Confirmar que a versão deployada no Railway inclui as rotas usadas pelo dashboa
 | GET | `/api/dashboard/emergency/detalhes` |
 | GET | `/api/dashboard/export/report` |
 
-Todas estão definidas em [`src/routes/dashboard.routes.js`](src/routes/dashboard.routes.js). Após aplicar o item 2 (`monthly_goals`), validar em staging/produção com token de utilizador real.
+Todas estão definidas em [`src/routes/dashboard.routes.js`](src/routes/dashboard.routes.js). Validar em staging/produção com token de utilizador real após deploy.
+
+---
+
+## Smoke e regressão (gate antes de dar backend por fechado)
+
+Na raiz do repo `lumiz-backend`:
+
+```bash
+npm run test:regression
+```
+
+Smoke de carregamento do router (processo deve terminar sozinho após ~1s):
+
+```bash
+node -e "require('./src/routes/dashboard.routes.js'); setTimeout(()=>process.exit(0),1000)"
+```
+
+**Nota:** com `REDIS_URL` a apontar para um host inacessível em local, podem aparecer logs de erro Redis/BullMQ; o importante é exit code `0` no smoke. O script `test:regression` desliga cache e fila MDR para o Jest não ficar pendurado.
 
 ---
 
 ## Referência de documentação interna
 
-- Plano geral de implementação backend: [`implementacao2.md`](implementacao2.md) (inclui seção *Handoff pendente — backend (post-frontend)*).
+- Plano geral de implementação backend: [`implementacao2.md`](implementacao2.md) (inclui *Definition of Done* e *Handoff — backend / deploy*).
 - Plano de telas/contratos no frontend: [`lumiz-financeiro/implementacao2FRONTEND.md`](lumiz-financeiro/implementacao2FRONTEND.md).

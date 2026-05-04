@@ -363,12 +363,22 @@ projection.days[i].data  // CORRETO (não .date)
 req.headers['x-cron-secret']  // nunca req.query.secret
 ```
 
+## Definition of Done — backend Phases 1–6 (fecho)
+
+- **Rotas:** todas as entradas do bloco “Resumo de todos os endpoints” (Phase 1–6) existem em [`src/routes/dashboard.routes.js`](src/routes/dashboard.routes.js) (e crons em [`src/server.js`](src/server.js) onde aplicável).
+- **Base de dados:** `monthly_goals` definida em [`supabase/migrations/20260505000001_create_monthly_goals.sql`](supabase/migrations/20260505000001_create_monthly_goals.sql); **produção (projeto Lumiz)** aplicada via migration remota / MCP. Outros ambientes: `supabase db push` ou SQL manual.
+- **Regressão automática:** `npm run test:regression` — slice `estoqueService` + `cashflowService`, Redis cache/fila desligados, `--forceExit` (evita processo preso por BullMQ).
+- **Smoke de módulo:** `node -e "require('./src/routes/dashboard.routes.js'); setTimeout(()=>process.exit(0),1000)"` na raiz (avisos Redis/`ENOTFOUND` em local sem Railway são esperados).
+- **Sanidade pós-deploy (manual):** Railway com o mesmo commit que o repo; chamadas com Bearer às rotas listadas em [`HANDOFF_BACKEND.md`](HANDOFF_BACKEND.md).
+
+---
+
 ## Handoff — backend / deploy
 
 **Onde registrar:** checklist operacional em **[`HANDOFF_BACKEND.md`](HANDOFF_BACKEND.md)** (prioridade para o agente de backend). Ponteiros para o frontend em [`lumiz-financeiro/HANDOFF_FRONTEND.md`](lumiz-financeiro/HANDOFF_FRONTEND.md).
 
 - [x] **Meta mensal HTTP** — `PUT` e **`POST`** em `/api/dashboard/goals/monthly` com o mesmo body (`year`, `month`, `meta_receita`). O cliente em [`lumiz-financeiro/src/services/dashboard-api.ts`](lumiz-financeiro/src/services/dashboard-api.ts) usa `PUT`.
-- [x] **Migration `monthly_goals`** — arquivo [`supabase/migrations/20260505000001_create_monthly_goals.sql`](supabase/migrations/20260505000001_create_monthly_goals.sql) (tabela + `UNIQUE (user_id, year, month)` + RLS). Falta aplicar em produção: `supabase db push` (ou SQL manual no dashboard Supabase).
-- [ ] **Deploy / sanidade** — Railway na mesma revisão que [`src/routes/dashboard.routes.js`](src/routes/dashboard.routes.js); validar rotas listadas em `HANDOFF_BACKEND.md` com token real após o push das migrations.
+- [x] **Migration `monthly_goals`** — migration no repo + **aplicada em produção (Supabase projeto Lumiz)**. Clones/staging: correr `supabase db push` ou aplicar o ficheiro SQL se ainda não existir a tabela.
+- [ ] **Deploy / sanidade** — Railway na revisão alinhada a `main`; validar rotas em [`HANDOFF_BACKEND.md`](HANDOFF_BACKEND.md) com token real (passo humano após cada release).
 
 - feito pelo Cursor no backend
