@@ -1,4 +1,5 @@
 const supabase = require('../db/supabase');
+const { formatarMoeda } = require('../utils/currency');
 
 class InadimplenciaService {
   _dateStr(date) {
@@ -111,11 +112,24 @@ class InadimplenciaService {
     const totalEmAtraso = clientes.reduce((sum, c) => sum + c.totalEmAtraso, 0);
     const totalParcelas = clientes.reduce((sum, c) => sum + c.totalParcelas, 0);
     const percentualFaturamento = faturamentoMes > 0 ? (totalEmAtraso / faturamentoMes) * 100 : 0;
+    const pctFmt = parseFloat(percentualFaturamento.toFixed(1));
+
+    let mensagemImpacto;
+    if (totalEmAtraso <= 0) {
+      mensagemImpacto = 'Não há parcelas em atraso.';
+    } else if (faturamentoMes > 0) {
+      mensagemImpacto = `Você tem ${formatarMoeda(totalEmAtraso)} em parcelas em atraso; isso representa ${pctFmt}% do faturamento do mês atual.`;
+    } else {
+      mensagemImpacto = `Você tem ${formatarMoeda(totalEmAtraso)} em parcelas em atraso. (Sem faturamento registrado no mês atual para calcular percentual.)`;
+    }
 
     return {
       totalEmAtraso: parseFloat(totalEmAtraso.toFixed(2)),
-      percentualFaturamento: parseFloat(percentualFaturamento.toFixed(1)),
+      percentualFaturamento: pctFmt,
       totalParcelas,
+      faturamentoMesReferencia: parseFloat(faturamentoMes.toFixed(2)),
+      periodoFaturamentoReferencia: 'mes_atual',
+      mensagemImpacto,
       clientes,
     };
   }

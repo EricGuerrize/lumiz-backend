@@ -132,10 +132,30 @@ class CashflowService {
     const totalEntradas = days_arr.reduce((s, d) => s + d.entradas, 0);
     const totalSaidas = days_arr.reduce((s, d) => s + d.saidas, 0);
 
+    const projectionDays = days_arr.map((d) => ({
+      ...d,
+      caixaNegativo: d.saldoAcumulado < 0,
+    }));
+
+    let primeiroDiaCaixaNegativo = null;
+    for (const d of projectionDays) {
+      if (d.caixaNegativo && !primeiroDiaCaixaNegativo) {
+        primeiroDiaCaixaNegativo = d.data;
+      }
+    }
+    const diasComCaixaNegativo = projectionDays.filter((d) => d.caixaNegativo).length;
+
     return {
       saldoAtual,
-      summary: { totalEntradas, totalSaidas, saldoFinal: saldoAtual + totalEntradas - totalSaidas },
-      days: days_arr,
+      summary: {
+        totalEntradas,
+        totalSaidas,
+        saldoFinal: saldoAtual + totalEntradas - totalSaidas,
+        diasComCaixaNegativo,
+        primeiroDiaCaixaNegativo,
+        temProjecaoCaixaNegativo: diasComCaixaNegativo > 0,
+      },
+      days: projectionDays,
     };
   }
 

@@ -114,6 +114,31 @@ describe('getCashflowProjection', () => {
       expect(d.data).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     }
   });
+
+  it('marca caixaNegativo e resumo quando saldo acumulado projetado cai abaixo de zero', async () => {
+    const t = dateOffset(2);
+    transactionController.getBalance = jest.fn().mockResolvedValue({ saldo: 1000, entradas: 0, saidas: 0 });
+    supabase.from = jest.fn((table) => {
+      if (table === 'parcelas') {
+        return buildQueryMock({ data: [], error: null });
+      }
+      if (table === 'contas_pagar') {
+        return buildQueryMock({
+          data: [{ id: 'c1', descricao: 'Fornecedor', valor: '5000', data_vencimento: t, categoria: 'insumo' }],
+          error: null,
+        });
+      }
+      return buildQueryMock({ data: [], error: null });
+    });
+
+    const result = await cashflowService.getCashflowProjection('user-1', 30);
+    expect(result.days.length).toBe(1);
+    expect(result.days[0].caixaNegativo).toBe(true);
+    expect(result.days[0].saldoAcumulado).toBeLessThan(0);
+    expect(result.summary.temProjecaoCaixaNegativo).toBe(true);
+    expect(result.summary.diasComCaixaNegativo).toBe(1);
+    expect(result.summary.primeiroDiaCaixaNegativo).toBe(t);
+  });
 });
 
 describe('getFinancialCalendar', () => {

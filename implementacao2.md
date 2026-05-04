@@ -330,6 +330,44 @@ GET /api/dashboard/emergency/detalhes
 
 ---
 
+## PDF *Lumiz Estética* — mapeamento backlog (Lumiz vs Alter)
+
+Referência: [`Lumiz Estética.pdf`](Lumiz%20Estética.pdf) (melhorias). Itens marcados **Alter** ficam com integração **externa** (antecipação, boletos, cruzamento recebível–distribuidor, cenários de antecipação, cobertura fornecedor com recebível, parte do score/crédito ligada à Alter, etc.). O backend **Lumiz** foca no que é possível com dados próprios (Supabase + regras).
+
+| Tema (PDF) | Escopo | Estado no backend Lumiz |
+|------------|--------|-------------------------|
+| §1a MDR / antecipar / comparar credenciadoras | Alter + dados concorrentes | MDR em atendimentos; comparativo profundo = **Alter**. |
+| §1b Recebíveis 30–180d livre vs comprometido + simulação antecipação | Alter | Parcial: parcelas em **cashflow**; “comprometido” = **Alter**. |
+| §1c Compras + caixa + recebíveis | Alter | **Alter** para cruzar com recebível. |
+| §1d Estoque operacional, mín/máx, alertas | Lumiz | **Phase 4** estoque + cron. |
+| §1e Fluxo gaps + ações (antecipar…) | Misto | Projeção **cashflow**; sugestões com antecipação = **Alter**. |
+| §2a–2e Registro vendas, estoque, lembretes, contas | Lumiz | WhatsApp + **Phase 2** contas/cashflow + **Phase 1** lembretes. |
+| §2b Validade / NF | Lumiz (futuro) | Pipeline NF não fechado. |
+| §2c Emissão NF | Fora / terceiros | — |
+| §2f Pagamento distribuidor via recebível | Alter | **Alter** |
+| §3a–c Lucro/caixa 6 meses, CMV | Lumiz (gap) | Projeção curta; **6 meses / CMV** = backlog (não Alter). |
+| §3d–f Agenda recebível, antecipação, cobertura fornecedor | Alter | **Alter** |
+| §3g Score saúde | Misto | **GET /health/score**; refinement com recebível = **Alter**. |
+| §3h Economia se não antecipar | Alter | **Alter** |
+| §4 Estoque + compras + histórico fornecedor | Lumiz (parcial) | Estoque; histórico compras **gap** (sem cruzar recebível Alter). |
+| §5 Sazonalidade, margens, benchmark | Misto | **Sazonalidade** OK; margens/evolução parcial (custo real **Phase 6**); benchmark **gap**. |
+| §6 Custo real, preço mínimo, desconto, prejuízo | Misto | **Phase 3 + 6**; custo total com antecipação no centavo = **Alter**. |
+| §7 Inadimplência, risco, régua WhatsApp, **impacto no caixa** | Lumiz | Overview + detalhe; `percentualFaturamento`, **`mensagemImpacto`**, `faturamentoMesReferencia`; régua **Phase 1**. |
+| §8 Simulador “e se?” | Misto | Cenário base **Phase 3**; troca maquininha / parar antecipar / recebível = **Alter**; funcionária / preço / segunda sala = **backlog**. |
+| §9 Calendário preditivo, dias negativos | Lumiz | Calendário + projeção; **`caixaNegativo` por dia** e `temProjecaoCaixaNegativo` na projeção (PDF §9b). |
+| §10 Meta lucro/reserva + caminho | Misto | Meta receita **monthly_goals** + **caminho**; meta reserva = **gap**. |
+| §11 Relatório sócio PDF/email | Misto | **Export**; envio automático = **gap** (cron). |
+| §12 Emergência | Misto | **emergency** + detalhes; priorização fina com recebível travado = **Alter**. |
+
+**Próximos blocos sugeridos (só Lumiz, sem Alter):** projeção multi-mês; simulador multi-cenário (sem MDR Alter); histórico compras por fornecedor; meta reserva; relatório mensal automatizado.
+
+**Alteração recente (API para dashboard):**
+
+- `GET /api/dashboard/cashflow/projection` — cada item em `days` inclui `caixaNegativo` (boolean). `summary` inclui `diasComCaixaNegativo`, `primeiroDiaCaixaNegativo`, `temProjecaoCaixaNegativo`.
+- `GET /api/dashboard/inadimplencia/overview` — resposta inclui `mensagemImpacto`, `faturamentoMesReferencia`, `periodoFaturamentoReferencia` (além de `totalEmAtraso` e `percentualFaturamento` já existentes).
+
+---
+
 ## Próximos passos sugeridos (pós Phase 4)
 
 - [ ] Dashboard web: telas de estoque consumindo os endpoints Phase 4 (repo `lumiz-financeiro`)
