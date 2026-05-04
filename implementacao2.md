@@ -202,6 +202,39 @@ POST /api/dashboard/estoque/entrada   body: procedimento_id, quantidade, custo_u
 
 ---
 
+### ✅ Phase 5 — Meta Mensal Persistida + Health Score + Inadimplência + Sazonalidade
+**Status:** Backend implementado e validado. Sem novas migrations (tabela `monthly_goals` já aplicada).
+
+#### Serviços criados
+| Arquivo | O que faz |
+|---|---|
+| `src/services/healthScoreService.js` | Calcula score 0–100 com 4 componentes: margem do mês (40), pontualidade de recebimentos (30), cobertura de caixa 30 dias (20), tendência de receita vs mês anterior (10). Retorna `score`, `nivel`, `componentes` e `recomendacao`. |
+| `src/services/inadimplenciaService.js` | Consolida parcelas vencidas não pagas por cliente com classificação de risco (`baixo`, `medio`, `alto`) e detalha inadimplência por cliente. |
+| `src/services/sazonalidadeService.js` | Calcula sazonalidade mensal (receita/custos/lucro), identifica mês forte/fraco, média de receita e tendência por comparação de médias dos últimos 3 meses vs 3 anteriores. |
+
+#### Endpoints adicionados (`src/routes/dashboard.routes.js`)
+```
+GET /api/dashboard/goals/monthly?year=2026&month=5
+PUT /api/dashboard/goals/monthly
+GET /api/dashboard/health/score
+GET /api/dashboard/inadimplencia/overview
+GET /api/dashboard/inadimplencia/cliente/:clienteId
+GET /api/dashboard/insights/sazonalidade?months=12
+```
+
+#### Regras de validação aplicadas
+- `goals/monthly` (GET): `year` e `month` obrigatórios; `month` no range `1..12`
+- `goals/monthly` (PUT): `year`, `month`, `meta_receita >= 0`
+- `inadimplencia/cliente/:clienteId`: valida UUID; retorna `400` quando inválido
+- `insights/sazonalidade`: `months` com clamp `2..24` (default `12`)
+
+#### Observações de implementação
+- Upsert de meta mensal com `onConflict: 'user_id,year,month'` e `updated_at`
+- GET de meta mensal retorna registro existente ou fallback `{ year, month, meta_receita: 0 }`
+- Sem alteração de comportamento das rotas existentes; apenas novas rotas adicionadas
+
+---
+
 ## Frontend (lumiz-financeiro)
 
 **Commit:** `66ce7f7`
@@ -259,6 +292,14 @@ GET /api/dashboard/estoque
 GET /api/dashboard/estoque/alertas
 GET /api/dashboard/estoque/sugestoes
 POST /api/dashboard/estoque/entrada
+
+# Phase 5
+GET /api/dashboard/goals/monthly
+PUT /api/dashboard/goals/monthly
+GET /api/dashboard/health/score
+GET /api/dashboard/inadimplencia/overview
+GET /api/dashboard/inadimplencia/cliente/:clienteId
+GET /api/dashboard/insights/sazonalidade
 ```
 
 ---
