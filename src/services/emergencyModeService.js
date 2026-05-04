@@ -15,7 +15,7 @@ class EmergencyModeService {
       runningBalance += (day.entradas || 0) - (day.saidas || 0);
       if (runningBalance < saldoMinimo) {
         saldoMinimo = runningBalance;
-        dataRisco = day.date;
+        dataRisco = day.data;
       }
     }
 

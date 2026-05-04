@@ -24,14 +24,20 @@ class ExportService {
       ['tipo', 'descricao', 'valor', 'data', 'forma_pagamento', 'categoria'],
     ];
 
+    const escapeCsv = (v) => {
+      const s = String(v ?? '');
+      if (/[,"\n=+\-@\t]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+      return s;
+    };
+
     for (const t of report.transactions || []) {
       rows.push([
-        t.tipo || '',
-        (t.descricao || '').replace(/,/g, ' '),
+        escapeCsv(t.tipo),
+        escapeCsv(t.descricao),
         t.valor || 0,
-        t.data_evento || t.data_recebimento || '',
-        t.forma_pagamento || '',
-        t.categoria || '',
+        escapeCsv(t.data_evento || t.data_recebimento),
+        escapeCsv(t.forma_pagamento),
+        escapeCsv(t.categoria),
       ]);
     }
 

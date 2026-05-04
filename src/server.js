@@ -335,7 +335,7 @@ app.get('/health', async (req, res) => {
 app.get('/api/cron/reminders', async (req, res) => {
   try {
     // Verifica secret key para segurança (opcional, mas recomendado)
-    const cronSecret = req.headers['x-cron-secret'] || req.query.secret;
+    const cronSecret = req.headers['x-cron-secret'];
     if (process.env.CRON_SECRET && cronSecret !== process.env.CRON_SECRET) {
       return res.status(401).json({ error: 'Unauthorized' });
     }

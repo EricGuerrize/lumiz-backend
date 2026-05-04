@@ -568,13 +568,12 @@ router.get('/calendar', async (req, res) => {
 // GET /api/dashboard/simulator/scenario - Simulador what-if
 router.get('/simulator/scenario', async (req, res) => {
   try {
-    const result = await simulatorService.runScenario(req.user.id, {
-      extraRevenue: parseFloat(req.query.extra_revenue) || 0,
-      cutExpensePct: parseFloat(req.query.cut_expense_pct) || 0,
-      newFixedCost: parseFloat(req.query.new_fixed_cost) || 0,
-      month: req.query.month ? parseInt(req.query.month) : undefined,
-      year: req.query.year ? parseInt(req.query.year) : undefined,
-    });
+    const extraRevenue = Math.min(Math.max(parseFloat(req.query.extra_revenue) || 0, 0), 1_000_000);
+    const cutExpensePct = Math.min(Math.max(parseFloat(req.query.cut_expense_pct) || 0, 0), 100);
+    const newFixedCost = Math.min(Math.max(parseFloat(req.query.new_fixed_cost) || 0, 0), 1_000_000);
+    const month = req.query.month ? Math.min(Math.max(parseInt(req.query.month), 1), 12) : undefined;
+    const year = req.query.year ? Math.min(Math.max(parseInt(req.query.year), 2000), 2100) : undefined;
+    const result = await simulatorService.runScenario(req.user.id, { extraRevenue, cutExpensePct, newFixedCost, month, year });
     res.json(result);
   } catch (error) {
     console.error('Error running simulator:', error);

@@ -18,8 +18,8 @@ beforeEach(() => {
 describe('pricingIntelligenceService.analyze', () => {
   it('groups procedures and computes avgTicket', async () => {
     supabase.from = jest.fn(() => buildChain([
-      { procedimento: 'Botox', valor: '1500' },
-      { procedimento: 'Botox', valor: '1000' },
+      { observacoes: 'Botox', valor_total: '1500' },
+      { observacoes: 'Botox', valor_total: '1000' },
     ]));
     const result = await pricingIntelligenceService.analyze('user-1');
     const botox = result.procedures.find(p => p.procedimento === 'Botox');
@@ -29,7 +29,7 @@ describe('pricingIntelligenceService.analyze', () => {
 
   it('marks abaixoMercado true when ticket below benchmark min', async () => {
     supabase.from = jest.fn(() => buildChain([
-      { procedimento: 'limpeza de pele', valor: '100' }, // below min 150
+      { observacoes: 'limpeza de pele', valor_total: '100' }, // below min 150
     ]));
     const result = await pricingIntelligenceService.analyze('user-1');
     expect(result.procedures[0].abaixoMercado).toBe(true);
@@ -38,7 +38,7 @@ describe('pricingIntelligenceService.analyze', () => {
 
   it('marks abaixoMercado false when ticket above benchmark min', async () => {
     supabase.from = jest.fn(() => buildChain([
-      { procedimento: 'Botox', valor: '2000' },
+      { observacoes: 'Botox', valor_total: '2000' },
     ]));
     const result = await pricingIntelligenceService.analyze('user-1');
     expect(result.procedures[0].abaixoMercado).toBe(false);
@@ -47,8 +47,8 @@ describe('pricingIntelligenceService.analyze', () => {
 
   it('summary.diasComEventos counts abaixoMercado procedures', async () => {
     supabase.from = jest.fn(() => buildChain([
-      { procedimento: 'limpeza', valor: '50' },
-      { procedimento: 'Botox', valor: '2000' },
+      { observacoes: 'limpeza', valor_total: '50' },
+      { observacoes: 'Botox', valor_total: '2000' },
     ]));
     const result = await pricingIntelligenceService.analyze('user-1');
     expect(result.summary.abaixoMercado).toBe(1);

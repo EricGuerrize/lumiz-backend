@@ -17,8 +17,8 @@ describe('emergencyModeService.getStatus', () => {
     cashflowService.getCashflowProjection = jest.fn().mockResolvedValue({
       saldoAtual: 5000,
       days: [
-        { date: '2026-05-04', entradas: 1000, saidas: 500 },
-        { date: '2026-05-05', entradas: 0, saidas: 200 },
+        { data: '2026-05-04', entradas: 1000, saidas: 500 },
+        { data: '2026-05-05', entradas: 0, saidas: 200 },
       ],
       summary: {},
     });
@@ -31,7 +31,7 @@ describe('emergencyModeService.getStatus', () => {
     cashflowService.getCashflowProjection = jest.fn().mockResolvedValue({
       saldoAtual: 500,
       days: [
-        { date: '2026-05-04', entradas: 0, saidas: 800 }, // goes to -300
+        { data: '2026-05-04', entradas: 0, saidas: 800 }, // goes to -300
       ],
       summary: {},
     });
@@ -45,8 +45,8 @@ describe('emergencyModeService.getStatus', () => {
     cashflowService.getCashflowProjection = jest.fn().mockResolvedValue({
       saldoAtual: 1000,
       days: [
-        { date: '2026-05-04', entradas: 0, saidas: 1500 }, // -500
-        { date: '2026-05-05', entradas: 200, saidas: 0 },  // -300
+        { data: '2026-05-04', entradas: 0, saidas: 1500 }, // -500
+        { data: '2026-05-05', entradas: 200, saidas: 0 },  // -300
       ],
       summary: {},
     });
