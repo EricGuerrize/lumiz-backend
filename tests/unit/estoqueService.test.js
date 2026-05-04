@@ -169,6 +169,36 @@ describe('registrarEntrada', () => {
   });
 });
 
+describe('getComprasPorFornecedor', () => {
+  it('agrega por fornecedor e nota quando falta custo_unitario em alguma linha', async () => {
+    supabase.from = jest.fn((t) => {
+      const c = {};
+      ['select', 'eq', 'not', 'gte', 'in'].forEach((m) => {
+        c[m] = jest.fn(() => c);
+      });
+      const payload =
+        t === 'movimentacoes_estoque'
+          ? {
+              data: [
+                { fornecedor_id: 'f1', quantidade: 10, custo_unitario: '2', data: '2026-01-01T00:00:00.000Z' },
+                { fornecedor_id: 'f1', quantidade: 5, custo_unitario: null, data: '2026-02-01T00:00:00.000Z' },
+              ],
+              error: null,
+            }
+          : { data: [{ id: 'f1', nome: 'Forn A' }], error: null };
+      c.then = (onOk, onErr) => Promise.resolve(payload).then(onOk, onErr);
+      return c;
+    });
+
+    const out = await estoqueService.getComprasPorFornecedor('user-1', 12);
+    expect(out.fornecedores).toHaveLength(1);
+    expect(out.fornecedores[0].nome).toBe('Forn A');
+    expect(out.fornecedores[0].total_gasto).toBe(20);
+    expect(out.fornecedores[0].compras_count).toBe(2);
+    expect(out.nota).toContain('custo_unitario');
+  });
+});
+
 describe('checkAndAlertEstoqueBaixo', () => {
   it('não envia WhatsApp se já enviou hoje (alreadySent)', async () => {
     supabase.from = jest.fn(() =>

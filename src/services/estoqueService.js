@@ -295,6 +295,95 @@ class EstoqueService {
     };
   }
 
+  /**
+   * Histórico de compras (entradas de estoque) agregado por fornecedor (PDF §4d).
+   * @param {string} userId
+   * @param {number} [months=12] janela móvel em meses (1–36)
+   */
+  async getComprasPorFornecedor(userId, months = 12) {
+    const m = Math.min(Math.max(Math.round(Number(months)) || 12, 1), 36);
+    const since = new Date();
+    since.setMonth(since.getMonth() - m);
+    since.setHours(0, 0, 0, 0);
+    const sinceIso = since.toISOString();
+
+    const { data: movs, error } = await supabase
+      .from('movimentacoes_estoque')
+      .select('fornecedor_id, quantidade, custo_unitario, data')
+      .eq('user_id', userId)
+      .eq('tipo', 'entrada')
+      .not('fornecedor_id', 'is', null)
+      .gte('data', sinceIso);
+
+    if (error) throw error;
+
+    const agg = new Map();
+    for (const row of movs || []) {
+      const fid = row.fornecedor_id;
+      if (!fid) continue;
+      const qtd = parseFloat(row.quantidade) || 0;
+      const cu = row.custo_unitario != null ? parseFloat(row.custo_unitario) : null;
+      const lineTotal = cu != null && Number.isFinite(cu) ? qtd * cu : null;
+
+      if (!agg.has(fid)) {
+        agg.set(fid, {
+          fornecedor_id: fid,
+          total_gasto: 0,
+          linhas_com_custo: 0,
+          compras_count: 0,
+          ultima_compra: null,
+        });
+      }
+      const a = agg.get(fid);
+      a.compras_count += 1;
+      if (lineTotal != null && Number.isFinite(lineTotal)) {
+        a.total_gasto += lineTotal;
+        a.linhas_com_custo += 1;
+      }
+      const d = row.data ? new Date(row.data).toISOString() : null;
+      if (d && (!a.ultima_compra || d > a.ultima_compra)) {
+        a.ultima_compra = d.split('T')[0];
+      }
+    }
+
+    const ids = [...agg.keys()];
+    if (!ids.length) {
+      return { months: m, fornecedores: [] };
+    }
+
+    const { data: forns, error: fe } = await supabase
+      .from('fornecedores')
+      .select('id, nome')
+      .eq('user_id', userId)
+      .in('id', ids);
+
+    if (fe) throw fe;
+    const nomeById = new Map((forns || []).map((f) => [f.id, f.nome]));
+
+    const fornecedores = [...agg.values()]
+      .map((a) => ({
+        fornecedor_id: a.fornecedor_id,
+        nome: nomeById.get(a.fornecedor_id) || 'Fornecedor',
+        total_gasto: parseFloat(a.total_gasto.toFixed(2)),
+        total_gasto_completo: a.linhas_com_custo === a.compras_count,
+        compras_count: a.compras_count,
+        ultima_compra: a.ultima_compra,
+      }))
+      .sort((x, y) => y.total_gasto - x.total_gasto || y.compras_count - x.compras_count);
+
+    const anyIncomplete = fornecedores.some((f) => !f.total_gasto_completo);
+    return {
+      months: m,
+      fornecedores,
+      ...(anyIncomplete
+        ? {
+            nota:
+              'total_gasto soma apenas entradas com custo_unitario preenchido; movimentações sem custo entram em compras_count e em ultima_compra mas não no valor.',
+          }
+        : {}),
+    };
+  }
+
   async findProcedimentoByNome(userId, nomeBusca) {
     const termo = String(nomeBusca || '').trim();
     if (!termo) return null;

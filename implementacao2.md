@@ -1,6 +1,6 @@
 # Lumiz — Monitoramento de Implementação (Phases 1–6)
 
-> **Última atualização:** 2026-05-04
+> **Última atualização:** 2026-05-04 (PDF Lumiz Estética — outlook, compras fornecedor, simulador presets, nota calendário)
 > **Repositório backend:** https://github.com/EricGuerrize/lumiz-backend
 > **Repositório frontend:** https://github.com/EricGuerrize/lumiz-financeiro
 > **Deploy backend:** Railway (branch `main` → auto-deploy)
@@ -119,7 +119,7 @@ GET /api/dashboard/calendar?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD
 #### Serviços criados
 | Arquivo | O que faz |
 |---|---|
-| `src/services/simulatorService.js` | Projeção what-if: `runScenario(userId, { extraRevenue, cutExpensePct, newFixedCost, month, year })`. Compara baseline vs projeção. |
+| `src/services/simulatorService.js` | Projeção what-if: `runScenario(userId, { extraRevenue, cutExpensePct, newFixedCost, month, year })`. Presets PDF §8: `runScenarioPreset`, `runAllPresets` (`extra_staff`, `price_hike`, `second_room`). Compara baseline vs projeção. |
 | `src/services/pricingIntelligenceService.js` | Analisa ticket médio por procedimento (coluna `observacoes`) vs benchmarks estáticos de mercado. Coluna de valor: `valor_total`. |
 | `src/services/emergencyModeService.js` | Detecta saldo negativo nos próximos 30 dias via `cashflowService.getCashflowProjection`. Campo de data nos dias: `day.data` (não `day.date`). |
 | `src/services/exportService.js` | Exporta relatório mensal em PDF (via `pdfService`) ou CSV com escape de injection. |
@@ -132,6 +132,8 @@ GET /api/dashboard/calendar?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD
 #### Endpoints adicionados (src/routes/dashboard.routes.js)
 ```
 GET /api/dashboard/simulator/scenario?extra_revenue=0&cut_expense_pct=0&new_fixed_cost=0
+GET /api/dashboard/simulator/scenario?scenario=extra_staff|price_hike|second_room&month=&year=&staff_monthly_cost=&price_hike_pct=&rent_extra=
+GET /api/dashboard/simulator/scenarios?month=&year=&… (mesmos overrides opcionais; devolve os 3 presets)
 GET /api/dashboard/insights/pricing?months=3
 GET /api/dashboard/emergency/status
 GET /api/dashboard/export/report?format=pdf|csv&month=YYYY-MM
@@ -161,7 +163,7 @@ GET /api/dashboard/export/report?format=pdf|csv&month=YYYY-MM
 #### Serviços criados
 | Arquivo | O que faz |
 |---|---|
-| `src/services/estoqueService.js` | `getEstoqueStatus`, `getAlertasBaixoEstoque`, `sugerirReposicao(userId, saldoAtual)`, `registrarEntrada`, `checkAndAlertEstoqueBaixo`. Consumo em 90 dias: soma `atendimento_procedimentos.ml_utilizado` + movimentações tipo `saida`. Níveis: `ok`, `baixo`, `critico` (&lt; 50% do mínimo), `sem_historico`. |
+| `src/services/estoqueService.js` | `getEstoqueStatus`, `getAlertasBaixoEstoque`, `sugerirReposicao(userId, saldoAtual)`, `registrarEntrada`, `getComprasPorFornecedor(userId, months)`, `checkAndAlertEstoqueBaixo`. Consumo em 90 dias: soma `atendimento_procedimentos.ml_utilizado` + movimentações tipo `saida`. Níveis: `ok`, `baixo`, `critico` (&lt; 50% do mínimo), `sem_historico`. |
 
 #### Cópia WhatsApp
 | Arquivo | Funções |
@@ -185,6 +187,7 @@ GET /api/dashboard/export/report?format=pdf|csv&month=YYYY-MM
 GET  /api/dashboard/estoque
 GET  /api/dashboard/estoque/alertas
 GET  /api/dashboard/estoque/sugestoes?saldo_disponivel=
+GET  /api/dashboard/estoque/compras-por-fornecedor?months=12
 POST /api/dashboard/estoque/entrada   body: procedimento_id, quantidade, custo_unitario?, fornecedor_id?, observacoes?, data?
 ```
 
@@ -215,6 +218,7 @@ POST /api/dashboard/estoque/entrada   body: procedimento_id, quantidade, custo_u
 | 5 | `src/services/healthScoreService.js` | `getScore(userId)` — score 0–100 (margem, pontualidade recebimentos, cobertura caixa ~30d, tendência vs mês anterior); `nivel`, `componentes`, `recomendacao`. Usa Supabase + `transactionController` para métricas do período corrente. |
 | 5 | `src/services/inadimplenciaService.js` | `getOverview`, `getDetalheCliente` — parcelas vencidas não pagas agregadas por cliente, risco `baixo` / `medio` / `alto`. |
 | 5 | `src/services/sazonalidadeService.js` | `getSazonalidade(userId, months)` — séries mensais receita/custo/lucro, mês forte/fraco, tendência (média últimos 3 vs 3 anteriores). |
+| 5 | `src/services/outlookService.js` | `getOutlook(userId, months)` — PDF §3a–c: por mês calendário, `receita` (soma `atendimentos.valor_total`), `custos` (saidas do `getMonthlyReport` / ledger, alinhado ao `monthly-report`), `lucro`, `margem_pct`; campo `nota` explica limites (não CMV completo). |
 | 5 | *(sem service dedicado)* | Metas mensais: `dashboard.routes.js` faz `select` / `upsert` na tabela `monthly_goals` (`onConflict: user_id,year,month`, `updated_at`). |
 | 6 | `src/services/procedimentoCustoService.js` | `getCustoRealProcedimentos`, `simularImpactoDesconto` — médias por procedimento (material, MDR cartão), margem, preço mínimo; simulação de impacto do desconto. |
 | 6 | `src/services/metaCaminhoService.js` | `calcularCaminhoMeta` — meta do mês atual em `monthly_goals`, fallback `profiles.meta_mensal`; ritmo vs necessário, falta para bater meta, sugestões. |
@@ -230,6 +234,7 @@ POST /api/dashboard/estoque/entrada   body: procedimento_id, quantidade, custo_u
 | `GET` | `health/score` |
 | `GET` | `inadimplencia/overview` |
 | `GET` | `inadimplencia/cliente/:clienteId` |
+| `GET` | `insights/outlook?months=` *(default 6; clamp 1–24)* |
 | `GET` | `insights/sazonalidade?months=` *(opcional; default comportamental 12)* |
 | `GET` | `insights/custo-procedimentos?months=` *(opcional; default 3)* |
 | `GET` | `insights/simular-desconto?procedimento_id=&desconto_pct=` *(aliases: `procedimentoId`, `descontoPct`)* |
@@ -241,6 +246,7 @@ POST /api/dashboard/estoque/entrada   body: procedimento_id, quantidade, custo_u
 - **`GET goals/monthly`:** `year` e `month` inteiros obrigatórios; `month` ∈ `1..12`; `year` inteiro válido (sem clamp explícito de faixa).
 - **`PUT` / `POST` `goals/monthly` *(JSON body)*:** `year`, `month` inteiros (`month` `1..12`); `meta_receita` número finito `>= 0`.
 - **`GET inadimplencia/cliente/:clienteId`:** `:clienteId` UUID (regex estrita); senão `400`.
+- **`GET insights/outlook`:** `months` inteiro opcional; default `6`; clamp `1..24`.
 - **`GET insights/sazonalidade`:** se `months` for inteiro, clamp `2..24`; ausente → `12`.
 - **`GET insights/custo-procedimentos`:** `months` inteiro `1..12` (default `3` se omitido).
 - **`GET insights/simular-desconto`:** `procedimento_id` string 36 chars (formato UUID com hífens); `desconto_pct` finito `1..99`; procedimento inexistente → `404` com mensagem do service.
@@ -302,6 +308,7 @@ GET /api/dashboard/calendar
 
 # Phase 3
 GET /api/dashboard/simulator/scenario
+GET /api/dashboard/simulator/scenarios
 GET /api/dashboard/insights/pricing
 GET /api/dashboard/emergency/status
 GET /api/dashboard/export/report
@@ -310,6 +317,7 @@ GET /api/dashboard/export/report
 GET /api/dashboard/estoque
 GET /api/dashboard/estoque/alertas
 GET /api/dashboard/estoque/sugestoes
+GET /api/dashboard/estoque/compras-por-fornecedor
 POST /api/dashboard/estoque/entrada
 
 # Phase 5
@@ -320,6 +328,7 @@ GET /api/dashboard/health/score
 GET /api/dashboard/inadimplencia/overview
 GET /api/dashboard/inadimplencia/cliente/:clienteId
 GET /api/dashboard/insights/sazonalidade
+GET /api/dashboard/insights/outlook
 
 # Phase 6
 GET /api/dashboard/insights/custo-procedimentos
@@ -345,26 +354,28 @@ Referência: [`Lumiz Estética.pdf`](Lumiz%20Estética.pdf) (melhorias). Itens m
 | §2b Validade / NF | Lumiz (futuro) | Pipeline NF não fechado. |
 | §2c Emissão NF | Fora / terceiros | — |
 | §2f Pagamento distribuidor via recebível | Alter | **Alter** |
-| §3a–c Lucro/caixa 6 meses, CMV | Lumiz (gap) | Projeção curta; **6 meses / CMV** = backlog (não Alter). |
+| §3a–c Lucro/caixa 6 meses, CMV | Lumiz | **`GET /api/dashboard/insights/outlook?months=`** — receita por `atendimentos`; custos pelo ledger mensal (`monthly-report`); `nota` sobre CMV. |
 | §3d–f Agenda recebível, antecipação, cobertura fornecedor | Alter | **Alter** |
 | §3g Score saúde | Misto | **GET /health/score**; refinement com recebível = **Alter**. |
 | §3h Economia se não antecipar | Alter | **Alter** |
-| §4 Estoque + compras + histórico fornecedor | Lumiz (parcial) | Estoque; histórico compras **gap** (sem cruzar recebível Alter). |
+| §4 Estoque + compras + histórico fornecedor | Lumiz | Estoque Phase 4; **`GET /api/dashboard/estoque/compras-por-fornecedor`** (entradas `movimentacoes_estoque` + `fornecedores`; sem recebível Alter). |
 | §5 Sazonalidade, margens, benchmark | Misto | **Sazonalidade** OK; margens/evolução parcial (custo real **Phase 6**); benchmark **gap**. |
 | §6 Custo real, preço mínimo, desconto, prejuízo | Misto | **Phase 3 + 6**; custo total com antecipação no centavo = **Alter**. |
 | §7 Inadimplência, risco, régua WhatsApp, **impacto no caixa** | Lumiz | Overview + detalhe; `percentualFaturamento`, **`mensagemImpacto`**, `faturamentoMesReferencia`; régua **Phase 1**. |
-| §8 Simulador “e se?” | Misto | Cenário base **Phase 3**; troca maquininha / parar antecipar / recebível = **Alter**; funcionária / preço / segunda sala = **backlog**. |
-| §9 Calendário preditivo, dias negativos | Lumiz | Calendário + projeção; **`caixaNegativo` por dia** e `temProjecaoCaixaNegativo` na projeção (PDF §9b). |
+| §8 Simulador “e se?” | Misto | Cenário base **Phase 3**; presets Lumiz: **`scenario=extra_staff|price_hike|second_room`** em `GET …/simulator/scenario` + **`GET …/simulator/scenarios`**; troca maquininha / antecipação recebível = **Alter**. |
+| §9 Calendário preditivo, dias negativos | Lumiz | Calendário + projeção; **`caixaNegativo` por dia** e `temProjecaoCaixaNegativo` na projeção (PDF §9b). Calendário inclui `summary.notaCashflow` a remeter para a projeção (saldo acumulado). |
 | §10 Meta lucro/reserva + caminho | Misto | Meta receita **monthly_goals** + **caminho**; meta reserva = **gap**. |
 | §11 Relatório sócio PDF/email | Misto | **Export**; envio automático = **gap** (cron). |
 | §12 Emergência | Misto | **emergency** + detalhes; priorização fina com recebível travado = **Alter**. |
 
-**Próximos blocos sugeridos (só Lumiz, sem Alter):** projeção multi-mês; simulador multi-cenário (sem MDR Alter); histórico compras por fornecedor; meta reserva; relatório mensal automatizado.
+**Próximos blocos sugeridos (só Lumiz, sem Alter):** meta reserva; relatório mensal automatizado (envio); benchmark precificação externo; simulador multi-período além do mês escolhido (melhoria incremental).
 
 **Alteração recente (API para dashboard):**
 
 - `GET /api/dashboard/cashflow/projection` — cada item em `days` inclui `caixaNegativo` (boolean). `summary` inclui `diasComCaixaNegativo`, `primeiroDiaCaixaNegativo`, `temProjecaoCaixaNegativo`.
+- `GET /api/dashboard/calendar` — `summary.notaCashflow` orienta o cliente a usar a projeção para saldo acumulado e dias críticos (PDF §9).
 - `GET /api/dashboard/inadimplencia/overview` — resposta inclui `mensagemImpacto`, `faturamentoMesReferencia`, `periodoFaturamentoReferencia` (além de `totalEmAtraso` e `percentualFaturamento` já existentes).
+- **Testes:** `tests/unit/outlookService.test.js`; presets em `tests/unit/simulatorService.test.js`; `getComprasPorFornecedor` em `tests/unit/estoqueService.test.js`; calendário em `tests/unit/cashflowService.test.js`.
 
 ---
 

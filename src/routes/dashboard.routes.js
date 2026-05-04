@@ -8,6 +8,7 @@ const pricingIntelligenceService = require('../services/pricingIntelligenceServi
 const emergencyModeService = require('../services/emergencyModeService');
 const exportService = require('../services/exportService');
 const estoqueService = require('../services/estoqueService');
+const outlookService = require('../services/outlookService');
 const healthScoreService = require('../services/healthScoreService');
 const inadimplenciaService = require('../services/inadimplenciaService');
 const sazonalidadeService = require('../services/sazonalidadeService');
@@ -571,9 +572,21 @@ router.get('/calendar', async (req, res) => {
   }
 });
 
+function optionalQueryFloat(q, keys) {
+  for (const k of keys) {
+    if (q[k] != null && String(q[k]).length) {
+      const n = parseFloat(q[k]);
+      if (Number.isFinite(n)) return n;
+    }
+  }
+  return undefined;
+}
+
 // GET /api/dashboard/simulator/scenario - Simulador what-if
 // Query canônico: extra_revenue, cut_expense_pct, new_fixed_cost, month, year
 // Aliases (doc / PT): receita_extra, corte_custos_pct, custos_fixos
+// Cenários nomeados (PDF §8): scenario=extra_staff|price_hike|second_room
+//   + opcionais: staff_monthly_cost, price_hike_pct (ou pct), rent_extra
 router.get('/simulator/scenario', async (req, res) => {
   try {
     const q = req.query;
@@ -586,16 +599,54 @@ router.get('/simulator/scenario', async (req, res) => {
       }
       return 0;
     };
+    const month = q.month ? Math.min(Math.max(parseInt(q.month, 10), 1), 12) : undefined;
+    const year = q.year ? Math.min(Math.max(parseInt(q.year, 10), 2000), 2100) : undefined;
+
+    const scenarioRaw = q.scenario ?? q.cenario;
+    if (scenarioRaw != null && String(scenarioRaw).length) {
+      const sid = String(scenarioRaw).toLowerCase();
+      const allowed = ['extra_staff', 'price_hike', 'second_room'];
+      if (!allowed.includes(sid)) {
+        return res.status(400).json({ error: `scenario inválido. Use: ${allowed.join(', ')}` });
+      }
+      const result = await simulatorService.runScenarioPreset(req.user.id, sid, {
+        month,
+        year,
+        staffMonthlyCost: optionalQueryFloat(q, ['staff_monthly_cost', 'staffMonthlyCost', 'custo_funcionario_mensal']),
+        priceHikePct: optionalQueryFloat(q, ['price_hike_pct', 'priceHikePct', 'pct', 'aumento_precos_pct']),
+        rentExtra: optionalQueryFloat(q, ['rent_extra', 'rentExtra', 'aluguel_extra']),
+      });
+      return res.json(result);
+    }
+
     const extraRevenue = Math.min(Math.max(firstNum(['extra_revenue', 'receita_extra']), 0), 1_000_000);
     const cutExpensePct = Math.min(Math.max(firstNum(['cut_expense_pct', 'corte_custos_pct']), 0), 100);
     const newFixedCost = Math.min(Math.max(firstNum(['new_fixed_cost', 'custos_fixos']), 0), 1_000_000);
-    const month = q.month ? Math.min(Math.max(parseInt(q.month, 10), 1), 12) : undefined;
-    const year = q.year ? Math.min(Math.max(parseInt(q.year, 10), 2000), 2100) : undefined;
     const result = await simulatorService.runScenario(req.user.id, { extraRevenue, cutExpensePct, newFixedCost, month, year });
     res.json(result);
   } catch (error) {
     console.error('Error running simulator:', error);
     res.status(500).json({ error: 'Failed to run scenario' });
+  }
+});
+
+// GET /api/dashboard/simulator/scenarios — três presets num único payload (mesmos overrides opcionais do /scenario)
+router.get('/simulator/scenarios', async (req, res) => {
+  try {
+    const q = req.query;
+    const month = q.month ? Math.min(Math.max(parseInt(q.month, 10), 1), 12) : undefined;
+    const year = q.year ? Math.min(Math.max(parseInt(q.year, 10), 2000), 2100) : undefined;
+    const result = await simulatorService.runAllPresets(req.user.id, {
+      month,
+      year,
+      staffMonthlyCost: optionalQueryFloat(q, ['staff_monthly_cost', 'staffMonthlyCost', 'custo_funcionario_mensal']),
+      priceHikePct: optionalQueryFloat(q, ['price_hike_pct', 'priceHikePct', 'pct', 'aumento_precos_pct']),
+      rentExtra: optionalQueryFloat(q, ['rent_extra', 'rentExtra', 'aluguel_extra']),
+    });
+    res.json(result);
+  } catch (error) {
+    console.error('Error running simulator presets:', error);
+    res.status(500).json({ error: 'Failed to run scenarios' });
   }
 });
 
@@ -665,6 +716,19 @@ router.get('/estoque/sugestoes', async (req, res) => {
   } catch (error) {
     console.error('Error getting estoque sugestoes:', error);
     res.status(500).json({ error: 'Failed to get sugestoes' });
+  }
+});
+
+// GET /api/dashboard/estoque/compras-por-fornecedor?months=12
+router.get('/estoque/compras-por-fornecedor', async (req, res) => {
+  try {
+    const raw = Number.parseInt(req.query.months, 10);
+    const months = Number.isInteger(raw) ? Math.min(Math.max(raw, 1), 36) : 12;
+    const result = await estoqueService.getComprasPorFornecedor(req.user.id, months);
+    res.json(result);
+  } catch (error) {
+    console.error('Error getting compras por fornecedor:', error);
+    res.status(500).json({ error: 'Failed to get compras por fornecedor' });
   }
 });
 
@@ -829,6 +893,19 @@ router.get('/inadimplencia/cliente/:clienteId', async (req, res) => {
   } catch (error) {
     console.error('Error getting inadimplencia cliente:', error);
     res.status(500).json({ error: 'Failed to get inadimplencia cliente' });
+  }
+});
+
+// GET /api/dashboard/insights/outlook?months=6 — visão multi-mês receita (atendimentos) vs custos (ledger)
+router.get('/insights/outlook', async (req, res) => {
+  try {
+    const raw = Number.parseInt(req.query.months, 10);
+    const months = Number.isInteger(raw) ? Math.min(Math.max(raw, 1), 24) : 6;
+    const result = await outlookService.getOutlook(req.user.id, months);
+    res.json(result);
+  } catch (error) {
+    console.error('Error getting outlook:', error);
+    res.status(500).json({ error: 'Failed to get outlook' });
   }
 });
 

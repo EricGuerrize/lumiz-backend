@@ -48,3 +48,30 @@ describe('simulatorService.runScenario', () => {
     expect(result.projection.margem).toBeCloseTo(40, 0);
   });
 });
+
+describe('simulatorService presets', () => {
+  it('price_hike aplica percentual default sobre entradas do mês', async () => {
+    const r = await simulatorService.runScenarioPreset('u1', 'price_hike', { month: 5, year: 2026 });
+    expect(r.preset).toBe('price_hike');
+    expect(r.inputsUsados.price_hike_pct).toBe(5);
+    expect(r.projection.entradas).toBeCloseTo(10500);
+  });
+
+  it('extra_staff usa custo fixo passado', async () => {
+    const r = await simulatorService.runScenarioPreset('u1', 'extra_staff', {
+      month: 5,
+      year: 2026,
+      staffMonthlyCost: 4000,
+    });
+    expect(r.inputsUsados.staff_monthly_cost).toBe(4000);
+    expect(r.projection.saidas).toBeCloseTo(10000);
+  });
+
+  it('runAllPresets devolve três cenários', async () => {
+    const r = await simulatorService.runAllPresets('u1', { month: 4, year: 2026 });
+    expect(r.month).toBe(4);
+    expect(r.year).toBe(2026);
+    expect(r.cenários).toHaveLength(3);
+    expect(r.cenários.map((c) => c.preset)).toEqual(['extra_staff', 'price_hike', 'second_room']);
+  });
+});

@@ -265,6 +265,8 @@ class CashflowService {
         totalSaidas: totalSaidasPrevistas,
         saldoFinal: saldoFinalPrevisto,
         diasComEventos: Object.keys(events).length,
+        notaCashflow:
+          'Este calendário lista vencimentos e recorrências previstas; não calcula saldo acumulado dia a dia. Para dias com risco de caixa negativo (saldoAcumulado), use GET /api/dashboard/cashflow/projection — campos days[].caixaNegativo e summary.temProjecaoCaixaNegativo.',
       },
       events,
     };

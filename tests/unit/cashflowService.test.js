@@ -190,4 +190,9 @@ describe('getFinancialCalendar', () => {
     expect(result.period.start).toBe(start);
     expect(result.period.end).toBe(end);
   });
+
+  it('summary inclui notaCashflow a remeter para cashflow/projection', async () => {
+    const result = await cashflowService.getFinancialCalendar('user-1', start, end);
+    expect(result.summary.notaCashflow).toContain('cashflow/projection');
+  });
 });

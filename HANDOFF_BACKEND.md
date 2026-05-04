@@ -41,8 +41,13 @@ Confirmar que a versão deployada no Railway inclui as rotas usadas pelo dashboa
 | GET | `/api/dashboard/goals/caminho` |
 | GET | `/api/dashboard/emergency/detalhes` |
 | GET | `/api/dashboard/export/report` |
+| GET | `/api/dashboard/insights/outlook` |
+| GET | `/api/dashboard/estoque/compras-por-fornecedor` |
+| GET | `/api/dashboard/simulator/scenarios` |
 
 Todas estão definidas em [`src/routes/dashboard.routes.js`](src/routes/dashboard.routes.js). Validar em staging/produção com token de utilizador real após deploy.
+
+**Simulador — preset num único cenário:** `GET /api/dashboard/simulator/scenario?scenario=extra_staff|price_hike|second_room` com overrides opcionais (`staff_monthly_cost`, `price_hike_pct` ou `pct`, `rent_extra`). Sem `scenario`, o comportamento continua só com `extra_revenue`, `cut_expense_pct`, `new_fixed_cost`.
 
 ---
 
