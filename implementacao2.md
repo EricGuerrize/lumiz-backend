@@ -1,6 +1,6 @@
-# Lumiz — Monitoramento de Implementação (Phases 1–3)
+# Lumiz — Monitoramento de Implementação (Phases 1–4)
 
-> **Última atualização:** 2026-05-03
+> **Última atualização:** 2026-05-04
 > **Repositório backend:** https://github.com/EricGuerrize/lumiz-backend
 > **Repositório frontend:** https://github.com/EricGuerrize/lumiz-financeiro
 > **Deploy backend:** Railway (branch `main` → auto-deploy)
@@ -139,7 +139,7 @@ GET /api/dashboard/export/report?format=pdf|csv&month=YYYY-MM
 
 #### Cron registrado (src/server.js)
 ```
-0 8 * * *   → emergencyModeService.checkAndAlert()  (diário às 8h, junto com reminders)
+0 8 * * *   → emergencyModeService.checkAndAlert() + estoqueService.checkAndAlertEstoqueBaixo()  (diário às 8h)
 ```
 
 #### Correções pós-revisão (commit bd82a3f)
@@ -152,6 +152,53 @@ GET /api/dashboard/export/report?format=pdf|csv&month=YYYY-MM
 - `tests/unit/simulatorService.test.js` — 6 testes
 - `tests/unit/pricingIntelligenceService.test.js` — 5 testes
 - `tests/unit/emergencyModeService.test.js` — 3 testes
+
+---
+
+### ✅ Phase 4 — Estoque (nível em `procedimentos.estoque_ml`)
+**Status:** Backend implementado; aplicar migrations no Supabase (`supabase db push`). UI web opcional (ver prompt para o repo `lumiz-financeiro`).
+
+#### Serviços criados
+| Arquivo | O que faz |
+|---|---|
+| `src/services/estoqueService.js` | `getEstoqueStatus`, `getAlertasBaixoEstoque`, `sugerirReposicao(userId, saldoAtual)`, `registrarEntrada`, `checkAndAlertEstoqueBaixo`. Consumo em 90 dias: soma `atendimento_procedimentos.ml_utilizado` + movimentações tipo `saida`. Níveis: `ok`, `baixo`, `critico` (&lt; 50% do mínimo), `sem_historico`. |
+
+#### Cópia WhatsApp
+| Arquivo | Funções |
+|---|---|
+| `src/copy/estoqueWhatsappCopy.js` | `alertaEstoqueBaixo(produtos)`, `alertaEstoqueCritico`, `entradaRegistrada`, `resumoEstoqueLinhas`, mensagens de ajuda/erro |
+
+#### Bot WhatsApp
+| Peça | Detalhe |
+|---|---|
+| Intents | `estoque_entrada`, `consultar_estoque` no `geminiService.js`; heurísticas em `intentHeuristicService.js` |
+| Handler | `src/controllers/messages/estoqueHandler.js` → `messageController` |
+
+#### Migrations aplicadas
+| Migration | O que cria |
+|---|---|
+| `20260504000012_create_fornecedores.sql` | Tabela `fornecedores`, RLS |
+| `20260504000013_estoque_movimentacoes.sql` | Colunas `estoque_minimo`, `unidade`, `fornecedor_id` em `procedimentos`; migração legado `estoque_atual` → `estoque_ml` se existir; `movimentacoes_estoque`; amplia `reminders_sent.tipo_lembrete` para varchar(80) |
+
+#### Endpoints (src/routes/dashboard.routes.js)
+```
+GET  /api/dashboard/estoque
+GET  /api/dashboard/estoque/alertas
+GET  /api/dashboard/estoque/sugestoes?saldo_disponivel=
+POST /api/dashboard/estoque/entrada   body: procedimento_id, quantidade, custo_unitario?, fornecedor_id?, observacoes?, data?
+```
+
+#### Cron (src/server.js)
+```
+0 8 * * *   → emergencyModeService.checkAndAlert() + estoqueService.checkAndAlertEstoqueBaixo()
+```
+
+#### Testes
+- `tests/unit/estoqueService.test.js` — 6 testes
+
+#### Roadmap (não no escopo deste backend)
+- Entrada por **áudio** (transcrever e reutilizar intent `estoque_entrada`)
+- Entrada por **NF** (OCR + extração + match em procedimentos)
 
 ---
 
@@ -189,11 +236,12 @@ GET /api/dashboard/export/report?format=pdf|csv&month=YYYY-MM
 
 ---
 
-## Resumo de todos os endpoints do backend (Phase 1–3)
+## Resumo de todos os endpoints do backend (Phase 1–4)
 
 ```
-# Phase 1 — Cron only (sem endpoints HTTP próprios)
-GET /api/cron/reminders          → dispara reminderService + goalReminderService + emergencyModeService
+# Phase 1 — Cron HTTP + outros crons no server.js
+GET /api/cron/reminders          → reminderService, nudges, insights, trial, goal (ver `server.js`; não inclui estoque)
+# Cron 8h (server.js) também roda emergency + estoque baixo
 
 # Phase 2
 GET /api/dashboard/contas-a-pagar
@@ -205,12 +253,19 @@ GET /api/dashboard/simulator/scenario
 GET /api/dashboard/insights/pricing
 GET /api/dashboard/emergency/status
 GET /api/dashboard/export/report
+
+# Phase 4
+GET /api/dashboard/estoque
+GET /api/dashboard/estoque/alertas
+GET /api/dashboard/estoque/sugestoes
+POST /api/dashboard/estoque/entrada
 ```
 
 ---
 
-## Próximos passos sugeridos (Phase 4+)
+## Próximos passos sugeridos (pós Phase 4)
 
+- [ ] Dashboard web: telas de estoque consumindo os endpoints Phase 4 (repo `lumiz-financeiro`)
 - [ ] Integração com dados reais de concorrentes para `pricingIntelligenceService` (atualmente usa benchmarks estáticos)
 - [ ] Simulador multi-período (atualmente projeta apenas o mês atual)
 - [ ] Notificações push no dashboard web (atualmente só WhatsApp)
