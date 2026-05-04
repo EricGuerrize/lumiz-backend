@@ -19,6 +19,28 @@ class IntentHeuristicService {
   constructor() {
     // Palavras-chave para intents
     this.keywords = {
+      estoque_entrada: [
+        'entrada no estoque',
+        'entrada de estoque',
+        'dar entrada no estoque',
+        'recebimento de insumo',
+        'compra para estoque',
+        'material chegou',
+        'estoque entrada',
+        'repor estoque',
+        'recebimento estoque',
+      ],
+      consultar_estoque: [
+        'meu estoque',
+        'como está o estoque',
+        'como esta o estoque',
+        'inventário',
+        'inventario',
+        'resumo estoque',
+        'falta no estoque',
+        'situação do estoque',
+        'situacao do estoque',
+      ],
       consultar_saldo: [
         'saldo', 'resumo', 'lucro', 'quanto tenho', 'quanto sobrou', 'sobra',
         'disponível', 'disponivel', 'caixa', 'dinheiro disponível',
@@ -139,6 +161,16 @@ class IntentHeuristicService {
     return String(text || '').trim().toLowerCase()
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, ''); // Remove acentos
+  }
+
+  /** Quantidade física (ml, caixas) — não valor monetário */
+  _extractStockQuantity(text) {
+    const t = String(text);
+    const m1 = t.match(/(\d+(?:[.,]\d+)?)\s*(?:ml|m[lL]|un|unid|unidades|und|caix|caixas|frasco|frascos)\b/i);
+    if (m1) return parseFloat(m1[1].replace(',', '.'));
+    const m2 = t.match(/\b(\d{1,6})\s*$/);
+    if (m2) return parseFloat(m2[1]);
+    return null;
   }
 
   /**
@@ -403,6 +435,18 @@ class IntentHeuristicService {
         data: dataHoje
       };
       confidence = 0.85; // Alta confiança para custos com valor
+    } else if (detectedIntent === 'estoque_entrada') {
+      const saleInfo = this.extractSaleInfo(original);
+      const q = this._extractStockQuantity(original);
+      const categoria = saleInfo.categoria || null;
+      dados = { categoria, quantidade: q, data: dataHoje };
+      if (!categoria || !q || q <= 0) {
+        return null;
+      }
+      confidence = 0.88;
+    } else if (detectedIntent === 'consultar_estoque') {
+      dados = { data: dataHoje };
+      confidence = 0.9;
     }
     // apenas_valor já foi tratado acima (detectado antes do loop)
 

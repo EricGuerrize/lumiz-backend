@@ -7,6 +7,7 @@ const simulatorService = require('../services/simulatorService');
 const pricingIntelligenceService = require('../services/pricingIntelligenceService');
 const emergencyModeService = require('../services/emergencyModeService');
 const exportService = require('../services/exportService');
+const estoqueService = require('../services/estoqueService');
 const userController = require('../controllers/userController');
 const { authenticateFlexible } = require('../middleware/authMiddleware');
 const { validate } = require('../middleware/validationMiddleware');
@@ -618,6 +619,81 @@ router.get('/emergency/status', async (req, res) => {
   } catch (error) {
     console.error('Error getting emergency status:', error);
     res.status(500).json({ error: 'Failed to get emergency status' });
+  }
+});
+
+// GET /api/dashboard/estoque — status de estoque por procedimento
+router.get('/estoque', async (req, res) => {
+  try {
+    const result = await estoqueService.getEstoqueStatus(req.user.id);
+    res.json(result);
+  } catch (error) {
+    console.error('Error getting estoque:', error);
+    res.status(500).json({ error: 'Failed to get estoque' });
+  }
+});
+
+// GET /api/dashboard/estoque/alertas — apenas baixo | crítico
+router.get('/estoque/alertas', async (req, res) => {
+  try {
+    const result = await estoqueService.getAlertasBaixoEstoque(req.user.id);
+    res.json(result);
+  } catch (error) {
+    console.error('Error getting estoque alertas:', error);
+    res.status(500).json({ error: 'Failed to get estoque alertas' });
+  }
+});
+
+// GET /api/dashboard/estoque/sugestoes?saldo_disponivel=
+router.get('/estoque/sugestoes', async (req, res) => {
+  try {
+    const raw = req.query.saldo_disponivel ?? req.query.saldoDisponivel;
+    let saldo;
+    if (raw != null && String(raw).length) {
+      saldo = parseFloat(raw);
+      if (!Number.isFinite(saldo)) {
+        return res.status(400).json({ error: 'saldo_disponivel inválido' });
+      }
+    }
+    const result = await estoqueService.sugerirReposicao(req.user.id, saldo);
+    res.json(result);
+  } catch (error) {
+    console.error('Error getting estoque sugestoes:', error);
+    res.status(500).json({ error: 'Failed to get sugestoes' });
+  }
+});
+
+// POST /api/dashboard/estoque/entrada
+router.post('/estoque/entrada', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const pid = body.procedimento_id || body.procedimentoId;
+    const q = body.quantidade != null ? Number(body.quantidade) : NaN;
+    if (!pid || !Number.isFinite(q) || q <= 0) {
+      return res.status(400).json({ error: 'procedimento_id e quantidade (> 0) são obrigatórios' });
+    }
+    const cu = body.custo_unitario ?? body.custoUnitario;
+    if (cu != null && cu !== '') {
+      const n = Number(cu);
+      if (!Number.isFinite(n) || n < 0) {
+        return res.status(400).json({ error: 'custo_unitario deve ser >= 0' });
+      }
+    }
+    const result = await estoqueService.registrarEntrada(req.user.id, {
+      procedimento_id: pid,
+      quantidade: q,
+      observacoes: body.observacoes ?? body.observacao,
+      fornecedor_id: body.fornecedor_id ?? body.fornecedorId,
+      custo_unitario: body.custo_unitario ?? body.custoUnitario,
+      data: body.data,
+    });
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('Error registering entrada estoque:', error);
+    if (String(error.message || '').includes('não encontrado')) {
+      return res.status(404).json({ error: error.message });
+    }
+    res.status(500).json({ error: error.message || 'Failed to register entrada' });
   }
 });
 

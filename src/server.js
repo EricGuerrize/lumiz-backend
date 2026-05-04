@@ -46,6 +46,7 @@ const nudgeService = require('./services/nudgeService');
 const insightService = require('./services/insightService');
 const goalReminderService = require('./services/goalReminderService');
 const emergencyModeService = require('./services/emergencyModeService');
+const estoqueService = require('./services/estoqueService');
 
 // Sentry initialization is now handled in instrument.js
 
@@ -67,13 +68,20 @@ cron.schedule('0 0 * * *', async () => {
     if (process.env.SENTRY_DSN) Sentry.captureException(error);
   }
 });
-// Cron de alerta de caixa negativo — todo dia às 8h
+// Cron de alerta de caixa negativo + estoque baixo — todo dia às 8h
 cron.schedule('0 8 * * *', async () => {
   console.log('[CRON] Verificando alertas de caixa negativo...');
   try {
     await emergencyModeService.checkAndAlert();
   } catch (error) {
     console.error('[CRON] Erro no alerta de emergência:', error);
+    if (process.env.SENTRY_DSN) Sentry.captureException(error);
+  }
+  console.log('[CRON] Verificando estoque baixo...');
+  try {
+    await estoqueService.checkAndAlertEstoqueBaixo();
+  } catch (error) {
+    console.error('[CRON] Erro no alerta de estoque:', error);
     if (process.env.SENTRY_DSN) Sentry.captureException(error);
   }
 });

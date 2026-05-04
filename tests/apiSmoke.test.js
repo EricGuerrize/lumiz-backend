@@ -151,6 +151,17 @@ async function run() {
     }
   });
 
+  await runStep('GET /api/dashboard/simulator/scenario (alias receita_extra=5000)', async () => {
+    const res = await request(app)
+      .get('/api/dashboard/simulator/scenario?receita_extra=5000')
+      .set('x-user-phone', TEST_PHONE)
+      .expect(200);
+    const { baseline, projection } = res.body;
+    if (projection.entradas - baseline.entradas !== 5000) {
+      throw new Error('alias receita_extra não aplicado');
+    }
+  });
+
   await runStep('GET /api/dashboard/insights/pricing', async () => {
     const res = await request(app)
       .get('/api/dashboard/insights/pricing')
@@ -165,6 +176,15 @@ async function run() {
       if (typeof p.avgTicket !== 'number') throw new Error(`avgTicket inválido em: ${p.procedimento}`);
       if (!p.benchmark) throw new Error(`benchmark ausente em: ${p.procedimento}`);
     }
+  });
+
+  await runStep('GET /api/dashboard/pricing/insights (alias)', async () => {
+    const res = await request(app)
+      .get('/api/dashboard/pricing/insights?months=3')
+      .set('x-user-phone', TEST_PHONE)
+      .expect(200);
+    if (!Array.isArray(res.body.procedures)) throw new Error('alias pricing/insights: procedures não é array');
+    if (!res.body.period?.since) throw new Error('alias: period.since ausente');
   });
 
   await runStep('GET /api/dashboard/emergency/status', async () => {

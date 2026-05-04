@@ -128,6 +128,8 @@ INTENÇÕES:
 - consultar_agenda: agenda, agendamentos, compromissos, consultas marcadas, ver agenda
 - consultar_meta: meta, minha meta, progresso, objetivo, quanto falta, atingir meta
 - insights: insights, dicas, sugestoes, sugestões, recomendacoes, recomendações
+- estoque_entrada: entrada no estoque, entrada de estoque, dar entrada no estoque, recebi insumos, compra para estoque, material chegou, conferir entrada estoque, repor estoque
+- consultar_estoque: meu estoque, como está o estoque, inventário, inventario, falta no estoque, resumo estoque
 - adicionar_numero: cadastrar número, adicionar número, novo número, registrar número, vincular número, adicionar celular, cadastrar celular, quero adicionar outro número, preciso cadastrar um número, adicionar membro, cadastrar membro, vincular outro whatsapp, adicionar outro whatsapp, quero adicionar alguém, preciso adicionar um número, cadastrar outro telefone
 - listar_numeros: meus números, números cadastrados, listar números, ver números, quem tem acesso, quais números estão cadastrados, mostrar números, ver membros, listar membros
 - remover_numero: remover número, excluir número, deletar número, tirar número, desvincular número, remover membro, excluir membro, tirar acesso, remover acesso, revogar acesso
@@ -143,6 +145,9 @@ INTENÇÕES:
 - apenas_procedimento: SÓ nome de procedimento/produto, sem valor
 - mensagem_ambigua: não conseguiu identificar
 
+EXTRAÇÃO (estoque_entrada):
+- quantidade: número de unidades/ml/caixas a dar entrada (não confundir com valor R$ de venda)
+- categoria: nome do procedimento/insumo cadastrado
 EXTRAÇÃO:
 - VALOR: números (1500, 2.800, 3mil = 3000). Se não houver valor, retorne null.
 - REGRA CRÍTICA DE MÚLTIPLOS NÚMEROS:
@@ -314,6 +319,11 @@ EXEMPLOS:
 
 "o que você faz" → {"intencao":"ajuda","dados":{}}
 "como funciona" → {"intencao":"ajuda","dados":{}}
+
+"entrada estoque botox 50 ml" → {"intencao":"estoque_entrada","dados":{"categoria":"Botox","quantidade":50,"data":"${dataHoje}"}}
+"recebi 20 ml de preenchimento pro estoque" → {"intencao":"estoque_entrada","dados":{"categoria":"Preenchimento","quantidade":20,"data":"${dataHoje}"}}
+"meu estoque" → {"intencao":"consultar_estoque","dados":{}}
+"como está o inventário" → {"intencao":"consultar_estoque","dados":{}}
 
 RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
 `;

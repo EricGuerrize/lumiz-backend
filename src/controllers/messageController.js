@@ -29,6 +29,7 @@ const ExportHandler = require('./messages/exportHandler');
 const ScheduleHandler = require('./messages/scheduleHandler');
 const InsightsHandler = require('./messages/insightsHandler');
 const MemberHandler = require('./messages/memberHandler');
+const EstoqueHandler = require('./messages/estoqueHandler');
 const mdrChatFlowService = require('../services/mdrChatFlowService');
 const betaFeedbackService = require('../services/betaFeedbackService');
 
@@ -62,6 +63,7 @@ class MessageController {
     this.scheduleHandler = new ScheduleHandler();
     this.insightsHandler = new InsightsHandler();
     this.memberHandler = new MemberHandler();
+    this.estoqueHandler = new EstoqueHandler();
   }
 
   async setAwaitingData(phone, pending, ttlMs = this.AWAITING_DATA_TTL_MS) {
@@ -642,6 +644,12 @@ class MessageController {
 
       case 'insights':
         return await this.insightsHandler.handleInsights(user);
+
+      case 'estoque_entrada':
+        return await this.estoqueHandler.handleEntradaEstoque(user, intent, phone);
+
+      case 'consultar_estoque':
+        return await this.estoqueHandler.handleConsultarEstoque(user);
 
       case 'adicionar_numero':
         return await this.memberHandler.handleAddMember(user, phone);
