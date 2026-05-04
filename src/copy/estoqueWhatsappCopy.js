@@ -58,7 +58,7 @@ function resumoEstoqueLinhas(itens) {
         ? '—'
         : String(Math.round(it.diasSuprimento * 10) / 10);
     const tag =
-      it.status === 'critico' ? ' 🚨' : it.status === 'baixo' ? ' ⚠️' : '';
+      it.status === 'critico' ? ' 🚨' : it.status === 'baixo' ? ' ⚠️' : it.status === 'excesso' ? ' 📈' : '';
     return `• ${it.nome}: ${it.estoqueAtual} ${it.unidade || 'ml'} (${dias} d)${tag}`;
   });
   return `📦 *Seu estoque*\n\n${linhas.join('\n')}`;
@@ -78,9 +78,27 @@ function precisaQuantidadeENome() {
   );
 }
 
+/** Acima de `estoque_maximo` (quando definido) */
+function alertaEstoqueExcesso(produtos) {
+  if (!produtos?.length) {
+    return '📈 Revise níveis máximos de estoque no dashboard.';
+  }
+  const linhas = produtos.map((p) => {
+    const u = p.unidade || 'ml';
+    const max = p.estoqueMaximo != null ? p.estoqueMaximo : '—';
+    return `• *${p.nome}*: ${p.estoqueAtual} ${u} (teto ${max} ${u})`;
+  });
+  return (
+    '📈 *Estoque acima do teto*\n\n' +
+    `${linhas.join('\n')}\n\n` +
+    'Confirme se o máximo ainda faz sentido ou ajuste no dashboard.'
+  );
+}
+
 module.exports = {
   alertaEstoqueBaixo,
   alertaEstoqueCritico,
+  alertaEstoqueExcesso,
   entradaRegistrada,
   resumoEstoqueLinhas,
   erroProcedimentoNaoEncontrado,

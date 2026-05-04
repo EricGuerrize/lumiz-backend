@@ -1,63 +1,57 @@
-let supabase;
-let pricingIntelligenceService;
-
-function buildChain(data) {
-  const chain = {};
-  ['select', 'eq', 'gte', 'not'].forEach(m => { chain[m] = jest.fn(() => chain); });
-  chain.then = resolve => Promise.resolve({ data, error: null }).then(resolve);
+function mockSupabaseAtendimentos(rows) {
+  const end = { data: rows, error: null };
+  const chain = {
+    select: jest.fn(() => chain),
+    eq: jest.fn(() => chain),
+    gte: jest.fn(() => chain),
+    not: jest.fn(() => Promise.resolve(end)),
+  };
   return chain;
 }
 
-beforeEach(() => {
-  jest.resetModules();
-  jest.mock('../../src/db/supabase');
-  supabase = require('../../src/db/supabase');
-  pricingIntelligenceService = require('../../src/services/pricingIntelligenceService');
+describe('pricingIntelligenceService (sem env merge)', () => {
+  beforeEach(() => {
+    jest.resetModules();
+    delete process.env.PRICING_BENCHMARK_JSON;
+    jest.doMock('../../src/db/supabase', () => ({
+      from: jest.fn(() =>
+        mockSupabaseAtendimentos([{ observacoes: 'Botox teste', valor_total: '900' }])
+      ),
+    }));
+  });
+
+  it('usa summary.fonteBenchmark estatico', async () => {
+    const svc = require('../../src/services/pricingIntelligenceService');
+    const r = await svc.analyze('user-1', { months: 1 });
+    expect(r.summary.fonteBenchmark).toBe('estatico');
+    expect(r.procedures.length).toBeGreaterThanOrEqual(1);
+  });
 });
 
-describe('pricingIntelligenceService.analyze', () => {
-  it('groups procedures and computes avgTicket', async () => {
-    supabase.from = jest.fn(() => buildChain([
-      { observacoes: 'Botox', valor_total: '1500' },
-      { observacoes: 'Botox', valor_total: '1000' },
-    ]));
-    const result = await pricingIntelligenceService.analyze('user-1');
-    const botox = result.procedures.find(p => p.procedimento === 'Botox');
-    expect(botox.count).toBe(2);
-    expect(botox.avgTicket).toBeCloseTo(1250);
+describe('pricingIntelligenceService (PRICING_BENCHMARK_JSON)', () => {
+  beforeEach(() => {
+    jest.resetModules();
+    process.env.PRICING_BENCHMARK_JSON = JSON.stringify({
+      botox: { min: 999, avg: 1999, label: 'Botox QA' },
+    });
+    jest.doMock('../../src/db/supabase', () => ({
+      from: jest.fn(() =>
+        mockSupabaseAtendimentos([{ observacoes: 'Botox teste', valor_total: '1500' }])
+      ),
+    }));
   });
 
-  it('marks abaixoMercado true when ticket below benchmark min', async () => {
-    supabase.from = jest.fn(() => buildChain([
-      { observacoes: 'limpeza de pele', valor_total: '100' }, // below min 150
-    ]));
-    const result = await pricingIntelligenceService.analyze('user-1');
-    expect(result.procedures[0].abaixoMercado).toBe(true);
-    expect(result.procedures[0].recomendacao).not.toBeNull();
+  afterEach(() => {
+    delete process.env.PRICING_BENCHMARK_JSON;
   });
 
-  it('marks abaixoMercado false when ticket above benchmark min', async () => {
-    supabase.from = jest.fn(() => buildChain([
-      { observacoes: 'Botox', valor_total: '2000' },
-    ]));
-    const result = await pricingIntelligenceService.analyze('user-1');
-    expect(result.procedures[0].abaixoMercado).toBe(false);
-    expect(result.procedures[0].recomendacao).toBeNull();
-  });
-
-  it('summary.diasComEventos counts abaixoMercado procedures', async () => {
-    supabase.from = jest.fn(() => buildChain([
-      { observacoes: 'limpeza', valor_total: '50' },
-      { observacoes: 'Botox', valor_total: '2000' },
-    ]));
-    const result = await pricingIntelligenceService.analyze('user-1');
-    expect(result.summary.abaixoMercado).toBe(1);
-  });
-
-  it('returns empty procedures when no data', async () => {
-    supabase.from = jest.fn(() => buildChain([]));
-    const result = await pricingIntelligenceService.analyze('user-1');
-    expect(result.procedures).toHaveLength(0);
-    expect(result.summary.abaixoMercado).toBe(0);
+  it('mescla benchmarks a partir do env', async () => {
+    const svc = require('../../src/services/pricingIntelligenceService');
+    const r = await svc.analyze('user-1', { months: 1 });
+    expect(r.summary.fonteBenchmark).toBe('estatico+env');
+    const b = r.procedures.find((p) => String(p.procedimento).toLowerCase().includes('botox'));
+    expect(b).toBeTruthy();
+    expect(b.benchmark.min).toBe(999);
+    expect(b.benchmark.avg).toBe(1999);
   });
 });

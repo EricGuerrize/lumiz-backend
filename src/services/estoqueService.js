@@ -91,9 +91,14 @@ class EstoqueService {
     };
   }
 
-  _resolveStatus(estoque, minimo, totalConsumo90) {
+  _resolveStatus(estoque, minimo, maximo, totalConsumo90) {
     const min = parseFloat(minimo) || 0;
+    const max = parseFloat(maximo) || 0;
     const atual = parseFloat(estoque) || 0;
+
+    if (max > 0 && atual > max) {
+      return 'excesso';
+    }
 
     if (!totalConsumo90 || totalConsumo90 <= 0) {
       return 'sem_historico';
@@ -117,6 +122,7 @@ class EstoqueService {
         nome,
         estoque_ml,
         estoque_minimo,
+        estoque_maximo,
         unidade,
         custo_material_ml,
         fornecedor_id,
@@ -137,13 +143,14 @@ class EstoqueService {
 
       const estoqueAtual = parseFloat(r.estoque_ml) || 0;
       const estoqueMinimo = parseFloat(r.estoque_minimo) || 0;
+      const estoqueMaximo = parseFloat(r.estoque_maximo) || 0;
 
       let diasSuprimento = null;
       if (diario90 > 0) {
         diasSuprimento = estoqueAtual / diario90;
       }
 
-      const status = this._resolveStatus(estoqueAtual, estoqueMinimo, total90);
+      const status = this._resolveStatus(estoqueAtual, estoqueMinimo, estoqueMaximo, total90);
       const forn = r.fornecedores;
 
       produtos.push({
@@ -152,6 +159,7 @@ class EstoqueService {
         unidade: r.unidade || 'ml',
         estoqueAtual,
         estoqueMinimo,
+        estoqueMaximo: estoqueMaximo || null,
         consumoMedioMensal,
         diasSuprimento,
         status,
@@ -169,6 +177,12 @@ class EstoqueService {
       produtos,
       diasConsumoReferencia: DIAS_CONSUMO_REFERENCIA,
     };
+  }
+
+  async getAlertasEstoqueExcesso(userId) {
+    const { produtos } = await this.getEstoqueStatus(userId);
+    const alertas = produtos.filter((p) => p.status === 'excesso');
+    return { alertas, total: alertas.length };
   }
 
   async getAlertasBaixoEstoque(userId) {
@@ -454,6 +468,46 @@ class EstoqueService {
     }
 
     console.log(`[ESTOQUE] ${sent.length} alertas de estoque registrados`);
+    return sent;
+  }
+
+  /**
+   * Alerta diário (dedupe) quando estoque > estoque_maximo definido.
+   */
+  async checkAndAlertEstoqueExcesso() {
+    const tipoDia = `estoque_excesso_${_todayISO()}`;
+    const { data: profiles, error } = await supabase
+      .from('profiles')
+      .select('id, telefone')
+      .not('telefone', 'is', null);
+
+    if (error) {
+      console.error('[ESTOQUE] excesso perfis:', error.message);
+      return [];
+    }
+
+    const sent = [];
+    for (const profile of profiles || []) {
+      try {
+        const { alertas } = await this.getAlertasEstoqueExcesso(profile.id);
+        const pendentes = [];
+        for (const a of alertas) {
+          const ja = await alreadySent(a.id, tipoDia);
+          if (!ja) pendentes.push(a);
+        }
+        if (!pendentes.length) continue;
+
+        const message = copy.alertaEstoqueExcesso(pendentes);
+        await evolutionService.sendMessage(profile.telefone, message);
+        for (const a of pendentes) {
+          await markSent(profile.id, a.id, tipoDia);
+          sent.push({ user_id: profile.id, procedimento_id: a.id });
+        }
+      } catch (err) {
+        console.error(`[ESTOQUE] excesso ${profile.id}:`, err.message);
+      }
+    }
+    console.log(`[ESTOQUE] ${sent.length} alertas de excesso registrados`);
     return sent;
   }
 }

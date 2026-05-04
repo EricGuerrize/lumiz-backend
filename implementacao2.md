@@ -351,7 +351,7 @@ Referência: [`Lumiz Estética.pdf`](Lumiz%20Estética.pdf) (melhorias). Itens m
 | §1d Estoque operacional, mín/máx, alertas | Lumiz | **Phase 4** estoque + cron. |
 | §1e Fluxo gaps + ações (antecipar…) | Misto | Projeção **cashflow**; sugestões com antecipação = **Alter**. |
 | §2a–2e Registro vendas, estoque, lembretes, contas | Lumiz | WhatsApp + **Phase 2** contas/cashflow + **Phase 1** lembretes. |
-| §2b Validade / NF | Lumiz (futuro) | Pipeline NF não fechado. |
+| §2b Validade / NF | Lumiz (mínimo) | Tabela **`nf_validade_itens`** + CRUD `GET|POST|DELETE /api/dashboard/nf-validade`; OCR/NF-e automática = futuro. |
 | §2c Emissão NF | Fora / terceiros | — |
 | §2f Pagamento distribuidor via recebível | Alter | **Alter** |
 | §3a–c Lucro/caixa 6 meses, CMV | Lumiz | **`GET /api/dashboard/insights/outlook?months=`** — receita por `atendimentos`; custos pelo ledger mensal (`monthly-report`); `nota` sobre CMV. |
@@ -364,30 +364,36 @@ Referência: [`Lumiz Estética.pdf`](Lumiz%20Estética.pdf) (melhorias). Itens m
 | §7 Inadimplência, risco, régua WhatsApp, **impacto no caixa** | Lumiz | Overview + detalhe; `percentualFaturamento`, **`mensagemImpacto`**, `faturamentoMesReferencia`; régua **Phase 1**. |
 | §8 Simulador “e se?” | Misto | Cenário base **Phase 3**; presets Lumiz: **`scenario=extra_staff|price_hike|second_room`** em `GET …/simulator/scenario` + **`GET …/simulator/scenarios`**; troca maquininha / antecipação recebível = **Alter**. |
 | §9 Calendário preditivo, dias negativos | Lumiz | Calendário + projeção; **`caixaNegativo` por dia** e `temProjecaoCaixaNegativo` na projeção (PDF §9b). Calendário inclui `summary.notaCashflow` a remeter para a projeção (saldo acumulado). |
-| §10 Meta lucro/reserva + caminho | Misto | Meta receita **monthly_goals** + **caminho**; meta reserva = **gap**. |
-| §11 Relatório sócio PDF/email | Misto | **Export**; envio automático = **gap** (cron). |
-| §12 Emergência | Misto | **emergency** + detalhes; priorização fina com recebível travado = **Alter**. |
+| §10 Meta lucro/reserva + caminho | Misto | **`monthly_goals.meta_reserva`**, **`meta_lucro`** + GET/PUT goals; **`GET /goals/caminho`** estende lucro mês (outlook) e metas opcionais. |
+| §11 Relatório sócio PDF/email | Misto | **Export**; **`reporte_mensal_whatsapp`** + cron dia 1 10h + **`GET /api/cron/monthly-report`** (WhatsApp resumo mês anterior). |
+| §12 Emergência | Misto | **emergency** + detalhes + **`GET /emergency/history`**; priorização fina com recebível travado = **Alter**. |
 
-**Próximos blocos sugeridos (só Lumiz, sem Alter):** meta reserva; relatório mensal automatizado (envio); benchmark precificação externo; simulador multi-período além do mês escolhido (melhoria incremental).
+**Próximos blocos sugeridos (só Lumiz, sem Alter):** notificações push dashboard; E2E HTTP real contra staging; integração concorrentes além de `PRICING_BENCHMARK_JSON`.
 
 **Alteração recente (API para dashboard):**
 
 - `GET /api/dashboard/cashflow/projection` — cada item em `days` inclui `caixaNegativo` (boolean). `summary` inclui `diasComCaixaNegativo`, `primeiroDiaCaixaNegativo`, `temProjecaoCaixaNegativo`.
 - `GET /api/dashboard/calendar` — `summary.notaCashflow` orienta o cliente a usar a projeção para saldo acumulado e dias críticos (PDF §9).
 - `GET /api/dashboard/inadimplencia/overview` — resposta inclui `mensagemImpacto`, `faturamentoMesReferencia`, `periodoFaturamentoReferencia` (além de `totalEmAtraso` e `percentualFaturamento` já existentes).
-- **Testes:** `tests/unit/outlookService.test.js`; presets em `tests/unit/simulatorService.test.js`; `getComprasPorFornecedor` em `tests/unit/estoqueService.test.js`; calendário em `tests/unit/cashflowService.test.js`.
+- **Testes:** `tests/unit/outlookService.test.js`; presets + multi-mês em `tests/unit/simulatorService.test.js`; `getComprasPorFornecedor` em `tests/unit/estoqueService.test.js`; calendário em `tests/unit/cashflowService.test.js`; `tests/unit/pricingIntelligenceService.test.js`; `tests/e2e/dashboardPlanContracts.e2e.test.js`.
+- **Metas reserva/lucro:** migrations `20260506000002_monthly_goals_reserva_lucro.sql`; body opcional `meta_reserva`, `meta_lucro` no PUT goals/monthly.
+- **Relatório mensal WhatsApp:** migration `20260506000003_profiles_reporte_mensal.sql`; `PUT /api/dashboard/preferences`; cron `0 10 1 * *` + `GET /api/cron/monthly-report`.
+- **Emergency history:** migration `20260506000004_emergency_alert_history.sql`.
+- **Estoque máximo / excesso:** migration `20260506000005_procedimentos_estoque_maximo.sql`; `GET /api/dashboard/estoque/alertas-excesso`; cron 8h inclui `checkAndAlertEstoqueExcesso`.
+- **NF / validade (mínimo):** migration `20260506000006_nf_validade_itens.sql`; `GET|POST|DELETE /api/dashboard/nf-validade`.
+- **Benchmarks precificação:** env `PRICING_BENCHMARK_JSON` (merge por chave de categoria).
 
 ---
 
 ## Próximos passos sugeridos (pós Phase 4)
 
 - [ ] Dashboard web: telas de estoque consumindo os endpoints Phase 4 (repo `lumiz-financeiro`)
-- [ ] Integração com dados reais de concorrentes para `pricingIntelligenceService` (atualmente usa benchmarks estáticos)
-- [ ] Simulador multi-período (atualmente projeta apenas o mês atual)
+- [ ] Integração com dados reais de concorrentes para `pricingIntelligenceService` (além de `PRICING_BENCHMARK_JSON` / estático)
+- [x] Simulador multi-período — query `projection_months` em `GET /api/dashboard/simulator/scenario` (+ serviço `runScenarioMultiMonth` / preset multi)
 - [ ] Notificações push no dashboard web (atualmente só WhatsApp)
-- [ ] Histórico de alertas de emergência (guardar em tabela para auditoria)
-- [ ] Testes E2E no backend com Playwright/Supertest contra ambiente de staging
-- [ ] Rate limiting específico por endpoint nos novos routes de dashboard
+- [x] Histórico de alertas de emergência — tabela `emergency_alert_history` + `GET /api/dashboard/emergency/history`
+- [x] Testes de contrato — `tests/e2e/dashboardPlanContracts.e2e.test.js` + regressão alargada (`npm run test:regression`)
+- [x] Rate limiting por rota pesada — [`src/middleware/dashboardRouteRateLimits.js`](src/middleware/dashboardRouteRateLimits.js) aplicado em rotas dashboard selecionadas
 
 ---
 
@@ -416,7 +422,7 @@ req.headers['x-cron-secret']  // nunca req.query.secret
 
 - **Rotas:** todas as entradas do bloco “Resumo de todos os endpoints” (Phase 1–6) existem em [`src/routes/dashboard.routes.js`](src/routes/dashboard.routes.js) (e crons em [`src/server.js`](src/server.js) onde aplicável).
 - **Base de dados:** `monthly_goals` definida em [`supabase/migrations/20260505000001_create_monthly_goals.sql`](supabase/migrations/20260505000001_create_monthly_goals.sql); **produção (projeto Lumiz)** aplicada via migration remota / MCP. Outros ambientes: `supabase db push` ou SQL manual.
-- **Regressão automática:** `npm run test:regression` — slice `estoqueService` + `cashflowService`, Redis cache/fila desligados, `--forceExit` (evita processo preso por BullMQ).
+- **Regressão automática:** `npm run test:regression` — estoque, cashflow, outlook, simulador, pricing, contrato e2e; Redis cache/fila desligados, `--forceExit`.
 - **Smoke de módulo:** `node -e "require('./src/routes/dashboard.routes.js'); setTimeout(()=>process.exit(0),1000)"` na raiz (avisos Redis/`ENOTFOUND` em local sem Railway são esperados).
 - **Sanidade pós-deploy (manual):** Railway com o mesmo commit que o repo; chamadas com Bearer às rotas listadas em [`HANDOFF_BACKEND.md`](HANDOFF_BACKEND.md).
 

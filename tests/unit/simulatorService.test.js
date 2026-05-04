@@ -75,3 +75,32 @@ describe('simulatorService presets', () => {
     expect(r.cenários.map((c) => c.preset)).toEqual(['extra_staff', 'price_hike', 'second_room']);
   });
 });
+
+describe('simulatorService multi-month', () => {
+  it('runScenarioMultiMonth devolve N meses', async () => {
+    const r = await simulatorService.runScenarioMultiMonth(
+      'u1',
+      { month: 11, year: 2025, extraRevenue: 500, cutExpensePct: 0, newFixedCost: 0 },
+      3
+    );
+    expect(r.projectionMonths).toBe(3);
+    expect(r.meses).toHaveLength(3);
+    expect(r.meses[0].month).toBe(11);
+    expect(r.meses[1].month).toBe(12);
+    expect(r.meses[2].month).toBe(1);
+    expect(r.meses[2].year).toBe(2026);
+    expect(r.nota).toContain('cashflow');
+  });
+
+  it('runScenarioPresetMultiMonth repete preset', async () => {
+    const r = await simulatorService.runScenarioPresetMultiMonth(
+      'u1',
+      'price_hike',
+      { month: 1, year: 2026 },
+      2
+    );
+    expect(r.preset).toBe('price_hike');
+    expect(r.meses).toHaveLength(2);
+    expect(r.meses[0].preset).toBe('price_hike');
+  });
+});

@@ -23,6 +23,11 @@ const {
   updateTransactionSchema,
   deleteTransactionSchema
 } = require('../validators/dashboard.validators');
+const {
+  heavyDashboardReadLimiter,
+  dashboardExportLimiter,
+} = require('../middleware/dashboardRouteRateLimits');
+const nfValidadeService = require('../services/nfValidadeService');
 
 // Aplica autenticação em todas as rotas (aceita JWT ou telefone)
 router.use(authenticateFlexible);
@@ -76,7 +81,7 @@ router.get('/transactions', async (req, res) => {
 });
 
 // GET /api/dashboard/monthly-report?year=2025&month=11 - Relatório mensal
-router.get('/monthly-report', validate(monthlyReportSchema), async (req, res) => {
+router.get('/monthly-report', heavyDashboardReadLimiter, validate(monthlyReportSchema), async (req, res) => {
   try {
     const now = new Date();
     const year = parseInt(req.query.year) || now.getFullYear();
@@ -246,7 +251,7 @@ router.get('/user', async (req, res) => {
 });
 
 // GET /api/dashboard/transactions/search - Busca transações com filtros
-router.get('/transactions/search', validate(searchTransactionsSchema), async (req, res) => {
+router.get('/transactions/search', heavyDashboardReadLimiter, validate(searchTransactionsSchema), async (req, res) => {
   try {
     const {
       startDate,
@@ -528,7 +533,7 @@ router.patch('/profile/initial-balance', async (req, res) => {
 });
 
 // GET /api/dashboard/contas-a-pagar - Contas a pagar ordenadas por prioridade/urgência
-router.get('/contas-a-pagar', async (req, res) => {
+router.get('/contas-a-pagar', heavyDashboardReadLimiter, async (req, res) => {
   try {
     const { status, days_ahead, limit, offset } = req.query;
     const result = await cashflowService.getContasPagarPriority(req.user.id, {
@@ -545,7 +550,7 @@ router.get('/contas-a-pagar', async (req, res) => {
 });
 
 // GET /api/dashboard/cashflow/projection - Projeção de fluxo de caixa dia a dia
-router.get('/cashflow/projection', async (req, res) => {
+router.get('/cashflow/projection', heavyDashboardReadLimiter, async (req, res) => {
   try {
     const days = Math.min(parseInt(req.query.days) || 30, 90);
     const result = await cashflowService.getCashflowProjection(req.user.id, days);
@@ -557,7 +562,7 @@ router.get('/cashflow/projection', async (req, res) => {
 });
 
 // GET /api/dashboard/calendar - Calendário financeiro preditivo
-router.get('/calendar', async (req, res) => {
+router.get('/calendar', heavyDashboardReadLimiter, async (req, res) => {
   try {
     const now = new Date();
     const startDate = req.query.start_date || now.toISOString().split('T')[0];
@@ -587,7 +592,7 @@ function optionalQueryFloat(q, keys) {
 // Aliases (doc / PT): receita_extra, corte_custos_pct, custos_fixos
 // Cenários nomeados (PDF §8): scenario=extra_staff|price_hike|second_room
 //   + opcionais: staff_monthly_cost, price_hike_pct (ou pct), rent_extra
-router.get('/simulator/scenario', async (req, res) => {
+router.get('/simulator/scenario', heavyDashboardReadLimiter, async (req, res) => {
   try {
     const q = req.query;
     const firstNum = (keys) => {
@@ -602,6 +607,12 @@ router.get('/simulator/scenario', async (req, res) => {
     const month = q.month ? Math.min(Math.max(parseInt(q.month, 10), 1), 12) : undefined;
     const year = q.year ? Math.min(Math.max(parseInt(q.year, 10), 2000), 2100) : undefined;
 
+    const projRaw = q.projection_months ?? q.projectionMonths;
+    let projectionMonths =
+      projRaw != null && String(projRaw).length ? parseInt(projRaw, 10) : 1;
+    if (!Number.isInteger(projectionMonths)) projectionMonths = 1;
+    projectionMonths = Math.min(Math.max(projectionMonths, 1), 12);
+
     const scenarioRaw = q.scenario ?? q.cenario;
     if (scenarioRaw != null && String(scenarioRaw).length) {
       const sid = String(scenarioRaw).toLowerCase();
@@ -609,20 +620,44 @@ router.get('/simulator/scenario', async (req, res) => {
       if (!allowed.includes(sid)) {
         return res.status(400).json({ error: `scenario inválido. Use: ${allowed.join(', ')}` });
       }
-      const result = await simulatorService.runScenarioPreset(req.user.id, sid, {
+      const presetOpts = {
         month,
         year,
         staffMonthlyCost: optionalQueryFloat(q, ['staff_monthly_cost', 'staffMonthlyCost', 'custo_funcionario_mensal']),
         priceHikePct: optionalQueryFloat(q, ['price_hike_pct', 'priceHikePct', 'pct', 'aumento_precos_pct']),
         rentExtra: optionalQueryFloat(q, ['rent_extra', 'rentExtra', 'aluguel_extra']),
-      });
+      };
+      if (projectionMonths > 1) {
+        const result = await simulatorService.runScenarioPresetMultiMonth(
+          req.user.id,
+          sid,
+          presetOpts,
+          projectionMonths
+        );
+        return res.json(result);
+      }
+      const result = await simulatorService.runScenarioPreset(req.user.id, sid, presetOpts);
       return res.json(result);
     }
 
     const extraRevenue = Math.min(Math.max(firstNum(['extra_revenue', 'receita_extra']), 0), 1_000_000);
     const cutExpensePct = Math.min(Math.max(firstNum(['cut_expense_pct', 'corte_custos_pct']), 0), 100);
     const newFixedCost = Math.min(Math.max(firstNum(['new_fixed_cost', 'custos_fixos']), 0), 1_000_000);
-    const result = await simulatorService.runScenario(req.user.id, { extraRevenue, cutExpensePct, newFixedCost, month, year });
+    if (projectionMonths > 1) {
+      const result = await simulatorService.runScenarioMultiMonth(
+        req.user.id,
+        { extraRevenue, cutExpensePct, newFixedCost, month, year },
+        projectionMonths
+      );
+      return res.json(result);
+    }
+    const result = await simulatorService.runScenario(req.user.id, {
+      extraRevenue,
+      cutExpensePct,
+      newFixedCost,
+      month,
+      year,
+    });
     res.json(result);
   } catch (error) {
     console.error('Error running simulator:', error);
@@ -631,7 +666,7 @@ router.get('/simulator/scenario', async (req, res) => {
 });
 
 // GET /api/dashboard/simulator/scenarios — três presets num único payload (mesmos overrides opcionais do /scenario)
-router.get('/simulator/scenarios', async (req, res) => {
+router.get('/simulator/scenarios', heavyDashboardReadLimiter, async (req, res) => {
   try {
     const q = req.query;
     const month = q.month ? Math.min(Math.max(parseInt(q.month, 10), 1), 12) : undefined;
@@ -662,10 +697,10 @@ async function pricingInsightsHandler(req, res) {
 }
 
 // GET /api/dashboard/insights/pricing - Análise de precificação
-router.get('/insights/pricing', pricingInsightsHandler);
+router.get('/insights/pricing', heavyDashboardReadLimiter, pricingInsightsHandler);
 
 // GET /api/dashboard/pricing/insights - mesmo handler (alias para doc / clientes legados)
-router.get('/pricing/insights', pricingInsightsHandler);
+router.get('/pricing/insights', heavyDashboardReadLimiter, pricingInsightsHandler);
 
 // GET /api/dashboard/emergency/status - Status de caixa de emergência
 router.get('/emergency/status', async (req, res) => {
@@ -720,7 +755,7 @@ router.get('/estoque/sugestoes', async (req, res) => {
 });
 
 // GET /api/dashboard/estoque/compras-por-fornecedor?months=12
-router.get('/estoque/compras-por-fornecedor', async (req, res) => {
+router.get('/estoque/compras-por-fornecedor', heavyDashboardReadLimiter, async (req, res) => {
   try {
     const raw = Number.parseInt(req.query.months, 10);
     const months = Number.isInteger(raw) ? Math.min(Math.max(raw, 1), 36) : 12;
@@ -767,7 +802,7 @@ router.post('/estoque/entrada', async (req, res) => {
 });
 
 // GET /api/dashboard/export/report - Exportar relatório (PDF ou CSV)
-router.get('/export/report', async (req, res) => {
+router.get('/export/report', dashboardExportLimiter, async (req, res) => {
   try {
     const format = (req.query.format || 'csv').toLowerCase();
     const monthStr = req.query.month; // YYYY-MM
@@ -809,17 +844,41 @@ router.get('/goals/monthly', async (req, res) => {
 
     if (error) throw error;
 
-    res.json(data || { year, month, meta_receita: 0 });
+    res.json(
+      data || {
+        year,
+        month,
+        meta_receita: 0,
+        meta_reserva: null,
+        meta_lucro: null,
+      }
+    );
   } catch (error) {
     console.error('Error getting monthly goal:', error);
     res.status(500).json({ error: 'Failed to get monthly goal' });
   }
 });
 
+function parseOptionalGoalNumber(body, key, existingVal) {
+  if (!Object.prototype.hasOwnProperty.call(body || {}, key)) {
+    return existingVal;
+  }
+  const raw = body[key];
+  if (raw === null || raw === '') return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) {
+    const err = new Error(`invalid_${key}`);
+    err.code = 'VALIDATION';
+    throw err;
+  }
+  return n;
+}
+
 // PUT /api/dashboard/goals/monthly — POST espelha o mesmo handler (clientes legados / curl)
 async function upsertMonthlyGoal(req, res) {
   try {
-    const { year, month, meta_receita } = req.body || {};
+    const body = req.body || {};
+    const { year, month, meta_receita } = body;
     const parsedYear = Number.parseInt(year, 10);
     const parsedMonth = Number.parseInt(month, 10);
     const parsedMeta = Number(meta_receita);
@@ -831,11 +890,41 @@ async function upsertMonthlyGoal(req, res) {
       return res.status(400).json({ error: 'meta_receita deve ser número >= 0' });
     }
 
+    const { data: existing } = await supabase
+      .from('monthly_goals')
+      .select('meta_reserva, meta_lucro')
+      .eq('user_id', req.user.id)
+      .eq('year', parsedYear)
+      .eq('month', parsedMonth)
+      .maybeSingle();
+
+    let meta_reserva = null;
+    let meta_lucro = null;
+    if (existing?.meta_reserva != null && existing.meta_reserva !== '') {
+      const pr = parseFloat(existing.meta_reserva);
+      if (Number.isFinite(pr)) meta_reserva = pr;
+    }
+    if (existing?.meta_lucro != null && existing.meta_lucro !== '') {
+      const pl = parseFloat(existing.meta_lucro);
+      if (Number.isFinite(pl)) meta_lucro = pl;
+    }
+    try {
+      meta_reserva = parseOptionalGoalNumber(body, 'meta_reserva', meta_reserva);
+      meta_lucro = parseOptionalGoalNumber(body, 'meta_lucro', meta_lucro);
+    } catch (e) {
+      if (e.code === 'VALIDATION') {
+        return res.status(400).json({ error: 'meta_reserva e meta_lucro devem ser null, omitidas ou número >= 0' });
+      }
+      throw e;
+    }
+
     const payload = {
       user_id: req.user.id,
       year: parsedYear,
       month: parsedMonth,
       meta_receita: parsedMeta,
+      meta_reserva,
+      meta_lucro,
       updated_at: new Date().toISOString(),
     };
 
@@ -897,7 +986,7 @@ router.get('/inadimplencia/cliente/:clienteId', async (req, res) => {
 });
 
 // GET /api/dashboard/insights/outlook?months=6 — visão multi-mês receita (atendimentos) vs custos (ledger)
-router.get('/insights/outlook', async (req, res) => {
+router.get('/insights/outlook', heavyDashboardReadLimiter, async (req, res) => {
   try {
     const raw = Number.parseInt(req.query.months, 10);
     const months = Number.isInteger(raw) ? Math.min(Math.max(raw, 1), 24) : 6;
@@ -910,7 +999,7 @@ router.get('/insights/outlook', async (req, res) => {
 });
 
 // GET /api/dashboard/insights/sazonalidade?months=12
-router.get('/insights/sazonalidade', async (req, res) => {
+router.get('/insights/sazonalidade', heavyDashboardReadLimiter, async (req, res) => {
   try {
     const rawMonths = Number.parseInt(req.query.months, 10);
     const months = Number.isInteger(rawMonths) ? Math.min(Math.max(rawMonths, 2), 24) : 12;
@@ -923,7 +1012,7 @@ router.get('/insights/sazonalidade', async (req, res) => {
 });
 
 // GET /api/dashboard/insights/custo-procedimentos?months=3
-router.get('/insights/custo-procedimentos', async (req, res) => {
+router.get('/insights/custo-procedimentos', heavyDashboardReadLimiter, async (req, res) => {
   try {
     const raw = req.query.months != null ? Number.parseInt(req.query.months, 10) : 3;
     if (!Number.isInteger(raw) || raw < 1 || raw > 12) {
@@ -938,7 +1027,7 @@ router.get('/insights/custo-procedimentos', async (req, res) => {
 });
 
 // GET /api/dashboard/insights/simular-desconto?procedimento_id=&desconto_pct=
-router.get('/insights/simular-desconto', async (req, res) => {
+router.get('/insights/simular-desconto', heavyDashboardReadLimiter, async (req, res) => {
   try {
     const pid = req.query.procedimento_id || req.query.procedimentoId;
     const rawPct = req.query.desconto_pct ?? req.query.descontoPct;
@@ -976,13 +1065,102 @@ router.get('/goals/caminho', async (req, res) => {
 });
 
 // GET /api/dashboard/emergency/detalhes
-router.get('/emergency/detalhes', async (req, res) => {
+router.get('/emergency/detalhes', heavyDashboardReadLimiter, async (req, res) => {
   try {
     const result = await emergencyModeService.getEmergenciaDetalhada(req.user.id);
     res.json(result);
   } catch (error) {
     console.error('Error getting emergency detalhes:', error);
     res.status(500).json({ error: 'Failed to get emergency detalhes' });
+  }
+});
+
+// GET /api/dashboard/emergency/history?limit=50
+router.get('/emergency/history', async (req, res) => {
+  try {
+    const lim = parseInt(req.query.limit, 10);
+    const result = await emergencyModeService.getAlertHistory(req.user.id, lim);
+    res.json(result);
+  } catch (error) {
+    console.error('Error getting emergency history:', error);
+    res.status(500).json({ error: 'Failed to get emergency history' });
+  }
+});
+
+// PUT /api/dashboard/preferences — opt-ins (ex.: relatório mensal WhatsApp)
+router.put('/preferences', async (req, res) => {
+  try {
+    const { reporte_mensal_whatsapp } = req.body || {};
+    if (typeof reporte_mensal_whatsapp !== 'boolean') {
+      return res
+        .status(400)
+        .json({ error: 'Body deve incluir reporte_mensal_whatsapp (boolean)' });
+    }
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({ reporte_mensal_whatsapp })
+      .eq('id', req.user.id)
+      .select('id, reporte_mensal_whatsapp')
+      .single();
+
+    if (error) throw error;
+    res.json(data);
+  } catch (error) {
+    console.error('Error updating preferences:', error);
+    res.status(500).json({ error: 'Failed to update preferences' });
+  }
+});
+
+// GET /api/dashboard/nf-validade?days=90 — validades / lembretes (PDF §2b mínimo)
+router.get('/nf-validade', async (req, res) => {
+  try {
+    const days = req.query.days != null ? parseInt(req.query.days, 10) : 90;
+    const result = await nfValidadeService.listarProximos(req.user.id, days);
+    res.json(result);
+  } catch (error) {
+    console.error('Error listing nf-validade:', error);
+    res.status(500).json({ error: 'Failed to list nf-validade' });
+  }
+});
+
+// POST /api/dashboard/nf-validade — body: { descricao, data_validade, origem? }
+router.post('/nf-validade', async (req, res) => {
+  try {
+    const row = await nfValidadeService.criar(req.user.id, req.body || {});
+    res.status(201).json(row);
+  } catch (error) {
+    console.error('Error creating nf-validade:', error);
+    const msg = String(error.message || '');
+    if (msg.includes('obrigat')) {
+      return res.status(400).json({ error: msg });
+    }
+    res.status(500).json({ error: 'Failed to create nf-validade' });
+  }
+});
+
+// DELETE /api/dashboard/nf-validade/:id
+router.delete('/nf-validade/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id || !/^[0-9a-f-]{36}$/i.test(id)) {
+      return res.status(400).json({ error: 'id inválido' });
+    }
+    const result = await nfValidadeService.remover(req.user.id, id);
+    res.json(result);
+  } catch (error) {
+    console.error('Error deleting nf-validade:', error);
+    res.status(500).json({ error: 'Failed to delete nf-validade' });
+  }
+});
+
+// GET /api/dashboard/estoque/alertas-excesso — acima de estoque_maximo
+router.get('/estoque/alertas-excesso', async (req, res) => {
+  try {
+    const result = await estoqueService.getAlertasEstoqueExcesso(req.user.id);
+    res.json(result);
+  } catch (error) {
+    console.error('Error getting estoque alertas excesso:', error);
+    res.status(500).json({ error: 'Failed to get estoque alertas excesso' });
   }
 });
 

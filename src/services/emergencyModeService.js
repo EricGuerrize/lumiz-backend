@@ -50,6 +50,17 @@ class EmergencyModeService {
         if (status.alert) {
           const message = copy.alertaCaixaNegativo(status.saldoMinimo, status.dataRisco);
           await evolutionService.sendMessage(profile.telefone, message);
+          try {
+            await supabase.from('emergency_alert_history').insert({
+              user_id: profile.id,
+              tipo: 'caixa_negativo',
+              saldo_minimo: status.saldoMinimo,
+              data_risco: status.dataRisco,
+              canal: 'whatsapp',
+            });
+          } catch (histErr) {
+            console.warn('[EMERGENCY] Histórico não gravado:', histErr.message);
+          }
           alertsSent.push({ user_id: profile.id, saldoMinimo: status.saldoMinimo, dataRisco: status.dataRisco });
           console.log(`[EMERGENCY] Alerta enviado para ${profile.telefone}`);
         }
@@ -179,6 +190,24 @@ class EmergencyModeService {
       recebiveis_proximos_15d,
       antecipacao_sugerida,
     };
+  }
+
+  /**
+   * Histórico de alertas enviados (auditoria), mais recentes primeiro.
+   * @param {string} userId
+   * @param {number} [limit=50]
+   */
+  async getAlertHistory(userId, limit = 50) {
+    const lim = Math.min(Math.max(parseInt(String(limit), 10) || 50, 1), 200);
+    const { data, error } = await supabase
+      .from('emergency_alert_history')
+      .select('id, tipo, saldo_minimo, data_risco, canal, enviado_em')
+      .eq('user_id', userId)
+      .order('enviado_em', { ascending: false })
+      .limit(lim);
+
+    if (error) throw error;
+    return { limit: lim, itens: data || [] };
   }
 }
 

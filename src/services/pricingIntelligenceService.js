@@ -1,7 +1,6 @@
 const supabase = require('../db/supabase');
 
-// Market benchmarks per procedure category (BRL)
-const MARKET_BENCHMARKS = {
+const STATIC_BENCHMARKS = {
   botox: { min: 800, avg: 1500, label: 'Botox/Toxina Botulínica' },
   preenchimento: { min: 1200, avg: 2000, label: 'Preenchimento' },
   limpeza: { min: 150, avg: 300, label: 'Limpeza de Pele' },
@@ -13,7 +12,33 @@ const MARKET_BENCHMARKS = {
   default: { min: 200, avg: 500, label: 'Procedimento' },
 };
 
-function matchBenchmark(procedureName) {
+/**
+ * Mescla benchmarks estáticos com JSON em `PRICING_BENCHMARK_JSON` (env).
+ * Formato: `{"botox":{"min":900,"avg":1600,"label":"..."}}`
+ */
+function loadMergedBenchmarks() {
+  const base = { ...STATIC_BENCHMARKS };
+  const raw = process.env.PRICING_BENCHMARK_JSON;
+  if (!raw || !String(raw).trim()) return base;
+  try {
+    const extra = JSON.parse(raw);
+    if (!extra || typeof extra !== 'object') return base;
+    for (const [k, v] of Object.entries(extra)) {
+      if (!v || typeof v !== 'object') continue;
+      const cur = base[k] || base.default;
+      base[k] = {
+        min: Number.isFinite(Number(v.min)) ? Number(v.min) : cur.min,
+        avg: Number.isFinite(Number(v.avg)) ? Number(v.avg) : cur.avg,
+        label: typeof v.label === 'string' && v.label.length ? v.label : cur.label || k,
+      };
+    }
+    return base;
+  } catch {
+    return { ...STATIC_BENCHMARKS };
+  }
+}
+
+function matchBenchmark(procedureName, MARKET_BENCHMARKS) {
   const name = (procedureName || '').toLowerCase();
   for (const [key, bench] of Object.entries(MARKET_BENCHMARKS)) {
     if (key !== 'default' && name.includes(key)) return { key, ...bench };
@@ -23,6 +48,7 @@ function matchBenchmark(procedureName) {
 
 class PricingIntelligenceService {
   async analyze(userId, { months = 3 } = {}) {
+    const MARKET_BENCHMARKS = loadMergedBenchmarks();
     const since = new Date();
     since.setMonth(since.getMonth() - months);
     const sinceStr = since.toISOString().split('T')[0];
@@ -36,7 +62,6 @@ class PricingIntelligenceService {
 
     if (error) throw error;
 
-    // Group by procedure description (observacoes)
     const groups = {};
     for (const row of data || []) {
       const proc = (row.observacoes || '').trim();
@@ -48,7 +73,7 @@ class PricingIntelligenceService {
 
     const procedures = Object.entries(groups).map(([name, { count, total }]) => {
       const avgTicket = total / count;
-      const bench = matchBenchmark(name);
+      const bench = matchBenchmark(name, MARKET_BENCHMARKS);
       const vsMarket = bench.avg > 0 ? ((avgTicket - bench.avg) / bench.avg) * 100 : 0;
       const abaixoMercado = avgTicket < bench.min;
 
@@ -67,7 +92,8 @@ class PricingIntelligenceService {
 
     procedures.sort((a, b) => b.count - a.count);
 
-    const abaixoCount = procedures.filter(p => p.abaixoMercado).length;
+    const abaixoCount = procedures.filter((p) => p.abaixoMercado).length;
+    const fonteBenchmark = process.env.PRICING_BENCHMARK_JSON ? 'estatico+env' : 'estatico';
 
     return {
       period: { months, since: sinceStr },
@@ -75,9 +101,11 @@ class PricingIntelligenceService {
       summary: {
         totalProcedures: procedures.length,
         abaixoMercado: abaixoCount,
-        alertas: abaixoCount > 0
-          ? `${abaixoCount} procedimento(s) com ticket abaixo do mercado`
-          : 'Precificação dentro do mercado',
+        fonteBenchmark,
+        alertas:
+          abaixoCount > 0
+            ? `${abaixoCount} procedimento(s) com ticket abaixo do mercado`
+            : 'Precificação dentro do mercado',
       },
     };
   }

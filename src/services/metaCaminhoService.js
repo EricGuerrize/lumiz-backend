@@ -1,4 +1,5 @@
 const supabase = require('../db/supabase');
+const outlookService = require('./outlookService');
 
 function _dateStr(d) {
   return d.toISOString().split('T')[0];
@@ -17,7 +18,7 @@ class MetaCaminhoService {
 
     const { data: goalRow } = await supabase
       .from('monthly_goals')
-      .select('meta_receita')
+      .select('meta_receita, meta_reserva, meta_lucro')
       .eq('user_id', userId)
       .eq('year', year)
       .eq('month', month)
@@ -142,8 +143,50 @@ class MetaCaminhoService {
       acao_sugerida: '',
     };
 
+    let meta_reserva = null;
+    let meta_lucro = null;
+    if (goalRow != null) {
+      if (goalRow.meta_reserva != null && goalRow.meta_reserva !== '') {
+        const mr = parseFloat(goalRow.meta_reserva);
+        if (Number.isFinite(mr) && mr >= 0) meta_reserva = mr;
+      }
+      if (goalRow.meta_lucro != null && goalRow.meta_lucro !== '') {
+        const ml = parseFloat(goalRow.meta_lucro);
+        if (Number.isFinite(ml) && ml >= 0) meta_lucro = ml;
+      }
+    }
+
+    let lucro_mes_estimado = null;
+    try {
+      const outlook = await outlookService.getOutlook(userId, 1);
+      const last = outlook.meses && outlook.meses.length ? outlook.meses[outlook.meses.length - 1] : null;
+      if (last && Number.isFinite(last.lucro)) {
+        lucro_mes_estimado = Math.round(last.lucro * 100) / 100;
+      }
+    } catch {
+      lucro_mes_estimado = null;
+    }
+
+    let falta_meta_lucro = null;
+    let percentual_meta_lucro = null;
+    if (meta_lucro != null && meta_lucro > 0 && lucro_mes_estimado != null) {
+      falta_meta_lucro = Math.max(0, Math.round((meta_lucro - lucro_mes_estimado) * 100) / 100);
+      percentual_meta_lucro = Math.round((lucro_mes_estimado / meta_lucro) * 1000) / 10;
+    }
+
     if (meta_receita <= 0) {
-      return baseZeros;
+      return {
+        ...baseZeros,
+        meta_reserva,
+        meta_lucro,
+        lucro_mes_estimado,
+        falta_meta_lucro,
+        percentual_meta_lucro,
+        meta_reserva_nota:
+          meta_reserva != null
+            ? 'A meta de reserva é um objetivo declarado; o app não infere quanto já poupou automaticamente.'
+            : null,
+      };
     }
 
     return {
@@ -159,6 +202,19 @@ class MetaCaminhoService {
         procedimentos_necessarios == null ? 0 : procedimentos_necessarios,
       no_caminho,
       acao_sugerida,
+      meta_reserva,
+      meta_lucro,
+      lucro_mes_estimado,
+      falta_meta_lucro,
+      percentual_meta_lucro,
+      meta_reserva_nota:
+        meta_reserva != null
+          ? 'A meta de reserva é um objetivo declarado; o app não infere quanto já poupou automaticamente.'
+          : null,
+      lucro_meta_nota:
+        lucro_mes_estimado != null
+          ? 'Lucro do mês (indicativo) usa a mesma base do outlook: receita em atendimentos vs saídas no livro.'
+          : null,
     };
   }
 }

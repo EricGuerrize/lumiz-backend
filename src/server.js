@@ -47,6 +47,7 @@ const insightService = require('./services/insightService');
 const goalReminderService = require('./services/goalReminderService');
 const emergencyModeService = require('./services/emergencyModeService');
 const estoqueService = require('./services/estoqueService');
+const { deliverPreviousMonthSummaries } = require('./services/monthlyReportDeliveryService');
 
 // Sentry initialization is now handled in instrument.js
 
@@ -82,6 +83,23 @@ cron.schedule('0 8 * * *', async () => {
     await estoqueService.checkAndAlertEstoqueBaixo();
   } catch (error) {
     console.error('[CRON] Erro no alerta de estoque:', error);
+    if (process.env.SENTRY_DSN) Sentry.captureException(error);
+  }
+  console.log('[CRON] Verificando estoque acima do teto...');
+  try {
+    await estoqueService.checkAndAlertEstoqueExcesso();
+  } catch (error) {
+    console.error('[CRON] Erro no alerta de estoque em excesso:', error);
+    if (process.env.SENTRY_DSN) Sentry.captureException(error);
+  }
+});
+// Relatório mensal WhatsApp — dia 1 de cada mês às 10h
+cron.schedule('0 10 1 * *', async () => {
+  console.log('[CRON] Enviando relatórios mensais (opt-in)...');
+  try {
+    await deliverPreviousMonthSummaries();
+  } catch (error) {
+    console.error('[CRON] Erro relatório mensal:', error);
     if (process.env.SENTRY_DSN) Sentry.captureException(error);
   }
 });
@@ -340,6 +358,20 @@ app.get('/health', async (req, res) => {
 });
 
 // Endpoint para cron job de lembretes
+app.get('/api/cron/monthly-report', async (req, res) => {
+  try {
+    const cronSecret = req.headers['x-cron-secret'];
+    if (process.env.CRON_SECRET && cronSecret !== process.env.CRON_SECRET) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const result = await deliverPreviousMonthSummaries();
+    res.json({ status: 'success', timestamp: new Date().toISOString(), ...result });
+  } catch (error) {
+    console.error('[CRON] monthly-report:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+});
+
 app.get('/api/cron/reminders', async (req, res) => {
   try {
     // Verifica secret key para segurança (opcional, mas recomendado)
@@ -388,7 +420,8 @@ app.get('/', (req, res) => {
       test: '/api/test',
       health: '/health',
       cron: {
-        reminders: '/api/cron/reminders'
+        reminders: '/api/cron/reminders',
+        monthlyReport: '/api/cron/monthly-report'
       },
       dashboard: {
         summary: '/api/dashboard/summary',

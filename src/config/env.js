@@ -29,6 +29,10 @@ class EnvValidator {
     this.validateOptional('REDIS_URL', 'URL do Redis (opcional, mas recomendado para cache/filas)');
     this.validateOptional('SENTRY_DSN', 'DSN do Sentry (opcional, mas recomendado para produção)');
     this.validateOptional('CRON_SECRET', 'Segredo para endpoints de cron (recomendado em produção)');
+    this.validateOptional(
+      'PRICING_BENCHMARK_JSON',
+      'JSON opcional para sobrescrever benchmarks de precificação (dashboard)'
+    );
     this.validateOptional('METRICS_TOKEN', 'Token para endpoint de métricas (recomendado em produção)');
 
     // Validações específicas

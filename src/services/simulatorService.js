@@ -135,6 +135,80 @@ class SimulatorService {
       },
     };
   }
+
+  /**
+   * Mesma hipótese de `runScenario` aplicada a N meses consecutivos (calendário).
+   * @param {number} projectionMonths 1–12
+   */
+  async runScenarioMultiMonth(userId, params, projectionMonths = 1) {
+    const n = Math.min(Math.max(parseInt(String(projectionMonths), 10) || 1, 1), 12);
+    const now = new Date();
+    const startM = params.month != null ? params.month : now.getMonth() + 1;
+    const startY = params.year != null ? params.year : now.getFullYear();
+    const {
+      extraRevenue = 0,
+      cutExpensePct = 0,
+      newFixedCost = 0,
+    } = params;
+
+    const meses = [];
+    for (let i = 0; i < n; i += 1) {
+      const d = new Date(startY, startM - 1 + i, 1);
+      const y = d.getFullYear();
+      const m = d.getMonth() + 1;
+      meses.push({
+        year: y,
+        month: m,
+        ...(await this.runScenario(userId, {
+          extraRevenue,
+          cutExpensePct,
+          newFixedCost,
+          month: m,
+          year: y,
+        })),
+      });
+    }
+
+    return {
+      projectionMonths: n,
+      meses,
+      nota:
+        'Cada mês usa o saldo e relatório daquele mês isoladamente (não acumula saldo entre meses no simulador). Para caixa acumulado use GET /api/dashboard/cashflow/projection.',
+    };
+  }
+
+  /**
+   * Preset nomeado repetido por vários meses consecutivos.
+   * @param {'extra_staff'|'price_hike'|'second_room'} scenarioId
+   */
+  async runScenarioPresetMultiMonth(userId, scenarioId, opts, projectionMonths = 1) {
+    const n = Math.min(Math.max(parseInt(String(projectionMonths), 10) || 1, 1), 12);
+    const now = new Date();
+    const startM = opts.month != null ? opts.month : now.getMonth() + 1;
+    const startY = opts.year != null ? opts.year : now.getFullYear();
+
+    const meses = [];
+    for (let i = 0; i < n; i += 1) {
+      const d = new Date(startY, startM - 1 + i, 1);
+      const y = d.getFullYear();
+      const m = d.getMonth() + 1;
+      meses.push(
+        await this.runScenarioPreset(userId, scenarioId, {
+          ...opts,
+          month: m,
+          year: y,
+        })
+      );
+    }
+
+    return {
+      preset: String(scenarioId).toLowerCase(),
+      projectionMonths: n,
+      meses,
+      nota:
+        'Cada mês recalcula o baseline daquele mês com o mesmo tipo de ajuste (preset). Ver GET /api/dashboard/insights/outlook para série histórica real.',
+    };
+  }
 }
 
 module.exports = new SimulatorService();
