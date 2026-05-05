@@ -1,7 +1,7 @@
 # Lumiz Financeiro — Roadmap de Implementação
 
 > Documento vivo. Atualizar status a cada entrega.
-> Fases 1–8 concluídas (back + front). Preset opcional: simulador “cortar pró-labore”. Fases 9–20 pendentes.
+> Fases 1–10 concluídas (back + front, quando aplicável). Preset opcional: simulador “cortar pró-labore”. Fases 11–20 pendentes.
 
 ---
 
@@ -17,8 +17,8 @@
 | 6 | Email report, perfil de pagamento, margem comparativa, NF validade, rate limiting | Back | M | ✅ Concluído |
 | 7 | Pró-labore como categoria especial | Back + Front | P | ✅ Concluído (preset simulador opcional) |
 | 8 | Comissão por colaborador | Back + Front | M | ✅ Concluído |
-| 9 | Estados Empty/Sparse na UI | Front | P | ⬜ Pendente |
-| 10 | Frontend Phases 4–6 (Estoque, Health Score, Inadimplência, Sazonalidade, Outlook, Goals) | Front | G | ⬜ Pendente |
+| 9 | Estados Empty/Sparse na UI | Front | P | ✅ Concluído |
+| 10 | Frontend Phases 4–6 (Estoque, Health Score, Inadimplência, Sazonalidade, Outlook, Goals) | Front | G | ✅ Concluído |
 | 11 | Capture Agent — confidence score + confirmação WhatsApp | Back | M | ⬜ Pendente |
 | 12 | Importador de planilha Excel | Back + Front | G | ⬜ Pendente |
 | 13 | Export OFX para contador | Back + Front | P | ⬜ Pendente |
@@ -224,6 +224,12 @@ Referência rápida do que está implementado. Não retrabalhar.
 - Contrato já estável para os estados de empty/sparse consumirem respostas vazias/curtas sem erro.
 - Suporte ativo: validação de smoke de rotas durante a execução do frontend.
 
+**Status frontend (2026-05-05):**
+- `EmptyState` reutilizável padronizado com `icon`, `title`, `description`, `ctaLabel`, `ctaHref`.
+- `SparseWarning` adicionado e aplicado em telas alvo.
+- Empty/Sparse aplicado em: home dashboard, cashflow, estoque, inadimplência, pricing/custo real, sazonalidade.
+- Em sparse, comparativos sensíveis ao histórico foram reduzidos/ocultados com orientação ao usuário.
+
 ---
 
 ## Fase 10 — Frontend Phases 4–6 (páginas faltando)
@@ -267,6 +273,12 @@ Referência rápida do que está implementado. Não retrabalhar.
 - Endpoints listados na fase já disponíveis no backend atual.
 - Sem bloqueio de schema para consumo frontend (incluindo entregas de Fases 7–8 já migradas).
 - Pendência principal desta fase está no frontend (páginas/rotas/estados/integração).
+
+**Status frontend (2026-05-05):**
+- Rotas e telas cobertas: `/dashboard/estoque`, `/dashboard/nf-validade`, `/dashboard/inadimplencia`, `/dashboard/sazonalidade`, `/dashboard/outlook`, `/dashboard/custo-procedimentos`, `/dashboard/clientes`, `/dashboard/insights`.
+- Home com integrações ativas de `health/score` e drawer de `emergency/detalhes`.
+- `dashboard-api.ts` atualizado com contratos faltantes (`clientes/perfil-pagamento`, `insights/margem-comparativa`) e hooks React Query dedicados.
+- Sidebar atualizado para navegação completa das rotas analíticas novas.
 
 ---
 
