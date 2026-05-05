@@ -40,6 +40,19 @@ class HealthScoreService {
     return 'excelente';
   }
 
+  async _getOperationalExpensesInMonth(userId, year, month) {
+    const { start, end } = this._monthBounds(year, month);
+    const { data, error } = await supabase
+      .from('contas_pagar')
+      .select('valor')
+      .eq('user_id', userId)
+      .eq('is_pro_labore', false)
+      .gte('data_vencimento', start)
+      .lte('data_vencimento', end);
+    if (error) throw error;
+    return (data || []).reduce((sum, row) => sum + (parseFloat(row.valor) || 0), 0);
+  }
+
   async getScore(userId) {
     const now = new Date();
     const year = now.getFullYear();
@@ -51,7 +64,7 @@ class HealthScoreService {
       prevYear -= 1;
     }
 
-    const [{ start: monthStart, end: monthEnd }, balance, currentReport, prevReport, parcelasPagasResult, contasResult] = await Promise.all([
+    const [{ start: monthStart, end: monthEnd }, balance, currentReport, prevReport, parcelasPagasResult, contasResult, despesasOpAtual] = await Promise.all([
       Promise.resolve(this._monthBounds(year, month)),
       transactionController.getBalance(userId),
       transactionController.getMonthlyReport(userId, year, month),
@@ -68,15 +81,17 @@ class HealthScoreService {
         .select('valor, data_vencimento')
         .eq('user_id', userId)
         .eq('status_pagamento', 'pendente')
+        .eq('is_pro_labore', false)
         .gte('data_vencimento', now.toISOString().split('T')[0])
         .lte('data_vencimento', new Date(now.getTime() + 30 * 86400000).toISOString().split('T')[0]),
+      this._getOperationalExpensesInMonth(userId, year, month),
     ]);
 
     if (parcelasPagasResult.error) throw parcelasPagasResult.error;
     if (contasResult.error) throw contasResult.error;
 
     const receitas = currentReport.entradas || 0;
-    const custos = currentReport.saidas || 0;
+    const custos = despesasOpAtual;
     const lucro = receitas - custos;
     const margemPct = receitas > 0 ? (lucro / receitas) * 100 : 0;
     const margemPontos = this._clamp((margemPct / 30) * 40, 0, 40);

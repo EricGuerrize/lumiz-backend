@@ -75,7 +75,7 @@ class CashflowService {
         .lte('data_vencimento', endStr),
       supabase
         .from('contas_pagar')
-        .select('id, descricao, valor, data_vencimento, categoria')
+        .select('id, descricao, valor, data_vencimento, categoria, is_pro_labore')
         .eq('user_id', userId)
         .eq('status_pagamento', 'pendente')
         .gte('data_vencimento', todayStr)
@@ -110,6 +110,7 @@ class CashflowService {
         tipo: 'saida',
         descricao: c.descricao || c.categoria || 'Conta a pagar',
         valor,
+        is_pro_labore: !!c.is_pro_labore,
       });
     }
 
@@ -173,7 +174,7 @@ class CashflowService {
         .lte('data_vencimento', endStr),
       supabase
         .from('contas_pagar')
-        .select('id, descricao, valor, data_vencimento, categoria, status_pagamento')
+        .select('id, descricao, valor, data_vencimento, categoria, status_pagamento, is_pro_labore')
         .eq('user_id', userId)
         .eq('status_pagamento', 'pendente')
         .gte('data_vencimento', startStr)
@@ -209,6 +210,7 @@ class CashflowService {
         descricao: c.descricao || c.categoria || 'Conta a pagar',
         valor: parseFloat(c.valor),
         status: c.status_pagamento, predicted: false,
+        is_pro_labore: !!c.is_pro_labore,
       });
     }
 

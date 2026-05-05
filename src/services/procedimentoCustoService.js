@@ -134,7 +134,22 @@ class ProcedimentoCustoService {
 
     if (pe) throw pe;
 
-    const { byProc } = await this._aggregarPorProcedimento(userId, m);
+    const { byProc, startStr, todayStr } = await this._aggregarPorProcedimento(userId, m);
+
+    const { data: contas, error: ce } = await supabase
+      .from('contas_pagar')
+      .select('valor, is_pro_labore')
+      .eq('user_id', userId)
+      .gte('data_vencimento', startStr)
+      .lte('data_vencimento', todayStr);
+    if (ce) throw ce;
+
+    const despesasOp = (contas || []).filter((c) => !c.is_pro_labore);
+    const proLabore = (contas || []).filter((c) => c.is_pro_labore);
+    const totalProLabore = proLabore.reduce(
+      (s, c) => s + (parseFloat(c.valor) || 0),
+      0
+    );
 
     const procedimentos = (todosProcedimentos || []).map((p) => {
       const agg = byProc.get(p.id);
@@ -166,6 +181,10 @@ class ProcedimentoCustoService {
 
     return {
       periodo_meses: m,
+      total_pro_labore_periodo: _ceilCentavos(totalProLabore),
+      total_despesas_operacionais_periodo: _ceilCentavos(
+        despesasOp.reduce((s, c) => s + (parseFloat(c.valor) || 0), 0)
+      ),
       procedimentos,
       alertas,
     };

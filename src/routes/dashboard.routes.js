@@ -563,6 +563,47 @@ router.get('/contas-a-pagar', heavyDashboardReadLimiter, async (req, res) => {
   }
 });
 
+// GET /api/dashboard/prolabore - Contas marcadas como pró-labore
+router.get('/prolabore', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { data, error } = await supabase
+      .from('contas_pagar')
+      .select('id, descricao, valor, data_vencimento, status_pagamento, categoria, is_pro_labore')
+      .eq('user_id', userId)
+      .eq('is_pro_labore', true)
+      .order('data_vencimento', { ascending: false });
+    if (error) throw error;
+    const totalMensal = (data || []).reduce(
+      (s, c) => s + (parseFloat(c.valor) || 0),
+      0
+    );
+    res.json({ items: data || [], totalMensal });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/dashboard/prolabore/:id - Marcar/desmarcar conta como pró-labore
+router.patch('/prolabore/:id', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { id } = req.params;
+    const { is_pro_labore } = req.body || {};
+    const { data, error } = await supabase
+      .from('contas_pagar')
+      .update({ is_pro_labore: Boolean(is_pro_labore) })
+      .eq('id', id)
+      .eq('user_id', userId)
+      .select()
+      .single();
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/dashboard/cashflow/projection - Projeção de fluxo de caixa dia a dia
 router.get('/cashflow/projection', heavyDashboardReadLimiter, async (req, res) => {
   try {
