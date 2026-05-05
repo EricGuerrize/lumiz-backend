@@ -1,5 +1,4 @@
 const supabase = require('../db/supabase');
-const transactionController = require('../controllers/transactionController');
 
 /** @param {number} n @param {number} lo @param {number} hi */
 function clampInt(n, lo, hi) {
@@ -54,17 +53,23 @@ class OutlookService {
     const rangeStart = monthStartEnd(first.year, first.month).start;
     const rangeEnd = monthStartEnd(last.year, last.month).end;
 
-    const [atendResult, ...reports] = await Promise.all([
+    const [atendResult, contasResult] = await Promise.all([
       supabase
         .from('atendimentos')
         .select('data, valor_total')
         .eq('user_id', userId)
         .gte('data', rangeStart)
         .lte('data', rangeEnd),
-      ...keys.map(({ year, month }) => transactionController.getMonthlyReport(userId, year, month)),
+      supabase
+        .from('contas_pagar')
+        .select('data_vencimento, valor, is_pro_labore')
+        .eq('user_id', userId)
+        .gte('data_vencimento', rangeStart)
+        .lte('data_vencimento', rangeEnd),
     ]);
 
     if (atendResult.error) throw atendResult.error;
+    if (contasResult.error) throw contasResult.error;
 
     const receitaByKey = {};
     for (const k of keys) {
@@ -79,11 +84,32 @@ class OutlookService {
       }
     }
 
-    const meses = keys.map((k, idx) => {
+    const despesasByKey = {};
+    const prolaboreByKey = {};
+    for (const k of keys) {
       const mk = `${k.year}-${String(k.month).padStart(2, '0')}`;
-      const report = reports[idx];
+      despesasByKey[mk] = 0;
+      prolaboreByKey[mk] = 0;
+    }
+
+    for (const row of contasResult.data || []) {
+      if (!row.data_vencimento) continue;
+      const mk = String(row.data_vencimento).slice(0, 7);
+      if (!Object.prototype.hasOwnProperty.call(despesasByKey, mk)) continue;
+      const valor = parseFloat(row.valor) || 0;
+      if (row.is_pro_labore) {
+        prolaboreByKey[mk] += valor;
+      } else {
+        despesasByKey[mk] += valor;
+      }
+    }
+
+    const meses = keys.map((k) => {
+      const mk = `${k.year}-${String(k.month).padStart(2, '0')}`;
       const receita = receitaByKey[mk] || 0;
-      const custos = report ? parseFloat(report.saidas) || 0 : 0;
+      const custos_operacionais = despesasByKey[mk] || 0;
+      const pro_labore = prolaboreByKey[mk] || 0;
+      const custos = custos_operacionais;
       const lucro = receita - custos;
       const margem_pct = receita > 0 ? parseFloat(((lucro / receita) * 100).toFixed(1)) : 0;
 
@@ -91,6 +117,8 @@ class OutlookService {
         year: k.year,
         month: k.month,
         receita: parseFloat(receita.toFixed(2)),
+        custos_operacionais: parseFloat(custos_operacionais.toFixed(2)),
+        pro_labore: parseFloat(pro_labore.toFixed(2)),
         custos: parseFloat(custos.toFixed(2)),
         lucro: parseFloat(lucro.toFixed(2)),
         margem_pct,
@@ -101,7 +129,7 @@ class OutlookService {
       months: m,
       meses,
       nota:
-        'Receita = soma de atendimentos.valor_total no mês civil (campo data do atendimento). Custos = despesas (saídas) do mesmo mês no livro financeiro consolidado — mesma base numérica do GET /api/dashboard/monthly-report e dos cards que usam relatório mensal. Não inclui CMV detalhado por produto; margem e lucro são indicativos quando houver receitas lançadas só no ledger ou só em atendimentos.',
+        'Receita = soma de atendimentos.valor_total no mês civil. Custos operacionais = contas_pagar do mês com is_pro_labore=false. pro_labore é exposto em linha separada e não entra em custos operacionais/margem. Não inclui CMV detalhado por produto.',
     };
   }
 }

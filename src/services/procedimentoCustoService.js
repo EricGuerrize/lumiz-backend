@@ -33,6 +33,7 @@ class ProcedimentoCustoService {
       .from('atendimento_procedimentos')
       .select(`
         procedimento_id,
+        atendimento_id,
         custo_material,
         valor_cobrado,
         procedimentos ( id, nome ),
@@ -70,12 +71,14 @@ class ProcedimentoCustoService {
           count: 0,
           mdrSum: 0,
           mdrCount: 0,
+          atendimentoIds: new Set(),
         });
       }
       const g = byProc.get(pid);
       g.custoSum += custo;
       g.valorSum += valorCob;
       g.count += 1;
+      if (row.atendimento_id) g.atendimentoIds.add(row.atendimento_id);
       if (FORMAS_COM_TAXA.includes(forma)) {
         g.mdrSum += mdrN;
         g.mdrCount += 1;
@@ -85,13 +88,13 @@ class ProcedimentoCustoService {
     return { byProc, periodoMeses: meses, startStr, todayStr };
   }
 
-  _buildRow(agg) {
+  _buildRow(agg, comissao_media = 0) {
     const { id, nome, custoSum, valorSum, count, mdrSum, mdrCount } = agg;
     const custo_material_medio = count > 0 ? custoSum / count : 0;
     const valor_cobrado_medio = count > 0 ? valorSum / count : 0;
     const taxa_cartao_media = mdrCount > 0 ? mdrSum / mdrCount : 0;
     const custo_taxa_cartao = valor_cobrado_medio * (taxa_cartao_media / 100);
-    const custo_total_real = custo_material_medio + custo_taxa_cartao;
+    const custo_total_real = custo_material_medio + custo_taxa_cartao + (comissao_media || 0);
     const margem_real =
       valor_cobrado_medio > 0
         ? ((valor_cobrado_medio - custo_total_real) / valor_cobrado_medio) * 100
@@ -113,6 +116,7 @@ class ProcedimentoCustoService {
       nome,
       valor_cobrado_medio: _ceilCentavos(valor_cobrado_medio),
       custo_material_medio: _ceilCentavos(custo_material_medio),
+      comissao_media: _ceilCentavos(comissao_media || 0),
       taxa_cartao_media: Math.round(taxa_cartao_media * 100) / 100,
       custo_taxa_cartao: _ceilCentavos(custo_taxa_cartao),
       custo_total_real: _ceilCentavos(custo_total_real),
@@ -151,6 +155,24 @@ class ProcedimentoCustoService {
       0
     );
 
+    const allAtendimentoIds = [...byProc.values()].flatMap((a) => [...a.atendimentoIds]);
+    const comissaoByAtendimento = new Map();
+    if (allAtendimentoIds.length) {
+      const { data: comRows, error: comErr } = await supabase
+        .from('comissoes')
+        .select('atendimento_id, valor')
+        .eq('user_id', userId)
+        .in('atendimento_id', allAtendimentoIds);
+      if (comErr) throw comErr;
+      for (const row of comRows || []) {
+        const key = row.atendimento_id;
+        comissaoByAtendimento.set(
+          key,
+          (comissaoByAtendimento.get(key) || 0) + (parseFloat(row.valor) || 0)
+        );
+      }
+    }
+
     const procedimentos = (todosProcedimentos || []).map((p) => {
       const agg = byProc.get(p.id);
       if (!agg) {
@@ -159,6 +181,7 @@ class ProcedimentoCustoService {
           nome: p.nome,
           valor_cobrado_medio: 0,
           custo_material_medio: 0,
+          comissao_media: 0,
           taxa_cartao_media: 0,
           custo_taxa_cartao: 0,
           custo_total_real: 0,
@@ -168,7 +191,12 @@ class ProcedimentoCustoService {
           atendimentos_no_periodo: 0,
         };
       }
-      return this._buildRow(agg);
+      const comissaoTotal = [...agg.atendimentoIds].reduce(
+        (sum, atId) => sum + (comissaoByAtendimento.get(atId) || 0),
+        0
+      );
+      const comissaoMedia = agg.count > 0 ? comissaoTotal / agg.count : 0;
+      return this._buildRow(agg, comissaoMedia);
     });
 
     const alertas = procedimentos

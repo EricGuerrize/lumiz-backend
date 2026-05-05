@@ -14,6 +14,7 @@ const inadimplenciaService = require('../services/inadimplenciaService');
 const sazonalidadeService = require('../services/sazonalidadeService');
 const procedimentoCustoService = require('../services/procedimentoCustoService');
 const metaCaminhoService = require('../services/metaCaminhoService');
+const colaboradorService = require('../services/colaboradorService');
 const clientePerfilService = require('../services/clientePerfilService');
 const margemAlertaService = require('../services/margemAlertaService');
 const emailReportService = require('../services/emailReportService');
@@ -38,7 +39,26 @@ router.use(authenticateFlexible);
 // GET /api/dashboard/summary - Resumo geral (cards principais)
 router.get('/summary', async (req, res) => {
   try {
-    const balance = await transactionController.getBalance(req.user.id);
+    const userId = req.user.id;
+    const balance = await transactionController.getBalance(userId);
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+    const monthStart = `${year}-${String(month).padStart(2, '0')}-01`;
+    const monthEnd = `${year}-${String(month).padStart(2, '0')}-${new Date(year, month, 0).getDate()}`;
+
+    const { data: proRows, error: proErr } = await supabase
+      .from('contas_pagar')
+      .select('valor')
+      .eq('user_id', userId)
+      .eq('is_pro_labore', true)
+      .gte('data_vencimento', monthStart)
+      .lte('data_vencimento', monthEnd);
+    if (proErr) throw proErr;
+    const proLaboreMensal = (proRows || []).reduce(
+      (sum, row) => sum + (parseFloat(row.valor) || 0),
+      0
+    );
 
     const lucro = balance.entradas - balance.saidas;
     const margemPercentual = balance.entradas > 0
@@ -48,6 +68,11 @@ router.get('/summary', async (req, res) => {
     res.json({
       receitas: balance.entradas,
       custos: balance.saidas,
+      pro_labore_mensal: parseFloat(proLaboreMensal.toFixed(2)),
+      pro_labore_ratio_receita:
+        balance.entradas > 0
+          ? parseFloat(((proLaboreMensal / balance.entradas) * 100).toFixed(1))
+          : 0,
       lucro: lucro,
       margemLucro: parseFloat(margemPercentual),
       saldo: balance.saldo,
@@ -261,6 +286,61 @@ router.get('/clientes/perfil-pagamento', heavyDashboardReadLimiter, async (req, 
   } catch (error) {
     console.error('Error getting clientes perfil pagamento:', error);
     res.status(500).json({ error: 'Failed to get clientes perfil pagamento' });
+  }
+});
+
+// GET /api/dashboard/colaboradores
+router.get('/colaboradores', async (req, res) => {
+  try {
+    const data = await colaboradorService.list(req.user.id);
+    res.json({ items: data });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/dashboard/colaboradores
+router.post('/colaboradores', async (req, res) => {
+  try {
+    const data = await colaboradorService.create(req.user.id, req.body || {});
+    res.status(201).json(data);
+  } catch (error) {
+    const code = String(error.message || '').includes('obrigatório') ? 400 : 500;
+    res.status(code).json({ error: error.message });
+  }
+});
+
+// PUT /api/dashboard/colaboradores/:id
+router.put('/colaboradores/:id', async (req, res) => {
+  try {
+    const data = await colaboradorService.update(req.user.id, req.params.id, req.body || {});
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE /api/dashboard/colaboradores/:id
+router.delete('/colaboradores/:id', async (req, res) => {
+  try {
+    const out = await colaboradorService.remove(req.user.id, req.params.id);
+    res.json(out);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/dashboard/colaboradores/:id/comissoes?month=YYYY-MM
+router.get('/colaboradores/:id/comissoes', async (req, res) => {
+  try {
+    const out = await colaboradorService.getComissoesByMonth(
+      req.user.id,
+      req.params.id,
+      req.query.month
+    );
+    res.json(out);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 
