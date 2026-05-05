@@ -1,3 +1,3 @@
 ALTER TABLE profiles
   ADD COLUMN IF NOT EXISTS meta_mensal        DECIMAL(12,2),
-  ADD COLUMN IF NOT EXISTS meta_atualizada_em TIMESTAMPTZ;
+  ADD COLUMN IF NOT EXISTS meta_atualizada_em TIMESTAMPTZ;;

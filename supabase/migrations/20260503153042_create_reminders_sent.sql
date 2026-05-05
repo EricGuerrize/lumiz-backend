@@ -7,4 +7,4 @@ CREATE TABLE IF NOT EXISTS reminders_sent (
   UNIQUE(referencia_id, tipo_lembrete)
 );
 
-CREATE INDEX IF NOT EXISTS idx_reminders_sent_ref ON reminders_sent(referencia_id, tipo_lembrete);
+CREATE INDEX IF NOT EXISTS idx_reminders_sent_ref ON reminders_sent(referencia_id, tipo_lembrete);;

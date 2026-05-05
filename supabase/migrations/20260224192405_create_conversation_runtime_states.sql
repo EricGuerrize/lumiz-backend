@@ -13,4 +13,4 @@ CREATE INDEX IF NOT EXISTS idx_conversation_runtime_states_phone
   ON conversation_runtime_states(phone);
 
 CREATE INDEX IF NOT EXISTS idx_conversation_runtime_states_expires_at
-  ON conversation_runtime_states(expires_at);
+  ON conversation_runtime_states(expires_at);;

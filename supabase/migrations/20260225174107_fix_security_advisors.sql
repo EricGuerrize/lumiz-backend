@@ -1,4 +1,3 @@
--- Fix Supabase security advisor warnings/errors
 
 -- 1. Enable RLS on conversation_runtime_states (ERROR level)
 ALTER TABLE public.conversation_runtime_states ENABLE ROW LEVEL SECURITY;
@@ -81,3 +80,4 @@ AS $function$
   ORDER BY lk.embedding <=> query_embedding
   LIMIT match_count;
 $function$;
+;

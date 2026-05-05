@@ -23,4 +23,4 @@ CREATE POLICY "users manage own monthly_goals"
   USING (user_id = auth.uid())
   WITH CHECK (user_id = auth.uid());
 
-COMMENT ON TABLE public.monthly_goals IS 'Meta de receita mensal por utilizador (dashboard); upsert onConflict user_id,year,month.';
+COMMENT ON TABLE public.monthly_goals IS 'Meta de receita mensal por utilizador (dashboard); upsert onConflict user_id,year,month.';;

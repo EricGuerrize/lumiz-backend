@@ -18,4 +18,4 @@ CREATE TABLE IF NOT EXISTS subscriptions (
 
 CREATE INDEX IF NOT EXISTS idx_subscriptions_clinic_id    ON subscriptions(clinic_id);
 CREATE INDEX IF NOT EXISTS idx_subscriptions_status       ON subscriptions(status);
-CREATE INDEX IF NOT EXISTS idx_subscriptions_trial_ends   ON subscriptions(trial_ends_at);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_trial_ends   ON subscriptions(trial_ends_at);;
