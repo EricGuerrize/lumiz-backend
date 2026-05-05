@@ -382,6 +382,10 @@ Referência: [`Lumiz Estética.pdf`](Lumiz%20Estética.pdf) (melhorias). Itens m
 - **Estoque máximo / excesso:** migration `20260506000005_procedimentos_estoque_maximo.sql`; `GET /api/dashboard/estoque/alertas-excesso`; cron 8h inclui `checkAndAlertEstoqueExcesso`.
 - **NF / validade (mínimo):** migration `20260506000006_nf_validade_itens.sql`; `GET|POST|DELETE /api/dashboard/nf-validade`.
 - **Benchmarks precificação:** env `PRICING_BENCHMARK_JSON` (merge por chave de categoria).
+- **Perfil de pagamento por cliente:** `GET /api/dashboard/clientes/perfil-pagamento` com `formas_usadas`, `forma_preferida`, `ticket_medio`, `indice_risco_pagamento`.
+- **Margem comparativa + alerta:** `GET /api/dashboard/insights/margem-comparativa`; cron 8h chama `margemAlertaService.checkAndAlertMargemCaindo()` com dedupe `margem_caindo_YYYY-MM`.
+- **Email relatório mensal (Resend):** `src/services/emailReportService.js`; integração em `monthlyReportDeliveryService` após WhatsApp; rota manual `POST /api/dashboard/reports/send-email?month=YYYY-MM`; degrade graceful sem `RESEND_API_KEY`.
+- **Testes novos deste bloco:** `tests/unit/clientePerfilService.test.js`, `tests/unit/margemAlertaService.test.js`, `tests/unit/emailReportService.test.js`.
 
 ---
 
