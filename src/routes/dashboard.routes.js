@@ -14,6 +14,9 @@ const inadimplenciaService = require('../services/inadimplenciaService');
 const sazonalidadeService = require('../services/sazonalidadeService');
 const procedimentoCustoService = require('../services/procedimentoCustoService');
 const metaCaminhoService = require('../services/metaCaminhoService');
+const clientePerfilService = require('../services/clientePerfilService');
+const margemAlertaService = require('../services/margemAlertaService');
+const emailReportService = require('../services/emailReportService');
 const userController = require('../controllers/userController');
 const { authenticateFlexible } = require('../middleware/authMiddleware');
 const { validate } = require('../middleware/validationMiddleware');
@@ -247,6 +250,17 @@ router.get('/user', async (req, res) => {
   } catch (error) {
     console.error('Error getting user info:', error);
     res.status(500).json({ error: 'Failed to get user info' });
+  }
+});
+
+// GET /api/dashboard/clientes/perfil-pagamento
+router.get('/clientes/perfil-pagamento', heavyDashboardReadLimiter, async (req, res) => {
+  try {
+    const result = await clientePerfilService.getPerfilPagamento(req.user.id);
+    res.json(result);
+  } catch (error) {
+    console.error('Error getting clientes perfil pagamento:', error);
+    res.status(500).json({ error: 'Failed to get clientes perfil pagamento' });
   }
 });
 
@@ -1053,6 +1067,17 @@ router.get('/insights/simular-desconto', heavyDashboardReadLimiter, async (req, 
   }
 });
 
+// GET /api/dashboard/insights/margem-comparativa
+router.get('/insights/margem-comparativa', heavyDashboardReadLimiter, async (req, res) => {
+  try {
+    const result = await margemAlertaService.getMargemComparativa(req.user.id);
+    res.json(result);
+  } catch (error) {
+    console.error('Error getting margem comparativa:', error);
+    res.status(500).json({ error: 'Failed to get margem comparativa' });
+  }
+});
+
 // GET /api/dashboard/goals/caminho
 router.get('/goals/caminho', async (req, res) => {
   try {
@@ -1161,6 +1186,21 @@ router.get('/estoque/alertas-excesso', async (req, res) => {
   } catch (error) {
     console.error('Error getting estoque alertas excesso:', error);
     res.status(500).json({ error: 'Failed to get estoque alertas excesso' });
+  }
+});
+
+// POST /api/dashboard/reports/send-email?month=YYYY-MM
+router.post('/reports/send-email', async (req, res) => {
+  try {
+    const month = req.query.month;
+    if (month != null && month !== '' && !/^\d{4}-\d{2}$/.test(String(month))) {
+      return res.status(400).json({ error: 'month deve estar no formato YYYY-MM' });
+    }
+    const result = await emailReportService.sendMonthlyReportEmail(req.user.id, month);
+    res.json(result);
+  } catch (error) {
+    console.error('Error sending monthly email report:', error);
+    res.status(500).json({ error: 'Failed to send monthly email report' });
   }
 });
 

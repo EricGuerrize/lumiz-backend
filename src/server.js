@@ -48,6 +48,7 @@ const goalReminderService = require('./services/goalReminderService');
 const emergencyModeService = require('./services/emergencyModeService');
 const estoqueService = require('./services/estoqueService');
 const { deliverPreviousMonthSummaries } = require('./services/monthlyReportDeliveryService');
+const margemAlertaService = require('./services/margemAlertaService');
 
 // Sentry initialization is now handled in instrument.js
 
@@ -90,6 +91,13 @@ cron.schedule('0 8 * * *', async () => {
     await estoqueService.checkAndAlertEstoqueExcesso();
   } catch (error) {
     console.error('[CRON] Erro no alerta de estoque em excesso:', error);
+    if (process.env.SENTRY_DSN) Sentry.captureException(error);
+  }
+  console.log('[CRON] Verificando queda de margem...');
+  try {
+    await margemAlertaService.checkAndAlertMargemCaindo();
+  } catch (error) {
+    console.error('[CRON] Erro no alerta de margem:', error);
     if (process.env.SENTRY_DSN) Sentry.captureException(error);
   }
 });

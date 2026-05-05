@@ -2,6 +2,7 @@ const supabase = require('../db/supabase');
 const transactionController = require('../controllers/transactionController');
 const evolutionService = require('./evolutionService');
 const copy = require('../copy/monthlyReportWhatsappCopy');
+const emailReportService = require('./emailReportService');
 
 /**
  * Envia resumo do mês civil anterior a quem tem `reporte_mensal_whatsapp` ativo.
@@ -33,8 +34,12 @@ async function deliverPreviousMonthSummaries() {
       const report = await transactionController.getMonthlyReport(p.id, year, month);
       const msg = copy.resumoMensalAnterior({ year, month }, report);
       await evolutionService.sendMessage(p.telefone, msg);
+      const emailStatus = await emailReportService.sendMonthlyReportEmail(
+        p.id,
+        `${year}-${String(month).padStart(2, '0')}`
+      );
       enviados += 1;
-      detalhes.push({ user_id: p.id, ok: true });
+      detalhes.push({ user_id: p.id, ok: true, email: emailStatus });
     } catch (e) {
       erros += 1;
       console.error(`[MONTHLY_REPORT] Falha user ${p.id}:`, e.message);
