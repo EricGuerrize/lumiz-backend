@@ -1,7 +1,7 @@
 # Lumiz Financeiro — Roadmap de Implementação
 
 > Documento vivo. Atualizar status a cada entrega.
-> Fases 1–6 concluídas. Fases 7–20 pendentes, ordenadas por impacto de negócio.
+> Fases 1–8 concluídas (back + front). Preset opcional: simulador “cortar pró-labore”. Fases 9–20 pendentes.
 
 ---
 
@@ -15,8 +15,8 @@
 | 4 | Estoque (serviço + bot + endpoints) | Back | G | ✅ Concluído |
 | 5 | Dashboard backend completo (health score, inadimplência, sazonalidade, goals, custo real, caminho da meta) | Back | G | ✅ Concluído |
 | 6 | Email report, perfil de pagamento, margem comparativa, NF validade, rate limiting | Back | M | ✅ Concluído |
-| 7 | Pró-labore como categoria especial | Back + Front | P | 🟨 Backend concluído / Front pendente |
-| 8 | Comissão por colaborador | Back + Front | M | 🟨 Backend em progresso / Front pendente |
+| 7 | Pró-labore como categoria especial | Back + Front | P | ✅ Concluído (preset simulador opcional) |
+| 8 | Comissão por colaborador | Back + Front | M | ✅ Concluído |
 | 9 | Estados Empty/Sparse na UI | Front | P | ⬜ Pendente |
 | 10 | Frontend Phases 4–6 (Estoque, Health Score, Inadimplência, Sazonalidade, Outlook, Goals) | Front | G | ⬜ Pendente |
 | 11 | Capture Agent — confidence score + confirmação WhatsApp | Back | M | ⬜ Pendente |
@@ -43,7 +43,7 @@ Referência rápida do que está implementado. Não retrabalhar.
 - **Phase 5** — `healthScoreService.js`, `inadimplenciaService.js`, `sazonalidadeService.js`, `metaCaminhoService.js`, `procedimentoCustoService.js`, migration `monthly_goals`, 10+ endpoints.
 - **Phase 6** — `emailReportService.js`, `clientePerfilService.js`, `margemAlertaService.js`, `nfValidadeService.js`, `monthlyReportDeliveryService.js`, rate limiting, 44 testes no regression suite.
 
-**Frontend concluído:** ContasPagar, Cashflow, Simulador (multi-período), Precificação + Custo Real, Estoque, NF/Validade, Inadimplência, Sazonalidade, Health Score, Goals/Meta (3 campos), Emergency (detalhes + histórico), Export (PDF/CSV), Sidebar com seção Operacional.
+**Frontend concluído:** ContasPagar (+ pró-labore), Pró-labore (`/dashboard/prolabore`), Colaboradores (`/dashboard/colaboradores`), Cashflow, Simulador (multi-período), Precificação + Custo Real (comissão no breakdown), Estoque, NF/Validade, Inadimplência, Sazonalidade, Health Score, Goals/Meta (3 campos), Emergency (detalhes + histórico), Export (PDF/CSV), Sidebar com seções Operacional e Análises.
 
 ---
 
@@ -89,12 +89,11 @@ Referência rápida do que está implementado. Não retrabalhar.
   - Smoke de rotas: OK.
   - `npm run test:regression`: OK.
   - Testes focados (`cashflowService`, `outlookService`): OK.
-- **Pendente frontend**
-  - Toggle “É pró-labore?” no lançamento de conta.
-  - Linha separada de pró-labore no relatório.
-  - Preset de simulação de corte de pró-labore.
+- **Frontend (2026-05-05)**
+  - Toggle “É pró-labore?” em Contas a Pagar; página `/dashboard/prolabore` (lista + toggle); dashboard com total/razão e alerta &gt;15%; relatório mensal com card Pró-labore + link.
+  - **Ainda opcional (DoD estendido):** preset “cortar pró-labore X%” no simulador.
 - **Observação de deploy**
-  - `supabase db push` bloqueado por histórico remoto divergente; requer `supabase migration repair` + `supabase db pull` antes de aplicar em produção/staging.
+  - Histórico Supabase foi alinhado com `supabase migration fetch` + remoção de duplicados locais; `supabase db push --include-all` aplica pendências. Ambientes novos precisam da coluna `contas_pagar.is_pro_labore` e das tabelas `colaboradores` / `comissoes` (migrations `20260504000001`, `20260507000014`, `20260507000015`).
 
 ---
 
@@ -179,9 +178,10 @@ Referência rápida do que está implementado. Não retrabalhar.
 - **Testes backend**
   - `tests/unit/colaboradorService.test.js` criado.
   - `tests/unit/procedimentoCustoService.test.js` criado com 4 cenários de comissão/custos.
-- **Pendente para concluir fase**
-  - Aplicar migrations no ambiente remoto após correção do histórico do Supabase CLI.
-  - Frontend da Fase 8 (página de colaboradores + breakdown visual).
+- **Deploy / ops**
+  - Migrations aplicáveis ao remoto via fluxo documentado acima (fetch + push com `--include-all` quando necessário).
+- **Frontend (2026-05-05)**
+  - `/dashboard/colaboradores` (CRUD + comissões por mês em painel lateral); Custo Real com coluna comissão média e custo total real; `dashboard-api` + hooks TanStack.
 
 ---
 
@@ -218,6 +218,11 @@ Referência rápida do que está implementado. Não retrabalhar.
 - Testado com conta sem dados
 
 **Esforço:** P
+
+**Status backend (2026-05-05):**
+- Não requer implementação nova em backend.
+- Contrato já estável para os estados de empty/sparse consumirem respostas vazias/curtas sem erro.
+- Suporte ativo: validação de smoke de rotas durante a execução do frontend.
 
 ---
 
@@ -257,6 +262,11 @@ Referência rápida do que está implementado. Não retrabalhar.
 - Sidebar atualizado com itens novos
 
 **Esforço:** G
+
+**Status backend (2026-05-05):**
+- Endpoints listados na fase já disponíveis no backend atual.
+- Sem bloqueio de schema para consumo frontend (incluindo entregas de Fases 7–8 já migradas).
+- Pendência principal desta fase está no frontend (páginas/rotas/estados/integração).
 
 ---
 
