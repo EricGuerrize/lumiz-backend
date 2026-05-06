@@ -502,19 +502,17 @@ class MessageController {
         });
       }
 
-      // Salva conversa no histórico
+      // Salva conversa no histórico (fire-and-forget para não bloquear o envio da resposta)
       if (response && response !== null) {
-        try {
-          await conversationHistoryService.saveConversation(
-            user.id,
-            message,
-            response,
-            intent.intencao,
-            { dados: intent.dados }
-          );
-        } catch (error) {
+        conversationHistoryService.saveConversation(
+          user.id,
+          message,
+          response,
+          intent.intencao,
+          { dados: intent.dados }
+        ).catch((error) => {
           console.error('[MESSAGE] Erro ao salvar histórico (não crítico):', error.message);
-        }
+        });
       }
 
       return response;

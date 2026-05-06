@@ -171,9 +171,6 @@ const webhookHandler = async (req, res) => {
         // Processa em segundo plano para não segurar a conexão
         (async () => {
           try {
-            // Envia sinal de "digitando..." para feedback visual imediato
-            await evolutionService.sendPresenceUpdate(phone, 'composing');
-
             let response = '';
 
             if (imageMessage) {
@@ -248,9 +245,6 @@ const webhookHandler = async (req, res) => {
             if (response && typeof response === 'string' && response.trim().length > 0) {
               await evolutionService.sendMessage(phone, response);
             }
-
-            // Para o sinal de "digitando"
-            await evolutionService.sendPresenceUpdate(phone, 'paused');
 
           } catch (bgError) {
             console.error('[WEBHOOK] [BG] ❌ Erro no processamento em segundo plano:', bgError.message);
