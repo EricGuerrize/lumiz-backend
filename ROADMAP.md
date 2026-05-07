@@ -19,16 +19,18 @@
 | 8 | Comissão por colaborador | Back + Front | M | ✅ Concluído |
 | 9 | Estados Empty/Sparse na UI | Front | P | ✅ Concluído |
 | 10 | Frontend Phases 4–6 (Estoque, Health Score, Inadimplência, Sazonalidade, Outlook, Goals) | Front | G | ✅ Concluído |
-| 11 | Capture Agent — confidence score + confirmação WhatsApp | Back | M | ⬜ Pendente |
+| 11 | Capture Agent — confidence score + confirmação WhatsApp | Back | M | ✅ Concluído (Onda 1, áudio Whisper incluído) |
 | 12 | Importador de planilha Excel | Back + Front | G | ⬜ Pendente |
 | 13 | Export OFX para contador | Back + Front | P | ⬜ Pendente |
 | 14 | Multi-tenant / switch de clínica | Back + Front | G | ⬜ Pendente |
 | 15 | Audit log | Back + Front | M | ⬜ Pendente |
-| 16 | Feature flags | Back + Front | P | ⬜ Pendente |
+| 16 | Feature flags | Back + Front | P | ✅ Concluído — frontend com `useFeatureFlag` + `AlterGate`; **`GET /api/config/features` ainda pendente no backend** (degradação segura → flags `false`) |
 | 17 | Analytics de produto (PostHog) | Back + Front | M | ⬜ Pendente |
 | 18 | MFA obrigatório | Back + Front | M | ⬜ Pendente |
 | 19 | LGPD: export de dados + direito ao esquecimento | Back + Front | M | ⬜ Pendente |
-| 20 | Integrações futuras (Pluggy, Adquirentes, NFe.io, Alter) | Back | G | ⏸️ Bloqueado |
+| 20 | Integrações futuras (Pluggy, Adquirentes, NFe.io, Alter) | Back | G | ⏸️ Bloqueado go-live (Alter real — falta sandbox/contrato) |
+| 21 | Ondas 2–4 frontend (Supplier Docs, Fornecedores, Contas a receber, painéis Alter) | Front | G | ✅ Concluído — ver `lumiz-financeiro/HANDOFF_FRONTEND.md` (Onda 1–4) |
+| 20.4 | Alter — telas dashboard | Front | M | 🟡 Concluído (mock) — `/dashboard/alter/*` atrás de `alter_enabled`; produção depende da fase 20 |
 
 ---
 
@@ -43,7 +45,7 @@ Referência rápida do que está implementado. Não retrabalhar.
 - **Phase 5** — `healthScoreService.js`, `inadimplenciaService.js`, `sazonalidadeService.js`, `metaCaminhoService.js`, `procedimentoCustoService.js`, migration `monthly_goals`, 10+ endpoints.
 - **Phase 6** — `emailReportService.js`, `clientePerfilService.js`, `margemAlertaService.js`, `nfValidadeService.js`, `monthlyReportDeliveryService.js`, rate limiting, 44 testes no regression suite.
 
-**Frontend concluído:** ContasPagar (+ pró-labore), Pró-labore (`/dashboard/prolabore`), Colaboradores (`/dashboard/colaboradores`), Cashflow, Simulador (multi-período), Precificação + Custo Real (comissão no breakdown), Estoque, NF/Validade, Inadimplência, Sazonalidade, Health Score, Goals/Meta (3 campos), Emergency (detalhes + histórico), Export (PDF/CSV), Sidebar com seções Operacional e Análises.
+**Frontend concluído:** ContasPagar (+ pró-labore), Pró-labore (`/dashboard/prolabore`), Colaboradores (`/dashboard/colaboradores`), Cashflow, Simulador (multi-período), Precificação + Custo Real (comissão no breakdown), Estoque, NF/Validade, Inadimplência, Sazonalidade, Health Score (`HealthScoreCard` + opcional `cobertura_fornecedor`), Goals/Meta (3 campos), Emergency (detalhes + histórico), Export (PDF/CSV), Sidebar (Visão geral, Inteligência, **Análises**, **Powered by Alter** condicional, Operacional). **Onda 2–4:** Documentos de fornecedor (`/dashboard/supplier-docs`), Fornecedores, Contas a receber, painéis Alter (`/dashboard/alter/*`).
 
 ---
 
@@ -311,6 +313,18 @@ Referência rápida do que está implementado. Não retrabalhar.
 
 **Esforço:** M
 
+**Status atual (Onda 1 do plano backend completo, 2026-05-07):**
+- **Backend entregue**
+  - `src/services/audioTranscriptionService.js` — wrapper Whisper para áudio do WhatsApp (OGG/MP3/M4A); webhook em `src/routes/webhook.js` agora trata `audioMessage` → transcreve → injeta no fluxo de texto comum.
+  - `buildIntentClassificationPrompt()` e `buildDocumentExtractionPrompt()` agora retornam `confidence_score: 0..1` (alias `confianca` mantido para compatibilidade) com guidelines explícitas por faixa de confiança.
+  - `src/copy/captureConfirmCopy.js` — `isLowConfidence()` (threshold configurável via `CAPTURE_LOW_CONFIDENCE_THRESHOLD`, padrão 0.8) + `lowConfidenceBanner()`.
+  - `transactionHandler.handleTransactionRequest()` carrega `confidence_score` no pending; `buildConfirmationMessage()` insere banner "Não tenho 100% de certeza, confere por favor:" quando score < threshold.
+  - `documentHandler` aplica o mesmo banner em respostas de OCR (NF, boleto, comprovante) via helper `_prefixLowConfidence()`.
+  - Dependência `openai` adicionada em `package.json` (estava sendo usada em `openaiService.js` sem estar declarada).
+- **Testes**
+  - `tests/unit/audioTranscriptionService.test.js` (4 casos — sem chamar API real).
+  - `tests/unit/captureConfirmFlow.test.js` (7 casos — copy + comportamento do banner em buildConfirmationMessage).
+
 ---
 
 ## Fase 12 — Importador de planilha Excel
@@ -474,19 +488,19 @@ Referência rápida do que está implementado. Não retrabalhar.
 
 ## Fase 16 — Feature flags
 
+**Status:** 🟡 Concluído (backend) — frontend (hook `useFeatureFlag`) pendente. Entregue via Onda 3.A do plano `backend_completo_financeiro_alter_whatsapp`.
+
 **Objetivo:** permitir ativar/desativar features por ambiente ou por clínica sem redeploy.
 
 **Impacto de negócio:** viabiliza rollout gradual das próximas fases (5% → 25% → 100%) e kill switch rápido se algo der errado.
 
-**Backend:**
-- Criar `src/services/featureFlagService.js`:
-  - Lê env var `FEATURE_FLAGS` como JSON: `{"excel_import": true, "multi_tenant": false}`
-  - Fallback: flags desligadas por padrão
-  - Futuro: tabela `feature_flags` para flags por clínica
-- Endpoint: `GET /api/config/features` — retorna flags ativas para o usuário autenticado
-- Adicionar `FEATURE_FLAGS` em `src/config/env.js` como opcional
+**Backend:** ✅
+- `src/services/featureFlagService.js`: layered resolver (DB user → DB global → env JSON → env booleano → default false). Cache 60s.
+- Migration `supabase/migrations/20260507000030_create_feature_flags.sql`: tabela `feature_flags(user_id, name, enabled, meta)` + RLS.
+- Middleware `requireFeature(flag)` exposto via `featureFlagService.requireFeature` — usado em todas as rotas Alter (`/api/dashboard/alter/*`).
+- Endpoint `GET /api/config/features`: pendente (consumo direto do service em rotas + middleware atende o caso atual).
 
-**Frontend:**
+**Frontend:** ⬜
 - Hook `useFeatureFlag(flagName: string): boolean` consumindo o endpoint
 - Guard em componentes novos: `{useFeatureFlag('excel_import') && <ImportButton />}`
 
@@ -647,13 +661,26 @@ Referência rápida do que está implementado. Não retrabalhar.
 
 ### 20.4 Alter — Motor de recebíveis
 
-- `src/services/alterService.js` — consumo da API Alter
-- Agenda de recebíveis: livre vs comprometido
-- Cenários de antecipação com custo real
-- Score de crédito da clínica
-- **Formato:** definir se API REST ou módulo interno (ver Apêndice C)
+**Status:** 🟡 Backend mock pronto via Onda 3 (A/B/C). Falta sandbox/contrato real da Alter para destravar o `realAlterAdapter`.
 
-**Definition of Done por sub-fase:** definir após contratos assinados e sandbox disponível.
+**Concluído (backend):**
+- Adapter contract + factory: `src/services/alter/{alterAdapterContract,alterAdapter,mockAlterAdapter,realAlterAdapter}.js`. Factory escolhe automaticamente entre mock e real conforme `ALTER_API_URL` + `ALTER_API_KEY`.
+- Domínio: `alterRecebiveisService` (aging/posição/mix), `antecipacaoService` (simular/executar/recomendar/parar-automática), `coberturaFornecedorService` (cobertura por fornecedor + snapshots), `pagarComRecebivelService` (sugerir/executar pagamento via recebível).
+- Schema: migrations `20260507000031..033` (`alter_recebiveis`, `alter_antecipacoes`, `alter_cobertura_snapshots`).
+- Endpoints `/api/dashboard/alter/*` atrás de `requireFeature('alter_enabled')`.
+- Health score componente `cobertura_fornecedor` (peso configurável via `HEALTH_SCORE_COBERTURA_FORNECEDOR_PESO`).
+- Cron semanal `/api/cron/alter-insights` via `alterInsightCronService` + copy `src/copy/alterWhatsappCopy.js`.
+
+**Pendente (real):**
+- Implementar métodos de `realAlterAdapter.js` consumindo `ALTER_API_URL`/`ALTER_API_KEY`.
+- Score de crédito da clínica (depende de dados Alter).
+- Frontend Alter (telas dedicadas).
+
+**Definition of Done para go-live real:**
+- Contrato API Alter assinado e sandbox disponível.
+- `realAlterAdapter` implementado e validado contra sandbox.
+- Frontend consumindo endpoints `/api/dashboard/alter/*`.
+- Flag `alter_enabled` ligada gradualmente (5% → 25% → 100%).
 
 **Esforço:** G (cada sub-fase)
 
