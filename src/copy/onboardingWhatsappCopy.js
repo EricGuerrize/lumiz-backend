@@ -30,8 +30,7 @@ module.exports = {
             `• Resumo do mês: quanto entrou, saiu e sobrou\n\n` +
             `Sem planilhas. Sem apps extras. Tudo aqui no WhatsApp.\n\n` +
             `Ficou claro? Posso começar o teste rápido (3 minutinhos)?\n\n` +
-            `1️⃣ Sim!\n` +
-            `2️⃣ Como a Lumiz funciona?`
+            `1️⃣ Sim, vamos começar!`
         );
     },
 

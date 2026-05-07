@@ -462,6 +462,7 @@ class OnboardingStateHandlers {
         const choseHow = v === '2' || v.includes('como funciona') || v.includes('como a lumiz funciona');
 
         if (choseHow) {
+            onboarding.explained = true;
             return await respond(onboardingCopy.startHowItWorks());
         }
 
@@ -474,7 +475,11 @@ class OnboardingStateHandlers {
             return await respond(onboardingCopy.consentQuestion(), true); // Persist imediato em transição de estado
         }
 
-        return await respond(onboardingCopy.invalidChoice(`1️⃣ Sim!\n2️⃣ Como a Lumiz funciona?`));
+        // Se o usuário já viu a explicação, o fallback não deve oferecer "Como a Lumiz funciona?" novamente
+        const fallbackOptions = onboarding.explained
+            ? `1️⃣ Sim, vamos começar!`
+            : `1️⃣ Sim!\n2️⃣ Como a Lumiz funciona?`;
+        return await respond(onboardingCopy.invalidChoice(fallbackOptions));
     }
 
     async handleConsent(onboarding, messageTrimmed, normalizedPhone, respond) {
