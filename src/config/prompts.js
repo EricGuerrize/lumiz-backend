@@ -219,6 +219,7 @@ const FORMATO_RESPOSTA_DOCUMENTO = `
 RETORNE APENAS JSON NO SEGUINTE FORMATO (sem texto fora do JSON):
 {
   "tipo_documento": "boleto" | "extrato" | "comprovante_pix" | "comprovante" | "nota_fiscal" | "fatura" | "recibo" | "nao_identificado",
+  "confidence_score": 0.0,
   "transacoes": [
     {
       "tipo": "entrada" | "saida",
@@ -227,14 +228,23 @@ RETORNE APENAS JSON NO SEGUINTE FORMATO (sem texto fora do JSON):
       "data": "YYYY-MM-DD",
       "descricao": "Descrição detalhada (inclua nome do fornecedor/destinatário)",
       "parcelas": 1,
-      "condicoes_pagamento": null
+      "condicoes_pagamento": null,
+      "confidence_score": 0.0
     }
   ]
 }
 
+REGRA OBRIGATÓRIA DO confidence_score (0..1):
+- Avalie a CERTEZA com que extraiu cada transação e a tipificação do documento.
+- 0.95+ = documento nítido, todos os campos extraídos sem ambiguidade
+- 0.80–0.94 = pequenas incertezas (data ambígua, descrição parcial)
+- 0.50–0.79 = vários campos com baixa nitidez ou inferidos
+- abaixo de 0.5 = não consegue afirmar com segurança o tipo do documento ou os valores
+
 EXEMPLO — Nota fiscal de insumos com boleto parcelado 30/60/90/120:
 {
   "tipo_documento": "nota_fiscal",
+  "confidence_score": 0.94,
   "transacoes": [
     {
       "tipo": "saida",
@@ -243,7 +253,8 @@ EXEMPLO — Nota fiscal de insumos com boleto parcelado 30/60/90/120:
       "data": "2026-03-05",
       "descricao": "Compra de insumos — Ácido hialurônico + Botox — Distribuidora XYZ (NF 4521)",
       "parcelas": 4,
-      "condicoes_pagamento": ["2026-04-04", "2026-05-04", "2026-06-03", "2026-07-03"]
+      "condicoes_pagamento": ["2026-04-04", "2026-05-04", "2026-06-03", "2026-07-03"],
+      "confidence_score": 0.94
     }
   ]
 }
@@ -471,8 +482,16 @@ RETORNE APENAS JSON NO SEGUINTE FORMATO:
     "mes_referencia": null
   },
   "confianca": 0.0,
+  "confidence_score": 0.0,
   "resposta_sugerida": null
 }
+
+REGRA OBRIGATÓRIA do confidence_score (0..1):
+- Replique o mesmo valor em "confianca" e em "confidence_score" (alias para compatibilidade futura).
+- 0.95+: intenção e todos os campos críticos (valor + tipo) sem ambiguidade
+- 0.80–0.94: pequenas dúvidas (forma de pagamento, número de parcelas)
+- 0.50–0.79: tipo de transação foi inferido ou valor incerto
+- abaixo de 0.5: não consegue afirmar a intenção principal sem perguntar ao usuário
 
 EXEMPLO — usuário diz "comprei insumos na distribuidora, 18200 reais, pago em 30/60/90/120":
 {
@@ -492,6 +511,7 @@ EXEMPLO — usuário diz "comprei insumos na distribuidora, 18200 reais, pago em
     "mes_referencia": null
   },
   "confianca": 0.95,
+  "confidence_score": 0.95,
   "resposta_sugerida": "Registrei a compra de R$ 18.200 em 4x boleto. As saídas vão aparecer nas datas de vencimento. ✅"
 }
 `.trim();

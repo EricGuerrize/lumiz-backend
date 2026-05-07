@@ -1,6 +1,6 @@
 # 📊 Estrutura do Banco de Dados - Lumiz
 
-**Última atualização:** 14/01/2026
+**Última atualização:** 07/05/2026
 
 Esta documentação detalha a estrutura completa do banco de dados Supabase utilizado pelo sistema Lumiz.
 
@@ -326,8 +326,140 @@ As seguintes tabelas têm RLS habilitado para segurança:
 - ✅ `mdr_configs`
 - ✅ `ocr_jobs`
 - ✅ `user_insights`
+- ✅ `supplier_documents`
+- ✅ `feature_flags`
+- ✅ `alter_recebiveis`
+- ✅ `alter_antecipacoes`
+- ✅ `alter_cobertura_snapshots`
 
 **Política:** `user_id = auth.uid()` - Usuários só acessam seus próprios dados
+
+---
+
+## 🧾 Onda 2 — Supplier docs / OCR de fornecedor
+
+### `supplier_documents`
+**Descrição:** Registro do documento enviado pelo usuário (NF, boleto, comprovante), texto bruto extraído e JSON estruturado usado para criar contas a pagar e sugestões de estoque.
+
+**Migration:** `supabase/migrations/20260507000020_create_supplier_documents.sql`
+
+**Colunas principais:**
+- `id` (PK)
+- `user_id` (FK → profiles)
+- `fornecedor_id` (FK → fornecedores, nullable)
+- `tipo` (`nf`, `boleto`, `comprovante`, `outro`)
+- `raw_text`
+- `parsed_json` (JSONB)
+- `status` (`pending`, `linked`, `failed`, `cancelled`)
+- `conta_pagar_id` (FK → contas_pagar, compatibilidade com documento de parcela única)
+- `source_phone`
+- `file_hash`
+- `confidence_score`
+- `created_at`, `updated_at`
+
+**Uso:** OCR de NF/boleto/comprovante, fluxo de confirmação no WhatsApp, deduplicação por hash e auditoria do que foi extraído pela IA.
+
+### Extensões em `fornecedores`
+**Migration:** `supabase/migrations/20260507000021_fornecedores_extra_fields.sql`
+
+Campos adicionados:
+- `cnpj`
+- `email`
+- `whatsapp`
+
+**Uso:** match de fornecedor por CNPJ/nome e CRUD de fornecedores no dashboard.
+
+### Extensões em `contas_pagar`
+**Migration:** `supabase/migrations/20260507000022_contas_pagar_origem_parcelas.sql`
+
+Campos adicionados:
+- `origem` (`manual`, `whatsapp_text`, `nf_ocr`, `boleto_ocr`, `comprovante_ocr`, `import`)
+- `supplier_document_id` (FK → supplier_documents)
+- `fornecedor_id` (FK → fornecedores)
+- `parcela_numero`
+- `parcela_total`
+
+**Uso:** rastrear origem da conta a pagar e representar boletos/NFs parcelados como múltiplas linhas.
+
+---
+
+## 🔀 Onda 3 — Feature flags e Alter mock
+
+### `feature_flags`
+**Descrição:** Flags globais ou por usuário para ativar/desativar features sem deploy.
+
+**Migration:** `supabase/migrations/20260507000030_create_feature_flags.sql`
+
+**Colunas principais:**
+- `id` (PK)
+- `user_id` (FK → profiles, nullable para flag global)
+- `name`
+- `enabled`
+- `meta` (JSONB)
+- `created_at`, `updated_at`
+
+**Uso:** `alter_enabled`, `alter_antecipacao_automatica_off`, `alter_insight_last_sent` e futuras flags de rollout.
+
+### `alter_recebiveis`
+**Descrição:** Agenda de recebíveis por clínica. No mock, é derivada de `parcelas`; no futuro, será sincronizada da API Alter.
+
+**Migration:** `supabase/migrations/20260507000031_create_alter_recebiveis.sql`
+
+**Colunas principais:**
+- `id` (PK)
+- `user_id` (FK → profiles)
+- `adquirente`
+- `bandeira`
+- `parcelas_total`, `parcela_numero`
+- `valor_bruto`, `valor_liquido`
+- `mdr`
+- `data_venda`, `data_disponivel`
+- `status` (`livre`, `comprometido`, `antecipado`, `liquidado`, `cancelado`)
+- `source` (`mock`, `alter_api`, `manual`)
+- `external_id`
+- `parcela_id` (FK → parcelas)
+- `created_at`, `updated_at`
+
+**Uso:** agenda de recebíveis, aging, mix por adquirente/parcelas, simulação de antecipação e cobertura de fornecedor.
+
+### `alter_antecipacoes`
+**Descrição:** Registro de simulações/execuções de antecipação spot.
+
+**Migration:** `supabase/migrations/20260507000032_create_alter_antecipacoes.sql`
+
+**Colunas principais:**
+- `id` (PK)
+- `user_id` (FK → profiles)
+- `tipo` (`spot`)
+- `valor_solicitado`
+- `valor_liquido_recebido`
+- `custo_antecipacao`
+- `taxa_efetiva_pct`
+- `recebiveis_ids` (uuid[])
+- `status` (`simulada`, `executada`, `cancelada`, `falhou`)
+- `payload_simulacao`
+- `created_at`, `updated_at`
+
+**Uso:** auditoria da matemática de antecipação e execução no mock/real adapter.
+
+### `alter_cobertura_snapshots`
+**Descrição:** Snapshot diário de cobertura de fornecedores por recebíveis disponíveis.
+
+**Migration:** `supabase/migrations/20260507000033_create_alter_cobertura_snapshots.sql`
+
+**Colunas principais:**
+- `id` (PK)
+- `user_id` (FK → profiles)
+- `fornecedor_id` (FK → fornecedores)
+- `data_snapshot`
+- `total_a_pagar`
+- `total_recebivel_disponivel`
+- `cobertura_pct`
+- `gap_dias`
+- `payload`
+- `created_at`
+
+**Uso:** histórico de cobertura, ranking de fornecedores em risco e componente `cobertura_fornecedor` do health score.
 
 ---
 
@@ -339,6 +471,10 @@ profiles (1) ──→ (N) contas_pagar
 profiles (1) ──→ (N) clientes
 profiles (1) ──→ (N) procedimentos
 profiles (1) ──→ (N) agendamentos
+profiles (1) ──→ (N) supplier_documents
+profiles (1) ──→ (N) alter_recebiveis
+profiles (1) ──→ (N) alter_antecipacoes
+profiles (1) ──→ (N) alter_cobertura_snapshots
 
 atendimentos (1) ──→ (N) atendimento_procedimentos
 atendimentos (1) ──→ (N) parcelas
@@ -346,6 +482,11 @@ atendimentos (1) ──→ (N) parcelas
 procedimentos (1) ──→ (N) atendimento_procedimentos
 clientes (1) ──→ (N) atendimentos
 clientes (1) ──→ (N) agendamentos
+
+fornecedores (1) ──→ (N) supplier_documents
+fornecedores (1) ──→ (N) contas_pagar
+supplier_documents (1) ──→ (N) contas_pagar
+parcelas (1) ──→ (0..1) alter_recebiveis
 ```
 
 ---
@@ -353,9 +494,9 @@ clientes (1) ──→ (N) agendamentos
 ## 🎯 Resumo
 
 **Tabelas Core:** 8 tabelas principais  
-**Tabelas Auxiliares:** 6 tabelas de suporte  
+**Tabelas Auxiliares:** 11+ tabelas de suporte  
 **Views:** 2 views otimizadas  
-**Total:** 16 estruturas principais
+**Total:** 21+ estruturas principais
 
 **Princípio:** Separação clara entre entradas (`atendimentos`) e saídas (`contas_pagar`) para facilitar cálculos financeiros e relatórios.
 

@@ -1,5 +1,9 @@
 const supabase = require('../db/supabase');
 const transactionController = require('../controllers/transactionController');
+const featureFlagService = require('./featureFlagService');
+const coberturaFornecedorService = require('./alter/coberturaFornecedorService');
+
+const COBERTURA_FORNECEDOR_PESO = Number(process.env.HEALTH_SCORE_COBERTURA_FORNECEDOR_PESO || 10);
 
 class HealthScoreService {
   _toDateOnly(dateStr) {
@@ -122,7 +126,7 @@ class HealthScoreService {
         : 'stable';
     const tendenciaPontos = tendenciaValor === 'growing' ? 10 : tendenciaValor === 'stable' ? 5 : 0;
 
-    const score = margemPontos + pontualidadePontos + coberturaPontos + tendenciaPontos;
+    let score = margemPontos + pontualidadePontos + coberturaPontos + tendenciaPontos;
     const componentes = {
       margem: {
         pontos: parseFloat(margemPontos.toFixed(1)),
@@ -145,6 +149,27 @@ class HealthScoreService {
         valor: tendenciaValor,
       },
     };
+
+    // Componente cobertura_fornecedor (Onda 3.C) — só ativa quando flag Alter ligada.
+    try {
+      const alterEnabled = await featureFlagService.isEnabled('alter_enabled', userId);
+      if (alterEnabled) {
+        const cob = await coberturaFornecedorService.calcular(userId, { horizonte_dias: 90 });
+        const coberturaGlobal = cob.cobertura_global_pct || 0;
+        const coberturaFornecedorPontos = this._clamp((coberturaGlobal / 1.0) * COBERTURA_FORNECEDOR_PESO, 0, COBERTURA_FORNECEDOR_PESO);
+        score += coberturaFornecedorPontos;
+        componentes.cobertura_fornecedor = {
+          pontos: parseFloat(coberturaFornecedorPontos.toFixed(1)),
+          max: COBERTURA_FORNECEDOR_PESO,
+          valor: parseFloat(coberturaGlobal.toFixed(2)),
+          fornecedores_em_risco: (cob.top_em_risco || []).length,
+          ativo: true,
+        };
+      }
+    } catch (err) {
+      // Mantém score anterior em caso de falha — fallback explícito.
+      console.warn('[healthScoreService] componente cobertura_fornecedor falhou:', err.message);
+    }
 
     const scoreRounded = Math.round(score);
     return {

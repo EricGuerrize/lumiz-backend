@@ -2,8 +2,11 @@ const userController = require('../userController');
 const onboardingFlowService = require('../../services/onboardingFlowService');
 const onboardingService = require('../../services/onboardingService');
 const documentService = require('../../services/documentService');
+const supplierDocumentService = require('../../services/supplierDocumentService');
 const userRateLimit = require('../../middleware/userRateLimit');
 const { normalizePhone } = require('../../utils/phone');
+const { isLowConfidence, lowConfidenceBanner } = require('../../copy/captureConfirmCopy');
+const supplierCopy = require('../../copy/supplierDocWhatsappCopy');
 
 /**
  * Handler para documentos e imagens
@@ -16,6 +19,26 @@ class DocumentHandler {
 
   normalizePhoneKey(phone) {
     return normalizePhone(phone) || phone;
+  }
+
+  /**
+   * Prepend banner de baixa confiança quando o OCR retornou confidence_score < 0.8
+   * (no documento ou em qualquer transação extraída).
+   */
+  _prefixLowConfidence(response, result) {
+    if (!response || typeof response !== 'string') return response;
+    const docScore = typeof result?.confidence_score === 'number' ? result.confidence_score : null;
+    const transacoes = Array.isArray(result?.transacoes) ? result.transacoes : [];
+    const minTransactionScore = transacoes.reduce((min, t) => {
+      const s = typeof t?.confidence_score === 'number' ? t.confidence_score : null;
+      if (s === null) return min;
+      if (min === null) return s;
+      return Math.min(min, s);
+    }, null);
+    const lowDoc = isLowConfidence(docScore);
+    const lowTx = isLowConfidence(minTransactionScore);
+    if (!lowDoc && !lowTx) return response;
+    return `${lowConfidenceBanner()}\n\n${response}`;
   }
 
   _setPendingDoc(normalizedPhone, value) {
@@ -97,6 +120,60 @@ class DocumentHandler {
   }
 
   /**
+   * Onda 2.B — Detecta se o resultado do OCR corresponde a NF/Boleto e, em caso
+   * positivo, prepara um pending especial de "supplier_doc" para confirmação.
+   *
+   * @param {Object} ctx
+   * @param {Object} ctx.user
+   * @param {string} ctx.normalizedPhone
+   * @param {Object} ctx.result - output bruto do documentService
+   * @param {Buffer|null} [ctx.buffer] - quando disponível, gera fileHash determinístico
+   * @returns {Promise<{response: string, parsed: Object} | null>} null se não é supplier doc
+   */
+  async _maybePrepareSupplierDocPending({ user, normalizedPhone, result, buffer = null }) {
+    if (!result || !result.tipo_documento) return null;
+    const tipoBruto = String(result.tipo_documento).toLowerCase();
+    const isSupplierDoc = ['nota_fiscal', 'boleto', 'fatura', 'comprovante'].some((t) => tipoBruto.includes(t));
+    if (!isSupplierDoc) return null;
+
+    const parsed = supplierDocumentService.fromDocumentResult(result);
+    if (!parsed.valor_total || parsed.valor_total <= 0) return null;
+
+    const fileHash = buffer ? supplierDocumentService.computeFileHash(buffer) : null;
+
+    let supplierDoc = null;
+    try {
+      supplierDoc = await supplierDocumentService.persist(user.id, parsed, {
+        fileHash,
+        sourcePhone: normalizedPhone,
+        fornecedorId: null
+      });
+    } catch (err) {
+      const message = String(err?.message || '');
+      if (message.includes('uq_supplier_documents_user_hash')) {
+        console.warn('[SUPPLIER_DOC] Documento já registrado anteriormente (hash duplicado), seguindo sem persistir.');
+      } else {
+        console.error('[SUPPLIER_DOC] Falha ao persistir supplier_document:', message);
+      }
+    }
+
+    const pending = {
+      user,
+      isSupplierDoc: true,
+      supplier_document_id: supplierDoc?.id || null,
+      parsed,
+      timestamp: Date.now()
+    };
+    this._setPendingDoc(normalizedPhone, pending);
+    await this.persistPendingConfirmation(normalizedPhone, user, []);
+
+    const response = supplierCopy.confirmacaoSupplierDoc(parsed, {
+      isLowConfidence: isLowConfidence(parsed.confidence_score)
+    });
+    return { response, parsed };
+  }
+
+  /**
    * Verifica rate limit para operações de OCR/documento
    * @returns {string|null} Mensagem de erro ou null se permitido
    */
@@ -134,7 +211,17 @@ class DocumentHandler {
 
       // Processa o documento (PDF ou imagem)
       const result = await documentService.processImage(mediaUrl, messageKey);
-      const response = documentService.formatDocumentSummary(result);
+
+      // Onda 2.B — caminho rápido para NF/boleto: pending de supplier_doc
+      const supplierFlow = await this._maybePrepareSupplierDocPending({
+        user,
+        normalizedPhone,
+        result
+      });
+      if (supplierFlow) return supplierFlow.response;
+
+      const baseResponse = documentService.formatDocumentSummary(result);
+      const response = this._prefixLowConfidence(baseResponse, result);
 
       if (result.processor === 'tesseract') {
         return response + '\n\nO que deseja fazer com essa informação? Me diga se é uma venda ou um custo e o valor.';
@@ -209,7 +296,17 @@ class DocumentHandler {
 
       // Processa a imagem
       const result = await documentService.processImage(mediaUrl, messageKey);
-      const response = documentService.formatDocumentSummary(result);
+
+      // Onda 2.B — caminho rápido para NF/boleto
+      const supplierFlow = await this._maybePrepareSupplierDocPending({
+        user,
+        normalizedPhone,
+        result
+      });
+      if (supplierFlow) return supplierFlow.response;
+
+      const baseResponse = documentService.formatDocumentSummary(result);
+      const response = this._prefixLowConfidence(baseResponse, result);
 
       if (result.processor === 'tesseract') {
         return response + '\n\nO que deseja fazer com essa informação? Me diga se é uma venda ou um custo e o valor.';
@@ -277,6 +374,15 @@ class DocumentHandler {
         return documentService.formatDocumentSummary(result);
       }
 
+      // Onda 2.B — caminho rápido para NF/boleto (com fileHash a partir do buffer)
+      const supplierFlow = await this._maybePrepareSupplierDocPending({
+        user,
+        normalizedPhone,
+        result,
+        buffer: imageBuffer
+      });
+      if (supplierFlow) return supplierFlow.response;
+
       if (result.transacoes.length === 0) {
         return documentService.formatDocumentSummary(result);
       }
@@ -289,7 +395,7 @@ class DocumentHandler {
       });
       await this.persistPendingConfirmation(normalizedPhone, user, result.transacoes);
 
-      return documentService.formatDocumentSummary(result);
+      return this._prefixLowConfidence(documentService.formatDocumentSummary(result), result);
     } catch (error) {
       console.error('Erro ao processar imagem:', error);
       return 'Erro ao analisar imagem 😢\n\nTente enviar novamente ou registre manualmente.';
@@ -318,9 +424,61 @@ class DocumentHandler {
     }
 
     const messageLower = message.toLowerCase().trim();
+    const isConfirm = messageLower === 'sim' || messageLower === 's' || messageLower === 'confirmar' || messageLower === '1';
+    const isCancel = messageLower === 'não' || messageLower === 'nao' || messageLower === 'n' || messageLower === 'cancelar' || messageLower === '2';
+
+    // Onda 2.B — fluxo de supplier_doc (NF/boleto)
+    if (pending.isSupplierDoc) {
+      if (isConfirm) {
+        try {
+          const fornecedor = await supplierDocumentService.linkOrCreateFornecedor(user.id, pending.parsed);
+          const contas = await supplierDocumentService.createContasPagarFromDocument(
+            user.id,
+            pending.parsed,
+            fornecedor.id,
+            { supplierDocumentId: pending.supplier_document_id || null }
+          );
+          const estoque = await supplierDocumentService.applyEstoqueEntradaFromItens(
+            user.id,
+            pending.parsed,
+            { supplierDocumentId: pending.supplier_document_id || null, fornecedorId: fornecedor.id }
+          );
+
+          this.pendingDocumentTransactions.delete(normalizedPhone);
+          await this.clearPersistedPendingConfirmation(normalizedPhone);
+
+          return supplierCopy.supplierDocConfirmado({
+            contasCount: contas.length,
+            valorTotal: pending.parsed.valor_total,
+            estoqueAplicados: estoque.aplicados.length,
+            estoquePendentes: estoque.pendentes.length,
+            fornecedorNome: fornecedor.nome
+          });
+        } catch (err) {
+          console.error('[SUPPLIER_DOC] Falha ao confirmar supplier_doc:', err.message);
+          return 'Não consegui registrar essa nota agora 😢\n\nTenta novamente em alguns minutos ou me manda os dados em texto.';
+        }
+      }
+      if (isCancel) {
+        this.pendingDocumentTransactions.delete(normalizedPhone);
+        await this.clearPersistedPendingConfirmation(normalizedPhone);
+        if (pending.supplier_document_id) {
+          try {
+            const supabase = require('../../db/supabase');
+            await supabase
+              .from('supplier_documents')
+              .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+              .eq('id', pending.supplier_document_id)
+              .eq('user_id', user.id);
+          } catch (e) { /* não-crítico */ }
+        }
+        return supplierCopy.supplierDocCancelado();
+      }
+      return 'Não entendi... responde *1* pra confirmar a NF ou *2* pra cancelar 😊';
+    }
 
     // Confirmação
-    if (messageLower === 'sim' || messageLower === 's' || messageLower === 'confirmar' || messageLower === '1') {
+    if (isConfirm) {
       const transactionController = require('../transactionController');
       
       for (const transacao of pending.transacoes) {
@@ -349,7 +507,7 @@ class DocumentHandler {
     }
 
     // Cancelamento
-    if (messageLower === 'não' || messageLower === 'nao' || messageLower === 'n' || messageLower === 'cancelar' || messageLower === '2') {
+    if (isCancel) {
       this.pendingDocumentTransactions.delete(normalizedPhone);
       await this.clearPersistedPendingConfirmation(normalizedPhone);
       return 'Transações canceladas ❌\n\nSe quiser registrar, é só me enviar novamente!';

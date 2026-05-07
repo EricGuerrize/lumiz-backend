@@ -441,3 +441,50 @@ req.headers['x-cron-secret']  // nunca req.query.secret
 - [ ] **Deploy / sanidade** — Railway na revisão alinhada a `main`; validar rotas em [`HANDOFF_BACKEND.md`](HANDOFF_BACKEND.md) com token real (passo humano após cada release).
 
 - feito pelo Cursor no backend
+
+---
+
+## Phase 7 — Captura multimodal + Supplier docs + Alter mock (Onda 1–4)
+
+> Plano completo: [.cursor/plans/backend_completo_financeiro_alter_whatsapp_91e0e02c.plan.md](.cursor/plans/backend_completo_financeiro_alter_whatsapp_91e0e02c.plan.md).
+> Detalhes operacionais e contratos: [HANDOFF_BACKEND.md](HANDOFF_BACKEND.md) (seção "Onda 1–4").
+> Atualizações de roadmap: [ROADMAP.md](ROADMAP.md) (Fases 11, 16, 20.4 marcadas concluídas).
+
+### Onda 1 — Captura multimodal + confidence
+- [src/routes/webhook.js](src/routes/webhook.js) (audioMessage → Whisper).
+- [src/services/audioTranscriptionService.js](src/services/audioTranscriptionService.js).
+- [src/copy/captureConfirmCopy.js](src/copy/captureConfirmCopy.js) + [src/config/prompts.js](src/config/prompts.js) (campo `confidence_score` em ambos prompts).
+- Handlers: [src/controllers/messages/transactionHandler.js](src/controllers/messages/transactionHandler.js), [src/controllers/messages/documentHandler.js](src/controllers/messages/documentHandler.js).
+
+### Onda 2 — Supplier documents
+- Migrations:
+  - `supabase/migrations/20260507000020_create_supplier_documents.sql`
+  - `supabase/migrations/20260507000021_fornecedores_extra_fields.sql`
+  - `supabase/migrations/20260507000022_contas_pagar_origem_parcelas.sql`
+- Serviços: [src/services/supplierDocumentService.js](src/services/supplierDocumentService.js), [src/services/contasReceberService.js](src/services/contasReceberService.js).
+- Copy: [src/copy/supplierDocWhatsappCopy.js](src/copy/supplierDocWhatsappCopy.js).
+- Endpoints novos em [src/routes/dashboard.routes.js](src/routes/dashboard.routes.js) (`supplier-documents`, `fornecedores`, `contas-a-receber`).
+
+### Onda 3 — Alter pré-pronta com mock
+- Migrations:
+  - `20260507000030_create_feature_flags.sql`
+  - `20260507000031_create_alter_recebiveis.sql`
+  - `20260507000032_create_alter_antecipacoes.sql`
+  - `20260507000033_create_alter_cobertura_snapshots.sql`
+- Adapter: `src/services/alter/alterAdapterContract.js`, `mockAlterAdapter.js`, `realAlterAdapter.js`, `alterAdapter.js` (factory).
+- Domínio: `alterRecebiveisService.js`, `antecipacaoService.js`, `coberturaFornecedorService.js`, `pagarComRecebivelService.js`.
+- Cron semanal: `alterInsightCronService.js`, exposto via `GET /api/cron/alter-insights`.
+- Health score: 5º componente `cobertura_fornecedor` em [src/services/healthScoreService.js](src/services/healthScoreService.js).
+- Feature flag: [src/services/featureFlagService.js](src/services/featureFlagService.js) (com middleware `requireFeature`).
+
+### Onda 4 — Empty states + handoff
+- Endpoints novos com `meta: { is_empty, hint }`.
+- Handoff: [HANDOFF_BACKEND.md](HANDOFF_BACKEND.md) (seção "Onda 1–4").
+- Suítes novas: `tests/unit/audioTranscriptionService.test.js`, `captureConfirmFlow.test.js`, `supplierDocumentService.test.js`, `contasReceberService.test.js`, `alterAdapter.contract.test.js`, `alterRecebiveisService.test.js`, `antecipacaoService.test.js`, `coberturaFornecedorService.test.js`, `pagarComRecebivelService.test.js`.
+
+### Variáveis de ambiente novas
+Ver bloco completo em [HANDOFF_BACKEND.md](HANDOFF_BACKEND.md). Resumo:
+- `WHISPER_MODEL`, `WHISPER_LANGUAGE`, `CAPTURE_LOW_CONFIDENCE_THRESHOLD`.
+- `ALTER_ENABLED`, `ALTER_API_URL`, `ALTER_API_KEY`, `ALTER_FEE_SPOT_PCT`, `ALTER_FEE_SPOT_MIN_PCT`, `ALTER_FEE_SPOT_MAX_PCT`.
+- `ALTER_RECOMEND_SAFETY_PCT`, `HEALTH_SCORE_COBERTURA_FORNECEDOR_PESO`.
+- `FEATURE_FLAGS` (JSON env opcional).

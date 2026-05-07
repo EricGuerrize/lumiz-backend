@@ -418,6 +418,22 @@ app.get('/api/cron/reminders', async (req, res) => {
   }
 });
 
+// Onda 3.C — Cron semanal de insight Alter (sexta 18h via Railway cron).
+app.get('/api/cron/alter-insights', async (req, res) => {
+  try {
+    const cronSecret = req.headers['x-cron-secret'];
+    if (process.env.CRON_SECRET && cronSecret !== process.env.CRON_SECRET) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const alterInsightCronService = require('./services/alter/alterInsightCronService');
+    const result = await alterInsightCronService.run();
+    res.json({ timestamp: new Date().toISOString(), ...result });
+  } catch (error) {
+    console.error('[CRON] alter-insights:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+});
+
 app.get('/', (req, res) => {
   res.json({
     name: 'Lumiz Backend',
@@ -429,7 +445,8 @@ app.get('/', (req, res) => {
       health: '/health',
       cron: {
         reminders: '/api/cron/reminders',
-        monthlyReport: '/api/cron/monthly-report'
+        monthlyReport: '/api/cron/monthly-report',
+        alterInsights: '/api/cron/alter-insights'
       },
       dashboard: {
         summary: '/api/dashboard/summary',

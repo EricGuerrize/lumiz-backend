@@ -88,4 +88,42 @@ Each handler group is in `src/services/onboarding/`. The orchestrator (`onboardi
 - Deployed on Railway (`railway.toml`, `nixpacks.toml`)
 - Frontend dashboard: `lumiz-financeiro/` (separate Vite/React app, deployed to Vercel)
 - Sentry for error tracking (`src/instrument.js` — must be imported first in `server.js`)
-- Cron endpoint: `GET /api/cron/reminders` (called by Railway cron, protected by `CRON_SECRET`)
+- Cron endpoints (all protected by `CRON_SECRET` header `x-cron-secret`):
+  - `GET /api/cron/reminders` — diário 8h
+  - `GET /api/cron/monthly-report` — mensal
+  - `GET /api/cron/alter-insights` — semanal sexta 18h (Onda 3.C)
+
+### Alter integration (Onda 3 — backend pré-pronto, mock)
+
+- Adapter pattern em `src/services/alter/`:
+  - `alterAdapterContract.js` — interface base.
+  - `mockAlterAdapter.js` — deriva recebíveis de `parcelas` + `mdr_configs` (default em dev/test).
+  - `realAlterAdapter.js` — stub HTTP; ativa quando `ALTER_API_URL` + `ALTER_API_KEY` estão setados.
+  - `alterAdapter.js` — factory que decide mock vs real.
+- Domain services consomem **sempre** a tabela `alter_recebiveis`, nunca o adapter direto:
+  - `alterRecebiveisService` (aging/posição/mix), `antecipacaoService` (simular/recomendar/parar-automática), `coberturaFornecedorService`, `pagarComRecebivelService`.
+- Endpoints `/api/dashboard/alter/*` ficam atrás de `requireFeature('alter_enabled')`.
+
+### Feature flags (Fase 16)
+
+- `featureFlagService` resolve em camadas: tabela por user → tabela global → `FEATURE_FLAGS` JSON env → env booleano (`ALTER_ENABLED`) → default false.
+- Cache em memória de 60s.
+- Middleware `requireFeature(flag)` para proteger rotas.
+
+## Convenções de código
+
+> Ver seção completa "Convenções de código (contrato vivo)" em `HANDOFF_BACKEND.md`.
+> Resumo aplicável durante edições:
+
+- **Documentação**: todo arquivo novo em `src/services/`, `src/controllers/`, `src/routes/` começa com bloco JSDoc identificando onda/fase + responsabilidade. Métodos públicos têm `@param`/`@returns` tipados.
+- **Camadas**: `routes → controllers → services → db`. Nunca pular camada.
+- **Copy WhatsApp**: sempre em `src/copy/*WhatsappCopy.js`. Nunca hardcoded em service/controller.
+- **Empty states**: endpoints novos retornam `meta: { is_empty, hint }`.
+- **Naming**: services em `camelCaseService.js`; classes em `PascalCase`; helpers privados com prefixo `_`; migrations em `YYYYMMDDHHMMSS_descricao.sql`.
+- **Atualizar docs ao mexer em código**:
+  - Endpoint novo → `HANDOFF_BACKEND.md`.
+  - Migration nova → `ESTRUTURA_BANCO_DADOS.md`.
+  - Fase concluída → `ROADMAP.md`.
+  - Env nova → `.env.example` + `HANDOFF_BACKEND.md`.
+- **Testes**: 1 caso feliz + 1 empty/erro mínimos. Regressão (`npm run test:regression`) deve continuar < 5s.
+- **Commits**: conventional commits em PT-BR; GPG desligado (`git -c commit.gpgsign=false commit`).

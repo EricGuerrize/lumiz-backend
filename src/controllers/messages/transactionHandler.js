@@ -9,6 +9,7 @@ const {
   extractMixedPaymentSplit
 } = require('../../utils/moneyParser');
 const { sanitizeClientName } = require('../../utils/procedureKeywords');
+const { isLowConfidence, lowConfidenceBanner } = require('../../copy/captureConfirmCopy');
 
 /**
  * Handler para transações (vendas e custos)
@@ -49,6 +50,10 @@ class TransactionHandler {
       return 'Não consegui identificar o valor 🤔\n\nMe manda assim: "Botox R$ 2800" ou "Insumos R$ 3200"';
     }
 
+    const intentConfidence = (typeof intent.confidence_score === 'number')
+      ? intent.confidence_score
+      : (typeof intent.confianca === 'number' ? intent.confianca : null);
+
     const normalizedData = {
       tipo,
       valor: mixedCandidate?.total || valorCorrigido,
@@ -60,7 +65,8 @@ class TransactionHandler {
       bandeira_cartao,
       nome_cliente,
       payment_split: payment_split || mixedCandidate?.splits || null,
-      valor_total: intent.dados?.valor_total || mixedCandidate?.total || null
+      valor_total: intent.dados?.valor_total || mixedCandidate?.total || null,
+      confidence_score: intentConfidence
     };
 
     normalizedData.nome_cliente = this.sanitizeClientName(normalizedData.nome_cliente, normalizedData.categoria);
@@ -260,7 +266,11 @@ class TransactionHandler {
       month: '2-digit'
     });
 
-    let text = `${emoji} *${tipoTexto}*\n\n`;
+    let text = '';
+    if (isLowConfidence(dados?.confidence_score)) {
+      text += `${lowConfidenceBanner()}\n\n`;
+    }
+    text += `${emoji} *${tipoTexto}*\n\n`;
     text += `💵 *${formatarMoeda(valor)}*\n`;
     text += `📂 ${categoria || 'Sem categoria'}\n`;
 

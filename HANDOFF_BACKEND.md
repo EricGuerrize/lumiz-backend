@@ -79,3 +79,210 @@ As fases 9 e 10 são majoritariamente frontend. No backend, o foco é garantir c
 ## Smoke local
 
 - `node -e "require('./src/routes/dashboard.routes.js'); setTimeout(()=>process.exit(0),500)"`
+
+---
+
+# Onda 1–4: Captura multimodal + Supplier Docs + Alter mock + Empty States
+
+> Plano de referência: `.cursor/plans/backend_completo_financeiro_alter_whatsapp_91e0e02c.plan.md`.
+> ROADMAP: ver `ROADMAP.md` (fases 11, 16, 20.4 atualizadas).
+
+## Onda 1 — Captura WhatsApp multimodal + confidence score
+
+### Áudio (Whisper)
+- Webhook (`src/routes/webhook.js`) detecta `audioMessage`, baixa via Evolution, transcreve via `audioTranscriptionService.transcribe(buffer, mimeType)`, prefixa `🎤 _Entendi assim:_` e injeta no fluxo de texto.
+- Limite: 25 MB / até 2 min.
+- Modelo: `WHISPER_MODEL` (default `whisper-1`), idioma `WHISPER_LANGUAGE` (default `pt`).
+
+### Confidence score
+- Prompts (`src/config/prompts.js`) retornam `confidence_score: 0..1` em `buildIntentClassificationPrompt` e `buildDocumentExtractionPrompt`.
+- `transactionHandler` e `documentHandler` usam `src/copy/captureConfirmCopy.js`:
+  - Threshold `CAPTURE_LOW_CONFIDENCE_THRESHOLD` (default `0.8`).
+  - Banner `🤔 *Não tenho 100% de certeza, confere por favor:*` injetado quando `confidence_score < threshold`.
+- Estado `awaiting_data` mantido via `conversationRuntimeStateService`.
+
+## Onda 2 — Supplier Documents (NF/Boleto/Comprovante) → contas_pagar + estoque
+
+### Schema novo
+- `supabase/migrations/20260507000020_create_supplier_documents.sql` cria `supplier_documents`.
+- `20260507000021_fornecedores_extra_fields.sql` adiciona `cnpj`, `email`, `whatsapp`.
+- `20260507000022_contas_pagar_origem_parcelas.sql` adiciona `origem`, `supplier_document_id`, `fornecedor_id`, `parcela_numero`, `parcela_total`.
+
+### Endpoints
+| Método | Rota | Notas |
+|---|---|---|
+| GET | `/api/dashboard/supplier-documents` | filtros: `status`, `limit` |
+| GET | `/api/dashboard/supplier-documents/:id` | retorna parsed_json + status |
+| POST | `/api/dashboard/supplier-documents/process` | sobe arquivo, extrai e persiste |
+| POST | `/api/dashboard/supplier-documents/:id/link-fornecedor` | body `{ fornecedor_id }` |
+| POST | `/api/dashboard/supplier-documents/:id/match-itens` | body `{ matches: [{descricao, procedimento_id, quantidade}] }` |
+| GET\|POST\|PUT\|DELETE | `/api/dashboard/fornecedores[/:id]` | CRUD fornecedores |
+| GET | `/api/dashboard/contas-a-receber` | aging buckets + mix forma de pagamento |
+
+### WhatsApp
+- Ao detectar NF/Boleto/Comprovante: `documentHandler` salva `supplier_document` em estado `pending`, manda copy em `src/copy/supplierDocWhatsappCopy.js` e aguarda confirmação 1/2/3. Confirmação cria `contas_pagar` (parcelas) e aplica estoque via `supplierDocumentService.applyEstoqueEntradaFromItens`.
+
+## Onda 3 — Alter pré-pronta com adapter mockado
+
+### Schema novo
+- `20260507000030_create_feature_flags.sql`
+- `20260507000031_create_alter_recebiveis.sql`
+- `20260507000032_create_alter_antecipacoes.sql`
+- `20260507000033_create_alter_cobertura_snapshots.sql`
+
+### Adapter
+- Contrato: `src/services/alter/alterAdapterContract.js` — interface base com `NotImplementedError`.
+- Mock: `src/services/alter/mockAlterAdapter.js` — deriva `alter_recebiveis` de `parcelas` + `mdr_configs`. Custo spot configurável: `ALTER_FEE_SPOT_PCT` (default 2.5%), `ALTER_FEE_SPOT_MIN_PCT` (1.5%), `ALTER_FEE_SPOT_MAX_PCT` (4.5%).
+- Real: `src/services/alter/realAlterAdapter.js` — stub; lança `NotImplementedError` enquanto `ALTER_API_URL`/`ALTER_API_KEY` não definidos.
+- Factory: `src/services/alter/alterAdapter.js` resolve por env (`ALTER_API_URL` + `ALTER_API_KEY` → real; senão → mock).
+
+### Services
+- `alterRecebiveisService` — list/getPosicao/getAging/getMix.
+- `antecipacaoService` — simular/executar/recomendar/pararAutomatica.
+- `coberturaFornecedorService` — calcular cobertura por fornecedor + snapshots.
+- `pagarComRecebivelService` — sugerir/executar pagamento com recebíveis.
+- `alterInsightCronService` — cron semanal de insight via WhatsApp.
+
+### Feature flag (Fase 16)
+- `featureFlagService.isEnabled(flag, userId)` resolve em camadas: tabela por user → tabela global → `FEATURE_FLAGS` JSON env → env booleano (`ALTER_ENABLED`) → default false.
+- Middleware `requireFeature(flag)` em `src/services/featureFlagService.js`.
+
+### Endpoints (todos atrás de `requireFeature('alter_enabled')`)
+| Método | Rota | Body / Query |
+|---|---|---|
+| GET | `/api/dashboard/alter/recebiveis` | `status`, `adquirente`, `from`, `to` |
+| GET | `/api/dashboard/alter/recebiveis/aging` | — |
+| GET | `/api/dashboard/alter/recebiveis/mix` | — |
+| GET | `/api/dashboard/alter/antecipacao/sugestao` | `horizonte_dias` (default 30) |
+| POST | `/api/dashboard/alter/antecipacao/simular` | `{ valor_alvo, horizonte_dias }` |
+| POST | `/api/dashboard/alter/antecipacao/executar` | `{ valor_alvo, horizonte_dias, simulacao? }` |
+| POST | `/api/dashboard/alter/antecipacao/parar-automatica` | — |
+| GET | `/api/dashboard/alter/cobertura` | `horizonte_dias`, `snapshot=true` |
+| POST | `/api/dashboard/alter/pagar-fornecedor` | `{ supplier_document_id?, conta_pagar_id? }` |
+| POST | `/api/dashboard/alter/pagar-fornecedor/executar` | `{ recebiveis_ids[], conta_pagar_id? }` |
+
+### Health Score
+- `healthScoreService.getScore(userId)` ganha 5º componente `cobertura_fornecedor` quando `alter_enabled` ligado. Peso configurável: `HEALTH_SCORE_COBERTURA_FORNECEDOR_PESO` (default 10 pontos). Fallback graceful se cobertura falhar.
+
+### Cron novo
+- `GET /api/cron/alter-insights` (header `x-cron-secret`) — roda `alterInsightCronService.run()`. Configurar Railway cron em sexta 18h.
+- Idempotência semanal via `feature_flags(name='alter_insight_last_sent')`.
+
+## Onda 4 — Empty states & contratos consistentes
+
+- Endpoints novos retornam `meta: { is_empty: boolean, hint: string|null }` quando não há dados suficientes:
+  - `contas-a-receber`, `alter/recebiveis`, `alter/recebiveis/aging`, `alter/recebiveis/mix`, `alter/antecipacao/sugestao`, `alter/cobertura`, `alter/pagar-fornecedor`.
+- `meta.confianca` (`baixa`/`media`/`alta`) ainda em endpoints existentes (sazonalidade/outlook/pricing) quando aplicável.
+
+## Variáveis de ambiente novas
+
+- `OPENAI_API_KEY` (já existia; reforçado) — usado por Whisper e Vision quando ativo.
+- `WHISPER_MODEL`, `WHISPER_LANGUAGE` — opcionais; defaults `whisper-1` / `pt`.
+- `CAPTURE_LOW_CONFIDENCE_THRESHOLD` — default `0.8`.
+- `ALTER_ENABLED` — boolean, ativa rotas Alter (alternativa: registro em `feature_flags`).
+- `ALTER_API_URL`, `ALTER_API_KEY` — opcionais; quando ambos definidos, factory usa `realAlterAdapter`.
+- `ALTER_FEE_SPOT_PCT` / `ALTER_FEE_SPOT_MIN_PCT` / `ALTER_FEE_SPOT_MAX_PCT` — taxas mock spot.
+- `ALTER_RECOMEND_SAFETY_PCT` — buffer de segurança em `antecipacaoService.recomendar` (default 0.10).
+- `HEALTH_SCORE_COBERTURA_FORNECEDOR_PESO` — peso do novo componente (default 10).
+- `FEATURE_FLAGS` — JSON env opcional (`{"alter_enabled":true}`).
+- `CRON_SECRET` — protege `/api/cron/alter-insights`.
+
+## Dependências
+
+- `openai` (já em uso por `openaiService`/`audioTranscriptionService`).
+
+## Testes
+
+- `tests/unit/audioTranscriptionService.test.js`
+- `tests/unit/captureConfirmFlow.test.js`
+- `tests/unit/supplierDocumentService.test.js`
+- `tests/unit/contasReceberService.test.js`
+- `tests/unit/alterAdapter.contract.test.js`
+- `tests/unit/alterRecebiveisService.test.js`
+- `tests/unit/antecipacaoService.test.js`
+- `tests/unit/coberturaFornecedorService.test.js`
+- `tests/unit/pagarComRecebivelService.test.js`
+
+## Matriz feature × endpoint × empty state
+
+| Feature | Endpoint | Empty state | Hint padrão |
+|---|---|---|---|
+| Recebíveis | `/alter/recebiveis` | `data: []` | "Sem recebíveis no cartão ainda. Conforme registrar vendas parceladas, aparecem aqui." |
+| Aging | `/alter/recebiveis/aging` | `total: 0`, buckets zerados | "Sem recebíveis em aberto. Quando começar a vender no cartão, a agenda aparece aqui." |
+| Mix | `/alter/recebiveis/mix` | listas vazias | "Mix vai aparecer quando houver recebíveis no cartão." |
+| Antecipação | `/alter/antecipacao/sugestao` | `entradas=0 saidas=0` | "Não tenho entradas e saídas suficientes para sugerir antecipação." |
+| Cobertura | `/alter/cobertura` | `fornecedores: []` | "Sem contas a pagar com fornecedor no horizonte. Quando subir uma NF/boleto, a cobertura aparece aqui." |
+| Pagar fornecedor | `/alter/pagar-fornecedor` | `cobertura: null` | "Nada a pagar para esses parâmetros." |
+| Contas a receber | `/contas-a-receber` | `data: []` | "Você ainda não tem parcelas em aberto. Conforme registrar vendas parceladas, aparecem aqui." |
+
+---
+
+# Convenções de código (contrato vivo)
+
+> Esta seção é referência para qualquer trabalho futuro no repo (humano ou
+> agente). Quem editar código DEVE manter estes padrões.
+
+## Documentação obrigatória
+
+- Todo arquivo novo em `src/services/`, `src/controllers/`, `src/routes/` começa com bloco JSDoc descrevendo:
+  1. Onda/fase do roadmap a que pertence (ex.: `Onda 3.B`, `Fase 16`).
+  2. Responsabilidade única em uma frase.
+  3. Dependências externas (DB, APIs, env vars).
+- Métodos públicos de classes (sem prefixo `_`) recebem JSDoc com `@param` tipado e `@returns`.
+- Métodos privados (prefixo `_`) recebem `@private` e comentário breve quando não-óbvios.
+- Migrations recebem comentário no topo (`-- Onda X.Y — descrição curta`) e `COMMENT ON COLUMN` para campos não-óbvios.
+
+## Organização
+
+- **camadas**: `routes → controllers → services → db`. Routes nunca tocam Supabase direto; controllers nunca fazem regra de negócio pesada.
+- **um service = uma responsabilidade**: se passar de ~400 linhas, considerar split (ex.: `alter/` é uma pasta com 6 services pequenos em vez de um `alterService.js` gigante).
+- **copy fica em `src/copy/`**: mensagens WhatsApp NUNCA são hardcoded em service/controller. Centralizar em arquivo `*WhatsappCopy.js`.
+- **prompts LLM ficam em `src/config/prompts.js`**: nunca espalhar em services.
+
+## Empty states e meta
+
+- Todo endpoint que pode devolver vazio inclui `meta: { is_empty: boolean, hint: string|null }` no payload — frontend renderiza `hint` direto sem precisar de string própria.
+- Endpoints de insight (sazonalidade, outlook, pricing) ganham `meta.confianca: 'baixa'|'media'|'alta'` quando histórico é insuficiente.
+
+## Feature flags
+
+- Toda feature em rollout gradual usa `featureFlagService.requireFeature('flag_name')` como middleware. Nunca acoplar `if (process.env.X)` direto em routes.
+- Nomes de flags em `snake_case`: `alter_enabled`, `multi_tenant_enabled`, etc.
+
+## Naming
+
+- Migrations: `YYYYMMDDHHMMSS_descricao_curta.sql` (timestamp em UTC, descrição em snake_case).
+- Tabelas/colunas: `snake_case`, sempre em português quando for vocabulário de domínio (ex.: `contas_pagar`, `data_vencimento`).
+- Services: `camelCaseService.js`. Classes em `PascalCase`. Helpers privados em `_camelCase` (prefixo underscore).
+- Variáveis de env: `UPPER_SNAKE_CASE`. Booleanas terminam em `_ENABLED` ou `_OFF` quando aplicável.
+
+## Testes
+
+- Toda nova feature ganha test unit (`tests/unit/<service>.test.js`) que valida pelo menos 1 caso feliz + 1 caso de empty/erro.
+- Suite de regressão (`npm run test:regression`) roda em < 5s, sem Redis e sem rede. Adicionar test à regressão somente se for autocontido.
+- Anti-padrão a evitar: testar mocks (ver `~/.claude/skills/default/testing-anti-patterns/SKILL.md`).
+
+## Commits
+
+- Mensagens em PT-BR, prefixo conventional commits (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`).
+- 1 commit por onda/fase quando possível. Cada commit deixa `npm run test:regression` verde.
+- GPG desligado neste repo: `git -c commit.gpgsign=false commit`.
+
+## Atualização de documentação ao mexer em código
+
+Quem alterar código DEVE atualizar, na mesma PR/commit:
+
+| Tipo de mudança | Atualizar |
+|---|---|
+| Endpoint novo ou contrato mudou | `HANDOFF_BACKEND.md` (tabela de endpoints + matriz empty state) |
+| Migration nova | `ESTRUTURA_BANCO_DADOS.md` |
+| Fase do roadmap concluída | `ROADMAP.md` (status na tabela + bloco da fase) |
+| Variável de ambiente nova | `.env.example` + `HANDOFF_BACKEND.md` (seção env vars) |
+| Onda do plano concluída | bloco "Phase 7+" em `implementacao2.md` |
+
+## Débito técnico conhecido
+
+- `alterInsightCronService._listTargetUsers` faz N+1 lookups de feature flag. Refatorar para RPC `select_users_with_feature_flag` quando a base passar de ~500 usuários ativos.
+- Endpoint `GET /api/config/features` (Fase 16) ainda não exposto — hoje o middleware `requireFeature` cobre o uso atual; criar quando o frontend implementar `useFeatureFlag`.
+- `realAlterAdapter` é stub — os métodos lançam `NotImplementedError` enquanto sandbox/contrato Alter não chegam.
+- Hook `useFeatureFlag` no frontend pendente (Fase 16 backend pronto).

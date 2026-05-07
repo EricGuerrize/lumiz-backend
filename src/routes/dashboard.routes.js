@@ -18,6 +18,13 @@ const colaboradorService = require('../services/colaboradorService');
 const clientePerfilService = require('../services/clientePerfilService');
 const margemAlertaService = require('../services/margemAlertaService');
 const emailReportService = require('../services/emailReportService');
+const supplierDocumentService = require('../services/supplierDocumentService');
+const contasReceberService = require('../services/contasReceberService');
+const alterRecebiveisService = require('../services/alter/alterRecebiveisService');
+const antecipacaoService = require('../services/alter/antecipacaoService');
+const coberturaFornecedorService = require('../services/alter/coberturaFornecedorService');
+const pagarComRecebivelService = require('../services/alter/pagarComRecebivelService');
+const { requireFeature } = require('../services/featureFlagService');
 const userController = require('../controllers/userController');
 const { authenticateFlexible } = require('../middleware/authMiddleware');
 const { validate } = require('../middleware/validationMiddleware');
@@ -1325,4 +1332,487 @@ router.post('/reports/send-email', async (req, res) => {
   }
 });
 
+// ============================================================================
+// Onda 2 — Supplier Documents (NF, Boleto, Comprovante via OCR)
+// ============================================================================
+
+// GET /api/dashboard/supplier-documents?status=pending&limit=50
+router.get('/supplier-documents', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const status = String(req.query.status || '').trim() || null;
+    const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
+    let query = supabase
+      .from('supplier_documents')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (status) query = query.eq('status', status);
+    const { data, error } = await query;
+    if (error) throw error;
+    res.json({
+      data: data || [],
+      meta: {
+        is_empty: !data || data.length === 0,
+        hint: !data || data.length === 0
+          ? 'Envie uma NF ou boleto pelo WhatsApp para começar a popular esta lista.'
+          : null
+      }
+    });
+  } catch (error) {
+    console.error('Error listing supplier documents:', error);
+    res.status(500).json({ error: 'Failed to list supplier documents' });
+  }
+});
+
+// POST /api/dashboard/supplier-documents/process
+// body: { file_base64, mime_type, source_phone? }
+// Roda extract → linkOrCreateFornecedor → persist + cria contas_pagar + tenta entrada de estoque.
+router.post('/supplier-documents/process', heavyDashboardReadLimiter, async (req, res) => {
+  try {
+    const { file_base64, mime_type, source_phone, dry_run } = req.body || {};
+    if (!file_base64 || typeof file_base64 !== 'string') {
+      return res.status(400).json({ error: 'file_base64 obrigatório' });
+    }
+    if (!mime_type || typeof mime_type !== 'string') {
+      return res.status(400).json({ error: 'mime_type obrigatório (image/jpeg, image/png, application/pdf)' });
+    }
+
+    const cleanBase64 = file_base64.includes(',') ? file_base64.split(',')[1] : file_base64;
+    const buffer = Buffer.from(cleanBase64, 'base64');
+    const fileHash = supplierDocumentService.computeFileHash(buffer);
+
+    const parsed = await supplierDocumentService.extract(buffer, mime_type);
+
+    if (dry_run === true) {
+      return res.json({ parsed, fileHash });
+    }
+
+    const fornecedor = await supplierDocumentService.linkOrCreateFornecedor(req.user.id, parsed);
+    const supplierDoc = await supplierDocumentService.persist(req.user.id, parsed, {
+      fileHash,
+      sourcePhone: source_phone || null,
+      fornecedorId: fornecedor.id
+    });
+    const contas = await supplierDocumentService.createContasPagarFromDocument(
+      req.user.id,
+      parsed,
+      fornecedor.id,
+      { supplierDocumentId: supplierDoc.id }
+    );
+    const estoqueResult = await supplierDocumentService.applyEstoqueEntradaFromItens(
+      req.user.id,
+      parsed,
+      { supplierDocumentId: supplierDoc.id, fornecedorId: fornecedor.id }
+    );
+
+    res.status(201).json({
+      parsed,
+      fornecedor,
+      supplier_document: supplierDoc,
+      contas_pagar: contas,
+      estoque: estoqueResult
+    });
+  } catch (error) {
+    console.error('Error processing supplier document:', error);
+    res.status(500).json({ error: error.message || 'Failed to process supplier document' });
+  }
+});
+
+// GET /api/dashboard/supplier-documents/:id
+router.get('/supplier-documents/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).json({ error: 'id inválido' });
+    const { data, error } = await supabase
+      .from('supplier_documents')
+      .select('*')
+      .eq('user_id', req.user.id)
+      .eq('id', id)
+      .single();
+    if (error || !data) return res.status(404).json({ error: 'Documento não encontrado' });
+    res.json(data);
+  } catch (error) {
+    console.error('Error getting supplier document:', error);
+    res.status(500).json({ error: 'Failed to get supplier document' });
+  }
+});
+
+// POST /api/dashboard/supplier-documents/:id/link-fornecedor body: { fornecedor_id }
+router.post('/supplier-documents/:id/link-fornecedor', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { fornecedor_id } = req.body || {};
+    if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).json({ error: 'id inválido' });
+    if (!fornecedor_id || !/^[0-9a-f-]{36}$/i.test(fornecedor_id)) {
+      return res.status(400).json({ error: 'fornecedor_id inválido' });
+    }
+
+    const { data: forn, error: fe } = await supabase
+      .from('fornecedores')
+      .select('id')
+      .eq('id', fornecedor_id)
+      .eq('user_id', req.user.id)
+      .single();
+    if (fe || !forn) return res.status(404).json({ error: 'Fornecedor não encontrado' });
+
+    const { data: doc, error: docError } = await supabase
+      .from('supplier_documents')
+      .update({ fornecedor_id, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .eq('user_id', req.user.id)
+      .select('*')
+      .single();
+    if (docError) throw docError;
+    res.json(doc);
+  } catch (error) {
+    console.error('Error linking supplier document to fornecedor:', error);
+    res.status(500).json({ error: 'Failed to link supplier document' });
+  }
+});
+
+// POST /api/dashboard/supplier-documents/:id/match-itens body: { matches: [{descricao, procedimento_id, quantidade}] }
+router.post('/supplier-documents/:id/match-itens', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { matches } = req.body || {};
+    if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).json({ error: 'id inválido' });
+    if (!Array.isArray(matches) || matches.length === 0) {
+      return res.status(400).json({ error: 'matches deve ser um array não-vazio' });
+    }
+
+    const { data: doc, error: docError } = await supabase
+      .from('supplier_documents')
+      .select('*')
+      .eq('id', id)
+      .eq('user_id', req.user.id)
+      .single();
+    if (docError || !doc) return res.status(404).json({ error: 'Documento não encontrado' });
+
+    const aplicados = [];
+    const erros = [];
+    for (const m of matches) {
+      try {
+        const movimento = await estoqueService.registrarEntrada(req.user.id, {
+          procedimentoId: m.procedimento_id,
+          quantidade: Number(m.quantidade) || 0,
+          custoUnitario: m.valor_unitario ?? null,
+          fornecedorId: doc.fornecedor_id || null,
+          observacoes: `Match manual via supplier_doc ${id}`
+        });
+        aplicados.push({ descricao: m.descricao, procedimento_id: m.procedimento_id, movimento });
+      } catch (e) {
+        erros.push({ ...m, erro: e?.message || String(e) });
+      }
+    }
+
+    res.json({ aplicados, erros });
+  } catch (error) {
+    console.error('Error applying matches:', error);
+    res.status(500).json({ error: 'Failed to apply matches' });
+  }
+});
+
+// GET /api/dashboard/fornecedores
+router.get('/fornecedores', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('fornecedores')
+      .select('*')
+      .eq('user_id', req.user.id)
+      .order('nome', { ascending: true });
+    if (error) throw error;
+    res.json({
+      data: data || [],
+      meta: {
+        is_empty: !data || data.length === 0,
+        hint: !data || data.length === 0
+          ? 'Cadastre fornecedores manualmente ou envie NFs pelo WhatsApp para popular automaticamente.'
+          : null
+      }
+    });
+  } catch (error) {
+    console.error('Error listing fornecedores:', error);
+    res.status(500).json({ error: 'Failed to list fornecedores' });
+  }
+});
+
+// POST /api/dashboard/fornecedores
+router.post('/fornecedores', async (req, res) => {
+  try {
+    const { nome, cnpj, email, whatsapp, contato, prazo_medio_dias } = req.body || {};
+    if (!nome || String(nome).trim().length === 0) {
+      return res.status(400).json({ error: 'nome obrigatório' });
+    }
+    const payload = {
+      user_id: req.user.id,
+      nome: String(nome).trim(),
+      cnpj: cnpj ? String(cnpj).replace(/\D+/g, '') : null,
+      email: email || null,
+      whatsapp: whatsapp || null,
+      contato: contato || null,
+      prazo_medio_dias: prazo_medio_dias != null ? parseInt(prazo_medio_dias, 10) : null
+    };
+    if (payload.cnpj && payload.cnpj.length !== 14) {
+      return res.status(400).json({ error: 'cnpj deve ter 14 dígitos' });
+    }
+    const { data, error } = await supabase
+      .from('fornecedores')
+      .insert(payload)
+      .select('*')
+      .single();
+    if (error) {
+      if (String(error.message || '').includes('uq_fornecedores_user_cnpj')) {
+        return res.status(409).json({ error: 'Já existe fornecedor com esse CNPJ.' });
+      }
+      throw error;
+    }
+    res.status(201).json(data);
+  } catch (error) {
+    console.error('Error creating fornecedor:', error);
+    res.status(500).json({ error: 'Failed to create fornecedor' });
+  }
+});
+
+// PUT /api/dashboard/fornecedores/:id
+router.put('/fornecedores/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).json({ error: 'id inválido' });
+    const { nome, cnpj, email, whatsapp, contato, prazo_medio_dias } = req.body || {};
+    const updates = {};
+    if (nome !== undefined) updates.nome = String(nome).trim();
+    if (cnpj !== undefined) updates.cnpj = cnpj ? String(cnpj).replace(/\D+/g, '') : null;
+    if (email !== undefined) updates.email = email || null;
+    if (whatsapp !== undefined) updates.whatsapp = whatsapp || null;
+    if (contato !== undefined) updates.contato = contato || null;
+    if (prazo_medio_dias !== undefined) updates.prazo_medio_dias = prazo_medio_dias != null ? parseInt(prazo_medio_dias, 10) : null;
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'nenhum campo para atualizar' });
+    }
+    const { data, error } = await supabase
+      .from('fornecedores')
+      .update(updates)
+      .eq('id', id)
+      .eq('user_id', req.user.id)
+      .select('*')
+      .single();
+    if (error || !data) return res.status(404).json({ error: 'Fornecedor não encontrado' });
+    res.json(data);
+  } catch (error) {
+    console.error('Error updating fornecedor:', error);
+    res.status(500).json({ error: 'Failed to update fornecedor' });
+  }
+});
+
+// DELETE /api/dashboard/fornecedores/:id
+router.delete('/fornecedores/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).json({ error: 'id inválido' });
+    const { error } = await supabase
+      .from('fornecedores')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', req.user.id);
+    if (error) throw error;
+    res.status(204).send();
+  } catch (error) {
+    console.error('Error deleting fornecedor:', error);
+    res.status(500).json({ error: 'Failed to delete fornecedor' });
+  }
+});
+
+// GET /api/dashboard/contas-a-receber?from=YYYY-MM-DD&to=YYYY-MM-DD
+// Onda 2.C — agrega parcelas em aberto com aging buckets + mix por forma de pagamento.
+router.get('/contas-a-receber', heavyDashboardReadLimiter, async (req, res) => {
+  try {
+    const { from, to } = req.query;
+    if (from && !/^\d{4}-\d{2}-\d{2}$/.test(String(from))) {
+      return res.status(400).json({ error: 'from deve ser YYYY-MM-DD' });
+    }
+    if (to && !/^\d{4}-\d{2}-\d{2}$/.test(String(to))) {
+      return res.status(400).json({ error: 'to deve ser YYYY-MM-DD' });
+    }
+    const result = await contasReceberService.getOverview(req.user.id, {
+      from: from || null,
+      to: to || null
+    });
+    res.json(result);
+  } catch (error) {
+    console.error('Error getting contas a receber overview:', error);
+    res.status(500).json({ error: 'Failed to get contas a receber' });
+  }
+});
+
+// ====================================================================
+// Onda 3.C — Alter endpoints (todos atrás de feature flag alter_enabled)
+// ====================================================================
+
+const alterGuard = requireFeature('alter_enabled');
+
+// GET /api/dashboard/alter/recebiveis
+router.get('/alter/recebiveis', alterGuard, heavyDashboardReadLimiter, async (req, res) => {
+  try {
+    const { status, adquirente, from, to } = req.query;
+    const data = await alterRecebiveisService.list(req.user.id, {
+      status: status || null,
+      adquirente: adquirente || null,
+      from: from || null,
+      to: to || null
+    });
+    const posicao = await alterRecebiveisService.getPosicao(req.user.id);
+    res.json({
+      data,
+      posicao,
+      meta: {
+        is_empty: data.length === 0,
+        hint: data.length === 0
+          ? 'Sem recebíveis no cartão ainda. Conforme registrar vendas parceladas, aparecem aqui.'
+          : null
+      }
+    });
+  } catch (error) {
+    console.error('Error listing alter recebiveis:', error);
+    res.status(500).json({ error: 'Failed to list recebiveis' });
+  }
+});
+
+// GET /api/dashboard/alter/recebiveis/aging
+router.get('/alter/recebiveis/aging', alterGuard, heavyDashboardReadLimiter, async (req, res) => {
+  try {
+    const result = await alterRecebiveisService.getAging(req.user.id);
+    res.json(result);
+  } catch (error) {
+    console.error('Error getting alter aging:', error);
+    res.status(500).json({ error: 'Failed to get aging' });
+  }
+});
+
+// GET /api/dashboard/alter/recebiveis/mix
+router.get('/alter/recebiveis/mix', alterGuard, heavyDashboardReadLimiter, async (req, res) => {
+  try {
+    const result = await alterRecebiveisService.getMix(req.user.id);
+    res.json(result);
+  } catch (error) {
+    console.error('Error getting alter mix:', error);
+    res.status(500).json({ error: 'Failed to get mix' });
+  }
+});
+
+// GET /api/dashboard/alter/antecipacao/sugestao?horizonte_dias=30
+router.get('/alter/antecipacao/sugestao', alterGuard, heavyDashboardReadLimiter, async (req, res) => {
+  try {
+    const horizonte = req.query.horizonte_dias ? Number(req.query.horizonte_dias) : 30;
+    const result = await antecipacaoService.recomendar(req.user.id, { horizonte_dias: horizonte });
+    res.json(result);
+  } catch (error) {
+    console.error('Error getting antecipacao sugestao:', error);
+    res.status(500).json({ error: 'Failed to get sugestao' });
+  }
+});
+
+// POST /api/dashboard/alter/antecipacao/simular  body { valor_alvo, horizonte_dias }
+router.post('/alter/antecipacao/simular', alterGuard, async (req, res) => {
+  try {
+    const { valor_alvo, horizonte_dias } = req.body || {};
+    if (typeof valor_alvo !== 'number' || valor_alvo < 0) {
+      return res.status(400).json({ error: 'valor_alvo deve ser número >= 0' });
+    }
+    const result = await antecipacaoService.simular(req.user.id, {
+      valor_alvo,
+      horizonte_dias: horizonte_dias || 30
+    });
+    res.json(result);
+  } catch (error) {
+    console.error('Error simulating antecipacao:', error);
+    res.status(500).json({ error: 'Failed to simulate antecipacao' });
+  }
+});
+
+// POST /api/dashboard/alter/antecipacao/executar body { valor_alvo, horizonte_dias }
+router.post('/alter/antecipacao/executar', alterGuard, async (req, res) => {
+  try {
+    const { valor_alvo, horizonte_dias, simulacao } = req.body || {};
+    if (!simulacao && (typeof valor_alvo !== 'number' || valor_alvo <= 0)) {
+      return res.status(400).json({ error: 'envie valor_alvo > 0 ou simulacao' });
+    }
+    const result = await antecipacaoService.executar(req.user.id, {
+      valor_alvo,
+      horizonte_dias: horizonte_dias || 30,
+      simulacao
+    });
+    res.json(result);
+  } catch (error) {
+    console.error('Error executing antecipacao:', error);
+    res.status(500).json({ error: 'Failed to execute antecipacao' });
+  }
+});
+
+// POST /api/dashboard/alter/antecipacao/parar-automatica
+router.post('/alter/antecipacao/parar-automatica', alterGuard, async (req, res) => {
+  try {
+    const result = await antecipacaoService.pararAutomatica(req.user.id);
+    res.json(result);
+  } catch (error) {
+    console.error('Error stopping antecipacao automatica:', error);
+    res.status(500).json({ error: 'Failed to stop automatica' });
+  }
+});
+
+// GET /api/dashboard/alter/cobertura?horizonte_dias=90&snapshot=true
+router.get('/alter/cobertura', alterGuard, heavyDashboardReadLimiter, async (req, res) => {
+  try {
+    const horizonte = req.query.horizonte_dias ? Number(req.query.horizonte_dias) : 90;
+    const persistSnapshot = req.query.snapshot === 'true';
+    const result = await coberturaFornecedorService.calcular(req.user.id, {
+      horizonte_dias: horizonte,
+      persistSnapshot
+    });
+    res.json(result);
+  } catch (error) {
+    console.error('Error calculating cobertura:', error);
+    res.status(500).json({ error: 'Failed to calculate cobertura' });
+  }
+});
+
+// POST /api/dashboard/alter/pagar-fornecedor body { supplier_document_id?, conta_pagar_id? }
+router.post('/alter/pagar-fornecedor', alterGuard, async (req, res) => {
+  try {
+    const { supplier_document_id, conta_pagar_id } = req.body || {};
+    if (!supplier_document_id && !conta_pagar_id) {
+      return res.status(400).json({ error: 'envie supplier_document_id ou conta_pagar_id' });
+    }
+    const result = await pagarComRecebivelService.sugerir(req.user.id, {
+      supplier_document_id,
+      conta_pagar_id
+    });
+    res.json(result);
+  } catch (error) {
+    console.error('Error suggesting pagar com recebivel:', error);
+    res.status(500).json({ error: 'Failed to suggest pagar com recebivel' });
+  }
+});
+
+// POST /api/dashboard/alter/pagar-fornecedor/executar body { recebiveis_ids[], conta_pagar_id? }
+router.post('/alter/pagar-fornecedor/executar', alterGuard, async (req, res) => {
+  try {
+    const { recebiveis_ids, conta_pagar_id } = req.body || {};
+    if (!Array.isArray(recebiveis_ids) || recebiveis_ids.length === 0) {
+      return res.status(400).json({ error: 'recebiveis_ids deve ser array não vazio' });
+    }
+    const result = await pagarComRecebivelService.executar(req.user.id, {
+      recebiveis_ids,
+      conta_pagar_id
+    });
+    res.json(result);
+  } catch (error) {
+    console.error('Error executing pagar com recebivel:', error);
+    res.status(500).json({ error: 'Failed to execute pagar com recebivel' });
+  }
+});
+
 module.exports = router;
+

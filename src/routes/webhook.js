@@ -6,6 +6,7 @@ const evolutionService = require('../services/evolutionService');
 const userController = require('../controllers/userController');
 const registrationTokenService = require('../services/registrationTokenService');
 const userRateLimit = require('../middleware/userRateLimit');
+const audioTranscriptionService = require('../services/audioTranscriptionService');
 const { extractPhoneFromWebhookBody } = require('../utils/phone');
 
 // Deduplicação de mensagens: previne reprocessamento quando a Evolution reenvia o webhook
@@ -159,9 +160,10 @@ const webhookHandler = async (req, res) => {
         message.extendedTextMessage?.text ||
         '').substring(0, 5000); // Limita tamanho
 
-      // Verifica se é imagem ou documento
+      // Verifica se é imagem, documento ou áudio
       const imageMessage = message.imageMessage;
       const documentMessage = message.documentMessage;
+      const audioMessage = message.audioMessage || message.pttMessage || null;
 
       if (phone) {
         // Responde 200 OK imediatamente para a Evolution API
@@ -230,6 +232,49 @@ const webhookHandler = async (req, res) => {
                   console.error(`[WEBHOOK] [DOC] Erro ao processar documento:`, docError.message);
                   response = 'Erro ao processar documento 😢';
                 }
+              }
+            } else if (audioMessage) {
+              // Mensagem de áudio: transcreve com Whisper e injeta no fluxo de texto
+              try {
+                if (!audioTranscriptionService.isEnabled()) {
+                  response = 'Ainda não consigo entender áudios por aqui 😅\n\nPode me mandar a mesma informação por texto?';
+                } else {
+                  let base64Data = audioMessage.media || audioMessage.base64 || audioMessage.mediaBase64 || audioMessage.data;
+                  if (!base64Data) {
+                    response = 'Não consegui acessar o áudio 😢\n\nTente enviar novamente ou me mande por texto.';
+                  } else {
+                    if (typeof base64Data === 'string' && base64Data.includes(',')) {
+                      base64Data = base64Data.split(',')[1];
+                    }
+                    const audioBuffer = Buffer.from(base64Data, 'base64');
+                    const mimeType = audioMessage.mimetype || audioMessage.mimeType || 'audio/ogg';
+
+                    if (!audioTranscriptionService.isSupportedMimeType(mimeType)) {
+                      console.warn('[WEBHOOK] [AUDIO] MIME não suportado, tentando como audio/ogg:', mimeType);
+                    }
+
+                    const { text: transcribedText, durationMs } = await audioTranscriptionService.transcribe(audioBuffer, mimeType);
+                    console.log(`[WEBHOOK] [AUDIO] Transcrição em ${durationMs}ms (${transcribedText.length} chars)`);
+
+                    if (!transcribedText || transcribedText.trim().length === 0) {
+                      response = 'Não consegui entender o áudio 🤔\n\nTente falar de novo ou me mande por texto.';
+                    } else {
+                      const innerResponse = await messageController.handleIncomingMessage(phone, transcribedText);
+                      const transcricaoResumo = transcribedText.length > 240
+                        ? `${transcribedText.slice(0, 240).trim()}…`
+                        : transcribedText.trim();
+                      const header = `🎤 _Entendi assim:_ "${transcricaoResumo}"`;
+                      if (innerResponse && typeof innerResponse === 'string' && innerResponse.trim().length > 0) {
+                        response = `${header}\n\n${innerResponse}`;
+                      } else {
+                        response = header;
+                      }
+                    }
+                  }
+                }
+              } catch (audioError) {
+                console.error(`[WEBHOOK] [AUDIO] Erro ao processar áudio:`, audioError.message);
+                response = 'Erro ao processar áudio 😢\n\nTente novamente ou me mande por texto.';
               }
             } else if (messageText) {
               // Mensagem de texto normal
