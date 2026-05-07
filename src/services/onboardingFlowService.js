@@ -1424,7 +1424,7 @@ class OnboardingStateHandlers {
         return await respond(onboardingCopy.balanceQuestion(), true);
     }
 
-    async handleBalanceQuestion(onboarding, messageTrimmed, respond, respondAndClear) {
+    async handleBalanceQuestion(onboarding, messageTrimmed, respond, respondAndClear, respondAndClearMulti) {
         const choice = validateChoice(messageTrimmed, {
             'yes': ['1', 'sim', 'vou mandar', 'mandar'],
             'no': ['2', 'não', 'nao', 'seguimos']
@@ -1436,17 +1436,16 @@ class OnboardingStateHandlers {
         }
 
         if (choice === 'no') {
-            return await respondAndClear(
-                onboardingCopy.handoffToDailyUse() +
-                '\n\n' +
+            return await respondAndClearMulti([
+                onboardingCopy.handoffToDailyUse(),
                 onboardingCopy.onboardingCompletionNoMdr()
-            );
+            ]);
         }
 
         return await respond(onboardingCopy.invalidChoice(`1️⃣ Sim, vou mandar\n2️⃣ Não agora, seguimos assim`));
     }
 
-    async handleBalanceInput(onboarding, messageTrimmed, respond, respondAndClear) {
+    async handleBalanceInput(onboarding, messageTrimmed, respond, respondAndClear, respondAndClearMulti) {
         // Valida valor usando utilitário existente
         const result = validateAndExtractValue(messageTrimmed);
 
@@ -1471,24 +1470,20 @@ class OnboardingStateHandlers {
             .eq('id', onboarding.data.userId);
         }
 
-        return await respondAndClear(
-            onboardingCopy.balanceConfirmation(saldo) +
-            '\n\n' +
-            onboardingCopy.handoffToDailyUse() +
-            '\n\n' +
+        return await respondAndClearMulti([
+            onboardingCopy.balanceConfirmation(saldo) + '\n\n' + onboardingCopy.handoffToDailyUse(),
             onboardingCopy.onboardingCompletionNoMdr()
-        );
+        ]);
     }
 
-    async handleHandoffToDailyUse(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear) {
+    async handleHandoffToDailyUse(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear, respondAndClearMulti) {
         // Caso legacy: força handoff e finaliza onboarding sem MDR
         if (onboarding.data?.force_handoff) {
             delete onboarding.data.force_handoff;
-            return await respondAndClear(
-                onboardingCopy.handoffToDailyUse() +
-                '\n\n' +
+            return await respondAndClearMulti([
+                onboardingCopy.handoffToDailyUse(),
                 onboardingCopy.onboardingCompletionNoMdr()
-            );
+            ]);
         }
 
         // Detecta se a mensagem parece ser uma transação (venda ou custo)
@@ -1553,11 +1548,10 @@ class OnboardingStateHandlers {
             return null;
         }
 
-        return await respondAndClear(
-            onboardingCopy.handoffToDailyUse() +
-            '\n\n' +
+        return await respondAndClearMulti([
+            onboardingCopy.handoffToDailyUse(),
             onboardingCopy.onboardingCompletionNoMdr()
-        );
+        ]);
     }
 
     async handleMdrSetupIntro(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear) {
@@ -2144,6 +2138,29 @@ class OnboardingFlowService {
             return finalText;
         };
 
+        // Envia as N-1 primeiras mensagens via Evolution e usa respondAndClear na última
+        // (que será a que recebe o dashboardAccessLink). Permite quebrar a finalização
+        // do onboarding em mensagens menores e legíveis no WhatsApp.
+        const respondAndClearMulti = async (messages) => {
+            const list = (messages || []).filter((m) => typeof m === 'string' && m.trim().length > 0);
+            if (list.length === 0) {
+                return await respondAndClear(null);
+            }
+            if (list.length === 1) {
+                return await respondAndClear(list[0]);
+            }
+
+            const evolutionSvc = require('./evolutionService');
+            for (let i = 0; i < list.length - 1; i++) {
+                try {
+                    await evolutionSvc.sendMessage(normalizedPhone, list[i]);
+                } catch (e) {
+                    console.error('[ONBOARDING] Falha ao enviar mensagem intermediária:', e?.message || e);
+                }
+            }
+            return await respondAndClear(list[list.length - 1]);
+        };
+
         // Escape hatch global
         if (
             messageLower.includes('ajuda') ||
@@ -2218,11 +2235,11 @@ class OnboardingFlowService {
                 case 'AHA_SUMMARY':
                     return await handlers.handleAhaSummary(onboarding, normalizedPhone, respond);
                 case 'BALANCE_QUESTION':
-                    return await handlers.handleBalanceQuestion(onboarding, messageTrimmed, respond, respondAndClear);
+                    return await handlers.handleBalanceQuestion(onboarding, messageTrimmed, respond, respondAndClear, respondAndClearMulti);
                 case 'BALANCE_INPUT':
-                    return await handlers.handleBalanceInput(onboarding, messageTrimmed, respond, respondAndClear);
+                    return await handlers.handleBalanceInput(onboarding, messageTrimmed, respond, respondAndClear, respondAndClearMulti);
                 case 'HANDOFF_TO_DAILY_USE':
-                    return await handlers.handleHandoffToDailyUse(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear);
+                    return await handlers.handleHandoffToDailyUse(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear, respondAndClearMulti);
                 case 'MDR_SETUP_INTRO':
                     return await handlers.handleMdrSetupIntro(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear);
                 case 'MDR_SETUP_QUESTION':

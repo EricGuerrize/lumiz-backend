@@ -449,9 +449,9 @@ module.exports = {
     dashboardAccessLink(link) {
         return (
             `Seu dashboard já está liberado ✅\n\n` +
-            `Crie seu acesso por este link (válido por 24h):\n` +
+            `Para criar seu acesso, abra este link (válido por 24h):\n` +
             `${link}\n\n` +
-            `Depois você poderá entrar com email+senha ou telefone+senha.`
+            `Depois é só entrar pelo dashboard usando seu e-mail (ou telefone) e a senha que você acabou de cadastrar.`
         );
     },
 
