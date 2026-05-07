@@ -850,10 +850,7 @@ class UserController {
           `Seu email foi vinculado ao seu WhatsApp!\n\n` +
           `Agora você tem acesso completo:\n` +
           `🌐 https://lumiz-financeiro.vercel.app\n\n` +
-          `*Pronto pra começar?* 🚀\n\n` +
-          `Me manda sua primeira venda assim:\n` +
-          `_"Botox 2800 paciente Maria"_\n\n` +
-          `Ou manda "ajuda" que te mostro tudo que sei fazer! 😊`;
+          `*Pronto pra começar!* 🚀`;
 
         await evolutionService.sendMessage(phone, confirmationMessage);
       } catch (whatsappError) {
