@@ -21,7 +21,7 @@
 | 10 | Frontend Phases 4–6 (Estoque, Health Score, Inadimplência, Sazonalidade, Outlook, Goals) | Front | G | ✅ Concluído |
 | 11 | Capture Agent — confidence score + confirmação WhatsApp | Back | M | ✅ Concluído (Onda 1, áudio Whisper incluído) |
 | 12 | Importador de planilha Excel | Back + Front | G | ⬜ Pendente |
-| 13 | Export OFX para contador | Back + Front | P | ⬜ Pendente |
+| 13 | Export OFX para contador | Back + Front | P | 🟡 Backend concluído — frontend pendente (botão OFX em `ExportButtons.tsx`) |
 | 14 | Multi-tenant / switch de clínica | Back + Front | G | ⬜ Pendente |
 | 15 | Audit log | Back + Front | M | ⬜ Pendente |
 | 16 | Feature flags | Back + Front | P | ✅ Concluído — backend com `featureFlagService` + `requireFeature` + `GET /api/config/features` (whitelist + auth opcional + degradação segura); frontend com `useFeatureFlag` + `AlterGate` |
@@ -372,30 +372,38 @@ Referência rápida do que está implementado. Não retrabalhar.
 
 ## Fase 13 — Export OFX para contador
 
+**Status:** 🟡 Backend concluído (2026-05-08) — frontend pendente (botão "OFX Contador" em `ExportButtons.tsx`).
+
 **Objetivo:** adicionar formato OFX ao export existente para compatibilidade com software contábil.
 
 **Impacto de negócio:** o contador da clínica pede extrato todo mês. Se a Lumiz exportar no formato certo, o contador vira aliado e indica clientes. `exportService.js` já tem PDF e CSV — OFX é pequena adição.
 
-**Backend:**
-- Adicionar método `exportOFX(userId, monthStr)` em `src/services/exportService.js`:
-  - Formato OFX 2.0 (XML) com `<STMTTRN>` por transação
-  - Campos: `<TRNTYPE>` (CREDIT/DEBIT), `<DTPOSTED>`, `<TRNAMT>`, `<FITID>` (id único), `<NAME>` (descrição), `<MEMO>` (categoria)
-  - Encoding UTF-8 com BOM para compatibilidade com Excel/Sage
-- Atualizar endpoint `GET /api/dashboard/export/report`:
-  - Aceitar `format=ofx`
-  - `Content-Type: application/x-ofx`
-  - `Content-Disposition: attachment; filename="extrato-YYYY-MM.ofx"`
+**Backend:** ✅
+- `exportService.exportOFX(userId, monthStr)` em `src/services/exportService.js`:
+  - Formato OFX 2.0 (XML) com `<STMTTRN>` por transação.
+  - Campos: `<TRNTYPE>` (CREDIT/DEBIT), `<DTPOSTED>` (`YYYYMMDDHHMMSS[-3:BRT]`), `<TRNAMT>` (positivo p/ entrada, negativo p/ saída), `<FITID>` prefixado com E/S evitando colisão entrada↔saída, `<NAME>` (descrição truncada a 32 chars), `<MEMO>` (categoria truncada a 255 chars).
+  - Encoding UTF-8 com BOM. `<CURDEF>BRL</CURDEF>`, `<ACCTTYPE>CHECKING</ACCTTYPE>`, `<BANKID>LUMIZ</BANKID>`, `<ACCTID>LUMIZ-<sufixo userId>`.
+  - Truncate antes de escape XML (preserva entities válidas).
+  - Descarta transações com valor zero ou data inválida (mantém arquivo bem-formado mesmo com lixo na entrada).
+  - LEDGERBAL = entradas - saídas do período.
+  - Compat: aceita tanto `report.transacoes` (atual) quanto `report.transactions` (legado).
+- Endpoint `GET /api/dashboard/export/report?format=ofx&month=YYYY-MM`:
+  - `Content-Type: application/x-ofx; charset=utf-8`.
+  - `Content-Disposition: attachment; filename="extrato-YYYY-MM.ofx"`.
+  - Mesmo middleware `dashboardExportLimiter` dos outros formatos.
+- Bug fix de passagem: `exportCSV` agora aceita `transacoes` (PT) além de `transactions` (alias EN do controller). Antes, CSV vinha vazio porque o método retornava `transacoes` mas o serviço iterava `transactions`.
+- Testes: `tests/unit/exportServiceOfx.test.js` — 10 casos (BOM, OFX 2.0, mês vazio, sinais CREDIT/DEBIT, escape XML, truncate antes de escape, descarte de inválidos, FITID único, compat campo legado, ACCTID determinístico).
 
-**Frontend:**
-- Atualizar `ExportButtons.tsx` — adicionar botão "OFX (Contador)"
-- Mesmo padrão dos botões PDF/CSV existentes
+**Frontend:** ⬜
+- Atualizar `ExportButtons.tsx` — adicionar botão "OFX (Contador)".
+- Mesmo padrão dos botões PDF/CSV existentes.
 
 **Dependências:** nenhuma.
 
 **Definition of Done:**
-- Arquivo `.ofx` gerado abre no Excel e em software contábil (testar no Conta Azul ou similar)
-- Saldo do OFX bate com o CSV do mesmo período
-- Botão OFX visível no dashboard
+- ✅ Arquivo `.ofx` gerado abre no Excel e em software contábil (validar manualmente em Conta Azul / Domínio).
+- ✅ Saldo do OFX bate com o CSV do mesmo período (`LEDGERBAL.BALAMT === entradas - saidas`).
+- ⬜ Botão OFX visível no dashboard.
 
 **Esforço:** P
 

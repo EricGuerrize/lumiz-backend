@@ -1,6 +1,6 @@
 # Lumiz — Monitoramento de Implementação (Phases 1–6)
 
-> **Última atualização:** 2026-05-08 (Fase 16 fechada — endpoint `GET /api/config/features` com whitelist e auth opcional)
+> **Última atualização:** 2026-05-08 (Fase 13 backend — export OFX 2.0 disponível em `?format=ofx`)
 > **Repositório backend:** https://github.com/EricGuerrize/lumiz-backend
 > **Repositório frontend:** https://github.com/EricGuerrize/lumiz-financeiro
 > **Deploy backend:** Railway (branch `main` → auto-deploy)
@@ -488,6 +488,18 @@ req.headers['x-cron-secret']  // nunca req.query.secret
 - Auth opcional (Bearer best-effort, anônimo permitido), degradação segura para defaults se Supabase falhar.
 - Suíte: `tests/unit/configFeaturesEndpoint.test.js` (6 casos cobrindo defaults, whitelist filter, anônimo, token válido, token inválido, falha de DB).
 - Fase 16 marcada ✅ no [ROADMAP.md](ROADMAP.md). Frontend já tinha `useFeatureFlag` consumindo este endpoint.
+
+### Fase 13 — Export OFX para contador (backend)
+- [src/services/exportService.js](src/services/exportService.js) ganhou `exportOFX(userId, monthStr)`:
+  - OFX 2.0 (XML) com BOM UTF-8.
+  - `<STMTTRN>` por transação: TRNTYPE/DTPOSTED/TRNAMT/FITID/NAME/MEMO.
+  - FITID prefixado E/S (entrada/saída) evitando colisão de UUID compartilhado.
+  - Truncate antes de escape XML; transações inválidas (valor 0, data ruim) descartadas.
+  - LEDGERBAL = entradas - saídas do período.
+- [src/routes/dashboard.routes.js](src/routes/dashboard.routes.js) — endpoint `GET /api/dashboard/export/report` agora aceita `format=ofx`. PDF/CSV inalterados.
+- Bug fix de passagem em `exportCSV`: aceita `transacoes` (PT) além de `transactions` (alias EN). Antes, CSV vinha vazio porque o método retornava `transacoes` mas o serviço iterava `transactions`.
+- Suíte: `tests/unit/exportServiceOfx.test.js` (10 casos). Regression suite agora 113 testes.
+- Frontend pendente: botão "OFX (Contador)" em `ExportButtons.tsx`.
 
 ### Variáveis de ambiente novas
 Ver bloco completo em [HANDOFF_BACKEND.md](HANDOFF_BACKEND.md). Resumo:

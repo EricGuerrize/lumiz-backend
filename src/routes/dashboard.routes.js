@@ -943,23 +943,32 @@ router.post('/estoque/entrada', async (req, res) => {
   }
 });
 
-// GET /api/dashboard/export/report - Exportar relatório (PDF ou CSV)
+// GET /api/dashboard/export/report - Exportar relatório (PDF, CSV ou OFX)
+// Fase 13 — OFX 2.0 para envio ao contador (Conta Azul, Sage, Domínio, etc.).
 router.get('/export/report', dashboardExportLimiter, async (req, res) => {
   try {
     const format = (req.query.format || 'csv').toLowerCase();
     const monthStr = req.query.month; // YYYY-MM
+    const periodSlug = monthStr || 'atual';
 
     if (format === 'pdf') {
       const pdfBuffer = await exportService.exportPDF(req.user.id, monthStr);
       res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename="relatorio-${monthStr || 'atual'}.pdf"`);
-      res.send(pdfBuffer);
-    } else {
-      const csv = await exportService.exportCSV(req.user.id, monthStr);
-      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-      res.setHeader('Content-Disposition', `attachment; filename="relatorio-${monthStr || 'atual'}.csv"`);
-      res.send(csv);
+      res.setHeader('Content-Disposition', `attachment; filename="relatorio-${periodSlug}.pdf"`);
+      return res.send(pdfBuffer);
     }
+
+    if (format === 'ofx') {
+      const ofx = await exportService.exportOFX(req.user.id, monthStr);
+      res.setHeader('Content-Type', 'application/x-ofx; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="extrato-${periodSlug}.ofx"`);
+      return res.send(ofx);
+    }
+
+    const csv = await exportService.exportCSV(req.user.id, monthStr);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="relatorio-${periodSlug}.csv"`);
+    return res.send(csv);
   } catch (error) {
     console.error('Error exporting report:', error);
     res.status(500).json({ error: 'Failed to export report' });

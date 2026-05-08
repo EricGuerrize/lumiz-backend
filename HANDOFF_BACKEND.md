@@ -209,6 +209,7 @@ As fases 9 e 10 são majoritariamente frontend. No backend, o foco é garantir c
 - `tests/unit/coberturaFornecedorService.test.js`
 - `tests/unit/pagarComRecebivelService.test.js`
 - `tests/unit/configFeaturesEndpoint.test.js`
+- `tests/unit/exportServiceOfx.test.js`
 
 ## Matriz feature × endpoint × empty state
 
@@ -292,3 +293,43 @@ Quem alterar código DEVE atualizar, na mesma PR/commit:
 - `alterInsightCronService._listTargetUsers` faz N+1 lookups de feature flag. Refatorar para RPC `select_users_with_feature_flag` quando a base passar de ~500 usuários ativos.
 - `realAlterAdapter` é stub — os métodos lançam `NotImplementedError` enquanto sandbox/contrato Alter não chegam.
 - `GET /api/config/features` é público (sem rate limiting próprio além do global). Avaliar inclusão no `userRateLimit` se virar rota muito chamada.
+- `exportOFX` usa `BANKID=LUMIZ` (placeholder, não código bancário real). Alguns parsers contábeis exigem código de instituição numérico — se um cliente reclamar, expor `OFX_BANK_ID` como env var.
+
+---
+
+# Fase 13 — Export OFX
+
+## Endpoints
+
+| Método | Rota | Body / Query |
+|---|---|---|
+| GET | `/api/dashboard/export/report?format=ofx&month=YYYY-MM` | gera OFX 2.0 (BOM UTF-8) com `Content-Type: application/x-ofx; charset=utf-8` e `Content-Disposition: attachment; filename="extrato-YYYY-MM.ofx"` |
+
+Os formatos existentes (`format=pdf`, `format=csv`, padrão `csv`) continuam funcionando sem mudança de contrato.
+
+## Estrutura OFX gerada
+
+- Header: `<?xml version="1.0" encoding="UTF-8"?>` + `<?OFX OFXHEADER="200" VERSION="200"...?>`.
+- `<SIGNONMSGSRSV1>` com `<FI><ORG>Lumiz</ORG><FID>LUMIZ</FID></FI>`.
+- `<BANKMSGSRSV1>` com 1 `<STMTTRNRS>`:
+  - `<BANKACCTFROM>`: `BANKID=LUMIZ`, `ACCTID=LUMIZ-<sufixo userId 12 chars hex>`, `ACCTTYPE=CHECKING`.
+  - `<BANKTRANLIST>` com `DTSTART`/`DTEND` no formato `YYYYMMDDHHMMSS[-3:BRT]` e 1 `<STMTTRN>` por transação.
+  - `<LEDGERBAL>`: `BALAMT = entradas - saidas` do período.
+- Cada `<STMTTRN>`:
+  - `TRNTYPE`: `CREDIT` (entrada) ou `DEBIT` (saída).
+  - `DTPOSTED`: data da transação às 12:00 BRT (evita drift de timezone).
+  - `TRNAMT`: positivo para entrada, negativo para saída, 2 decimais.
+  - `FITID`: `E<id-sanitizado>` ou `S<id-sanitizado>` (255 chars max). Prefixo previne colisão entrada↔saída quando UUIDs coincidem.
+  - `NAME`: descrição truncada a 32 chars (limite OFX 2.0).
+  - `MEMO`: categoria truncada a 255 chars (omitido se vazio).
+- BOM UTF-8 (`\uFEFF`) prefixa o arquivo todo (compat Excel / Sage legacy).
+
+## Garantias de robustez
+
+- Truncate é aplicado **antes** do escape XML (preserva entities `&amp;`/`&lt;`/`&gt;`/`&quot;`/`&apos;`).
+- Transação com valor 0 ou data inválida é silenciosamente descartada (preserva arquivo bem-formado mesmo com dados ruins).
+- Mês vazio gera OFX válido com `<BANKTRANLIST>` sem `<STMTTRN>`.
+
+## Frontend pendente
+
+- Adicionar botão "OFX (Contador)" em `ExportButtons.tsx` apontando para `?format=ofx`. Ver prompt de handoff frontend.
