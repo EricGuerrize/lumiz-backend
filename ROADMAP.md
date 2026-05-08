@@ -24,7 +24,7 @@
 | 13 | Export OFX para contador | Back + Front | P | ⬜ Pendente |
 | 14 | Multi-tenant / switch de clínica | Back + Front | G | ⬜ Pendente |
 | 15 | Audit log | Back + Front | M | ⬜ Pendente |
-| 16 | Feature flags | Back + Front | P | ✅ Concluído — frontend com `useFeatureFlag` + `AlterGate`; **`GET /api/config/features` ainda pendente no backend** (degradação segura → flags `false`) |
+| 16 | Feature flags | Back + Front | P | ✅ Concluído — backend com `featureFlagService` + `requireFeature` + `GET /api/config/features` (whitelist + auth opcional + degradação segura); frontend com `useFeatureFlag` + `AlterGate` |
 | 17 | Analytics de produto (PostHog) | Back + Front | M | ⬜ Pendente |
 | 18 | MFA obrigatório | Back + Front | M | ⬜ Pendente |
 | 19 | LGPD: export de dados + direito ao esquecimento | Back + Front | M | ⬜ Pendente |
@@ -488,7 +488,7 @@ Referência rápida do que está implementado. Não retrabalhar.
 
 ## Fase 16 — Feature flags
 
-**Status:** 🟡 Concluído (backend) — frontend (hook `useFeatureFlag`) pendente. Entregue via Onda 3.A do plano `backend_completo_financeiro_alter_whatsapp`.
+**Status:** ✅ Concluído (backend + frontend). Entrega backend em duas ondas: serviço/middleware na Onda 3.A; endpoint público `GET /api/config/features` em 2026-05-08.
 
 **Objetivo:** permitir ativar/desativar features por ambiente ou por clínica sem redeploy.
 
@@ -498,11 +498,18 @@ Referência rápida do que está implementado. Não retrabalhar.
 - `src/services/featureFlagService.js`: layered resolver (DB user → DB global → env JSON → env booleano → default false). Cache 60s.
 - Migration `supabase/migrations/20260507000030_create_feature_flags.sql`: tabela `feature_flags(user_id, name, enabled, meta)` + RLS.
 - Middleware `requireFeature(flag)` exposto via `featureFlagService.requireFeature` — usado em todas as rotas Alter (`/api/dashboard/alter/*`).
-- Endpoint `GET /api/config/features`: pendente (consumo direto do service em rotas + middleware atende o caso atual).
+- Registry `src/config/featureFlagsRegistry.js`: whitelist de flags expostas (`alter_enabled`, `excel_import`, `ofx_export`, `multi_tenant`, `audit_log`, `posthog_enabled`, `mfa_required`, `lgpd_self_service`).
+- Rota `src/routes/config.routes.js` montada em `app.use('/api/config', ...)`. `GET /api/config/features`:
+  - Auth opcional (Bearer best-effort, nunca bloqueia anônimo).
+  - Resposta sempre 200 com `{ flags, descriptions, resolvedFor: { user_id }, meta }`.
+  - Filtra para a whitelist (flags fora do registry nunca vazam).
+  - Em erro do service, degrada para defaults (`false`) sem 5xx.
+- Testes: `tests/unit/configFeaturesEndpoint.test.js` (6 casos: defaults, whitelist filter, anônimo, token válido, token inválido, falha de DB).
 
-**Frontend:** ⬜
-- Hook `useFeatureFlag(flagName: string): boolean` consumindo o endpoint
-- Guard em componentes novos: `{useFeatureFlag('excel_import') && <ImportButton />}`
+**Frontend:** ✅
+- Hook `useFeatureFlag(flagName: string): boolean` consumindo o endpoint.
+- Guard em componentes novos: `{useFeatureFlag('excel_import') && <ImportButton />}`.
+- `AlterGate` envolve rotas `/dashboard/alter/*`.
 
 **Dependências:** nenhuma.
 

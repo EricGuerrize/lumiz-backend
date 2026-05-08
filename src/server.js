@@ -40,6 +40,7 @@ const authRoutes = require('./routes/auth.routes');
 const mdrRoutes = require('./routes/mdr.routes');
 const clinicMembersRoutes = require('./routes/clinicMembers.routes');
 const adminRoutes = require('./routes/admin.routes');
+const configRoutes = require('./routes/config.routes');
 const asaasWebhookRoutes = require('./routes/webhooks');
 const reminderService = require('./services/reminderService');
 const nudgeService = require('./services/nudgeService');
@@ -269,6 +270,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/mdr', mdrRoutes);
 app.use('/api/clinic-members', clinicMembersRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/config', configRoutes);
 app.use('/webhooks', asaasWebhookRoutes);
 
 app.get('/health', async (req, res) => {
@@ -447,6 +449,9 @@ app.get('/', (req, res) => {
         reminders: '/api/cron/reminders',
         monthlyReport: '/api/cron/monthly-report',
         alterInsights: '/api/cron/alter-insights'
+      },
+      config: {
+        features: '/api/config/features'
       },
       dashboard: {
         summary: '/api/dashboard/summary',

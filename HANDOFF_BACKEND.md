@@ -146,6 +146,12 @@ As fases 9 e 10 são majoritariamente frontend. No backend, o foco é garantir c
 ### Feature flag (Fase 16)
 - `featureFlagService.isEnabled(flag, userId)` resolve em camadas: tabela por user → tabela global → `FEATURE_FLAGS` JSON env → env booleano (`ALTER_ENABLED`) → default false.
 - Middleware `requireFeature(flag)` em `src/services/featureFlagService.js`.
+- Whitelist exposta ao frontend: `src/config/featureFlagsRegistry.js` (flags conhecidas + descrição + default). Flags fora do registry NÃO são devolvidas pelo `/api/config/features`.
+- Endpoint público `GET /api/config/features` (auth opcional, sempre 200):
+  - Bearer token válido → propaga `user_id` em `resolvedFor` e no merge.
+  - Sem token / token inválido → resolve apenas globais/env (`resolvedFor.user_id = null`).
+  - DB indisponível → degrada para defaults (`false`) sem 5xx.
+  - Resposta: `{ flags: { alter_enabled, excel_import, ofx_export, multi_tenant, audit_log, posthog_enabled, mfa_required, lgpd_self_service }, descriptions, resolvedFor, meta: { generated_at } }`.
 
 ### Endpoints (todos atrás de `requireFeature('alter_enabled')`)
 | Método | Rota | Body / Query |
@@ -202,6 +208,7 @@ As fases 9 e 10 são majoritariamente frontend. No backend, o foco é garantir c
 - `tests/unit/antecipacaoService.test.js`
 - `tests/unit/coberturaFornecedorService.test.js`
 - `tests/unit/pagarComRecebivelService.test.js`
+- `tests/unit/configFeaturesEndpoint.test.js`
 
 ## Matriz feature × endpoint × empty state
 
@@ -283,6 +290,5 @@ Quem alterar código DEVE atualizar, na mesma PR/commit:
 ## Débito técnico conhecido
 
 - `alterInsightCronService._listTargetUsers` faz N+1 lookups de feature flag. Refatorar para RPC `select_users_with_feature_flag` quando a base passar de ~500 usuários ativos.
-- Endpoint `GET /api/config/features` (Fase 16) ainda não exposto — hoje o middleware `requireFeature` cobre o uso atual; criar quando o frontend implementar `useFeatureFlag`.
 - `realAlterAdapter` é stub — os métodos lançam `NotImplementedError` enquanto sandbox/contrato Alter não chegam.
-- Hook `useFeatureFlag` no frontend pendente (Fase 16 backend pronto).
+- `GET /api/config/features` é público (sem rate limiting próprio além do global). Avaliar inclusão no `userRateLimit` se virar rota muito chamada.

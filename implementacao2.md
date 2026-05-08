@@ -1,6 +1,6 @@
 # Lumiz — Monitoramento de Implementação (Phases 1–6)
 
-> **Última atualização:** 2026-05-04 (PDF Lumiz Estética — outlook, compras fornecedor, simulador presets, nota calendário)
+> **Última atualização:** 2026-05-08 (Fase 16 fechada — endpoint `GET /api/config/features` com whitelist e auth opcional)
 > **Repositório backend:** https://github.com/EricGuerrize/lumiz-backend
 > **Repositório frontend:** https://github.com/EricGuerrize/lumiz-financeiro
 > **Deploy backend:** Railway (branch `main` → auto-deploy)
@@ -481,6 +481,13 @@ req.headers['x-cron-secret']  // nunca req.query.secret
 - Endpoints novos com `meta: { is_empty, hint }`.
 - Handoff: [HANDOFF_BACKEND.md](HANDOFF_BACKEND.md) (seção "Onda 1–4").
 - Suítes novas: `tests/unit/audioTranscriptionService.test.js`, `captureConfirmFlow.test.js`, `supplierDocumentService.test.js`, `contasReceberService.test.js`, `alterAdapter.contract.test.js`, `alterRecebiveisService.test.js`, `antecipacaoService.test.js`, `coberturaFornecedorService.test.js`, `pagarComRecebivelService.test.js`.
+
+### Patch Fase 16 — `GET /api/config/features`
+- Whitelist registry: [src/config/featureFlagsRegistry.js](src/config/featureFlagsRegistry.js) (8 flags: `alter_enabled`, `excel_import`, `ofx_export`, `multi_tenant`, `audit_log`, `posthog_enabled`, `mfa_required`, `lgpd_self_service`).
+- Rota: [src/routes/config.routes.js](src/routes/config.routes.js) montada em `app.use('/api/config', configRoutes)` (server.js).
+- Auth opcional (Bearer best-effort, anônimo permitido), degradação segura para defaults se Supabase falhar.
+- Suíte: `tests/unit/configFeaturesEndpoint.test.js` (6 casos cobrindo defaults, whitelist filter, anônimo, token válido, token inválido, falha de DB).
+- Fase 16 marcada ✅ no [ROADMAP.md](ROADMAP.md). Frontend já tinha `useFeatureFlag` consumindo este endpoint.
 
 ### Variáveis de ambiente novas
 Ver bloco completo em [HANDOFF_BACKEND.md](HANDOFF_BACKEND.md). Resumo:
