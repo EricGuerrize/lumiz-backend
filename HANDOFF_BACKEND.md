@@ -422,3 +422,90 @@ Outras mutações (colaboradores, fornecedores CRUD, NF validade, preferences, p
 ## Frontend pendente
 
 - Página `/dashboard/configuracoes/audit-log` consumindo `GET /api/dashboard/audit-log` com filtros e paginação. Ver prompt de handoff.
+
+---
+
+# Fase 19 — LGPD: portabilidade + esquecimento
+
+## Visão geral
+
+Atende os direitos LGPD Art. 18, V (portabilidade) e Art. 18, VI (eliminação). Todos os endpoints estão sob `/api/user/*`.
+
+## Schema
+
+Migration `20260508000050_create_account_deletion_tokens.sql` (aplicada em prod). Tabela:
+
+```
+account_deletion_tokens
+  id              uuid PK default gen_random_uuid()
+  user_id         uuid NOT NULL references profiles(id) ON DELETE CASCADE
+  token           uuid NOT NULL unique default gen_random_uuid()
+  expira_em       timestamptz NOT NULL
+  usado_em        timestamptz NULL
+  requested_ip    varchar(45)
+  requested_user_agent text
+  created_at      timestamptz default now()
+```
+
+RLS: usuário só lê o próprio. Mutações apenas service-role.
+
+## Endpoints
+
+### `GET /api/user/export-data`
+
+**Auth:** Bearer JWT.
+
+**Query opcional:** `?download=true` retorna o JSON inline com `Content-Disposition: attachment` (testes/admin); padrão é envio por email.
+
+**Comportamento padrão (sem `download`):**
+1. Coleta dump completo em memória (28 tabelas com `user_id` + `parcelas` via `atendimentos`).
+2. Envia anexo `lumiz-export-<userId>-<YYYY-MM-DD>.json` para `req.user.email` via Resend.
+3. Devolve `202` com `summary` (contagem por tabela), `generated_at`, `delivered`, `to`.
+
+**Erros:**
+- `400` se usuário não tem email cadastrado.
+- `202` com `delivered:false` + warning se o envio do email falhar (export foi gerado mas email pifou).
+
+### `DELETE /api/user/account`
+
+**Auth:** Bearer JWT. **Não exclui imediatamente.**
+
+1. Cria token UUID em `account_deletion_tokens` (TTL 24h).
+2. Reaproveita token ativo recente (<60min) — evita spam de emails se o usuário clicar várias vezes.
+3. Manda email de confirmação com link para `${FRONTEND_URL}/conta/confirmar-exclusao?token=<uuid>`.
+4. Resposta `202` com `expira_em`, `delivered`, `reused`.
+
+### `POST /api/user/account/confirm-delete`
+
+**Auth:** Pelo próprio token (NÃO exige Bearer JWT — o link é aberto no email, possivelmente em outro device).
+
+**Body:** `{ "token": "<uuid>" }` (também aceita `?token=` query).
+
+**Pipeline (em ordem):**
+1. `cancelSubscription(userId)` — `UPDATE subscriptions SET status='cancelled' WHERE clinic_id = userId` (single-tenant atual: clinic_id = userId).
+2. `anonymizeAuditLog(userId)` — zera `user_id`, `ip_address`, `user_agent` em `audit_log`. Mantém `action`/`entity_type` para preservar trilha sem PII.
+3. `purgeOperationalData(userId)` — `DELETE` em todas as 27 tabelas operacionais com `user_id`. Cascateia parcelas via FK em `atendimentos`. NÃO deleta `audit_log` nem `profiles`.
+4. `softDeleteProfile(userId)` — define `is_active=false`, `deactivated_at=now()`, e zera nome/clinica/telefone/email/cidade/whatsapp_contato/responsavel_info.
+
+**Status codes:**
+- `200` em sucesso. Resposta inclui `summary.purged_tables` com `{ atendimentos: 12, contas_pagar: 5, ... }`.
+- `400` para token ausente/inválido/usado (`code: TOKEN_MISSING/TOKEN_INVALID/TOKEN_USED`).
+- `410` para token expirado (`code: TOKEN_EXPIRED`).
+
+## Garantias do service
+
+- **Confirmação dupla**: a sessão autenticada inicia (DELETE), mas só o clique no email finaliza (POST). Reduz drasticamente exclusões acidentais ou por sequestro de sessão.
+- **Idempotência**: dois `DELETE /account` em sequência reaproveitam o mesmo token (não criam dois emails).
+- **Degradação graciosa**: cada step do pipeline reporta erro individualmente em vez de abortar. Se `purgeOperationalData` falhar em uma tabela, a anonymization e o soft-delete ainda rodam.
+- **PII zerada por placeholder único**: email vira `deleted-<uuid>@lumiz.deleted` e telefone `+0deleted<id>` para evitar conflito com índices unique e deixar explícito que a conta foi excluída.
+- **Auth user (Supabase Auth) NÃO é excluído** — operação manual do operador. Permite trilha de auditoria interna mesmo após exclusão.
+
+## Frontend pendente
+
+- Página `/configuracoes/privacidade` (ou seção em `/configuracoes`):
+  - Botão **Exportar meus dados** → `GET /api/user/export-data`. Mostrar toast: "Vamos enviar o JSON com seus dados para `<email>` em alguns segundos. Pode levar até 1 minuto."
+  - Botão **Excluir minha conta** → modal de confirmação com input de texto que exige digitar `EXCLUIR`. Ao confirmar, chama `DELETE /api/user/account` e mostra: "Enviamos um email de confirmação para `<email>`. Clique no link em até 24h para finalizar."
+- Página pública `/conta/confirmar-exclusao?token=<uuid>`:
+  - Lê `token` da query, mostra resumo do que vai acontecer, botão "Confirmar exclusão definitiva".
+  - Ao clicar, chama `POST /api/user/account/confirm-delete` com `{ token }`.
+  - Em sucesso: mostra `summary.purged_tables` e CTA "Voltar ao site". Em token inválido/expirado: mostra erro humano em PT-BR.

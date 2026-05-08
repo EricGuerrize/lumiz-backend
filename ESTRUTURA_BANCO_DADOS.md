@@ -1,6 +1,6 @@
 # 📊 Estrutura do Banco de Dados - Lumiz
 
-**Última atualização:** 08/05/2026 (Fase 15 — `audit_log`)
+**Última atualização:** 07/05/2026 (Fase 19 — `account_deletion_tokens`)
 
 Esta documentação detalha a estrutura completa do banco de dados Supabase utilizado pelo sistema Lumiz.
 
@@ -486,6 +486,27 @@ Campos adicionados:
 
 **Mascaramento:** chaves sensíveis (senha, token, cpf, jwt, pix_chave, cartao*, cvv...) viram `***` recursivamente em `old_value`/`new_value`.
 
+### `account_deletion_tokens`
+**Descrição:** Tokens de confirmação para exclusão de conta (Fase 19 — LGPD Art. 18, VI). Confirmação dupla: o usuário inicia pela sessão autenticada e finaliza clicando no link enviado por email.
+
+**Migration:** `supabase/migrations/20260508000050_create_account_deletion_tokens.sql`
+
+**Colunas principais:**
+- `id` (PK uuid)
+- `user_id` (FK → profiles, ON DELETE CASCADE)
+- `token` (uuid unique, gerado com `gen_random_uuid()`)
+- `expira_em` (timestamptz, default agora + 24h)
+- `usado_em` (timestamptz NULL — marca consumo único)
+- `requested_ip` (varchar 45)
+- `requested_user_agent` (text)
+- `created_at`
+
+**Índices:** `(user_id, created_at DESC)`, índice parcial em `token WHERE usado_em IS NULL` para lookup rápido de tokens ativos.
+
+**RLS:** leitura por usuário autenticado restrita a `user_id = auth.uid()`; escrita só via service-role.
+
+**Uso:** Backend cria via `lgpdService.requestDeletionToken()` quando o usuário chama `DELETE /api/user/account`. Validação e consumo via `lgpdService.consumeDeletionToken()` em `POST /api/user/account/confirm-delete`.
+
 ---
 
 ## 📊 Relacionamentos Principais
@@ -501,6 +522,7 @@ profiles (1) ──→ (N) alter_recebiveis
 profiles (1) ──→ (N) alter_antecipacoes
 profiles (1) ──→ (N) alter_cobertura_snapshots
 profiles (1) ──→ (N) audit_log
+profiles (1) ──→ (N) account_deletion_tokens
 
 atendimentos (1) ──→ (N) atendimento_procedimentos
 atendimentos (1) ──→ (N) parcelas

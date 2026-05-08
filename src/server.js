@@ -477,6 +477,12 @@ app.get('/', (req, res) => {
         exportReport: '/api/dashboard/export/report',
         auditLog: '/api/dashboard/audit-log'
       },
+      user: {
+        linkEmail: 'POST /api/user/link-email',
+        exportData: 'GET /api/user/export-data',
+        deleteAccount: 'DELETE /api/user/account',
+        confirmDelete: 'POST /api/user/account/confirm-delete'
+      },
       auth: {
         note: 'Use Authorization: Bearer <supabase_token> or x-user-phone header'
       }

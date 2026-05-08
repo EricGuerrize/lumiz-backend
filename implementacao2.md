@@ -1,6 +1,6 @@
 # Lumiz — Monitoramento de Implementação (Phases 1–6)
 
-> **Última atualização:** 2026-05-08 (Fase 15 backend — `audit_log` + `auditLogService` + `GET /api/dashboard/audit-log`)
+> **Última atualização:** 2026-05-07 (Fase 19 backend — LGPD: export + esquecimento)
 > **Repositório backend:** https://github.com/EricGuerrize/lumiz-backend
 > **Repositório frontend:** https://github.com/EricGuerrize/lumiz-financeiro
 > **Deploy backend:** Railway (branch `main` → auto-deploy)
@@ -488,6 +488,23 @@ req.headers['x-cron-secret']  // nunca req.query.secret
 - Auth opcional (Bearer best-effort, anônimo permitido), degradação segura para defaults se Supabase falhar.
 - Suíte: `tests/unit/configFeaturesEndpoint.test.js` (6 casos cobrindo defaults, whitelist filter, anônimo, token válido, token inválido, falha de DB).
 - Fase 16 marcada ✅ no [ROADMAP.md](ROADMAP.md). Frontend já tinha `useFeatureFlag` consumindo este endpoint.
+
+### Fase 19 — LGPD: export + esquecimento (backend)
+- Migration: [supabase/migrations/20260508000050_create_account_deletion_tokens.sql](supabase/migrations/20260508000050_create_account_deletion_tokens.sql) (aplicada em produção via MCP). Tabela com TTL 24h, RLS, índice parcial em tokens ativos.
+- Service: [src/services/lgpdService.js](src/services/lgpdService.js):
+  - `collectUserData()` varre 28 tabelas com `user_id` + `parcelas` (via JOIN em `atendimentos.id`). Retorna dump JSON estruturado por tabela com `summary` de contagem.
+  - `requestDeletionToken()` cria token com TTL 24h; reaproveita token ativo recente (<60min).
+  - `consumeDeletionToken()` valida expiração + usado_em (codes: `TOKEN_MISSING/INVALID/USED/EXPIRED`).
+  - `executeDeletion()` pipeline: `cancelSubscription` → `anonymizeAuditLog` → `purgeOperationalData` → `softDeleteProfile`. Cada step degrada graciosamente.
+  - `anonymizeAuditLog` zera `user_id`/`ip_address`/`user_agent` em audit_log (preserva action/entity para auditoria sem PII).
+  - `softDeleteProfile` zera nome/clínica/telefone/email/cidade + `is_active=false` + `deactivated_at`. Email vira `deleted-<uuid>@lumiz.deleted` (placeholder único).
+- Templates email: [src/copy/lgpdEmailCopy.js](src/copy/lgpdEmailCopy.js) — export (com anexo JSON) e confirmação (link `${FRONTEND_URL}/conta/confirmar-exclusao?token=...`).
+- Endpoints em [src/routes/user.routes.js](src/routes/user.routes.js):
+  - `GET /api/user/export-data` — auth Bearer. Suporta `?download=true` para inline. Padrão: envia anexo por email + 202 com summary.
+  - `DELETE /api/user/account` — auth Bearer. Gera token e envia email. Idempotente em <60min.
+  - `POST /api/user/account/confirm-delete` — público (autenticado pelo token). Body `{token}`. Resposta inclui `summary.purged_tables`.
+- Suíte: [tests/unit/lgpdService.test.js](tests/unit/lgpdService.test.js) (21 casos). Regression suite: **148 testes verde**.
+- Frontend pendente: configurações → privacidade + página `/conta/confirmar-exclusao`.
 
 ### Fase 15 — Audit log (backend)
 - Migration: [supabase/migrations/20260508000040_create_audit_log.sql](supabase/migrations/20260508000040_create_audit_log.sql) (aplicada em produção via MCP).

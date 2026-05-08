@@ -27,7 +27,7 @@
 | 16 | Feature flags | Back + Front | P | ✅ Concluído — backend com `featureFlagService` + `requireFeature` + `GET /api/config/features` (whitelist + auth opcional + degradação segura); frontend com `useFeatureFlag` + `AlterGate` |
 | 17 | Analytics de produto (PostHog) | Back + Front | M | ⬜ Pendente |
 | 18 | MFA obrigatório | Back + Front | M | ⬜ Pendente |
-| 19 | LGPD: export de dados + direito ao esquecimento | Back + Front | M | ⬜ Pendente |
+| 19 | LGPD: export de dados + direito ao esquecimento | Back + Front | M | 🟡 Backend concluído |
 | 20 | Integrações futuras (Pluggy, Adquirentes, NFe.io, Alter) | Back | G | ⏸️ Bloqueado go-live (Alter real — falta sandbox/contrato) |
 | 21 | Ondas 2–4 frontend (Supplier Docs, Fornecedores, Contas a receber, painéis Alter) | Front | G | ✅ Concluído — ver `lumiz-financeiro/HANDOFF_FRONTEND.md` (Onda 1–4) |
 | 20.4 | Alter — telas dashboard | Front | M | 🟡 Concluído (mock) — `/dashboard/alter/*` atrás de `alter_enabled`; produção depende da fase 20 |
@@ -604,42 +604,44 @@ Referência rápida do que está implementado. Não retrabalhar.
 
 ## Fase 19 — LGPD: export de dados + direito ao esquecimento
 
+**Status:** 🟡 Backend concluído (07/05/2026). Frontend pendente.
+
 **Objetivo:** implementar export completo de dados do usuário e fluxo de exclusão de conta conforme LGPD.
 
 **Impacto de negócio:** obrigação legal. Sem isso, o produto não pode receber o primeiro pagamento com segurança jurídica. Prazo legal: 15 dias para atender solicitação.
 
-**Backend:**
-- Criar `src/services/lgpdService.js`:
-  - `exportUserData(userId)`:
-    - Dump completo de todas as tabelas do usuário (`atendimentos`, `contas_pagar`, `parcelas`, `clientes`, `procedimentos`, `estoque`, `metas`, `audit_log`, `reminders_sent`)
-    - Formato JSON estruturado por entidade
-    - Enviar por email via `emailReportService` (Resend já integrado)
-    - Retornar também como download direto
-  - `deleteUserData(userId)`:
-    - Cascade delete de dados operacionais
-    - Anonimizar `audit_log` (substituir `user_id` por hash, manter registros por 5 anos — obrigação fiscal)
-    - Cancelar subscription ativa
-    - Desativar profile (`is_active = false`, `deactivated_at = now()`)
-    - NÃO deletar dados financeiros com obrigação fiscal de 5 anos (manter anonimizados)
-- Endpoints:
-  ```
-  GET    /api/user/export-data    → gera export e envia por email
-  DELETE /api/user/account        → solicita exclusão (requer confirmação por email)
-  POST   /api/user/account/confirm-delete  → confirma exclusão após email
-  ```
+**Backend (entregue):**
+- `src/services/lgpdService.js` com pipeline completo:
+  - `collectUserData(userId)` — varre 28 tabelas com `user_id` + `parcelas` (via `atendimentos.id`) e devolve dump JSON estruturado por tabela com `summary` de contagem.
+  - `requestDeletionToken(userId, req)` — cria token UUID com TTL 24h em `account_deletion_tokens`. Reaproveita token ativo recente (<60min) para evitar spam de email.
+  - `consumeDeletionToken(token)` — valida e marca usado_em. Codes: `TOKEN_MISSING/INVALID/USED/EXPIRED`.
+  - `executeDeletion(userId)` — pipeline: cancelSubscription → anonymizeAuditLog → purgeOperationalData → softDeleteProfile.
+  - `anonymizeAuditLog` zera user_id/ip/user_agent (preserva trilha sem PII).
+  - `softDeleteProfile` zera nome/clinica/telefone/email/cidade, define `is_active=false` e `deactivated_at=now()`.
+  - `purgeOperationalData` deleta operacional (atendimentos, contas, fornecedores, supplier_documents, alter_*, etc.); cascateia parcelas via FK; **não** deleta `audit_log` nem `profiles`.
+  - Tudo degrada graciosamente: erros viram `console.warn` + `error` no relatório, nunca rejeitam.
+- Migration `20260508000050_create_account_deletion_tokens.sql` aplicada no Supabase (`whmbyfnwnlbrfmgdwdfw`). Tabela com RLS (usuário só lê os próprios), índice parcial em tokens ativos.
+- Templates de email LGPD em `src/copy/lgpdEmailCopy.js` (export + confirmação) com link para `${FRONTEND_URL}/conta/confirmar-exclusao?token=...`.
+- Endpoints em `src/routes/user.routes.js`:
+  - `GET /api/user/export-data` (auth Bearer) — gera dump, envia anexo JSON por email, devolve `summary`. Suporta `?download=true` para inline.
+  - `DELETE /api/user/account` (auth Bearer) — gera token, envia email de confirmação. Idempotente em <60min.
+  - `POST /api/user/account/confirm-delete` — público, autenticado pelo token. Body: `{ token }`. Resposta inclui `summary.purged_tables`.
+- Tests: `tests/unit/lgpdService.test.js` (21 cenários — mock chainable thenable estilo supabase-js). Adicionado ao `test:regression` (148 verdes).
 
-**Frontend:**
+**Frontend (pendente — prompt no fim do HANDOFF_BACKEND):**
 - Seção "Privacidade e dados" em `/configuracoes`:
-  - Botão "Exportar meus dados" — feedback: "você receberá um email em até 24h"
-  - Botão "Excluir conta" — modal de confirmação com campo de texto "EXCLUIR" + aviso sobre dados fiscais
+  - Botão "Exportar meus dados" — feedback: "Enviamos para `<email>` em alguns segundos."
+  - Botão "Excluir conta" — modal de confirmação com texto digitado "EXCLUIR" + aviso de irreversibilidade.
+- Página `/conta/confirmar-exclusao?token=...` — chama `POST /api/user/account/confirm-delete` e mostra summary.
 
-**Dependências:** Fase 15 (audit log) — necessário para anonimização correta.
+**Dependências:** Fase 15 (audit log) ✅ — anonimização correta requer schema do audit_log.
 
 **Definition of Done:**
-- Export gera JSON com todas as entidades do usuário e envia por email
-- Exclusão anonimiza audit log e desativa conta
-- Dados com obrigação fiscal permanecem anonimizados por 5 anos
-- Fluxo de exclusão exige confirmação dupla (modal + email)
+- ✅ Export gera JSON com todas as entidades do usuário e envia por email.
+- ✅ Exclusão anonimiza audit log, cancela subscription, purga operacional e soft-delete profile.
+- ✅ Confirmação dupla (sessão autenticada + token de email) — não deleta sem o usuário clicar no link.
+- ✅ Service nunca explode: cada step reporta erro individualmente.
+- ⬜ Frontend: configurações → privacidade.
 
 **Esforço:** M
 
