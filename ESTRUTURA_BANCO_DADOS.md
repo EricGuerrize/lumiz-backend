@@ -1,6 +1,6 @@
 # 📊 Estrutura do Banco de Dados - Lumiz
 
-**Última atualização:** 07/05/2026
+**Última atualização:** 08/05/2026 (Fase 15 — `audit_log`)
 
 Esta documentação detalha a estrutura completa do banco de dados Supabase utilizado pelo sistema Lumiz.
 
@@ -461,6 +461,31 @@ Campos adicionados:
 
 **Uso:** histórico de cobertura, ranking de fornecedores em risco e componente `cobertura_fornecedor` do health score.
 
+### `audit_log`
+**Descrição:** Append-only log de mutações críticas (POST/PUT/DELETE/PATCH). Captura quem alterou o quê, quando, com IP e user-agent.
+
+**Migration:** `supabase/migrations/20260508000040_create_audit_log.sql`
+
+**Colunas principais:**
+- `id` (PK)
+- `user_id` (FK → profiles, ON DELETE SET NULL)
+- `clinic_id` (reservado para Fase 14 multi-tenant — hoje sempre NULL)
+- `action` (varchar 100): ex `transaction_updated`, `goal_updated`, `estoque_entrada`
+- `entity_type` (varchar 50): ex `transaction`, `monthly_goal`, `supplier_document`
+- `entity_id` (text): UUID ou chave composta como `goal:2026:5`
+- `old_value`, `new_value` (jsonb com dados sensíveis mascarados)
+- `ip_address` (varchar 45, suporta IPv6)
+- `user_agent` (text, truncado a 500 chars no service)
+- `created_at`
+
+**Índices:** `(user_id, created_at DESC)`, `(entity_type, entity_id)`, `(action, created_at DESC)`.
+
+**RLS:** leitura por usuário autenticado restrita a `user_id = auth.uid()`; escrita só via service-role (backend).
+
+**Uso:** rastreabilidade de quem alterou o quê (atende compliance LGPD), debugging em produção, base para anonimização da Fase 19.
+
+**Mascaramento:** chaves sensíveis (senha, token, cpf, jwt, pix_chave, cartao*, cvv...) viram `***` recursivamente em `old_value`/`new_value`.
+
 ---
 
 ## 📊 Relacionamentos Principais
@@ -475,6 +500,7 @@ profiles (1) ──→ (N) supplier_documents
 profiles (1) ──→ (N) alter_recebiveis
 profiles (1) ──→ (N) alter_antecipacoes
 profiles (1) ──→ (N) alter_cobertura_snapshots
+profiles (1) ──→ (N) audit_log
 
 atendimentos (1) ──→ (N) atendimento_procedimentos
 atendimentos (1) ──→ (N) parcelas

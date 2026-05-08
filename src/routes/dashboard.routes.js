@@ -39,6 +39,7 @@ const {
   dashboardExportLimiter,
 } = require('../middleware/dashboardRouteRateLimits');
 const nfValidadeService = require('../services/nfValidadeService');
+const auditLogService = require('../services/auditLogService');
 
 // Aplica autenticação em todas as rotas (aceita JWT ou telefone)
 router.use(authenticateFlexible);
@@ -401,6 +402,15 @@ router.put('/transactions/:id', validate(updateTransactionSchema), async (req, r
       return res.status(404).json({ error: 'Transação não encontrada' });
     }
 
+    auditLogService.log({
+      userId: req.user.id,
+      action: 'transaction_updated',
+      entityType: 'transaction',
+      entityId: transactionId,
+      newValue: { input: updateData, output: updated },
+      req
+    });
+
     res.json({
       message: 'Transação atualizada com sucesso',
       transaction: updated
@@ -424,6 +434,14 @@ router.delete('/transactions/:id', validate(deleteTransactionSchema), async (req
     if (!deleted) {
       return res.status(404).json({ error: 'Transação não encontrada' });
     }
+
+    auditLogService.log({
+      userId: req.user.id,
+      action: 'transaction_deleted',
+      entityType: 'transaction',
+      entityId: transactionId,
+      req
+    });
 
     res.json({
       message: 'Transação excluída com sucesso',
@@ -685,6 +703,16 @@ router.patch('/prolabore/:id', async (req, res) => {
       .select()
       .single();
     if (error) throw error;
+
+    auditLogService.log({
+      userId,
+      action: 'prolabore_updated',
+      entityType: 'conta_pagar',
+      entityId: id,
+      newValue: { is_pro_labore: Boolean(is_pro_labore) },
+      req
+    });
+
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -933,6 +961,23 @@ router.post('/estoque/entrada', async (req, res) => {
       custo_unitario: body.custo_unitario ?? body.custoUnitario,
       data: body.data,
     });
+
+    auditLogService.log({
+      userId: req.user.id,
+      action: 'estoque_entrada',
+      entityType: 'estoque',
+      entityId: pid,
+      newValue: {
+        procedimento_id: pid,
+        quantidade: q,
+        custo_unitario: body.custo_unitario ?? body.custoUnitario ?? null,
+        fornecedor_id: body.fornecedor_id ?? body.fornecedorId ?? null,
+        data: body.data ?? null,
+        result
+      },
+      req
+    });
+
     res.json({ success: true, ...result });
   } catch (error) {
     console.error('Error registering entrada estoque:', error);
@@ -1086,6 +1131,16 @@ async function upsertMonthlyGoal(req, res) {
       .single();
 
     if (error) throw error;
+
+    auditLogService.log({
+      userId: req.user.id,
+      action: 'goal_updated',
+      entityType: 'monthly_goal',
+      entityId: `goal:${parsedYear}:${parsedMonth}`,
+      oldValue: existing || null,
+      newValue: data,
+      req
+    });
 
     res.json(data);
   } catch (error) {
@@ -1416,6 +1471,21 @@ router.post('/supplier-documents/process', heavyDashboardReadLimiter, async (req
       { supplierDocumentId: supplierDoc.id, fornecedorId: fornecedor.id }
     );
 
+    auditLogService.log({
+      userId: req.user.id,
+      action: 'supplier_doc_processed',
+      entityType: 'supplier_document',
+      entityId: supplierDoc?.id || null,
+      newValue: {
+        fornecedor_id: fornecedor?.id || null,
+        contas_criadas: Array.isArray(contas) ? contas.length : 0,
+        estoque_aplicado: estoqueResult?.itens_aplicados ?? estoqueResult?.aplicado ?? null,
+        file_hash: fileHash,
+        source_phone: source_phone || null
+      },
+      req
+    });
+
     res.status(201).json({
       parsed,
       fornecedor,
@@ -1474,6 +1544,16 @@ router.post('/supplier-documents/:id/link-fornecedor', async (req, res) => {
       .select('*')
       .single();
     if (docError) throw docError;
+
+    auditLogService.log({
+      userId: req.user.id,
+      action: 'supplier_doc_linked',
+      entityType: 'supplier_document',
+      entityId: id,
+      newValue: { fornecedor_id },
+      req
+    });
+
     res.json(doc);
   } catch (error) {
     console.error('Error linking supplier document to fornecedor:', error);
@@ -1515,6 +1595,23 @@ router.post('/supplier-documents/:id/match-itens', async (req, res) => {
         erros.push({ ...m, erro: e?.message || String(e) });
       }
     }
+
+    auditLogService.log({
+      userId: req.user.id,
+      action: 'supplier_doc_matched',
+      entityType: 'supplier_document',
+      entityId: id,
+      newValue: {
+        aplicados_count: aplicados.length,
+        erros_count: erros.length,
+        matches_input: matches.map(m => ({
+          descricao: m.descricao,
+          procedimento_id: m.procedimento_id,
+          quantidade: m.quantidade
+        }))
+      },
+      req
+    });
 
     res.json({ aplicados, erros });
   } catch (error) {
@@ -1753,6 +1850,19 @@ router.post('/alter/antecipacao/executar', alterGuard, async (req, res) => {
       horizonte_dias: horizonte_dias || 30,
       simulacao
     });
+
+    auditLogService.log({
+      userId: req.user.id,
+      action: 'alter_antecipacao_executed',
+      entityType: 'alter_antecipacao',
+      entityId: result?.antecipacao_id || result?.id || null,
+      newValue: {
+        input: { valor_alvo, horizonte_dias: horizonte_dias || 30, simulacao: Boolean(simulacao) },
+        output: result
+      },
+      req
+    });
+
     res.json(result);
   } catch (error) {
     console.error('Error executing antecipacao:', error);
@@ -1764,6 +1874,16 @@ router.post('/alter/antecipacao/executar', alterGuard, async (req, res) => {
 router.post('/alter/antecipacao/parar-automatica', alterGuard, async (req, res) => {
   try {
     const result = await antecipacaoService.pararAutomatica(req.user.id);
+
+    auditLogService.log({
+      userId: req.user.id,
+      action: 'alter_antecipacao_paused',
+      entityType: 'alter_antecipacao',
+      entityId: null,
+      newValue: result,
+      req
+    });
+
     res.json(result);
   } catch (error) {
     console.error('Error stopping antecipacao automatica:', error);
@@ -1816,10 +1936,42 @@ router.post('/alter/pagar-fornecedor/executar', alterGuard, async (req, res) => 
       recebiveis_ids,
       conta_pagar_id
     });
+
+    auditLogService.log({
+      userId: req.user.id,
+      action: 'alter_pago_recebivel_executed',
+      entityType: 'conta_pagar',
+      entityId: conta_pagar_id || null,
+      newValue: {
+        input: { recebiveis_ids, conta_pagar_id: conta_pagar_id || null },
+        output: result
+      },
+      req
+    });
+
     res.json(result);
   } catch (error) {
     console.error('Error executing pagar com recebivel:', error);
     res.status(500).json({ error: 'Failed to execute pagar com recebivel' });
+  }
+});
+
+// Fase 15 — Audit log: histórico de mutações críticas do usuário.
+// GET /api/dashboard/audit-log?limit=50&offset=0&entity_type=transaction&action=transaction_updated
+router.get('/audit-log', heavyDashboardReadLimiter, async (req, res) => {
+  try {
+    const limit = Number.parseInt(req.query.limit, 10);
+    const offset = Number.parseInt(req.query.offset, 10);
+    const result = await auditLogService.list(req.user.id, {
+      entityType: req.query.entity_type || undefined,
+      action: req.query.action || undefined,
+      limit: Number.isFinite(limit) ? limit : 50,
+      offset: Number.isFinite(offset) ? offset : 0
+    });
+    res.json(result);
+  } catch (error) {
+    console.error('Error listing audit log:', error);
+    res.status(500).json({ error: 'Failed to list audit log' });
   }
 });
 

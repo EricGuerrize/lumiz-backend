@@ -1,6 +1,6 @@
 # Lumiz — Monitoramento de Implementação (Phases 1–6)
 
-> **Última atualização:** 2026-05-08 (Fase 13 backend — export OFX 2.0 disponível em `?format=ofx`)
+> **Última atualização:** 2026-05-08 (Fase 15 backend — `audit_log` + `auditLogService` + `GET /api/dashboard/audit-log`)
 > **Repositório backend:** https://github.com/EricGuerrize/lumiz-backend
 > **Repositório frontend:** https://github.com/EricGuerrize/lumiz-financeiro
 > **Deploy backend:** Railway (branch `main` → auto-deploy)
@@ -488,6 +488,14 @@ req.headers['x-cron-secret']  // nunca req.query.secret
 - Auth opcional (Bearer best-effort, anônimo permitido), degradação segura para defaults se Supabase falhar.
 - Suíte: `tests/unit/configFeaturesEndpoint.test.js` (6 casos cobrindo defaults, whitelist filter, anônimo, token válido, token inválido, falha de DB).
 - Fase 16 marcada ✅ no [ROADMAP.md](ROADMAP.md). Frontend já tinha `useFeatureFlag` consumindo este endpoint.
+
+### Fase 15 — Audit log (backend)
+- Migration: [supabase/migrations/20260508000040_create_audit_log.sql](supabase/migrations/20260508000040_create_audit_log.sql) (aplicada em produção via MCP).
+- Service: [src/services/auditLogService.js](src/services/auditLogService.js) — `log()` fire-and-forget, `list()` paginado, `extractContext()` para IP/UA, mascaramento recursivo de chaves sensíveis.
+- Integração nas 11 mutações mais críticas do dashboard (transactions, goals, prolabore, estoque, alter executar, supplier docs).
+- Endpoint: `GET /api/dashboard/audit-log` com filtros `entity_type`, `action`, `limit`, `offset` e `meta` empty state.
+- Suíte: `tests/unit/auditLogService.test.js` (14 casos). Regression suite: 127 testes verde.
+- Pendente frontend: `/dashboard/configuracoes/audit-log`.
 
 ### Fase 13 — Export OFX para contador (backend)
 - [src/services/exportService.js](src/services/exportService.js) ganhou `exportOFX(userId, monthStr)`:

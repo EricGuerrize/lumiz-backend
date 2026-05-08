@@ -210,6 +210,7 @@ As fases 9 e 10 são majoritariamente frontend. No backend, o foco é garantir c
 - `tests/unit/pagarComRecebivelService.test.js`
 - `tests/unit/configFeaturesEndpoint.test.js`
 - `tests/unit/exportServiceOfx.test.js`
+- `tests/unit/auditLogService.test.js`
 
 ## Matriz feature × endpoint × empty state
 
@@ -333,3 +334,91 @@ Os formatos existentes (`format=pdf`, `format=csv`, padrão `csv`) continuam fun
 ## Frontend pendente
 
 - Adicionar botão "OFX (Contador)" em `ExportButtons.tsx` apontando para `?format=ofx`. Ver prompt de handoff frontend.
+
+---
+
+# Fase 15 — Audit log
+
+## Schema
+
+Tabela `public.audit_log` (migration `20260508000040_create_audit_log.sql`):
+
+| Coluna | Tipo | Notas |
+|---|---|---|
+| `id` | uuid | PK, default `gen_random_uuid()` |
+| `user_id` | uuid | FK `profiles(id)` ON DELETE SET NULL |
+| `clinic_id` | uuid | reservado para Fase 14 (multi-tenant) — hoje sempre NULL |
+| `action` | varchar(100) | ex: `transaction_updated`, `goal_updated`, `estoque_entrada` |
+| `entity_type` | varchar(50) | ex: `transaction`, `monthly_goal`, `supplier_document` |
+| `entity_id` | text | UUID ou chave composta (`goal:2026:5`) |
+| `old_value` | jsonb | snapshot anterior (mascarado) |
+| `new_value` | jsonb | snapshot novo (mascarado) |
+| `ip_address` | varchar(45) | suporta IPv6 |
+| `user_agent` | text | truncado a 500 chars no service |
+| `created_at` | timestamptz | default `now()` |
+
+Índices: `(user_id, created_at DESC)`, `(entity_type, entity_id)`, `(action, created_at DESC)`.
+
+RLS: leitura por usuário autenticado restrita a `user_id = auth.uid()`. Escrita só via service-role (backend).
+
+## Endpoints
+
+| Método | Rota | Notas |
+|---|---|---|
+| GET | `/api/dashboard/audit-log` | filtros `limit` (1..200, default 50), `offset` (default 0), `entity_type`, `action` |
+
+Resposta:
+```json
+{
+  "data": [
+    {
+      "id": "...",
+      "user_id": "...",
+      "action": "transaction_updated",
+      "entity_type": "transaction",
+      "entity_id": "tx-uuid",
+      "old_value": null,
+      "new_value": { "input": {...}, "output": {...} },
+      "ip_address": "203.0.113.10",
+      "user_agent": "Mozilla/5.0 ...",
+      "created_at": "2026-05-08T..."
+    }
+  ],
+  "meta": {
+    "total": 42,
+    "has_more": false,
+    "next_offset": null,
+    "is_empty": false,
+    "hint": null
+  }
+}
+```
+
+## Ações instrumentadas (entrega inicial)
+
+| Action | Entity type | Onde |
+|---|---|---|
+| `transaction_updated` | `transaction` | `PUT /transactions/:id` |
+| `transaction_deleted` | `transaction` | `DELETE /transactions/:id` |
+| `goal_updated` | `monthly_goal` | `PUT|POST /goals/monthly` (entity_id `goal:YYYY:M`) |
+| `prolabore_updated` | `conta_pagar` | `PATCH /prolabore/:id` |
+| `estoque_entrada` | `estoque` | `POST /estoque/entrada` |
+| `alter_antecipacao_executed` | `alter_antecipacao` | `POST /alter/antecipacao/executar` |
+| `alter_antecipacao_paused` | `alter_antecipacao` | `POST /alter/antecipacao/parar-automatica` |
+| `alter_pago_recebivel_executed` | `conta_pagar` | `POST /alter/pagar-fornecedor/executar` |
+| `supplier_doc_processed` | `supplier_document` | `POST /supplier-documents/process` |
+| `supplier_doc_linked` | `supplier_document` | `POST /supplier-documents/:id/link-fornecedor` |
+| `supplier_doc_matched` | `supplier_document` | `POST /supplier-documents/:id/match-itens` |
+
+Outras mutações (colaboradores, fornecedores CRUD, NF validade, preferences, profile/initial-balance) ainda não instrumentadas — adicionar incrementalmente conforme demanda. O contrato do `auditLogService.log()` aceita qualquer rota: basta `auditLogService.log({ userId, action, entityType, entityId, oldValue?, newValue?, req })`.
+
+## Garantias do service
+
+- **Fire-and-forget**: `log()` retorna Promise que NUNCA rejeita. Falha do audit log nunca derruba a request principal.
+- **Mask de dados sensíveis**: chaves `senha`/`password`/`pwd`/`token`/`access_token`/`refresh_token`/`jwt`/`authorization`/`cpf`/`rg`/`pix_chave`/`cartao*`/`cvv` viram `***` recursivamente (até 6 níveis).
+- **Truncate**: `entity_id` 512 chars, `user_agent` 500 chars, `action` 100 chars, `entity_type` 50 chars, `ip_address` 45 chars.
+- **Empty state**: `list()` devolve `meta.is_empty=true` + `hint` quando vazio; em erro de DB devolve empty + hint de retry (não 5xx).
+
+## Frontend pendente
+
+- Página `/dashboard/configuracoes/audit-log` consumindo `GET /api/dashboard/audit-log` com filtros e paginação. Ver prompt de handoff.

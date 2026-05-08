@@ -474,7 +474,8 @@ app.get('/', (req, res) => {
         insightsPricing: '/api/dashboard/insights/pricing',
         pricingInsightsAlias: '/api/dashboard/pricing/insights',
         emergencyStatus: '/api/dashboard/emergency/status',
-        exportReport: '/api/dashboard/export/report'
+        exportReport: '/api/dashboard/export/report',
+        auditLog: '/api/dashboard/audit-log'
       },
       auth: {
         note: 'Use Authorization: Bearer <supabase_token> or x-user-phone header'

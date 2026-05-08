@@ -23,7 +23,7 @@
 | 12 | Importador de planilha Excel | Back + Front | G | ⬜ Pendente |
 | 13 | Export OFX para contador | Back + Front | P | 🟡 Backend concluído — frontend pendente (botão OFX em `ExportButtons.tsx`) |
 | 14 | Multi-tenant / switch de clínica | Back + Front | G | ⬜ Pendente |
-| 15 | Audit log | Back + Front | M | ⬜ Pendente |
+| 15 | Audit log | Back + Front | M | 🟡 Backend concluído — frontend pendente (`/dashboard/configuracoes/audit-log`) |
 | 16 | Feature flags | Back + Front | P | ✅ Concluído — backend com `featureFlagService` + `requireFeature` + `GET /api/config/features` (whitelist + auth opcional + degradação segura); frontend com `useFeatureFlag` + `AlterGate` |
 | 17 | Analytics de produto (PostHog) | Back + Front | M | ⬜ Pendente |
 | 18 | MFA obrigatório | Back + Front | M | ⬜ Pendente |
@@ -447,48 +447,49 @@ Referência rápida do que está implementado. Não retrabalhar.
 
 ## Fase 15 — Audit log
 
+**Status:** 🟡 Backend concluído (2026-05-08) — frontend pendente (`/dashboard/configuracoes/audit-log`).
+
 **Objetivo:** registrar toda mutation crítica para rastreabilidade e debugging em produção.
 
-**Impacto de negócio:** quando a Nathalia disser "não fui eu que deletei esse lançamento", o audit log resolve. Também cobre requisitos de compliance (LGPD parte 6.6 do handoff).
+**Impacto de negócio:** quando a Nathalia disser "não fui eu que deletei esse lançamento", o audit log resolve. Também cobre requisitos de compliance (LGPD parte 6.6 do handoff) e é pré-requisito da Fase 19 (anonimização).
 
-**Backend:**
-- Migration `20260507000016_create_audit_log.sql`:
-  ```sql
-  CREATE TABLE audit_log (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    user_id UUID REFERENCES profiles(id),
-    clinic_id UUID,
-    action VARCHAR(100) NOT NULL,
-    entity_type VARCHAR(50) NOT NULL,
-    entity_id UUID,
-    old_value JSONB,
-    new_value JSONB,
-    ip_address VARCHAR(45),
-    user_agent TEXT,
-    created_at TIMESTAMPTZ DEFAULT now()
-  );
-  CREATE INDEX idx_audit_log_user ON audit_log(user_id, created_at DESC);
-  CREATE INDEX idx_audit_log_entity ON audit_log(entity_type, entity_id);
-  ```
-- Criar `src/services/auditLogService.js`:
-  - `log(userId, action, entityType, entityId, oldValue, newValue)`
-  - Ações chave: `transaction_created`, `transaction_deleted`, `goal_updated`, `import_confirmed`, `import_undone`, `conta_pagar_updated`, `estoque_entrada`
-- Integrar nas rotas críticas do `dashboard.routes.js` (POST/PUT/DELETE)
-- Endpoint:
-  ```
-  GET /api/dashboard/audit-log?limit=50&entity_type=transaction
-  ```
+**Backend:** ✅
+- Migration `supabase/migrations/20260508000040_create_audit_log.sql` aplicada em produção (Supabase Lumiz):
+  - `audit_log(id, user_id, clinic_id, action, entity_type, entity_id text, old_value jsonb, new_value jsonb, ip_address, user_agent, created_at)`.
+  - Índices: `(user_id, created_at DESC)`, `(entity_type, entity_id)`, `(action, created_at DESC)`.
+  - RLS: leitura por usuário autenticado restrita a `user_id = auth.uid()`. Escrita só via service-role (backend).
+  - `entity_id` como `TEXT` para suportar UUIDs e chaves compostas (`goal:2026:5`).
+- `src/services/auditLogService.js`:
+  - `log({ userId, action, entityType, entityId, oldValue, newValue, req })` — fire-and-forget; nunca derruba a request principal mesmo com DB em erro.
+  - `extractContext(req)` — IP via `x-forwarded-for` com fallback para `req.ip`; user-agent truncado a 500 chars.
+  - `_maskSensitive` recursivo (depth 6) para `senha`, `password`, `pwd`, `token`, `access_token`, `refresh_token`, `jwt`, `authorization`, `cpf`, `rg`, `pix_chave`, `cartao*`, `cvv`.
+  - `list(userId, { entityType, action, limit, offset })` — paginado com `meta: { total, has_more, next_offset, is_empty, hint }`. Limite clampado em [1..200].
+- Integração em mutações críticas do `dashboard.routes.js`:
+  - `PUT /transactions/:id` → `transaction_updated`.
+  - `DELETE /transactions/:id` → `transaction_deleted`.
+  - `PUT|POST /goals/monthly` → `goal_updated` (com `oldValue` do snapshot atual).
+  - `PATCH /prolabore/:id` → `prolabore_updated`.
+  - `POST /estoque/entrada` → `estoque_entrada`.
+  - `POST /alter/antecipacao/executar` → `alter_antecipacao_executed`.
+  - `POST /alter/antecipacao/parar-automatica` → `alter_antecipacao_paused`.
+  - `POST /alter/pagar-fornecedor/executar` → `alter_pago_recebivel_executed`.
+  - `POST /supplier-documents/process` → `supplier_doc_processed`.
+  - `POST /supplier-documents/:id/link-fornecedor` → `supplier_doc_linked`.
+  - `POST /supplier-documents/:id/match-itens` → `supplier_doc_matched`.
+- Endpoint `GET /api/dashboard/audit-log?limit=50&offset=0&entity_type=transaction&action=transaction_updated` (atrás de `heavyDashboardReadLimiter`). Resposta `{ data: [...], meta: { total, has_more, next_offset, is_empty, hint } }`.
+- Testes: `tests/unit/auditLogService.test.js` — 14 casos cobrindo persistência, mascaramento, fire-and-forget em erros, paginação, degradação. Regression: 127 testes verde.
 
-**Frontend:**
+**Frontend:** ⬜
 - Página `/dashboard/configuracoes/audit-log` (acesso admin)
-- Tabela com: data, ação, entidade, usuário, antes/depois (expandível)
+- Tabela com: data, ação, entidade, IP, antes/depois (expandível)
 
-**Dependências:** Fase 14 (multi-tenant) recomendada — audit log deve incluir `clinic_id`.
+**Dependências:** Fase 14 (multi-tenant) recomendada para preencher `clinic_id` — hoje fica `null` (single tenant).
 
 **Definition of Done:**
-- Criar/editar/deletar transação gera registro no audit log
-- Endpoint retorna log paginado
-- Página de audit log acessível nas configurações
+- ✅ Criar/editar/deletar transação gera registro no audit log.
+- ✅ Endpoint retorna log paginado com filtros.
+- ✅ Backend mascarando dados sensíveis.
+- ⬜ Página de audit log acessível nas configurações.
 
 **Esforço:** M
 
