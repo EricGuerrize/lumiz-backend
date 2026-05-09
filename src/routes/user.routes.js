@@ -341,14 +341,21 @@ router.post('/consent', authenticateToken, async (req, res) => {
 
 // ============================================================================
 // GET /api/user/whoami
-// Devolve identidade resumida do usuário autenticado + flag is_admin.
-// Front usa para decidir se renderiza o grupo "Administração" no sidebar.
-// Sem isto, o front teria que bater em /api/admin/* para inferir via 403, o
-// que polui logs e gasta requests.
+// Devolve identidade resumida do usuário autenticado + flag is_admin +
+// nome do usuário e da clínica para o front renderizar o brand/profile row
+// sem precisar bater em /dashboard/profile separadamente.
+//
+// Front usa também para decidir se renderiza o grupo "Administração" no
+// sidebar. Sem isto, o front teria que bater em /api/admin/* para inferir
+// via 403, o que polui logs e gasta requests.
 // ============================================================================
 router.get('/whoami', authenticateToken, async (req, res) => {
   const supabase = require('../db/supabase');
+
   let isAdmin = false;
+  let name = null;
+  let clinicName = null;
+
   try {
     const { data, error } = await supabase.rpc('is_user_admin', { p_user_id: req.user.id });
     if (!error) isAdmin = Boolean(data);
@@ -356,9 +363,25 @@ router.get('/whoami', authenticateToken, async (req, res) => {
     console.warn('[WHOAMI] Falha ao resolver is_user_admin:', err?.message || err);
   }
 
+  try {
+    const { data: profile, error } = await supabase
+      .from('profiles')
+      .select('nome_completo, nome_clinica')
+      .eq('id', req.user.id)
+      .maybeSingle();
+    if (!error && profile) {
+      name = profile.nome_completo || null;
+      clinicName = profile.nome_clinica || null;
+    }
+  } catch (err) {
+    console.warn('[WHOAMI] Falha ao carregar profile:', err?.message || err);
+  }
+
   return res.status(200).json({
     user_id: req.user.id,
     email: req.user.email || null,
+    name,
+    clinic_name: clinicName,
     is_admin: isAdmin,
   });
 });
