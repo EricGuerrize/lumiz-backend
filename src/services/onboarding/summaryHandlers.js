@@ -38,6 +38,17 @@ const summaryHandlers = {
    * Transição para uso diário
    */
   async handleHandoffToDailyUse(onboarding, messageTrimmed, respond, respondAndClear) {
+    await analyticsService.track('onboarding_completed', {
+      phone: onboarding?.normalizedPhone || null,
+      userId: onboarding?.data?.userId || null,
+      source: 'whatsapp',
+      properties: {
+        steps_total: onboarding?.data?.stepsTotal || null,
+        had_first_sale: Boolean(onboarding?.data?.primeiraVenda),
+        custos_recorded: onboarding?.data?.custos?.length || 0,
+      }
+    }).catch(() => {});
+
     return await respondAndClear(onboardingCopy.handoffToDailyUse());
   }
 };

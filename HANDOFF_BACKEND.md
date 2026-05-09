@@ -856,3 +856,91 @@ Implementar `/dashboard/import`:
 - Step 2: preview dos primeiros registros + inconsistências.
 - Step 3: confirmar importação.
 - Step 4: histórico + botão "Desfazer importação".
+
+---
+
+# Fase 17 — Analytics de produto (PostHog) — backend
+
+> **Status:** backend concluído (09/05/2026). Frontend pendente (instalar `posthog-js`, init em `main.tsx`, `identify` pós-login, pageview por rota, track manual).
+
+## Decisão arquitetural
+
+- O backend **espelha** todo evento do `analyticsService.track()` para o PostHog, **sem substituir** a tabela `analytics_events` no Supabase. Os dois rodam em paralelo:
+  - Supabase: histórico estruturado, queryável via RPC, retido no banco da clínica.
+  - PostHog: dashboards de funil/retention, segmentação, replays (quando ativados).
+- O envio para PostHog é **fire-and-forget** — falha do PostHog jamais bloqueia ou derruba a request original.
+- Sem `POSTHOG_API_KEY` ou com flag `posthog_enabled` OFF, o serviço é **no-op silencioso** (graceful degradation).
+
+## Configuração
+
+Variáveis de ambiente (todas opcionais):
+
+| Variável | Default | Descrição |
+|---|---|---|
+| `POSTHOG_API_KEY` | _ausente_ | API key do projeto PostHog. Sem ela, o PostHog é desligado por completo. |
+| `POSTHOG_HOST` | `https://us.i.posthog.com` | Host do PostHog (use `https://eu.i.posthog.com` para EU, ou self-hosted). |
+| `POSTHOG_FLUSH_AT` | `20` | Tamanho do batch antes de flushar. |
+| `POSTHOG_FLUSH_INTERVAL_MS` | `10000` | Intervalo (ms) para flush automático. |
+
+Flag (já no registry): `posthog_enabled` — controla per-user/global. Default `false`. Para ligar globalmente:
+
+```sql
+INSERT INTO feature_flags (user_id, name, enabled, meta)
+VALUES (NULL, 'posthog_enabled', true, '{"enabled_by":"fase_17_release"}'::jsonb);
+```
+
+## Eventos instrumentados
+
+Todos enviados pelo `analyticsService.track(eventName, payload)` e **espelhados automaticamente** no PostHog via `posthogService.capture()`. distinctId resolvido como `userId → phone:<phone> → anonymous`.
+
+| Evento | Origem | Propriedades chave |
+|---|---|---|
+| `onboarding_started` | `profileHandlers` (WhatsApp) | `phone_present` |
+| `onboarding_consent_given` | `profileHandlers` | — |
+| `onboarding_profile_completed` | `contextHandlers` | — |
+| `onboarding_first_sale` | `ahaRevenueHandlers` | `valor` |
+| `onboarding_cost_recorded` | `ahaCostsHandlers` | `categoria`, `valor` |
+| `onboarding_summary_shown` | `summaryHandlers` | `total_vendas`, `total_custos` |
+| `onboarding_completed` | `summaryHandlers` (handoff) | `had_first_sale`, `custos_recorded` |
+| `transaction_confirmation_accepted` | `transactionHandler` | — |
+| `transaction_confirmation_cancelled` | `transactionHandler` | — |
+| `transaction_created` | `transactionHandler` (após create) | `tipo`, `valor`, `categoria`, `forma_pagamento`, `parcelas`, `is_split` |
+| `report_exported` | `GET /api/dashboard/export/report` | `format` (pdf/csv/ofx), `month` |
+| `excel_imported` | `POST /api/dashboard/import/excel/confirm` | `valid_rows`, `receitas_count`, `despesas_count`, `receitas_total`, `despesas_total`, `batch_id` |
+| `goal_set` | `PUT|POST /api/dashboard/goals/monthly` | `year`, `month`, `meta_receita`, `is_first_set` |
+| `simulator_run` | `GET /api/dashboard/simulator/scenario(s)` | `scenario`, `projection_months`, `month`, `year` |
+| `emergency_triggered` | `emergencyModeService.checkAndAlert` (cron) | `saldo_minimo`, `data_risco`, `canal` |
+
+Eventos antigos (Fase 1+) continuam funcionando — qualquer chamada existente de `analyticsService.track()` agora também alimenta o PostHog automaticamente.
+
+## Segurança
+
+- Propriedades sensíveis são **mascaradas** antes do envio: `cpf`, `password`, `pwd`, `token`, `access_token`, `refresh_token`, `jwt`, `authorization`, `pix_chave`, `cartao*`, `cvv`, `rg`. Mascaramento recursivo até depth 4.
+- `phone` nunca é enviado como propriedade — só seu hash via distinctId (`phone:<phone>`) ou flag `phone_present: boolean`.
+- Erros do cliente PostHog são logados (`[POSTHOG]`) mas nunca propagam.
+
+## Graceful shutdown
+
+`server.js` chama `posthogService.shutdown()` durante `SIGTERM`/`SIGINT` para flushar a fila antes de `process.exit(0)`. Sem isso, o último batch poderia ser perdido em deploys.
+
+## Frontend pendente
+
+1. Instalar `posthog-js`.
+2. Inicializar em `main.tsx` ATRÁS da flag `posthog_enabled`:
+   ```ts
+   if (await featureFlags.isEnabled('posthog_enabled')) {
+     posthog.init(import.meta.env.VITE_POSTHOG_API_KEY, {
+       api_host: import.meta.env.VITE_POSTHOG_HOST || 'https://us.i.posthog.com',
+       person_profiles: 'identified_only',
+       capture_pageview: true,
+     });
+   }
+   ```
+3. Pós-login, `posthog.identify(userId, { clinic_name, tier, created_at, phone_e164: false })`. Não envie CPF, senha, telefone ou qualquer dado sensível como property.
+4. Track manual em ações que não viram request (clique em filtros, navegação interna que não mude rota, abrir modal):
+   - `dashboard_filter_changed`
+   - `chart_zoomed`
+   - `widget_dragged`
+5. Use o mesmo `distinctId` do backend (`userId`) para o funil cruzar (a query distinctId fica unificada).
+
+Sem a key `VITE_POSTHOG_API_KEY` configurada, o front deve no-op silenciosamente — espelho da degradação do backend.

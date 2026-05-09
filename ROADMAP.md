@@ -548,32 +548,63 @@ Referência rápida do que está implementado. Não retrabalhar.
 
 ## Fase 17 — Analytics de produto (PostHog)
 
+**Status:** 🟡 Backend concluído (09/05/2026). Frontend pendente (instalação `posthog-js`, init em `main.tsx`, `identify` pós-login, pageview por rota, track manual).
+
 **Objetivo:** instrumentar o produto com analytics real para decisões baseadas em uso.
 
 **Impacto de negócio:** sem dados de uso, não sabemos onde usuários travam, quais features geram valor, qual o TTFV real. North star: lançamentos por clínica por semana.
 
-**Backend:**
-- Instalar `posthog-node`
-- Criar `src/services/posthogService.js`:
-  - `track(userId, event, properties)` — wraper com fallback graceful se `POSTHOG_API_KEY` ausente
-  - `identify(userId, traits)` — envia perfil da clínica
-- Adicionar `POSTHOG_API_KEY` e `POSTHOG_HOST` em `src/config/env.js` como opcionais
-- Enriquecer `analyticsService.js` para enviar para PostHog além do Supabase:
-  - `transaction_created`, `report_exported`, `goal_set`, `simulator_run`, `excel_imported`, `emergency_triggered`, `onboarding_completed`
+**Backend:** ✅
+- Dependência `posthog-node@5.33.4` (MIT, oficial PostHog) adicionada em `package.json`.
+- `src/services/posthogService.js` (lazy-init, fire-and-forget):
+  - `isConfigured()` — true só se `POSTHOG_API_KEY` presente.
+  - `init()` — instancia cliente uma vez (idempotente). Sem chave, vira no-op.
+  - `capture({ distinctId, event, properties })` — respeita flag `posthog_enabled` (per-user/global, layered via `featureFlagService`); mascara propriedades sensíveis (`cpf`, `password`, `token`, `pix_chave`, `cartao*`, `cvv`, `pwd`, `rg`, etc.); injeta `$lib=lumiz-backend` e versão do package.
+  - `identify({ distinctId, properties })` — mesmas garantias, exige distinctId.
+  - `shutdown()` — flush + disconnect; usado no graceful shutdown.
+  - Erros do cliente PostHog jamais propagam para o caller.
+- `src/config/env.js`:
+  - `POSTHOG_API_KEY` e `POSTHOG_HOST` adicionados como opcionais.
+  - `config.posthog = { apiKey, host }` exposto.
+- `src/services/analyticsService.js`:
+  - `track()` agora **espelha** todo evento no PostHog após salvar em `analytics_events`.
+  - distinctId resolvido em ordem: `userId` → `phone:<phone>` → `anonymous`.
+  - Espelhamento nunca derruba o caller (try/catch + warn).
+- Eventos chave instrumentados nesta fase (além dos onboarding já existentes):
+  - `transaction_created` — `transactionHandler` no momento da confirmação WhatsApp (com `tipo`, `valor`, `categoria`, `forma_pagamento`, `parcelas`, split info).
+  - `report_exported` — `GET /api/dashboard/export/report` (formato PDF/CSV/OFX + mês).
+  - `excel_imported` — `POST /api/dashboard/import/excel/confirm` (qtd receitas/despesas, totais, batch_id).
+  - `goal_set` — `PUT|POST /api/dashboard/goals/monthly` (year/month/meta, primeiro set ou edição).
+  - `simulator_run` — `GET /api/dashboard/simulator/scenario` e `/scenarios` (cenário, projection_months).
+  - `emergency_triggered` — `emergencyModeService.checkAndAlert` quando alerta é disparado (saldo_minimo, data_risco).
+  - `onboarding_completed` — `summaryHandlers.handleHandoffToDailyUse` no fim do onboarding (steps_total, had_first_sale, custos_recorded).
+- `server.js` — graceful shutdown chama `posthogService.shutdown()` antes de `process.exit(0)`, garantindo flush dos eventos pendentes.
+- Tests: `tests/unit/posthogService.test.js` — 22 cenários (degradação graceful sem chave, captura com chave, flag OFF, distinctId resolvido, fire-and-forget em erro, mascaramento de propriedades sensíveis, shutdown, integração com `analyticsService.track`). Regressão: **190/190**.
 
-**Frontend:**
+**Frontend:** ⬜ (pendente — ver prompt em `HANDOFF_BACKEND.md` seção Fase 17)
 - Instalar `posthog-js`
-- Inicializar em `main.tsx` com `VITE_POSTHOG_API_KEY`
-- `identify` após login com `userId`, `clinicName`, `tier`
+- Inicializar em `main.tsx` com `VITE_POSTHOG_API_KEY` (apenas se flag `posthog_enabled` ativa)
+- `identify` após login com `userId`, `clinicName`, `tier`, `created_at`
 - Pageview automático por rota
 - Track manual em ações chave: exportar, simular, registrar estoque
 
-**Dependências:** nenhuma.
+**Ativação em produção:**
+- Flag `posthog_enabled` segue `false` por default. Para ligar:
+  ```sql
+  INSERT INTO feature_flags (user_id, name, enabled, meta)
+  VALUES (NULL, 'posthog_enabled', true, '{"enabled_by":"fase_17_release"}'::jsonb);
+  ```
+- Configurar `POSTHOG_API_KEY` e `POSTHOG_HOST` no Railway.
+- Sem chave configurada, todo `analyticsService.track` continua funcionando (Supabase salva, PostHog é no-op).
+
+**Dependências:** Fase 16 (feature flags) — utilizada para ligar/desligar PostHog por user. ✅ Concluída.
 
 **Definition of Done:**
-- Dashboard PostHog mostra eventos reais de uso
-- Funil de onboarding visível (steps até primeiro lançamento)
-- `POSTHOG_API_KEY` ausente não quebra nada (graceful degradation)
+- ✅ Backend salva no Supabase E espelha no PostHog quando configurado
+- ✅ `POSTHOG_API_KEY` ausente não quebra nada (graceful degradation)
+- ✅ Flag `posthog_enabled` per-user/global respeitada
+- ⬜ Dashboard PostHog mostra eventos reais (depende de configurar API key + frontend)
+- ⬜ Funil de onboarding visível (depende do frontend instrumentado)
 
 **Esforço:** M
 

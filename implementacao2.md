@@ -1,6 +1,6 @@
 # Lumiz — Monitoramento de Implementação (Phases 1–6)
 
-> **Última atualização:** 2026-05-09 (Fase 12 Importador Excel + Fase 18 MFA + Database Security Hardening)
+> **Última atualização:** 2026-05-09 (Fase 17 PostHog + Fase 12 Importador Excel + Fase 18 MFA + Database Security Hardening)
 > **Repositório backend:** https://github.com/EricGuerrize/lumiz-backend
 > **Repositório frontend:** https://github.com/EricGuerrize/lumiz-financeiro
 > **Deploy backend:** Railway (branch `main` → auto-deploy)
@@ -488,6 +488,27 @@ req.headers['x-cron-secret']  // nunca req.query.secret
 - Auth opcional (Bearer best-effort, anônimo permitido), degradação segura para defaults se Supabase falhar.
 - Suíte: `tests/unit/configFeaturesEndpoint.test.js` (6 casos cobrindo defaults, whitelist filter, anônimo, token válido, token inválido, falha de DB).
 - Fase 16 marcada ✅ no [ROADMAP.md](ROADMAP.md). Frontend já tinha `useFeatureFlag` consumindo este endpoint.
+
+### Fase 17 — Analytics de produto via PostHog (backend)
+Backend concluído em 09/05/2026. Frontend pendente.
+- Dependência: `posthog-node@5.33.4` (MIT, oficial PostHog).
+- [src/services/posthogService.js](src/services/posthogService.js): cliente lazy-init, `capture`, `identify`, `shutdown`. Fire-and-forget — falhas nunca propagam. Sem `POSTHOG_API_KEY` vira no-op silencioso.
+  - Mascaramento recursivo de propriedades sensíveis (`cpf`, `password`, `pwd`, `token`, `access_token`, `refresh_token`, `pix_chave`, `cartao*`, `cvv`, `rg`).
+  - Respeita flag `posthog_enabled` per-user/global via `featureFlagService.isEnabled`.
+- [src/services/analyticsService.js](src/services/analyticsService.js): `track()` agora **espelha** todo evento no PostHog após salvar em `analytics_events`. distinctId resolvido `userId → phone:<phone> → anonymous`.
+- Eventos novos instrumentados nesta fase:
+  - `transaction_created` em [src/controllers/messages/transactionHandler.js](src/controllers/messages/transactionHandler.js) (após confirmação WhatsApp).
+  - `report_exported` em `GET /api/dashboard/export/report` (formato + mês).
+  - `excel_imported` em `POST /api/dashboard/import/excel/confirm` (qtd + totais).
+  - `goal_set` em `PUT|POST /api/dashboard/goals/monthly` (ano/mês/meta + is_first_set).
+  - `simulator_run` em `GET /api/dashboard/simulator/scenario(s)`.
+  - `emergency_triggered` em [src/services/emergencyModeService.js](src/services/emergencyModeService.js) (cron).
+  - `onboarding_completed` em [src/services/onboarding/summaryHandlers.js](src/services/onboarding/summaryHandlers.js) (handoff).
+- Variáveis de ambiente novas (todas opcionais): `POSTHOG_API_KEY`, `POSTHOG_HOST`, `POSTHOG_FLUSH_AT`, `POSTHOG_FLUSH_INTERVAL_MS`. Sem chave → no-op.
+- [src/server.js](src/server.js): graceful shutdown chama `posthogService.shutdown()` antes de `process.exit(0)` (evita perda de batch em deploys).
+- Suíte: [tests/unit/posthogService.test.js](tests/unit/posthogService.test.js) — 22 casos. Regression suite: **190/190 verde**.
+- Rollout: flag `posthog_enabled` segue OFF por default. Para ligar globalmente: `INSERT INTO feature_flags(user_id, name, enabled, meta) VALUES (NULL, 'posthog_enabled', true, '{"enabled_by":"fase_17_release"}'::jsonb);`.
+- Frontend pendente: instalar `posthog-js`, init em `main.tsx` atrás de feature flag, `identify` pós-login, pageview por rota, track manual em ações UI-only. Detalhes na seção Fase 17 do [HANDOFF_BACKEND.md](HANDOFF_BACKEND.md).
 
 ### Fase 12 — Importador Excel (backend + frontend)
 Backend e frontend concluídos em 09/05/2026.

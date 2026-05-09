@@ -3,6 +3,7 @@ const cashflowService = require('./cashflowService');
 const transactionController = require('../controllers/transactionController');
 const evolutionService = require('./evolutionService');
 const copy = require('../copy/emergencyWhatsappCopy');
+const analyticsService = require('./analyticsService');
 
 class EmergencyModeService {
   async getStatus(userId) {
@@ -63,6 +64,17 @@ class EmergencyModeService {
           }
           alertsSent.push({ user_id: profile.id, saldoMinimo: status.saldoMinimo, dataRisco: status.dataRisco });
           console.log(`[EMERGENCY] Alerta enviado para ${profile.telefone}`);
+
+          analyticsService.track('emergency_triggered', {
+            userId: profile.id,
+            phone: profile.telefone,
+            source: 'cron',
+            properties: {
+              saldo_minimo: status.saldoMinimo,
+              data_risco: status.dataRisco,
+              canal: 'whatsapp',
+            }
+          }).catch(() => {});
         }
       } catch (err) {
         console.error(`[EMERGENCY] Erro para ${profile.id}:`, err.message);

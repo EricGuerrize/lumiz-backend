@@ -530,7 +530,7 @@ Endpoints:
   const gracefulShutdown = (signal) => {
     console.log(`\n[SHUTDOWN] Recebido ${signal}, iniciando graceful shutdown...`);
 
-    server.close(() => {
+    server.close(async () => {
       console.log('[SHUTDOWN] Servidor HTTP fechado');
 
       // Fecha conexões do BullMQ/Redis se existirem
@@ -542,6 +542,15 @@ Endpoints:
         }
       } catch (error) {
         // Ignora se não houver conexão
+      }
+
+      // Fase 17 — flush PostHog antes de encerrar
+      try {
+        const posthogService = require('./services/posthogService');
+        await posthogService.shutdown();
+        console.log('[SHUTDOWN] PostHog shutdown OK');
+      } catch (error) {
+        console.warn('[SHUTDOWN] Falha ao desligar PostHog:', error?.message || error);
       }
 
       console.log('[SHUTDOWN] Processo finalizado');

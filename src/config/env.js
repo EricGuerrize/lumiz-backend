@@ -35,6 +35,8 @@ class EnvValidator {
       'JSON opcional para sobrescrever benchmarks de precificação (dashboard)'
     );
     this.validateOptional('METRICS_TOKEN', 'Token para endpoint de métricas (recomendado em produção)');
+    this.validateOptional('POSTHOG_API_KEY', 'API Key do PostHog (Fase 17 — analytics de produto)');
+    this.validateOptional('POSTHOG_HOST', 'Host do PostHog (default https://us.i.posthog.com)');
 
     // Validações específicas
     this.validateUrl('SUPABASE_URL');
@@ -193,6 +195,10 @@ class EnvValidator {
       security: {
         cronSecret: process.env.CRON_SECRET || null,
         metricsToken: process.env.METRICS_TOKEN || null
+      },
+      posthog: {
+        apiKey: process.env.POSTHOG_API_KEY || null,
+        host: process.env.POSTHOG_HOST || null
       },
       nodeEnv: process.env.NODE_ENV || 'development',
       port: parseInt(process.env.PORT || '3000', 10)

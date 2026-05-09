@@ -1,9 +1,17 @@
 /**
  * Serviço de analytics/telemetria
- * Centraliza tracking de eventos para facilitar análise de funil e comportamento
+ * Centraliza tracking de eventos para facilitar análise de funil e comportamento.
+ *
+ * Fase 17: além de gravar em `analytics_events` no Supabase, espelha o evento
+ * para o PostHog quando `POSTHOG_API_KEY` configurado e flag `posthog_enabled`
+ * ativa para o usuário (resolução layered no `posthogService`).
+ *
+ * Espelhar não bloqueia nem afeta o salvamento no Supabase — falhas são
+ * logadas e ignoradas.
  */
 
 const supabase = require('../db/supabase');
+const posthogService = require('./posthogService');
 
 class AnalyticsService {
     /**
@@ -43,6 +51,22 @@ class AnalyticsService {
         } catch (e) {
             // Falha silenciosa - analytics não deve quebrar o fluxo principal
             console.error('[ANALYTICS] Erro ao trackear evento:', e?.message || e);
+        }
+
+        // Espelha no PostHog (Fase 17). No-op silencioso quando flag/key OFF.
+        try {
+            await posthogService.capture({
+                distinctId: userId || (phone ? `phone:${phone}` : 'anonymous'),
+                event: eventName,
+                properties: {
+                    ...(typeof properties === 'object' ? properties : {}),
+                    source,
+                    phone_present: Boolean(phone),
+                },
+            });
+        } catch (e) {
+            // Espelhamento nunca quebra o caller.
+            console.warn('[ANALYTICS] Falha ao espelhar no PostHog:', e?.message || e);
         }
 
         // Log local para desenvolvimento

@@ -205,6 +205,21 @@ class TransactionHandler {
         ).catch(err => console.error('[KNOWLEDGE] Erro ao salvar transação:', err.message));
       }
 
+      analyticsService.track('transaction_created', {
+        phone,
+        userId: user?.id || null,
+        source: 'whatsapp',
+        properties: {
+          tipo,
+          valor: Math.abs(Number(valor) || 0),
+          categoria: categoria || null,
+          forma_pagamento: forma_pagamento || null,
+          parcelas: parcelas || null,
+          is_split: Array.isArray(payment_split) && payment_split.length > 1,
+          split_parts: Array.isArray(payment_split) ? payment_split.length : 1,
+        }
+      }).catch(() => {});
+
       await this.clearPendingTransaction(phone);
 
       const emoji = tipo === 'entrada' ? '💰' : '💸';

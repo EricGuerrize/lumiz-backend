@@ -44,6 +44,7 @@ const {
 } = require('../middleware/dashboardRouteRateLimits');
 const nfValidadeService = require('../services/nfValidadeService');
 const auditLogService = require('../services/auditLogService');
+const analyticsService = require('../services/analyticsService');
 const { requireMFA } = require('../middleware/mfaMiddleware');
 
 const excelUpload = multer({
@@ -800,6 +801,17 @@ router.get('/simulator/scenario', heavyDashboardReadLimiter, async (req, res) =>
     const month = q.month ? Math.min(Math.max(parseInt(q.month, 10), 1), 12) : undefined;
     const year = q.year ? Math.min(Math.max(parseInt(q.year, 10), 2000), 2100) : undefined;
 
+    analyticsService.track('simulator_run', {
+      userId: req.user.id,
+      source: 'dashboard',
+      properties: {
+        scenario: q.scenario || q.cenario || 'custom',
+        projection_months: q.projection_months || q.projectionMonths || 1,
+        month: month || null,
+        year: year || null,
+      }
+    }).catch(() => {});
+
     const projRaw = q.projection_months ?? q.projectionMonths;
     let projectionMonths =
       projRaw != null && String(projRaw).length ? parseInt(projRaw, 10) : 1;
@@ -864,6 +876,17 @@ router.get('/simulator/scenarios', heavyDashboardReadLimiter, async (req, res) =
     const q = req.query;
     const month = q.month ? Math.min(Math.max(parseInt(q.month, 10), 1), 12) : undefined;
     const year = q.year ? Math.min(Math.max(parseInt(q.year, 10), 2000), 2100) : undefined;
+
+    analyticsService.track('simulator_run', {
+      userId: req.user.id,
+      source: 'dashboard',
+      properties: {
+        scenario: 'all_presets',
+        month: month || null,
+        year: year || null,
+      }
+    }).catch(() => {});
+
     const result = await simulatorService.runAllPresets(req.user.id, {
       month,
       year,
@@ -1019,6 +1042,12 @@ router.get('/export/report', dashboardExportLimiter, async (req, res) => {
     const monthStr = req.query.month; // YYYY-MM
     const periodSlug = monthStr || 'atual';
 
+    analyticsService.track('report_exported', {
+      userId: req.user.id,
+      source: 'dashboard',
+      properties: { format, month: monthStr || null }
+    }).catch(() => {});
+
     if (format === 'pdf') {
       const pdfBuffer = await exportService.exportPDF(req.user.id, monthStr);
       res.setHeader('Content-Type', 'application/pdf');
@@ -1074,6 +1103,20 @@ router.post('/import/excel/confirm', dashboardExportLimiter, async (req, res) =>
     }
 
     const result = await excelService.confirmImport(req.user.id, importToken);
+
+    analyticsService.track('excel_imported', {
+      userId: req.user.id,
+      source: 'dashboard',
+      properties: {
+        valid_rows: result?.summary?.valid_row_count ?? null,
+        receitas_count: result?.summary?.receitas_count ?? null,
+        despesas_count: result?.summary?.despesas_count ?? null,
+        receitas_total: result?.summary?.receitas_total ?? null,
+        despesas_total: result?.summary?.despesas_total ?? null,
+        batch_id: result?.batchId || null,
+      }
+    }).catch(() => {});
+
     if (req.user.telefone) {
       evolutionService
         .sendMessage(req.user.telefone, excelImportWhatsappCopy.importConfirmed(result.summary))
@@ -1238,6 +1281,19 @@ async function upsertMonthlyGoal(req, res) {
       newValue: data,
       req
     });
+
+    analyticsService.track('goal_set', {
+      userId: req.user.id,
+      source: 'dashboard',
+      properties: {
+        year: parsedYear,
+        month: parsedMonth,
+        meta_receita: parsedMeta,
+        has_meta_reserva: meta_reserva != null,
+        has_meta_lucro: meta_lucro != null,
+        is_first_set: !existing,
+      }
+    }).catch(() => {});
 
     res.json(data);
   } catch (error) {
