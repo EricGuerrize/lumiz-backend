@@ -259,6 +259,87 @@ router.post('/mfa/event', authenticateToken, async (req, res) => {
 });
 
 // ============================================================================
+// LGPD self-service web — leitura e re-consent (Fase 19)
+// ============================================================================
+
+const consentService = require('../services/consentService');
+
+/**
+ * GET /api/user/consent
+ *
+ * Devolve o estado de consentimento LGPD do usuário autenticado para o
+ * frontend renderizar:
+ *   - tela "Privacidade" mostrando versões aceitas + data
+ *   - banner "Termos atualizados" quando needs_reconsent=true
+ */
+router.get('/consent', authenticateToken, async (req, res) => {
+  try {
+    const status = await consentService.getConsentStatus({ userId: req.user.id });
+    return res.status(200).json(status);
+  } catch (err) {
+    console.error('[CONSENT] Erro em GET /consent:', err);
+    return res.status(500).json({ error: 'Erro ao consultar status de consentimento' });
+  }
+});
+
+/**
+ * POST /api/user/consent
+ *
+ * Grava aceitação dos termos vigentes para o usuário autenticado (re-consent
+ * via banner web ou primeira aceitação no fluxo de cadastro web).
+ *
+ * Body opcional: { terms_version?: string, privacy_version?: string } — se
+ * vier, valida contra as versões ativas; se as versões enviadas pelo cliente
+ * estiverem defasadas, devolve 409 para forçar refresh.
+ */
+router.post('/consent', authenticateToken, async (req, res) => {
+  try {
+    const active = consentService.getActiveVersions();
+    const sentTerms   = req.body?.terms_version || null;
+    const sentPrivacy = req.body?.privacy_version || null;
+
+    if (
+      (sentTerms && sentTerms !== active.termsVersion) ||
+      (sentPrivacy && sentPrivacy !== active.privacyVersion)
+    ) {
+      return res.status(409).json({
+        error: 'version_mismatch',
+        message: 'As versões enviadas estão defasadas. Atualize a página.',
+        active: {
+          terms_version: active.termsVersion,
+          privacy_version: active.privacyVersion,
+        },
+      });
+    }
+
+    const result = await consentService.recordConsent({
+      userId: req.user.id,
+      req,
+    });
+
+    if (!result.ok && !result.accepted) {
+      return res.status(500).json({
+        error: 'consent_record_failed',
+        reason: result.reason || 'unknown',
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      reused: Boolean(result.skipped),
+      accepted: result.accepted,
+      active: {
+        terms_version: active.termsVersion,
+        privacy_version: active.privacyVersion,
+      },
+    });
+  } catch (err) {
+    console.error('[CONSENT] Erro em POST /consent:', err);
+    return res.status(500).json({ error: 'Erro ao registrar consentimento' });
+  }
+});
+
+// ============================================================================
 // GET /api/user/whoami
 // Devolve identidade resumida do usuário autenticado + flag is_admin.
 // Front usa para decidir se renderiza o grupo "Administração" no sidebar.

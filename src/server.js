@@ -488,7 +488,9 @@ app.get('/', (req, res) => {
         confirmDelete: 'POST /api/user/account/confirm-delete',
         mfaStatus: 'GET /api/user/mfa/status',
         mfaEvent: 'POST /api/user/mfa/event',
-        whoami: 'GET /api/user/whoami'
+        whoami: 'GET /api/user/whoami',
+        consentStatus: 'GET /api/user/consent',
+        consentRecord: 'POST /api/user/consent'
       },
       auth: {
         note: 'Use Authorization: Bearer <supabase_token> or x-user-phone header'

@@ -80,10 +80,23 @@ describe('LGPD — consentService', () => {
             // Quando o chain é awaitado direto (sem .single/.maybeSingle),
             // resolve com null e dispara side effects.
             if (this._operation === 'update' && this._table === 'profiles') {
-              const phone = this._filters.telefone;
-              const existing = phone != null ? profilesByPhone.get(phone) : null;
-              if (phone != null) {
-                profilesByPhone.set(phone, { ...(existing || {}), telefone: phone, ...this._payload });
+              const filters = this._filters;
+              // Aceita update via .eq('telefone', ...) OU via .eq('id', ...).
+              if (filters.telefone != null) {
+                const existing = profilesByPhone.get(filters.telefone);
+                profilesByPhone.set(filters.telefone, {
+                  ...(existing || {}),
+                  telefone: filters.telefone,
+                  ...this._payload,
+                });
+              } else if (filters.id != null) {
+                // Resolve phone reverso buscando o profile por id no Map.
+                for (const [phone, prof] of profilesByPhone.entries()) {
+                  if (prof?.id === filters.id) {
+                    profilesByPhone.set(phone, { ...prof, ...this._payload });
+                    break;
+                  }
+                }
               }
               supabaseMock._state.lastUpdatePayload = this._payload;
             }
