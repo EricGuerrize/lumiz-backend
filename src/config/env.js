@@ -39,7 +39,10 @@ class EnvValidator {
     this.validateOptional('POSTHOG_HOST', 'Host do PostHog (default https://us.i.posthog.com)');
     this.validateOptional('LUMIZ_TERMS_VERSION', 'Versão dos Termos de Uso vigente (LGPD)');
     this.validateOptional('LUMIZ_PRIVACY_VERSION', 'Versão da Política de Privacidade vigente (LGPD)');
-    this.validateOptional('ASAAS_WEBHOOK_SECRET', 'Secret do webhook Asaas (OBRIGATÓRIO em produção)');
+    this.validateOptional(
+      'ASAAS_WEBHOOK_SECRET',
+      'Secret do webhook Asaas (opcional enquanto billing Asaas estiver desativado; sem ela o webhook fica 503)'
+    );
 
     // Validações específicas
     this.validateUrl('SUPABASE_URL');
@@ -144,13 +147,9 @@ class EnvValidator {
     this.validateNotPlaceholder('OPENAI_API_KEY', 'API Key da OpenAI');
     this.validateNotPlaceholder('CRON_SECRET', 'Segredo de cron');
     this.validateNotPlaceholder('METRICS_TOKEN', 'Token de métricas');
-    // ASAAS_WEBHOOK_SECRET é OBRIGATÓRIO em produção — sem ele, o webhook
-    // bloqueia (503) por fail-closed em src/routes/webhooks.js. Aqui falhamos
-    // mais cedo, na startup, para o operador detectar o erro de config antes
-    // do primeiro evento de billing.
-    if (!process.env.ASAAS_WEBHOOK_SECRET) {
-      this.errors.push('❌ ASAAS_WEBHOOK_SECRET é obrigatória em produção (webhook de billing). Sem ela, POST /api/webhooks/asaas devolve 503.');
-    } else {
+    // Asaas ainda pode ficar desativado no rollout inicial. Sem secret, a app
+    // deve subir e o endpoint /api/webhooks/asaas permanece fail-closed (503).
+    if (process.env.ASAAS_WEBHOOK_SECRET) {
       this.validateNotPlaceholder('ASAAS_WEBHOOK_SECRET', 'Secret do webhook Asaas');
     }
   }
