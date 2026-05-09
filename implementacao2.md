@@ -489,8 +489,8 @@ req.headers['x-cron-secret']  // nunca req.query.secret
 - Suíte: `tests/unit/configFeaturesEndpoint.test.js` (6 casos cobrindo defaults, whitelist filter, anônimo, token válido, token inválido, falha de DB).
 - Fase 16 marcada ✅ no [ROADMAP.md](ROADMAP.md). Frontend já tinha `useFeatureFlag` consumindo este endpoint.
 
-### Fase 12 — Importador Excel (backend)
-Backend concluído em 09/05/2026.
+### Fase 12 — Importador Excel (backend + frontend)
+Backend e frontend concluídos em 09/05/2026.
 - Migration `20260509000030_excel_import_batches.sql`: cria `excel_import_batches` com RLS + `import_batch_id` em `atendimentos` e `contas_pagar`.
 - `excelService.importFromExcel`: preview seguro de `.xlsx/.xls`, mapeamento automático de colunas, normalização BRL/data BR, inconsistências e summary.
 - `excelService.confirmImport`: materializa entradas em `atendimentos` + `atendimento_procedimentos` e saídas em `contas_pagar` (`origem='import'`), tudo com `import_batch_id`.
@@ -503,7 +503,8 @@ Backend concluído em 09/05/2026.
 - Segurança: `multer` em memória, limite padrão 5MB, limite padrão 5.000 linhas, parser sem fórmulas/estilos.
 - WhatsApp: confirmação fire-and-forget em `POST /confirm` via `excelImportWhatsappCopy`.
 - Testes: `tests/unit/excelImportService.test.js`; regression **168/168**.
-- Frontend pendente: página `/dashboard/import` (ver `HANDOFF_BACKEND.md`).
+- Frontend: rota `/dashboard/import` com drag-and-drop, prévia, inconsistências, histórico e desfazer; gated por `useFeatureFlag('excel_import')`.
+- Feature flag `excel_import` ativada globalmente em `feature_flags(user_id IS NULL)` em 09/05/2026 — descrição atualizada em `featureFlagsRegistry.js`.
 
 ### Database Security Hardening (08/05/2026)
 Após review do Supabase Advisor: **4 ERRORS críticos eliminados**. Migrations [`20260509000010_security_hardening.sql`](supabase/migrations/20260509000010_security_hardening.sql) + [`20260509000020_security_hardening_round2.sql`](supabase/migrations/20260509000020_security_hardening_round2.sql).

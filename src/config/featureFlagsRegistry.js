@@ -18,7 +18,7 @@ const KNOWN_FLAGS = Object.freeze({
   },
   excel_import: {
     default: false,
-    description: 'Importador de planilha Excel (Fase 12 — em planejamento).'
+    description: 'Importador de planilha Excel (Fase 12 — disponível). Ativada globalmente em 2026-05-09.'
   },
   ofx_export: {
     default: false,

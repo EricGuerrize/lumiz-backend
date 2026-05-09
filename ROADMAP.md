@@ -20,7 +20,7 @@
 | 9 | Estados Empty/Sparse na UI | Front | P | ✅ Concluído |
 | 10 | Frontend Phases 4–6 (Estoque, Health Score, Inadimplência, Sazonalidade, Outlook, Goals) | Front | G | ✅ Concluído |
 | 11 | Capture Agent — confidence score + confirmação WhatsApp | Back | M | ✅ Concluído (Onda 1, áudio Whisper incluído) |
-| 12 | Importador de planilha Excel | Back + Front | G | 🟡 Backend concluído — frontend pendente (`/dashboard/import`) |
+| 12 | Importador de planilha Excel | Back + Front | G | ✅ Concluído (back + front) — flag `excel_import` ativa globalmente desde 09/05/2026 |
 | 13 | Export OFX para contador | Back + Front | P | 🟡 Backend concluído — frontend pendente (botão OFX em `ExportButtons.tsx`) |
 | 14 | Multi-tenant / switch de clínica | Back + Front | G | ⬜ Pendente |
 | 15 | Audit log | Back + Front | M | 🟡 Backend concluído — frontend pendente (`/dashboard/configuracoes/audit-log`) |
@@ -329,7 +329,7 @@ Referência rápida do que está implementado. Não retrabalhar.
 
 ## Fase 12 — Importador de planilha Excel
 
-**Status:** 🟡 Backend concluído (09/05/2026) — frontend pendente (`/dashboard/import`).
+**Status:** ✅ Concluído (backend + frontend) em 09/05/2026. Flag `excel_import` ativada globalmente em `feature_flags` (`user_id IS NULL`).
 
 **Objetivo:** permitir que a clínica faça upload de seu Excel histórico e importe lançamentos automaticamente.
 
@@ -359,13 +359,17 @@ Referência rápida do que está implementado. Não retrabalhar.
 - `POST /import/excel/confirm` envia WhatsApp de confirmação via `src/copy/excelImportWhatsappCopy.js` quando `req.user.telefone` está disponível (fire-and-forget).
 - Testes: `tests/unit/excelImportService.test.js` (3 cenários: preview/mapping/inconsistências, confirm+undo, history). Regression: **168/168**.
 
-**Frontend:**
-- Página `/dashboard/import`:
-  - Step 1: upload de arquivo `.xlsx` ou `.xls` com drag-and-drop
-  - Step 2: preview dos primeiros 10 registros + mapeamento de colunas editável
-  - Step 3: confirmar importação + barra de progresso
-  - Step 4: resumo — "importei X lançamentos · R$ Y em receita · Z inconsistências"
-  - Botão "Desfazer importação" disponível por 24h
+**Frontend (entregue 09/05/2026):**
+- Rota `/dashboard/import` com `ExcelImportPage.tsx`: drag-and-drop `.xlsx/.xls`, validação de 5MB no cliente, prévia, resumo, inconsistências, confirmação (somente se `valid_rows > 0`), estado de sucesso e histórico com "Desfazer importação" para lotes `confirmed`.
+- `useFeatureFlag('excel_import')` controla visibilidade do menu; sem flag, a URL exibe "Importação Excel ainda não habilitada".
+- API: `postFormData` em `api-client.ts` para multipart (sem `Content-Type` fixo); contratos tipados em `dashboard-api.ts` (`postExcelImportPreview`, `postExcelImportConfirm`, `getExcelImportHistory`, `deleteExcelImport`); hooks `use-excel-import.ts` invalidam `excel-import-history`, `dashboard`, `contas-pagar-dashboard`, `cashflow-projection`.
+- Navegação: item "Importar Excel" em **Operacional** (`AppSidebar`); título mobile no `AppLayout`.
+- Docs: seção Fase 12 em `implementacao2FRONTEND.md` e `HANDOFF_FRONTEND.md`.
+- Verificação: `npx tsc --noEmit` e `npm run build` OK.
+
+**Ativação em produção:**
+- Flag `excel_import` ativa globalmente em `feature_flags(user_id IS NULL, enabled=true, meta.enabled_by='fase_12_release')` desde 2026-05-09 15:46 UTC.
+- Cache do `featureFlagService` é 60s; nova clínica autenticada já recebe a flag em `GET /api/config/features` no próximo refresh.
 
 **Dependências:** nenhuma crítica. Fases 7–8 recomendadas antes (pró-labore e comissão evitam retrabalho no import).
 
@@ -374,7 +378,8 @@ Referência rápida do que está implementado. Não retrabalhar.
 - ✅ Preview correto antes de confirmar
 - ✅ Desfazer batch remove todos os registros do import
 - ✅ Notificação WhatsApp ao final: "Importei X lançamentos"
-- Teste com o `Controle Geral.xlsx` da NB Clinic
+- ✅ Frontend `/dashboard/import` em produção atrás de feature flag
+- ⬜ Teste com o `Controle Geral.xlsx` real da NB Clinic (smoke manual recomendado)
 
 **Esforço:** G
 
