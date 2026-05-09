@@ -516,6 +516,13 @@ Auditoria pré-launch revelou dois gaps críticos. Backend concluído, regressio
 #### Frontend pendente
 - Para Fase 19 (LGPD self-service): exibir versões aceitas em "Configurações → Privacidade", banner "Termos atualizados" quando versões diferem das ativas, fluxo de re-consent. Detalhes em `HANDOFF_BACKEND.md` seção "Hardening pré-launch — Webhook Asaas + prova de consentimento LGPD".
 
+## Refator design system + páginas admin (09/05/2026)
+
+- **Backend:** `GET /api/user/whoami` (commit `6e9cdf4` na `main`); 6 testes unitários em `tests/unit/whoamiEndpoint.test.js`; regressão **216/216** verde.
+- **Frontend** (repo `lumiz-financeiro`, entregue por agente separado, mesma data): migração de `apps/dashboard` para tokens/components alinhados ao mock `lumiz-nb-clinic.html`; **5 páginas admin** com RBAC via `whoami` (`/admin`, `/admin/usuarios`, `/admin/assinaturas`, `/admin/feedback`, `/admin/diagnostico`); ajustes pontuais (`.dot-warn`, `AppSidebar` com `PlugZap`→`ShieldCheck`, `Topbar`, `SidebarTrigger`, `GlobalSearch`, `dashboard-api.ts`, `AppLayout`); mock copiado para `lumiz-financeiro/apps/dashboard/_design/`.
+- **Verificação front:** `cd lumiz-financeiro && npx tsc --noEmit` exit 0; `npm run build` ✓ (~8,8 s).
+- **Follow-up:** limpar blocos extras do sidebar fora do espec (**Operações extras**, outlook, pricing) em PR separada (decisão de produto). PR/screenshots/preview ficam sob captura do PO quando houver preview.
+
 ### Fase 17 — Analytics de produto via PostHog (backend)
 Backend concluído em 09/05/2026. Frontend pendente.
 - Dependência: `posthog-node@5.33.4` (MIT, oficial PostHog).

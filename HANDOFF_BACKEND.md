@@ -1078,3 +1078,33 @@ Nenhuma mudança imediata necessária. Para Fase 19 (LGPD self-service), a UI de
 1. Exibir as versões dos Termos/Privacidade aceitas em "Configurações → Privacidade" (consumir `GET /api/user/me` ou criar `GET /api/user/consent` se preciso).
 2. Mostrar banner "Termos atualizados — leia e reconfirme" quando `terms_version`/`privacy_version` do user diferem das ativas (server retorna a comparação).
 3. Após confirmação no front, chamar endpoint que delega para `consentService.recordConsent` (ou — alternativa mais simples — exigir reconsentimento via WhatsApp).
+
+## GET /api/user/whoami + refator design system (09/05/2026)
+
+### Por que existe
+
+O frontend precisa decidir com segurança se renderiza o grupo **Administração** no sidebar (e rotas `/admin/*`) sem depender de chamar `/api/admin/*` e inferir papel via **403**. O endpoint dedicado permite um contrato estável antes de qualquer rota administrativa sensível.
+
+### Contrato
+
+- **Método/rota:** `GET /api/user/whoami`
+- **Auth:** Bearer JWT (`Authorization`)
+- **Resposta JSON:** `{ user_id, email, is_admin }`
+
+### Degradação segura
+
+Se o RPC Postgres `is_user_admin` falhar (ou degradar por erro técnico), a resposta **nunca eleva privilégio**: devolve `is_admin: false`.
+
+### Entrega backend / testes
+
+- **Commit:** `6e9cdf4` na branch `main`
+- **Testes:** 6 cenários em `tests/unit/whoamiEndpoint.test.js`
+- **Regressão:** suíte **216/216** verde na data da entrega
+
+### Status do frontend (mesma data)
+
+Design system aplicado ao dashboard; **5 páginas admin** atrás do `whoami`: `/admin`, `/admin/usuarios`, `/admin/assinaturas`, `/admin/feedback`, `/admin/diagnostico`. Qualidade build: `npx tsc --noEmit` (exit 0) e `npm run build` (sucesso).
+
+### Follow-up pendente
+
+**Decisão de produto:** o sidebar atual ainda contém blocos extras além das 17 abas do espec (**Operações extras**, outlook, pricing). Limpeza ficou para **PR separada** — não faz parte desta rodada.
