@@ -25,7 +25,7 @@
 | 14 | Multi-tenant / switch de clínica | Back + Front | G | ⬜ Pendente |
 | 15 | Audit log | Back + Front | M | 🟡 Backend concluído — frontend pendente (`/dashboard/configuracoes/audit-log`) |
 | 16 | Feature flags | Back + Front | P | ✅ Concluído — backend com `featureFlagService` + `requireFeature` + `GET /api/config/features` (whitelist + auth opcional + degradação segura); frontend com `useFeatureFlag` + `AlterGate` |
-| 17 | Analytics de produto (PostHog) | Back + Front | M | ⬜ Pendente |
+| 17 | Analytics de produto (PostHog) | Back + Front | M | 🟡 Backend concluído (09/05/2026) — frontend pendente |
 | 18 | MFA obrigatório | Back + Front | M | 🟡 Backend concluído — frontend pendente (`/configuracoes/seguranca` enrollment TOTP) |
 | 19 | LGPD: export de dados + direito ao esquecimento | Back + Front | M | 🟡 Backend concluído |
 | 20 | Integrações futuras (Pluggy, Adquirentes, NFe.io, Alter) | Back | G | ⏸️ Bloqueado go-live (Alter real — falta sandbox/contrato) |
@@ -707,6 +707,49 @@ Referência rápida do que está implementado. Não retrabalhar.
 - ⬜ Frontend: configurações → privacidade.
 
 **Esforço:** M
+
+---
+
+## Hardening pré-launch — Webhook Asaas + prova de consentimento LGPD
+
+**Status:** ✅ Concluído (09/05/2026). Migration aplicada no Supabase remoto.
+
+**Por que existe:** auditoria pré-launch revelou dois gaps críticos:
+1. **Fraude potencial de billing** — `POST /api/webhooks/asaas` aceitava qualquer payload se `ASAAS_WEBHOOK_SECRET` não estivesse configurada (fail-open implícito).
+2. **Não-conformidade LGPD** — o "Autorizo" do onboarding via WhatsApp era registrado apenas em `analytics_events`, sem prova robusta (timestamp + versão dos termos) na tabela `profiles`. LGPD Art. 8º §1º exige prova auditável.
+
+**Backend:** ✅
+- `src/routes/webhooks.js` — fail-closed em produção:
+  - `NODE_ENV=production` sem `ASAAS_WEBHOOK_SECRET` → **503** + log crítico (não chama `paymentService.handleWebhook`).
+  - Em dev/test sem secret: warn alto + processa (ergonomia local).
+  - Em qualquer ambiente com secret configurado: token errado → **401**.
+- `src/config/env.js` — `ASAAS_WEBHOOK_SECRET` agora é validado como **obrigatório em produção** na startup. App falha fast em vez de subir vulnerável.
+- Migration `supabase/migrations/20260509000040_profiles_consent_lgpd.sql` (aplicada): adiciona `consent_given_at`, `terms_version`, `privacy_version`, `consent_ip`, `consent_user_agent` em `profiles` + índice parcial.
+- `src/services/consentService.js`:
+  - `recordConsent({ phone, req })` — busca profile por telefone, persiste timestamp + versões + IP + UA, grava entry em `audit_log` (action=`consent_given`, entityType=`profile`). Idempotente (skip se já consentiu nas versões atuais). Re-consent automático quando versões mudam.
+  - `hasGivenConsent({ phone })` — confere se o usuário consentiu nas versões ativas.
+  - `getActiveVersions()` — versões vêm de `LUMIZ_TERMS_VERSION` / `LUMIZ_PRIVACY_VERSION` (env-overridable; default `2026-05-09`).
+- Plug em ambos os handlers de consent (`src/services/onboarding/profileHandlers.js` e `src/services/onboardingFlowService.js`): no momento do "Autorizo", `recordConsent` é chamado fire-and-forget.
+- Tests:
+  - `tests/unit/asaasWebhookSecurity.test.js` — 7 cenários (prod sem/com/errado/sem header, dev sem/com errado, test sem).
+  - `tests/unit/consentService.test.js` — 13 cenários (versões ativas, persistência, audit_log, idempotência, re-consent, profile inexistente, fire-and-forget, IP via x-forwarded-for, hasGivenConsent).
+  - Regression suite: **210/210 verde**.
+
+**Frontend:** nenhuma mudança necessária para esta correção. UI dos termos/privacidade fica para Fase 19 (LGPD self-service).
+
+**Variáveis de ambiente (Railway):**
+- **OBRIGATÓRIO em produção:** `ASAAS_WEBHOOK_SECRET=<segredo-cadastrado-no-painel-asaas>`. Sem ela, o servidor não sobe (`validateOrThrow`) ou, se subir, devolve 503 no webhook.
+- **Recomendados (LGPD):** `LUMIZ_TERMS_VERSION=2026-05-09`, `LUMIZ_PRIVACY_VERSION=2026-05-09`. Bumpar a versão força re-consent global no próximo "Autorizo" do user.
+
+**Definition of Done:**
+- ✅ Webhook Asaas devolve 503 em produção sem secret configurada (fail-closed).
+- ✅ Tabela `profiles` ganhou colunas `consent_given_at`, `terms_version`, `privacy_version`, `consent_ip`, `consent_user_agent`.
+- ✅ Onboarding "Autorizo" persiste timestamp + versões + IP/UA + audit_log entry.
+- ✅ Re-consent automático ao mudar `LUMIZ_TERMS_VERSION` ou `LUMIZ_PRIVACY_VERSION`.
+- ⬜ Configurar `ASAAS_WEBHOOK_SECRET` e `LUMIZ_TERMS_VERSION` no Railway antes de habilitar billing real.
+- ⬜ Fase 19 frontend exibir as versões aceitas em "Configurações → Privacidade".
+
+**Esforço:** P (entregue em ~1h30, conforme estimativa).
 
 ---
 

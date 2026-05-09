@@ -37,6 +37,9 @@ class EnvValidator {
     this.validateOptional('METRICS_TOKEN', 'Token para endpoint de métricas (recomendado em produção)');
     this.validateOptional('POSTHOG_API_KEY', 'API Key do PostHog (Fase 17 — analytics de produto)');
     this.validateOptional('POSTHOG_HOST', 'Host do PostHog (default https://us.i.posthog.com)');
+    this.validateOptional('LUMIZ_TERMS_VERSION', 'Versão dos Termos de Uso vigente (LGPD)');
+    this.validateOptional('LUMIZ_PRIVACY_VERSION', 'Versão da Política de Privacidade vigente (LGPD)');
+    this.validateOptional('ASAAS_WEBHOOK_SECRET', 'Secret do webhook Asaas (OBRIGATÓRIO em produção)');
 
     // Validações específicas
     this.validateUrl('SUPABASE_URL');
@@ -141,6 +144,15 @@ class EnvValidator {
     this.validateNotPlaceholder('OPENAI_API_KEY', 'API Key da OpenAI');
     this.validateNotPlaceholder('CRON_SECRET', 'Segredo de cron');
     this.validateNotPlaceholder('METRICS_TOKEN', 'Token de métricas');
+    // ASAAS_WEBHOOK_SECRET é OBRIGATÓRIO em produção — sem ele, o webhook
+    // bloqueia (503) por fail-closed em src/routes/webhooks.js. Aqui falhamos
+    // mais cedo, na startup, para o operador detectar o erro de config antes
+    // do primeiro evento de billing.
+    if (!process.env.ASAAS_WEBHOOK_SECRET) {
+      this.errors.push('❌ ASAAS_WEBHOOK_SECRET é obrigatória em produção (webhook de billing). Sem ela, POST /api/webhooks/asaas devolve 503.');
+    } else {
+      this.validateNotPlaceholder('ASAAS_WEBHOOK_SECRET', 'Secret do webhook Asaas');
+    }
   }
 
   /**
@@ -199,6 +211,13 @@ class EnvValidator {
       posthog: {
         apiKey: process.env.POSTHOG_API_KEY || null,
         host: process.env.POSTHOG_HOST || null
+      },
+      legal: {
+        termsVersion: process.env.LUMIZ_TERMS_VERSION || null,
+        privacyVersion: process.env.LUMIZ_PRIVACY_VERSION || null
+      },
+      asaas: {
+        webhookSecret: process.env.ASAAS_WEBHOOK_SECRET || null
       },
       nodeEnv: process.env.NODE_ENV || 'development',
       port: parseInt(process.env.PORT || '3000', 10)

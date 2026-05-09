@@ -5,6 +5,7 @@
 
 const onboardingCopy = require('../../copy/onboardingWhatsappCopy');
 const analyticsService = require('../analyticsService');
+const consentService = require('../consentService');
 
 // Constantes
 const MIN_NAME_LENGTH = 2;
@@ -66,6 +67,11 @@ const profileHandlers = {
         phone: normalizedPhone,
         source: 'whatsapp'
       });
+      // LGPD — persiste prova do consentimento (timestamp + versão dos termos)
+      // em profiles + audit_log. Fire-and-forget; nunca derruba o onboarding.
+      consentService
+        .recordConsent({ phone: normalizedPhone, req: onboarding?.req })
+        .catch(() => {});
       const questionText = onboardingCopy.profileNameQuestion();
       return await respond(questionText, true);
     }

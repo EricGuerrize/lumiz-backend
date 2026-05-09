@@ -1,6 +1,6 @@
 # Lumiz — Monitoramento de Implementação (Phases 1–6)
 
-> **Última atualização:** 2026-05-09 (Fase 17 PostHog + Fase 12 Importador Excel + Fase 18 MFA + Database Security Hardening)
+> **Última atualização:** 2026-05-09 (Hardening pré-launch — Asaas webhook fail-closed + LGPD consent prova auditável + Fase 17 PostHog + Fase 12 Importador Excel + Fase 18 MFA + Database Security Hardening)
 > **Repositório backend:** https://github.com/EricGuerrize/lumiz-backend
 > **Repositório frontend:** https://github.com/EricGuerrize/lumiz-financeiro
 > **Deploy backend:** Railway (branch `main` → auto-deploy)
@@ -488,6 +488,33 @@ req.headers['x-cron-secret']  // nunca req.query.secret
 - Auth opcional (Bearer best-effort, anônimo permitido), degradação segura para defaults se Supabase falhar.
 - Suíte: `tests/unit/configFeaturesEndpoint.test.js` (6 casos cobrindo defaults, whitelist filter, anônimo, token válido, token inválido, falha de DB).
 - Fase 16 marcada ✅ no [ROADMAP.md](ROADMAP.md). Frontend já tinha `useFeatureFlag` consumindo este endpoint.
+
+### Hardening pré-launch — Asaas webhook + prova de consentimento LGPD (09/05/2026)
+
+Auditoria pré-launch revelou dois gaps críticos. Backend concluído, regression **210/210 verde**.
+
+#### 1. Webhook Asaas — fail-closed em produção
+- **Problema:** `POST /api/webhooks/asaas` antes aceitava qualquer payload se `ASAAS_WEBHOOK_SECRET` não estivesse configurada → vetor de fraude de billing.
+- [src/routes/webhooks.js](src/routes/webhooks.js) — `NODE_ENV=production` sem secret → **503** + log crítico, `paymentService.handleWebhook` NÃO é chamado. Token errado → 401. Em dev/test sem secret → warn alto + processa.
+- [src/config/env.js](src/config/env.js) — `ASAAS_WEBHOOK_SECRET` agora é validada como **obrigatória em produção** na startup. App falha fast em vez de subir vulnerável.
+- Tests: [tests/unit/asaasWebhookSecurity.test.js](tests/unit/asaasWebhookSecurity.test.js) — 7 cenários (prod sem/com correto/errado/sem header, dev sem/com errado, test sem).
+
+#### 2. Prova de consentimento LGPD persistida
+- **Problema:** "1️⃣ Autorizo" do onboarding via WhatsApp era registrado apenas em `analytics_events` (`event=onboarding_consent_given`), sem prova robusta auditável (timestamp + versão dos termos) — frágil para auditoria ANPD ou disputa civil. LGPD Art. 8º §1º exige prova.
+- Migration: [supabase/migrations/20260509000040_profiles_consent_lgpd.sql](supabase/migrations/20260509000040_profiles_consent_lgpd.sql) (aplicada via MCP). Adiciona em `profiles`: `consent_given_at`, `terms_version`, `privacy_version`, `consent_ip`, `consent_user_agent` + índice parcial `idx_profiles_consent_versions`.
+- [src/services/consentService.js](src/services/consentService.js):
+  - `recordConsent({ phone, req })` — busca profile por telefone, persiste timestamp + versões + IP + UA, grava entry em `audit_log` (`action='consent_given'`, `entityType='profile'`). Idempotente. Re-consent automático quando versões mudam. Fire-and-forget — erro de DB nunca propaga.
+  - `hasGivenConsent({ phone })` — confere se user consentiu nas versões ativas.
+  - `getActiveVersions()` — lê env `LUMIZ_TERMS_VERSION`/`LUMIZ_PRIVACY_VERSION` (default `2026-05-09`).
+- Plug em ambos handlers de consent: [src/services/onboarding/profileHandlers.js](src/services/onboarding/profileHandlers.js) e [src/services/onboardingFlowService.js](src/services/onboardingFlowService.js) — após "Autorizo", chamam `consentService.recordConsent` fire-and-forget.
+- Tests: [tests/unit/consentService.test.js](tests/unit/consentService.test.js) — 13 cenários (persistência, audit_log, idempotência, re-consent, profile inexistente, fire-and-forget em erro, x-forwarded-for, getActiveVersions, hasGivenConsent).
+
+#### Variáveis de ambiente novas
+- **OBRIGATÓRIA em prod:** `ASAAS_WEBHOOK_SECRET=<segredo-cadastrado-no-painel-asaas>`. Sem ela, server falha na startup.
+- **Recomendadas:** `LUMIZ_TERMS_VERSION=2026-05-09`, `LUMIZ_PRIVACY_VERSION=2026-05-09`. Bumpar força re-consent global.
+
+#### Frontend pendente
+- Para Fase 19 (LGPD self-service): exibir versões aceitas em "Configurações → Privacidade", banner "Termos atualizados" quando versões diferem das ativas, fluxo de re-consent. Detalhes em `HANDOFF_BACKEND.md` seção "Hardening pré-launch — Webhook Asaas + prova de consentimento LGPD".
 
 ### Fase 17 — Analytics de produto via PostHog (backend)
 Backend concluído em 09/05/2026. Frontend pendente.

@@ -944,3 +944,137 @@ Eventos antigos (Fase 1+) continuam funcionando — qualquer chamada existente d
 5. Use o mesmo `distinctId` do backend (`userId`) para o funil cruzar (a query distinctId fica unificada).
 
 Sem a key `VITE_POSTHOG_API_KEY` configurada, o front deve no-op silenciosamente — espelho da degradação do backend.
+
+---
+
+# Hardening pré-launch — Webhook Asaas + prova de consentimento LGPD
+
+> **Status:** backend concluído (09/05/2026). Migration `20260509000040_profiles_consent_lgpd.sql` aplicada no Supabase remoto.
+
+## 1. Webhook Asaas — fail-closed em produção
+
+### Problema
+
+Antes desta entrega, `POST /api/webhooks/asaas` tinha o seguinte fluxo:
+
+```js
+if (process.env.ASAAS_WEBHOOK_SECRET && token !== process.env.ASAAS_WEBHOOK_SECRET) {
+  return res.status(401).json({ error: 'Unauthorized' });
+}
+```
+
+Se a env var **não estivesse configurada** em produção (esquecimento humano), a verificação virava `false && ...`, permitindo que **qualquer um** mandasse webhooks forjados (PAYMENT_RECEIVED, etc.) e ativasse assinaturas pagas sem pagar.
+
+### Solução
+
+Hardening em duas camadas:
+
+1. **Runtime** ([src/routes/webhooks.js](src/routes/webhooks.js)):
+   - `NODE_ENV=production` SEM `ASAAS_WEBHOOK_SECRET` → **503** + log `[WEBHOOK/ASAAS] BLOQUEADO`. `paymentService.handleWebhook` NUNCA é chamado.
+   - `NODE_ENV=production` COM secret configurado: token correto → 200, token errado/ausente → 401.
+   - `NODE_ENV=development`/`test` SEM secret → warn alto + processa (ergonomia local).
+   - Em qualquer ambiente com secret configurado, token errado → 401.
+
+2. **Startup** ([src/config/env.js](src/config/env.js)):
+   - `ASAAS_WEBHOOK_SECRET` é validada como **obrigatória em produção** dentro de `validateSensitivePlaceholders`. Se ausente, a startup falha em `validateOrThrow` antes de aceitar tráfego — operador vê erro de config no boot do Railway, não em billing inválido depois.
+
+### Variável obrigatória em prod
+
+```
+ASAAS_WEBHOOK_SECRET=<segredo-do-painel-asaas>
+```
+
+Sem ela em produção: backend nem sobe (depende de `validate()` em `server.js`), ou se subir, devolve 503 em todo evento de billing.
+
+### Tests
+
+`tests/unit/asaasWebhookSecurity.test.js` — 7 cenários:
+- prod sem secret → 503 (handler não chamado)
+- prod com secret correto → 200 (handler chamado)
+- prod com secret errado → 401
+- prod sem header → 401
+- dev sem secret → 200 + warn
+- dev com secret errado → 401
+- test sem secret → 200 (não polui suite)
+
+## 2. Prova de consentimento LGPD
+
+### Problema
+
+LGPD Art. 8º §1º exige que o controlador (Lumiz) mantenha **prova robusta** do consentimento — com timestamp e versão dos termos vigentes naquele momento. Antes desta entrega, o "1️⃣ Autorizo" do onboarding via WhatsApp era registrado APENAS em `analytics_events` com `event=onboarding_consent_given`. Falhas silenciosas de DB (`error.code 42P01` quando tabela não existe) podiam fazer a prova evaporar — frágil para auditoria ANPD ou disputa civil.
+
+### Solução
+
+#### Migration ([20260509000040_profiles_consent_lgpd.sql](supabase/migrations/20260509000040_profiles_consent_lgpd.sql))
+
+Adiciona em `profiles`:
+
+| Coluna | Tipo | Significado |
+|---|---|---|
+| `consent_given_at` | `timestamptz` | Timestamp do consentimento mais recente |
+| `terms_version` | `text` | Versão dos Termos aceita |
+| `privacy_version` | `text` | Versão da Política de Privacidade aceita |
+| `consent_ip` | `text` | IP de origem (x-forwarded-for honored) |
+| `consent_user_agent` | `text` | User-agent (truncado a 500 chars) |
+
+Mais um índice parcial `idx_profiles_consent_versions` em `(terms_version, privacy_version)` filtrando por `consent_given_at IS NOT NULL` (consultas tipo "tem consent ativo nas versões atuais?").
+
+#### Service ([src/services/consentService.js](src/services/consentService.js))
+
+API:
+
+```js
+const consentService = require('./services/consentService');
+
+// Persiste consent (ou skip se já bate com versões ativas)
+await consentService.recordConsent({ phone: '+5566912345678', req });
+
+// Verifica se user consentiu nas versões ATIVAS
+const ok = await consentService.hasGivenConsent({ phone: '+5566912345678' });
+
+// Versões vigentes (env-overridable)
+const { termsVersion, privacyVersion } = consentService.getActiveVersions();
+```
+
+Comportamento:
+1. **Persistência**: faz `UPDATE profiles SET consent_given_at, terms_version, privacy_version, consent_ip, consent_user_agent WHERE telefone = ?`.
+2. **Audit log**: grava entry com `action='consent_given'`, `entityType='profile'`, `oldValue` (versões anteriores se re-consent) e `newValue` (versões atuais + timestamp).
+3. **Idempotência**: se `consent_given_at` já existe e `terms_version`/`privacy_version` batem com as ativas, retorna `{ skipped: true, reason: 'already_consented' }` sem regravar.
+4. **Re-consent**: se versões mudaram (env LUMIZ_TERMS_VERSION ou LUMIZ_PRIVACY_VERSION incrementadas), grava novo timestamp + audita oldValue.
+5. **Fire-and-forget**: erro de DB nunca propaga; loga warn e devolve `{ ok: false, skipped: true, reason: ... }`.
+6. **Profile não encontrado**: retorna `skipped`, avisa, NÃO cria perfil (segurança).
+
+#### Plug nos handlers
+
+Ambos os handlers de consent (`src/services/onboarding/profileHandlers.js` e `src/services/onboardingFlowService.js`) chamam `recordConsent` fire-and-forget no momento do "Autorizo":
+
+```js
+if (choseAuthorize) {
+  onboarding.step = 'PROFILE_NAME';
+  await analyticsService.track('onboarding_consent_given', { phone, source: 'whatsapp' });
+  consentService.recordConsent({ phone: normalizedPhone, req: onboarding?.req }).catch(() => {});
+  return await respond(onboardingCopy.profileNameQuestion(), true);
+}
+```
+
+#### Configuração
+
+Variáveis de ambiente (opcionais, com defaults):
+
+| Variável | Default | Descrição |
+|---|---|---|
+| `LUMIZ_TERMS_VERSION` | `2026-05-09` | Versão vigente dos Termos. Bumpar força re-consent. |
+| `LUMIZ_PRIVACY_VERSION` | `2026-05-09` | Versão vigente da Política. Bumpar força re-consent. |
+
+### Tests
+
+`tests/unit/consentService.test.js` — 13 cenários: persistência, audit, idempotência, re-consent, profile inexistente, fire-and-forget em DB error, IP via x-forwarded-for, getActiveVersions com env vars, defaults, hasGivenConsent.
+
+Regression suite: **210/210 verde** (subiu de 190 → 210 com 7 + 13 novos).
+
+## Frontend pendente
+
+Nenhuma mudança imediata necessária. Para Fase 19 (LGPD self-service), a UI deve:
+1. Exibir as versões dos Termos/Privacidade aceitas em "Configurações → Privacidade" (consumir `GET /api/user/me` ou criar `GET /api/user/consent` se preciso).
+2. Mostrar banner "Termos atualizados — leia e reconfirme" quando `terms_version`/`privacy_version` do user diferem das ativas (server retorna a comparação).
+3. Após confirmação no front, chamar endpoint que delega para `consentService.recordConsent` (ou — alternativa mais simples — exigir reconsentimento via WhatsApp).
