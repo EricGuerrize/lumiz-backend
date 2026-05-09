@@ -258,4 +258,28 @@ router.post('/mfa/event', authenticateToken, async (req, res) => {
   }
 });
 
+// ============================================================================
+// GET /api/user/whoami
+// Devolve identidade resumida do usuário autenticado + flag is_admin.
+// Front usa para decidir se renderiza o grupo "Administração" no sidebar.
+// Sem isto, o front teria que bater em /api/admin/* para inferir via 403, o
+// que polui logs e gasta requests.
+// ============================================================================
+router.get('/whoami', authenticateToken, async (req, res) => {
+  const supabase = require('../db/supabase');
+  let isAdmin = false;
+  try {
+    const { data, error } = await supabase.rpc('is_user_admin', { p_user_id: req.user.id });
+    if (!error) isAdmin = Boolean(data);
+  } catch (err) {
+    console.warn('[WHOAMI] Falha ao resolver is_user_admin:', err?.message || err);
+  }
+
+  return res.status(200).json({
+    user_id: req.user.id,
+    email: req.user.email || null,
+    is_admin: isAdmin,
+  });
+});
+
 module.exports = router;
