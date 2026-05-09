@@ -1,6 +1,6 @@
 # Lumiz — Monitoramento de Implementação (Phases 1–6)
 
-> **Última atualização:** 2026-05-07 (Fase 19 backend — LGPD: export + esquecimento)
+> **Última atualização:** 2026-05-08 (Fase 18 MFA + Database Security Hardening — 0 critical advisors)
 > **Repositório backend:** https://github.com/EricGuerrize/lumiz-backend
 > **Repositório frontend:** https://github.com/EricGuerrize/lumiz-financeiro
 > **Deploy backend:** Railway (branch `main` → auto-deploy)
@@ -488,6 +488,36 @@ req.headers['x-cron-secret']  // nunca req.query.secret
 - Auth opcional (Bearer best-effort, anônimo permitido), degradação segura para defaults se Supabase falhar.
 - Suíte: `tests/unit/configFeaturesEndpoint.test.js` (6 casos cobrindo defaults, whitelist filter, anônimo, token válido, token inválido, falha de DB).
 - Fase 16 marcada ✅ no [ROADMAP.md](ROADMAP.md). Frontend já tinha `useFeatureFlag` consumindo este endpoint.
+
+### Database Security Hardening (08/05/2026)
+Após review do Supabase Advisor: **4 ERRORS críticos eliminados**. Migrations [`20260509000010_security_hardening.sql`](supabase/migrations/20260509000010_security_hardening.sql) + [`20260509000020_security_hardening_round2.sql`](supabase/migrations/20260509000020_security_hardening_round2.sql).
+- `subscriptions`: RLS ON + policy `users read own subscription` (clinic_id = auth.uid()).
+- 3 views (`view_financial_ledger`, `view_finance_balance`, `view_monthly_report`): trocadas para `security_invoker = on` — passam a respeitar RLS das tabelas-base.
+- `exec_sql_readonly`, `admin_get_subscription_stats`, `is_user_admin`, `generate_orcamento_numero`: REVOKE EXECUTE de `anon` + `authenticated`. Backend continua chamando via service-role.
+- `match_learned_knowledge`: `search_path` fixado em `public, pg_catalog`.
+- Coverage: 34/35 tabelas com RLS + policy. Única exceção `reminders_sent` é intencional (apenas backend).
+- WARN restantes (não-bloqueantes): `vector` em schema `public` (tech debt), `auth_leaked_password_protection` (habilitar via painel Auth antes do go-live).
+- Detalhes completos no [HANDOFF_BACKEND.md](HANDOFF_BACKEND.md) seção "Database Security & Compliance".
+
+### Fase 18 — MFA obrigatório (backend)
+- Decisão: enrollment/verify/unenroll fica 100% no frontend via `supabase.auth.mfa.*` (TOTP nativo do Supabase Auth). Backend cumpre 3 papéis: status para a UI, enforcement e auditoria.
+- Service: [src/services/mfaService.js](src/services/mfaService.js):
+  - `extractAal(token)` decodifica JWT (sem revalidar, o `authenticateToken` já validou via `getUser`) e lê o claim `aal`. Fallback em `amr` (presença de `totp` ⇒ `aal2`).
+  - `getStatus({userId, accessToken})` combina `supabase.auth.admin.mfa.listFactors()` + flag `mfa_required` + AAL atual.
+  - `isMfaRequiredFor(userId)` resolve via `featureFlagService.listForUser` (layered: per-user → global → false).
+  - `shouldBlock({userId, accessToken})` true se flag ativa **e** sessão `aal !== 'aal2'`. Fail-open em erro.
+  - `logEvent({userId, action, factorId, friendlyName, req})` grava no audit_log (`entity_type=mfa_factor`). Whitelist: `mfa_enrolled/verified/unenrolled/challenge_failed`.
+- Middleware: [src/middleware/mfaMiddleware.js](src/middleware/mfaMiddleware.js):
+  - `requireMFA` → 403 `{ code: 'MFA_REQUIRED' }` quando bloqueio aplica. Bypass em rota pública, flag off, ou erro inesperado.
+- Endpoints em [src/routes/user.routes.js](src/routes/user.routes.js):
+  - `GET /api/user/mfa/status` — devolve `{ aal, mfa_required, enrolled, factors[] }`.
+  - `POST /api/user/mfa/event` — frontend reporta enroll/verify/unenroll/challenge_failed para audit.
+- `requireMFA` aplicado em 6 mutações financeiras críticas em [src/routes/dashboard.routes.js](src/routes/dashboard.routes.js):
+  - `PUT /transactions/:id`, `DELETE /transactions/:id`, `PATCH /prolabore/:id`, `POST /alter/antecipacao/executar`, `POST /alter/antecipacao/parar-automatica`, `POST /alter/pagar-fornecedor/executar`.
+- Sem migration nova (Supabase já gerencia `auth.mfa_factors` no schema `auth`).
+- Suíte: [tests/unit/mfaService.test.js](tests/unit/mfaService.test.js) (17 casos — extração de AAL/AMR, status, shouldBlock, logEvent, middleware bypass/block/fail-open). Regression suite: **165 testes verde**.
+- Rollout: flag `mfa_required` fica desligada por default; ativar gradualmente após UI de enrollment estar em produção (per-user override em `feature_flags` para piloto, depois global).
+- Frontend pendente: `/configuracoes/seguranca` (enrollment + lista de factors) + interceptor global de re-verify ao receber 403/MFA_REQUIRED.
 
 ### Fase 19 — LGPD: export + esquecimento (backend)
 - Migration: [supabase/migrations/20260508000050_create_account_deletion_tokens.sql](supabase/migrations/20260508000050_create_account_deletion_tokens.sql) (aplicada em produção via MCP). Tabela com TTL 24h, RLS, índice parcial em tokens ativos.

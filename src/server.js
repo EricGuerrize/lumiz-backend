@@ -481,7 +481,9 @@ app.get('/', (req, res) => {
         linkEmail: 'POST /api/user/link-email',
         exportData: 'GET /api/user/export-data',
         deleteAccount: 'DELETE /api/user/account',
-        confirmDelete: 'POST /api/user/account/confirm-delete'
+        confirmDelete: 'POST /api/user/account/confirm-delete',
+        mfaStatus: 'GET /api/user/mfa/status',
+        mfaEvent: 'POST /api/user/mfa/event'
       },
       auth: {
         note: 'Use Authorization: Bearer <supabase_token> or x-user-phone header'

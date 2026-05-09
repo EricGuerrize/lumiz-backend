@@ -40,6 +40,7 @@ const {
 } = require('../middleware/dashboardRouteRateLimits');
 const nfValidadeService = require('../services/nfValidadeService');
 const auditLogService = require('../services/auditLogService');
+const { requireMFA } = require('../middleware/mfaMiddleware');
 
 // Aplica autenticação em todas as rotas (aceita JWT ou telefone)
 router.use(authenticateFlexible);
@@ -387,7 +388,7 @@ router.get('/transactions/search', heavyDashboardReadLimiter, validate(searchTra
 });
 
 // PUT /api/dashboard/transactions/:id - Atualizar transação
-router.put('/transactions/:id', validate(updateTransactionSchema), async (req, res) => {
+router.put('/transactions/:id', requireMFA, validate(updateTransactionSchema), async (req, res) => {
   try {
     const transactionId = req.params.id;
     const updateData = req.body;
@@ -422,7 +423,7 @@ router.put('/transactions/:id', validate(updateTransactionSchema), async (req, r
 });
 
 // DELETE /api/dashboard/transactions/:id - Excluir transação
-router.delete('/transactions/:id', validate(deleteTransactionSchema), async (req, res) => {
+router.delete('/transactions/:id', requireMFA, validate(deleteTransactionSchema), async (req, res) => {
   try {
     const transactionId = req.params.id;
 
@@ -690,7 +691,7 @@ router.get('/prolabore', async (req, res) => {
 });
 
 // PATCH /api/dashboard/prolabore/:id - Marcar/desmarcar conta como pró-labore
-router.patch('/prolabore/:id', async (req, res) => {
+router.patch('/prolabore/:id', requireMFA, async (req, res) => {
   try {
     const userId = req.user.id;
     const { id } = req.params;
@@ -1839,7 +1840,7 @@ router.post('/alter/antecipacao/simular', alterGuard, async (req, res) => {
 });
 
 // POST /api/dashboard/alter/antecipacao/executar body { valor_alvo, horizonte_dias }
-router.post('/alter/antecipacao/executar', alterGuard, async (req, res) => {
+router.post('/alter/antecipacao/executar', alterGuard, requireMFA, async (req, res) => {
   try {
     const { valor_alvo, horizonte_dias, simulacao } = req.body || {};
     if (!simulacao && (typeof valor_alvo !== 'number' || valor_alvo <= 0)) {
@@ -1871,7 +1872,7 @@ router.post('/alter/antecipacao/executar', alterGuard, async (req, res) => {
 });
 
 // POST /api/dashboard/alter/antecipacao/parar-automatica
-router.post('/alter/antecipacao/parar-automatica', alterGuard, async (req, res) => {
+router.post('/alter/antecipacao/parar-automatica', alterGuard, requireMFA, async (req, res) => {
   try {
     const result = await antecipacaoService.pararAutomatica(req.user.id);
 
@@ -1926,7 +1927,7 @@ router.post('/alter/pagar-fornecedor', alterGuard, async (req, res) => {
 });
 
 // POST /api/dashboard/alter/pagar-fornecedor/executar body { recebiveis_ids[], conta_pagar_id? }
-router.post('/alter/pagar-fornecedor/executar', alterGuard, async (req, res) => {
+router.post('/alter/pagar-fornecedor/executar', alterGuard, requireMFA, async (req, res) => {
   try {
     const { recebiveis_ids, conta_pagar_id } = req.body || {};
     if (!Array.isArray(recebiveis_ids) || recebiveis_ids.length === 0) {

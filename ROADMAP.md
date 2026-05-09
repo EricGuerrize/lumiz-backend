@@ -26,7 +26,7 @@
 | 15 | Audit log | Back + Front | M | 🟡 Backend concluído — frontend pendente (`/dashboard/configuracoes/audit-log`) |
 | 16 | Feature flags | Back + Front | P | ✅ Concluído — backend com `featureFlagService` + `requireFeature` + `GET /api/config/features` (whitelist + auth opcional + degradação segura); frontend com `useFeatureFlag` + `AlterGate` |
 | 17 | Analytics de produto (PostHog) | Back + Front | M | ⬜ Pendente |
-| 18 | MFA obrigatório | Back + Front | M | ⬜ Pendente |
+| 18 | MFA obrigatório | Back + Front | M | 🟡 Backend concluído — frontend pendente (`/configuracoes/seguranca` enrollment TOTP) |
 | 19 | LGPD: export de dados + direito ao esquecimento | Back + Front | M | 🟡 Backend concluído |
 | 20 | Integrações futuras (Pluggy, Adquirentes, NFe.io, Alter) | Back | G | ⏸️ Bloqueado go-live (Alter real — falta sandbox/contrato) |
 | 21 | Ondas 2–4 frontend (Supplier Docs, Fornecedores, Contas a receber, painéis Alter) | Front | G | ✅ Concluído — ver `lumiz-financeiro/HANDOFF_FRONTEND.md` (Onda 1–4) |
@@ -566,37 +566,54 @@ Referência rápida do que está implementado. Não retrabalhar.
 
 ## Fase 18 — MFA obrigatório
 
-**Objetivo:** exigir segundo fator de autenticação para usuários owner com dados financeiros sensíveis.
+**Status:** 🟡 Backend concluído (08/05/2026). Frontend pendente.
 
-**Impacto de negócio:** dados financeiros de clínica são sensíveis (LGPD + risco de negócio). MFA reduz drasticamente risco de acesso não autorizado.
+**Objetivo:** exigir segundo fator de autenticação (TOTP) para mutações financeiras críticas, atrás da feature flag `mfa_required` (rollout gradual: usuários piloto primeiro, geral depois).
 
-**Backend:**
-- Supabase Auth suporta TOTP nativamente — usar API existente
-- Criar middleware `requireMFA(req, res, next)`:
-  - Verificar campo `amr` (authentication method reference) no JWT do Supabase
-  - Se usuário é `owner` e não tem TOTP verificado na sessão: retornar `403 MFA_REQUIRED`
-  - Grace period: 7 dias após criação da conta (novo usuário não é bloqueado imediatamente)
-- Endpoints:
-  ```
-  POST /api/auth/mfa/enroll   → inicia enrollment TOTP (retorna QR code)
-  POST /api/auth/mfa/verify   → verifica código TOTP
-  DELETE /api/auth/mfa        → remove TOTP (requer senha)
-  ```
+**Impacto de negócio:** dados financeiros de clínica são sensíveis (LGPD + risco de negócio). MFA reduz drasticamente risco de acesso não autorizado e fecha o pacote de compliance junto da Fase 15 (audit) e Fase 19 (LGPD).
 
-**Frontend:**
-- Flow de enrollment em `/configuracoes/seguranca`:
-  - Botão "Ativar autenticação de dois fatores"
-  - QR code para escanear no Google Authenticator / Authy
-  - Campo de verificação do código antes de confirmar
-- Challenge na sessão quando necessário (redirect para `/mfa/challenge`)
-- Badge "MFA ativo" nas configurações
+**Decisão arquitetural:** o enrollment/verify/unenroll do TOTP roda 100% no frontend via `supabase-js` (`supabase.auth.mfa.*`) — Supabase Auth já tem TOTP nativo. O backend só precisa **enforçar** (bloquear mutações sensíveis quando flag ativa e sessão `aal1`) e **auditar** (frontend reporta eventos para o audit_log).
 
-**Dependências:** nenhuma técnica. Fase 17 (analytics) recomendada para medir adoção.
+**Backend (entregue):**
+- `src/services/mfaService.js`:
+  - `decodeJwtPayload(token)` / `extractAal(token)` — decodifica JWT (sem revalidar; o middleware `authenticateToken` já validou via `getUser`) e extrai claim `aal`. Fallback em `amr` (presença de `totp` ⇒ `aal2`).
+  - `getStatus({userId, accessToken})` — devolve `{ aal, mfa_required, enrolled, factors }`. Combina `supabase.auth.admin.mfa.listFactors()` + flag layered + AAL da sessão. Frontend usa para decidir UI ("Ative MFA" vs "MFA ativo" vs "Reverifique").
+  - `isMfaRequiredFor(userId)` — resolve flag `mfa_required` via `featureFlagService.listForUser`. Layered: per-user → global → false default.
+  - `shouldBlock({userId, accessToken})` — `true` se flag ativa **e** sessão não é `aal2`. Fail-open em erro (MFA é proteção extra; nunca pode quebrar fluxo crítico por erro de resolução).
+  - `logEvent({userId, action, factorId, friendlyName, req})` — escreve `mfa_enrolled/verified/unenrolled/challenge_failed` no audit_log com `entityType=mfa_factor`.
+- `src/middleware/mfaMiddleware.js`:
+  - `requireMFA` — quando `shouldBlock=true`, retorna `403 { code: 'MFA_REQUIRED', error: 'Esta operação requer verificação de segundo fator (MFA).', hint: '...' }`.
+  - Bypass automático quando: sem `req.user` (rota pública), `shouldBlock=false`, ou erro inesperado.
+- Endpoints `/api/user/*`:
+  - `GET /api/user/mfa/status` (auth Bearer) — devolve estado completo.
+  - `POST /api/user/mfa/event` (auth Bearer) — frontend reporta `{ action, factor_id?, friendly_name? }` após enroll/verify/unenroll bem-sucedido. Backend audita.
+- `requireMFA` aplicado em mutações financeiras críticas no dashboard:
+  - `PUT /api/dashboard/transactions/:id`
+  - `DELETE /api/dashboard/transactions/:id`
+  - `PATCH /api/dashboard/prolabore/:id`
+  - `POST /api/dashboard/alter/antecipacao/executar`
+  - `POST /api/dashboard/alter/antecipacao/parar-automatica`
+  - `POST /api/dashboard/alter/pagar-fornecedor/executar`
+- Tests: `tests/unit/mfaService.test.js` (17 cenários — extração de aal/amr, getStatus, shouldBlock, logEvent, middleware bypass/block/fail-open). Adicionado ao `test:regression` (165 verdes).
+- Sem migration nova: o storage de factores fica no schema `auth.*` do Supabase (gerenciado).
+
+**Frontend (pendente):**
+- Página `/configuracoes/seguranca`:
+  - Card "Autenticação em dois fatores" consumindo `GET /api/user/mfa/status`.
+  - Banner amarelo se `mfa_required && !enrolled`.
+  - Botão "Ativar 2FA" → fluxo: `supabase.auth.mfa.enroll({ factorType: 'totp', friendlyName })` → render QR code → `supabase.auth.mfa.challenge` + `verify` → ao sucesso, `POST /api/user/mfa/event { action: 'mfa_enrolled', factor_id, friendly_name }`.
+  - Botão "Remover 2FA" (com confirmação) → `supabase.auth.mfa.unenroll({ factorId })` → `POST /api/user/mfa/event { action: 'mfa_unenrolled', factor_id }`.
+- Interceptor global de fetch/axios: ao receber `403 { code: 'MFA_REQUIRED' }`, abrir modal de re-verify (`supabase.auth.mfa.challenge` + `verify`). Em sucesso, refazer a request original (a sessão sobe para `aal2`). Reportar `POST /mfa/event { action: 'mfa_verified' }`.
+
+**Dependências:** Fase 15 (audit log) ✅ — eventos MFA são gravados lá.
 
 **Definition of Done:**
-- Usuário owner sem MFA vê banner de aviso por 7 dias, depois é bloqueado
-- Enrollment funciona end-to-end com TOTP
-- Teste: remoção de MFA exige confirmação de senha
+- ✅ Backend resolve `aal` corretamente para JWTs Supabase com TOTP.
+- ✅ `requireMFA` bloqueia 6 mutações financeiras críticas quando flag ativa e `aal1`.
+- ✅ Eventos MFA são auditados.
+- ✅ Flag `mfa_required` segue layered resolution (compatível com rollout gradual).
+- ✅ Service nunca explode: fail-open em erro inesperado.
+- ⬜ Frontend: enrollment + interceptor de re-verify.
 
 **Esforço:** M
 

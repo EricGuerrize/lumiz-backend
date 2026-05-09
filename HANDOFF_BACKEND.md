@@ -509,3 +509,200 @@ RLS: usuário só lê o próprio. Mutações apenas service-role.
   - Lê `token` da query, mostra resumo do que vai acontecer, botão "Confirmar exclusão definitiva".
   - Ao clicar, chama `POST /api/user/account/confirm-delete` com `{ token }`.
   - Em sucesso: mostra `summary.purged_tables` e CTA "Voltar ao site". Em token inválido/expirado: mostra erro humano em PT-BR.
+
+---
+
+# Fase 18 — MFA (TOTP)
+
+## Visão geral
+
+Backend **só enforça e audita**. Enrollment/verify/unenroll roda no frontend via `supabase.auth.mfa.*` (Supabase Auth tem TOTP nativo). Rollout via flag `mfa_required` (já registrada em `featureFlagsRegistry`).
+
+## Conceitos
+
+- **AAL** (Authentication Assurance Level): `aal1` = só senha; `aal2` = senha + TOTP nesta sessão. O claim vem no JWT do Supabase. Backend extrai com `mfaService.extractAal(token)`.
+- **Factor**: instância de TOTP enrolada (ex: "iPhone", "Authy"). Cada usuário pode ter múltiplos. Lista vem de `supabase.auth.admin.mfa.listFactors({userId})`.
+
+## Endpoints
+
+### `GET /api/user/mfa/status`
+- Auth: Bearer JWT.
+- Response 200:
+  ```json
+  {
+    "aal": "aal1" | "aal2" | null,
+    "mfa_required": false,
+    "enrolled": false,
+    "factors": [
+      {
+        "id": "...",
+        "friendly_name": "iPhone",
+        "factor_type": "totp",
+        "status": "verified",
+        "created_at": "...",
+        "updated_at": "..."
+      }
+    ]
+  }
+  ```
+- Frontend usa para:
+  - mostrar banner "Ative MFA agora" quando `mfa_required && !enrolled`.
+  - mostrar prompt de re-verify quando `enrolled && aal !== 'aal2'`.
+  - listar/remover factores em `/configuracoes/seguranca`.
+
+### `POST /api/user/mfa/event`
+- Auth: Bearer JWT.
+- Body: `{ "action": "mfa_enrolled" | "mfa_verified" | "mfa_unenrolled" | "mfa_challenge_failed", "factor_id"?: "...", "friendly_name"?: "..." }`
+- Response 202: `{ "accepted": true }`
+- 400 com `{ allowed: [...] }` se action fora do whitelist.
+- Frontend chama após enroll/verify/unenroll bem-sucedidos no Supabase JS para deixar trilha auditável.
+
+## Endpoints protegidos por `requireMFA`
+
+Quando `mfa_required=true` e `aal !== 'aal2'`:
+
+| Endpoint | Por quê |
+|---|---|
+| `PUT /api/dashboard/transactions/:id` | edição de receita/despesa |
+| `DELETE /api/dashboard/transactions/:id` | exclusão de receita/despesa |
+| `PATCH /api/dashboard/prolabore/:id` | mutação de pró-labore |
+| `POST /api/dashboard/alter/antecipacao/executar` | movimenta dinheiro real |
+| `POST /api/dashboard/alter/antecipacao/parar-automatica` | reverte estratégia financeira |
+| `POST /api/dashboard/alter/pagar-fornecedor/executar` | usa recebíveis para quitar boleto |
+
+Resposta 403:
+```json
+{
+  "error": "Esta operação requer verificação de segundo fator (MFA).",
+  "code": "MFA_REQUIRED",
+  "hint": "Verifique seu código TOTP e tente novamente."
+}
+```
+
+## Garantias do service
+
+- **Fail-open em erro de resolução**: se o featureFlagService cai ou se a admin API do Supabase falha, o middleware deixa passar. MFA é proteção extra, não pode quebrar fluxo crítico por erro de infra. Logs em `console.warn`.
+- **Sem cookies/sessão custom**: tudo derivado do JWT que já vem na request. Backend é stateless.
+- **Audit fire-and-forget**: `mfa_enrolled/verified/unenrolled/challenge_failed` viram entries no `audit_log` com `entity_type=mfa_factor`.
+- **Flag opt-in**: enquanto `mfa_required=false` (default), endpoints sensíveis funcionam normalmente. Permite rollout gradual.
+
+## Frontend pendente
+
+### 1. `/configuracoes/seguranca`
+
+```ts
+const { data, error } = await supabase.auth.mfa.enroll({
+  factorType: 'totp',
+  friendlyName: 'iPhone Maria',
+});
+// data.totp.qr_code → render <img src="data:image/svg+xml;..." />
+// data.totp.secret → mostrar como fallback para apps que não escaneiam
+
+// Após usuário digitar o código:
+const challenge = await supabase.auth.mfa.challenge({ factorId: data.id });
+const verify = await supabase.auth.mfa.verify({
+  factorId: data.id,
+  challengeId: challenge.data.id,
+  code: userTypedCode,
+});
+
+// Sucesso → reportar:
+await fetch('/api/user/mfa/event', {
+  method: 'POST',
+  headers: { 'Authorization': `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+  body: JSON.stringify({ action: 'mfa_enrolled', factor_id: data.id, friendly_name: 'iPhone Maria' }),
+});
+```
+
+- Listar factors via `GET /api/user/mfa/status` ou `supabase.auth.mfa.listFactors()`.
+- Remover via `supabase.auth.mfa.unenroll({ factorId })` + `POST /api/user/mfa/event { action: 'mfa_unenrolled' }`.
+
+### 2. Interceptor global de re-verify
+
+Quando qualquer fetch/axios receber `403 { code: 'MFA_REQUIRED' }`:
+1. Abrir modal "Verifique seu código TOTP".
+2. `const f = await supabase.auth.mfa.listFactors(); const factorId = f.data.totp[0].id`.
+3. `const c = await supabase.auth.mfa.challenge({ factorId })`.
+4. `await supabase.auth.mfa.verify({ factorId, challengeId: c.data.id, code: userInput })`.
+5. Reportar `POST /api/user/mfa/event { action: 'mfa_verified' }`.
+6. Refazer a request original (a session do supabase-js já está com `aal2` automaticamente após o verify).
+
+### 3. Quando ativar a flag
+
+Não ative `mfa_required=true` globalmente até a UI de enrollment estar deployada. Sequência sugerida:
+1. UI de enrollment em produção (frontend deploya).
+2. Comunicar usuárias por email/WhatsApp: "Em X dias vamos exigir 2FA para ações financeiras."
+3. Habilitar para usuários piloto via override per-user em `feature_flags` (`{ user_id, name: 'mfa_required', enabled: true }`).
+4. Após validar, ativar globalmente.
+
+---
+
+# Database Security & Compliance (audit do Supabase Advisor)
+
+## Estado atual (08/05/2026)
+
+Após `20260509000010_security_hardening.sql` + `20260509000020_security_hardening_round2.sql` (aplicadas em produção):
+
+- **0 critical errors** no Supabase Advisor.
+- **34/35 tabelas** com `user_id` operacional têm RLS habilitada **+ ao menos 1 policy**.
+- Única exceção: `reminders_sent` tem RLS sem policy (= nega tudo do client). **Intencional** — apenas o backend escreve/lê via service-role para dedupe de reminders.
+
+## Fixes aplicados (resumo executivo)
+
+| Antes | Depois | Risco eliminado |
+|---|---|---|
+| `subscriptions` sem RLS | RLS ON + `users read own subscription` (clinic_id = auth.uid()) | Qualquer authenticated podia ler/manipular assinaturas alheias |
+| `view_financial_ledger` `SECURITY DEFINER` | `security_invoker = on` | View ignorava RLS de `atendimentos`/`contas_pagar` — qualquer login lia tudo |
+| `view_finance_balance` `SECURITY DEFINER` | `security_invoker = on` | Idem (saldo de todas as clínicas) |
+| `view_monthly_report` `SECURITY DEFINER` | `security_invoker = on` | Idem (relatório mensal de todas as clínicas) |
+| `exec_sql_readonly(text)` exposta a `anon` | EXECUTE revogada de PUBLIC/anon/authenticated | **CRÍTICO**: qualquer um podia executar SELECT arbitrário (filtros regex burláveis com obfuscação) — vazaria `auth.users`, secrets, etc. |
+| `admin_get_subscription_stats()` exposta | EXECUTE revogada de anon/authenticated | Authenticated normal podia listar clínicas + assinaturas de todo mundo |
+| `is_user_admin(uuid)` exposta | EXECUTE revogada de anon/authenticated (backend usa via service-role) | Info disclosure de papéis admin |
+| `generate_orcamento_numero()` exposta | EXECUTE revogada de anon/authenticated | Função SECURITY DEFINER sem necessidade de exposição pública |
+| `match_learned_knowledge()` sem search_path fixo | `SET search_path = public, pg_catalog` | Search-path hijacking (baixo risco mas é boa prática) |
+
+## Como o backend continua funcionando
+
+O cliente em `src/db/supabase.js` é instanciado com `SUPABASE_SERVICE_ROLE_KEY`. Service-role:
+- bypassa RLS (lê/escreve qualquer linha — necessário para crons, webhooks, agent do WhatsApp, jobs de OCR, etc.);
+- mantém EXECUTE em todas as funções, mesmo as revogadas de anon/authenticated.
+
+Frontend autenticado usa `SUPABASE_ANON_KEY` + JWT do usuário no Authorization header. Para esse caminho:
+- RLS ativa filtra automaticamente para `auth.uid()`.
+- Funções privadas estão fora do alcance.
+
+## Pendências não-bloqueantes (não impedem go-live)
+
+1. **`vector` extension em `public`** (WARN). Mover para schema `extensions` quebra a coluna `learned_knowledge.embedding` — exige migration cuidadosa (DROP/CREATE da coluna + reindexação). Fica como tech debt; risco real é baixo (extension é só `pgvector`).
+2. **Leaked password protection desativada** (WARN). Configuração no painel Supabase Auth, não SQL. **Recomendado habilitar antes do go-live**:
+   - Dashboard → Authentication → Providers → Email → "Leaked password protection" → ON.
+   - Bloqueia cadastros/trocas de senha com senhas vazadas (HaveIBeenPwned).
+3. **`reminders_sent` sem policy** (INFO). Deliberado. Não tocar.
+
+## RLS coverage detalhado
+
+Todas as 28 tabelas com `user_id` direto têm RLS + ao menos 1 policy SELECT (`user_id = auth.uid()`):
+
+```
+account_deletion_tokens, agendamentos, alter_antecipacoes, alter_cobertura_snapshots,
+alter_recebiveis, analytics_events, atendimentos, audit_log, beta_feedback, clientes,
+colaboradores, comissoes, contas_pagar, conversation_history, emergency_alert_history,
+feature_flags, fornecedores, mdr_configs, monthly_goals, movimentacoes_estoque,
+nf_validade_itens, ocr_jobs, onboarding_progress, orcamentos, procedimentos,
+supplier_documents, user_insights, user_roles
+```
+
+Tabelas relacionais sem `user_id` direto (`parcelas`, `clinic_members`) têm RLS via tabela-pai (FK `atendimento_id`/`clinic_id`).
+
+## Como rodar este audit periodicamente
+
+Use o MCP `user-Supabase` (já configurado no Cursor):
+
+```
+get_advisors({ project_id: "whmbyfnwnlbrfmgdwdfw", type: "security" })
+get_advisors({ project_id: "whmbyfnwnlbrfmgdwdfw", type: "performance" })
+```
+
+Ou no painel: Database → Security Advisor.
+
+**Política sugerida:** rodar antes de cada release maior; tratar todo `ERROR` como bloqueador de deploy.

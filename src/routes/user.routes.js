@@ -6,6 +6,7 @@ const { validate } = require('../middleware/validationMiddleware');
 const { linkEmailSchema } = require('../validators/user.validators');
 const lgpdService = require('../services/lgpdService');
 const lgpdEmailCopy = require('../copy/lgpdEmailCopy');
+const mfaService = require('../services/mfaService');
 
 // Rota pública para vincular email (finalizar cadastro)
 router.post('/link-email', validate(linkEmailSchema), (req, res) => {
@@ -191,6 +192,69 @@ router.post('/account/confirm-delete', async (req, res) => {
   } catch (err) {
     console.error('[LGPD] Erro em POST /account/confirm-delete:', err);
     return res.status(500).json({ error: 'Erro ao confirmar exclusão de conta' });
+  }
+});
+
+// ============================================================================
+// Fase 18 — MFA (TOTP) status + event log
+// ============================================================================
+
+function _accessTokenFromReq(req) {
+  const auth = req.headers?.authorization;
+  if (!auth || typeof auth !== 'string') return null;
+  const parts = auth.split(' ');
+  return parts.length === 2 ? parts[1] : null;
+}
+
+/**
+ * GET /api/user/mfa/status
+ * Retorna estado atual do MFA do usuário (aal, factores, se é obrigatório).
+ * Frontend usa pra decidir UI (banner "ative MFA", prompt de re-verify, etc.).
+ */
+router.get('/mfa/status', authenticateToken, async (req, res) => {
+  try {
+    const status = await mfaService.getStatus({
+      userId: req.user.id,
+      accessToken: _accessTokenFromReq(req),
+    });
+    return res.status(200).json(status);
+  } catch (err) {
+    console.error('[MFA] Erro em GET /mfa/status:', err);
+    return res.status(500).json({ error: 'Erro ao consultar status do MFA' });
+  }
+});
+
+/**
+ * POST /api/user/mfa/event
+ * Body: { action: 'mfa_enrolled'|'mfa_verified'|'mfa_unenrolled'|'mfa_challenge_failed', factor_id?, friendly_name? }
+ *
+ * Frontend chama após enroll/verify/unenroll bem-sucedido no Supabase Auth
+ * para deixar trilha auditável (audit_log). Confiabilidade depende do front,
+ * mas o `aal` ainda é a fonte de verdade — o evento é só para auditoria.
+ */
+router.post('/mfa/event', authenticateToken, async (req, res) => {
+  try {
+    const { action, factor_id, friendly_name } = req.body || {};
+    if (!action) return res.status(400).json({ error: 'action é obrigatório' });
+    if (!mfaService.VALID_EVENT_ACTIONS.has(action)) {
+      return res.status(400).json({
+        error: 'action inválido',
+        allowed: Array.from(mfaService.VALID_EVENT_ACTIONS),
+      });
+    }
+
+    mfaService.logEvent({
+      userId: req.user.id,
+      action,
+      factorId: factor_id || null,
+      friendlyName: friendly_name || null,
+      req,
+    });
+
+    return res.status(202).json({ accepted: true });
+  } catch (err) {
+    console.error('[MFA] Erro em POST /mfa/event:', err);
+    return res.status(500).json({ error: 'Erro ao registrar evento de MFA' });
   }
 });
 
