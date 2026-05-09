@@ -23,7 +23,7 @@
 | 12 | Importador de planilha Excel | Back + Front | G | ✅ Concluído (back + front) — flag `excel_import` ativa globalmente desde 09/05/2026 |
 | 13 | Export OFX para contador | Back + Front | P | 🟡 Backend concluído — frontend pendente (botão OFX em `ExportButtons.tsx`) |
 | 14 | Multi-tenant / switch de clínica | Back + Front | G | ⬜ Pendente |
-| 15 | Audit log | Back + Front | M | 🟡 Backend concluído — frontend pendente (`/dashboard/configuracoes/audit-log`) |
+| 15 | Audit log | Back + Front | M | ✅ Back concluído (08/05/2026) — front Audit Log UI pushado em 09/05/2026: branch `feat/audit-log-fase15`, commit `530c206` → `origin/feat/audit-log-fase15`; PR a abrir na `lumiz-financeiro` |
 | 16 | Feature flags | Back + Front | P | ✅ Concluído — backend com `featureFlagService` + `requireFeature` + `GET /api/config/features` (whitelist + auth opcional + degradação segura); frontend com `useFeatureFlag` + `AlterGate` |
 | 17 | Analytics de produto (PostHog) | Back + Front | M | 🟡 Backend concluído (09/05/2026) — frontend pendente |
 | 18 | MFA obrigatório | Back + Front | M | 🟡 Backend concluído — frontend pendente (`/configuracoes/seguranca` enrollment TOTP) |
@@ -463,7 +463,7 @@ Referência rápida do que está implementado. Não retrabalhar.
 
 ## Fase 15 — Audit log
 
-**Status:** 🟡 Backend concluído (2026-05-08) — frontend pendente (`/dashboard/configuracoes/audit-log`).
+**Status:** ✅ Backend concluído (2026-05-08) — frontend Audit Log UI entregue e pushado (2026-05-09): branch `feat/audit-log-fase15`, commit `530c206` em `origin/feat/audit-log-fase15`. PR para `main` a abrir quando conveniente (`lumiz-financeiro`).
 
 **Objetivo:** registrar toda mutation crítica para rastreabilidade e debugging em produção.
 
@@ -495,8 +495,8 @@ Referência rápida do que está implementado. Não retrabalhar.
 - Endpoint `GET /api/dashboard/audit-log?limit=50&offset=0&entity_type=transaction&action=transaction_updated` (atrás de `heavyDashboardReadLimiter`). Resposta `{ data: [...], meta: { total, has_more, next_offset, is_empty, hint } }`.
 - Testes: `tests/unit/auditLogService.test.js` — 14 casos cobrindo persistência, mascaramento, fire-and-forget em erros, paginação, degradação. Regression: 127 testes verde.
 
-**Frontend:** ⬜
-- Página `/dashboard/configuracoes/audit-log` (acesso admin)
+**Frontend:** ✅ (em branch; merge pendente em `main`)
+- Página `/dashboard/configuracoes/audit-log` (acesso admin) — código em `feat/audit-log-fase15`, commit `530c206`; push OK para `origin/feat/audit-log-fase15`
 - Tabela com: data, ação, entidade, IP, antes/depois (expandível)
 
 **Dependências:** Fase 14 (multi-tenant) recomendada para preencher `clinic_id` — hoje fica `null` (single tenant).
@@ -505,7 +505,7 @@ Referência rápida do que está implementado. Não retrabalhar.
 - ✅ Criar/editar/deletar transação gera registro no audit log.
 - ✅ Endpoint retorna log paginado com filtros.
 - ✅ Backend mascarando dados sensíveis.
-- ⬜ Página de audit log acessível nas configurações.
+- ✅ Página de audit log nas configurações — implementação pushada (`feat/audit-log-fase15` / `530c206`); merge em produção quando a PR para `main` for aberta/aprovada.
 
 **Esforço:** M
 

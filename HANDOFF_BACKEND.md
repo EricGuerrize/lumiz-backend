@@ -419,9 +419,13 @@ Outras mutações (colaboradores, fornecedores CRUD, NF validade, preferences, p
 - **Truncate**: `entity_id` 512 chars, `user_agent` 500 chars, `action` 100 chars, `entity_type` 50 chars, `ip_address` 45 chars.
 - **Empty state**: `list()` devolve `meta.is_empty=true` + `hint` quando vazio; em erro de DB devolve empty + hint de retry (não 5xx).
 
-## Frontend pendente
+## Frontend — Audit Log UI (Fase 15)
 
-- Página `/dashboard/configuracoes/audit-log` consumindo `GET /api/dashboard/audit-log` com filtros e paginação. Ver prompt de handoff.
+**Status (2026-05-09):** UI entregue e **push enviado** para o remoto GitHub (`lumiz-financeiro`): branch `feat/audit-log-fase15`, commit `530c206` → `origin/feat/audit-log-fase15`. Abrir PR a partir daí quando possível — **sem URL fictícia**.
+
+- Página `/dashboard/configuracoes/audit-log` consumindo `GET /api/dashboard/audit-log` com filtros e paginação.
+
+**Obs. operacional:** em ambiente local o disco chegou ao limite (`No space left on device`); o push foi efetuado no GitHub mesmo assim — **screenshots de QA e atualização opcional da ref via `git fetch` ficam pendentes** até liberar espaço local.
 
 ---
 

@@ -1,6 +1,6 @@
 # Lumiz — Monitoramento de Implementação (Phases 1–6)
 
-> **Última atualização:** 2026-05-09 (Hardening pré-launch — Asaas webhook fail-closed + LGPD consent prova auditável + Fase 17 PostHog + Fase 12 Importador Excel + Fase 18 MFA + Database Security Hardening)
+> **Última atualização:** 2026-05-09 (Hardening pré-launch — Asaas webhook fail-closed + LGPD consent prova auditável + Fase 17 PostHog + Fase 12 Importador Excel + Fase 18 MFA + Fase 15 Audit Log UI frontend + Database Security Hardening)
 > **Repositório backend:** https://github.com/EricGuerrize/lumiz-backend
 > **Repositório frontend:** https://github.com/EricGuerrize/lumiz-financeiro
 > **Deploy backend:** Railway (branch `main` → auto-deploy)
@@ -614,7 +614,12 @@ Após review do Supabase Advisor: **4 ERRORS críticos eliminados**. Migrations 
 - Integração nas 11 mutações mais críticas do dashboard (transactions, goals, prolabore, estoque, alter executar, supplier docs).
 - Endpoint: `GET /api/dashboard/audit-log` com filtros `entity_type`, `action`, `limit`, `offset` e `meta` empty state.
 - Suíte: `tests/unit/auditLogService.test.js` (14 casos). Regression suite: 127 testes verde.
-- Pendente frontend: `/dashboard/configuracoes/audit-log`.
+
+### Fase 15 — Audit log (frontend UI) — 09/05/2026
+
+- Repo **lumiz-financeiro**: branch `feat/audit-log-fase15`, commit `530c206`, push OK → `origin/feat/audit-log-fase15`. PR contra `main` a abrir (sem inventar URL).
+- Rota `/dashboard/configuracoes/audit-log` integrada ao endpoint `GET /api/dashboard/audit-log` com filtros e paginação.
+- Nota: ambiente local com disco cheio dificulta `git fetch` e anexos de evidência — screenshots/PR link podem ficar pendente até liberar espaço.
 
 ### Fase 13 — Export OFX para contador (backend)
 - [src/services/exportService.js](src/services/exportService.js) ganhou `exportOFX(userId, monthStr)`:
