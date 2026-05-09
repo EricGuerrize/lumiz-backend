@@ -1,6 +1,6 @@
 # Lumiz — Monitoramento de Implementação (Phases 1–6)
 
-> **Última atualização:** 2026-05-08 (Fase 18 MFA + Database Security Hardening — 0 critical advisors)
+> **Última atualização:** 2026-05-09 (Fase 12 Importador Excel + Fase 18 MFA + Database Security Hardening)
 > **Repositório backend:** https://github.com/EricGuerrize/lumiz-backend
 > **Repositório frontend:** https://github.com/EricGuerrize/lumiz-financeiro
 > **Deploy backend:** Railway (branch `main` → auto-deploy)
@@ -488,6 +488,22 @@ req.headers['x-cron-secret']  // nunca req.query.secret
 - Auth opcional (Bearer best-effort, anônimo permitido), degradação segura para defaults se Supabase falhar.
 - Suíte: `tests/unit/configFeaturesEndpoint.test.js` (6 casos cobrindo defaults, whitelist filter, anônimo, token válido, token inválido, falha de DB).
 - Fase 16 marcada ✅ no [ROADMAP.md](ROADMAP.md). Frontend já tinha `useFeatureFlag` consumindo este endpoint.
+
+### Fase 12 — Importador Excel (backend)
+Backend concluído em 09/05/2026.
+- Migration `20260509000030_excel_import_batches.sql`: cria `excel_import_batches` com RLS + `import_batch_id` em `atendimentos` e `contas_pagar`.
+- `excelService.importFromExcel`: preview seguro de `.xlsx/.xls`, mapeamento automático de colunas, normalização BRL/data BR, inconsistências e summary.
+- `excelService.confirmImport`: materializa entradas em `atendimentos` + `atendimento_procedimentos` e saídas em `contas_pagar` (`origem='import'`), tudo com `import_batch_id`.
+- `excelService.undoImport`: remove lote inteiro por `import_batch_id` e marca batch como `undone`.
+- Endpoints:
+  - `POST /api/dashboard/import/excel/preview` (`multipart/form-data`, campo `file`).
+  - `POST /api/dashboard/import/excel/confirm`.
+  - `GET /api/dashboard/import/excel/history`.
+  - `DELETE /api/dashboard/import/excel/:batchId`.
+- Segurança: `multer` em memória, limite padrão 5MB, limite padrão 5.000 linhas, parser sem fórmulas/estilos.
+- WhatsApp: confirmação fire-and-forget em `POST /confirm` via `excelImportWhatsappCopy`.
+- Testes: `tests/unit/excelImportService.test.js`; regression **168/168**.
+- Frontend pendente: página `/dashboard/import` (ver `HANDOFF_BACKEND.md`).
 
 ### Database Security Hardening (08/05/2026)
 Após review do Supabase Advisor: **4 ERRORS críticos eliminados**. Migrations [`20260509000010_security_hardening.sql`](supabase/migrations/20260509000010_security_hardening.sql) + [`20260509000020_security_hardening_round2.sql`](supabase/migrations/20260509000020_security_hardening_round2.sql).

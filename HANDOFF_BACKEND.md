@@ -706,3 +706,153 @@ get_advisors({ project_id: "whmbyfnwnlbrfmgdwdfw", type: "performance" })
 Ou no painel: Database → Security Advisor.
 
 **Política sugerida:** rodar antes de cada release maior; tratar todo `ERROR` como bloqueador de deploy.
+
+---
+
+# Fase 12 — Importador Excel (backend)
+
+## Status
+
+Backend concluído em 09/05/2026. Frontend pendente: página `/dashboard/import`.
+
+## Schema
+
+Migration aplicada: `supabase/migrations/20260509000030_excel_import_batches.sql`.
+
+- `excel_import_batches`
+  - `id uuid` — também usado como `import_token`.
+  - `user_id uuid`.
+  - `status`: `preview | confirmed | undone | expired`.
+  - `filename`, `mapping`, `rows`, `preview`, `inconsistencias`, `summary`.
+  - contadores: `original_row_count`, `valid_row_count`, `invalid_row_count`.
+  - `confirmed_at`, `undone_at`, `expires_at`, `created_at`, `updated_at`.
+  - RLS ON; usuário autenticado só lê batches próprios.
+- `atendimentos.import_batch_id uuid`.
+- `contas_pagar.import_batch_id uuid`.
+
+## Endpoints
+
+### `POST /api/dashboard/import/excel/preview`
+
+Upload `multipart/form-data`, campo `file`.
+
+Limites:
+- `.xlsx` ou `.xls`.
+- Até 5MB por padrão (`EXCEL_IMPORT_MAX_FILE_BYTES`).
+- Até 5.000 linhas por padrão (`EXCEL_IMPORT_MAX_ROWS`).
+
+Resposta:
+
+```json
+{
+  "import_token": "uuid",
+  "preview": [
+    {
+      "tipo": "entrada",
+      "data": "2026-05-07",
+      "valor": 1500.5,
+      "descricao": "Importação Excel",
+      "cliente": "Maria",
+      "procedimento": "Botox",
+      "categoria": "Procedimento",
+      "forma_pagamento": "pix"
+    }
+  ],
+  "inconsistencias": [
+    {
+      "sheet": "Movimentacoes",
+      "row_number": 4,
+      "errors": ["data_invalida", "valor_invalido"]
+    }
+  ],
+  "mapping": {
+    "Movimentacoes": {
+      "tipo": "Tipo",
+      "data": "Data",
+      "valor": "Valor",
+      "cliente": "Cliente"
+    }
+  },
+  "summary": {
+    "total_rows": 10,
+    "valid_rows": 8,
+    "invalid_rows": 2,
+    "receitas_count": 5,
+    "despesas_count": 3,
+    "receitas_total": 8000,
+    "despesas_total": 2300
+  }
+}
+```
+
+### `POST /api/dashboard/import/excel/confirm`
+
+Body:
+
+```json
+{ "import_token": "uuid" }
+```
+
+Materializa:
+- `entrada` → `atendimentos` + `atendimento_procedimentos`; cria `clientes` e `procedimentos` se não existirem por nome exato.
+- `saida` → `contas_pagar` com `origem = "import"`.
+
+Todos os registros recebem `import_batch_id`.
+
+Resposta:
+
+```json
+{
+  "ok": true,
+  "batch_id": "uuid",
+  "summary": {
+    "inserted_atendimentos": 5,
+    "inserted_contas_pagar": 3
+  }
+}
+```
+
+Também envia WhatsApp fire-and-forget para `req.user.telefone`: "Importação concluída".
+
+### `GET /api/dashboard/import/excel/history?limit=20`
+
+Resposta:
+
+```json
+{
+  "data": [
+    {
+      "id": "uuid",
+      "filename": "controle.xlsx",
+      "status": "confirmed",
+      "summary": {},
+      "original_row_count": 10,
+      "valid_row_count": 8,
+      "invalid_row_count": 2,
+      "created_at": "..."
+    }
+  ]
+}
+```
+
+### `DELETE /api/dashboard/import/excel/:batchId`
+
+Desfaz lote inteiro:
+- deleta `atendimentos` com `import_batch_id=batchId`;
+- deleta `contas_pagar` com `import_batch_id=batchId`;
+- marca batch como `undone`.
+
+## Segurança
+
+- Parser `xlsx` roda com `cellFormula=false`, `cellNF=false`, `cellStyles=false`.
+- Upload em memória com limite de tamanho.
+- Dados só são persistidos como lançamentos após confirmação explícita.
+- RLS em `excel_import_batches`; escrita via service-role backend.
+
+## Frontend pendente
+
+Implementar `/dashboard/import`:
+- Step 1: drag-and-drop de arquivo.
+- Step 2: preview dos primeiros registros + inconsistências.
+- Step 3: confirmar importação.
+- Step 4: histórico + botão "Desfazer importação".

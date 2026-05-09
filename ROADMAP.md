@@ -20,7 +20,7 @@
 | 9 | Estados Empty/Sparse na UI | Front | P | ✅ Concluído |
 | 10 | Frontend Phases 4–6 (Estoque, Health Score, Inadimplência, Sazonalidade, Outlook, Goals) | Front | G | ✅ Concluído |
 | 11 | Capture Agent — confidence score + confirmação WhatsApp | Back | M | ✅ Concluído (Onda 1, áudio Whisper incluído) |
-| 12 | Importador de planilha Excel | Back + Front | G | ⬜ Pendente |
+| 12 | Importador de planilha Excel | Back + Front | G | 🟡 Backend concluído — frontend pendente (`/dashboard/import`) |
 | 13 | Export OFX para contador | Back + Front | P | 🟡 Backend concluído — frontend pendente (botão OFX em `ExportButtons.tsx`) |
 | 14 | Multi-tenant / switch de clínica | Back + Front | G | ⬜ Pendente |
 | 15 | Audit log | Back + Front | M | 🟡 Backend concluído — frontend pendente (`/dashboard/configuracoes/audit-log`) |
@@ -329,25 +329,35 @@ Referência rápida do que está implementado. Não retrabalhar.
 
 ## Fase 12 — Importador de planilha Excel
 
+**Status:** 🟡 Backend concluído (09/05/2026) — frontend pendente (`/dashboard/import`).
+
 **Objetivo:** permitir que a clínica faça upload de seu Excel histórico e importe lançamentos automaticamente.
 
 **Impacto de negócio:** "sem importador, perdemos 60% das clínicas que tentam o produto" (handoff, parte 7.1). A biblioteca `xlsx` já está no projeto e `excelService.js` já gera Excel — só falta o fluxo inverso.
 
-**Backend:**
-- Atualizar `src/services/excelService.js` — adicionar método `importFromExcel(userId, buffer)`:
-  - Ler todas as abas do workbook
-  - Heurística de mapeamento automático: detectar colunas "Receita", "Despesa", "Data", "Valor", "Cliente", "Forma Pagamento" (case-insensitive, partial match)
-  - Retornar `{ preview: [...], mapeamento: {...}, inconsistencias: [...] }` antes de salvar
-  - Após confirmação: salvar em `atendimentos` (entradas) e `contas_pagar` (saídas) com `source: 'import'`
-  - Tag de batch: `import_batch_id` (UUID) em cada registro importado para permitir desfazer
+**Backend:** ✅
+- Migration `20260509000030_excel_import_batches.sql` aplicada no Supabase:
+  - `excel_import_batches` com RLS + policy de leitura própria.
+  - `atendimentos.import_batch_id` e `contas_pagar.import_batch_id` com FK para o batch.
+  - Índices por usuário/status e por `import_batch_id`.
+- `src/services/excelService.js`:
+  - `importFromExcel(userId, buffer, { filename })` lê todas as abas do workbook com parser seguro (`cellFormula=false`, sem estilos/NF), limite padrão 5.000 linhas.
+  - Mapeamento automático case/acento-insensitive para `tipo`, `data`, `valor`, `receita`, `despesa`, `cliente`, `procedimento`, `categoria`, `descricao`, `forma_pagamento`, `fornecedor`.
+  - Normalização de valores BRL (`R$ 1.500,50`), datas BR (`07/05/2026`) e forma de pagamento (`pix`, `debito`, `credito_avista`, `parcelado`, `dinheiro`, `misto`).
+  - Preview salva batch em `excel_import_batches` com `rows`, `preview`, `mapping`, `inconsistencias`, `summary` e retorna `import_token`.
+  - `confirmImport(userId, import_token)` materializa entradas em `atendimentos` + `atendimento_procedimentos` (criando cliente/procedimento se necessário) e saídas em `contas_pagar` com `origem='import'`.
+  - `undoImport(userId, batchId)` deleta todos os registros do lote via `import_batch_id` e marca batch como `undone`.
+  - `getImportHistory(userId)` lista histórico paginado.
 - Novos endpoints em `dashboard.routes.js`:
   ```
-  POST /api/dashboard/import/excel/preview   → multipart, retorna preview sem salvar
+  POST /api/dashboard/import/excel/preview   → multipart campo file, retorna preview sem salvar lançamentos
   POST /api/dashboard/import/excel/confirm   → body: { import_token }, salva de fato
   DELETE /api/dashboard/import/excel/:batchId → desfaz importação inteira
   GET  /api/dashboard/import/excel/history   → lista importações anteriores
   ```
-- Validações: valor numérico positivo, data válida, forma de pagamento mapeável
+- Upload protegido por `multer` em memória, limite padrão 5MB (`EXCEL_IMPORT_MAX_FILE_BYTES`).
+- `POST /import/excel/confirm` envia WhatsApp de confirmação via `src/copy/excelImportWhatsappCopy.js` quando `req.user.telefone` está disponível (fire-and-forget).
+- Testes: `tests/unit/excelImportService.test.js` (3 cenários: preview/mapping/inconsistências, confirm+undo, history). Regression: **168/168**.
 
 **Frontend:**
 - Página `/dashboard/import`:
@@ -360,10 +370,10 @@ Referência rápida do que está implementado. Não retrabalhar.
 **Dependências:** nenhuma crítica. Fases 7–8 recomendadas antes (pró-labore e comissão evitam retrabalho no import).
 
 **Definition of Done:**
-- Upload de Excel com colunas padrão importa sem erro
-- Preview correto antes de confirmar
-- Desfazer batch remove todos os registros do import
-- Notificação WhatsApp ao final: "Importei X lançamentos"
+- ✅ Upload de Excel com colunas padrão importa sem erro
+- ✅ Preview correto antes de confirmar
+- ✅ Desfazer batch remove todos os registros do import
+- ✅ Notificação WhatsApp ao final: "Importei X lançamentos"
 - Teste com o `Controle Geral.xlsx` da NB Clinic
 
 **Esforço:** G

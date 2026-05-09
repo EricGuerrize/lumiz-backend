@@ -475,6 +475,10 @@ app.get('/', (req, res) => {
         pricingInsightsAlias: '/api/dashboard/pricing/insights',
         emergencyStatus: '/api/dashboard/emergency/status',
         exportReport: '/api/dashboard/export/report',
+        importExcelPreview: 'POST /api/dashboard/import/excel/preview',
+        importExcelConfirm: 'POST /api/dashboard/import/excel/confirm',
+        importExcelHistory: 'GET /api/dashboard/import/excel/history',
+        importExcelUndo: 'DELETE /api/dashboard/import/excel/:batchId',
         auditLog: '/api/dashboard/audit-log'
       },
       user: {

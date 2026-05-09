@@ -1,4 +1,5 @@
 const express = require('express');
+const multer = require('multer');
 const router = express.Router();
 const supabase = require('../db/supabase');
 const transactionController = require('../controllers/transactionController');
@@ -18,6 +19,9 @@ const colaboradorService = require('../services/colaboradorService');
 const clientePerfilService = require('../services/clientePerfilService');
 const margemAlertaService = require('../services/margemAlertaService');
 const emailReportService = require('../services/emailReportService');
+const excelService = require('../services/excelService');
+const evolutionService = require('../services/evolutionService');
+const excelImportWhatsappCopy = require('../copy/excelImportWhatsappCopy');
 const supplierDocumentService = require('../services/supplierDocumentService');
 const contasReceberService = require('../services/contasReceberService');
 const alterRecebiveisService = require('../services/alter/alterRecebiveisService');
@@ -41,6 +45,24 @@ const {
 const nfValidadeService = require('../services/nfValidadeService');
 const auditLogService = require('../services/auditLogService');
 const { requireMFA } = require('../middleware/mfaMiddleware');
+
+const excelUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: Number.parseInt(process.env.EXCEL_IMPORT_MAX_FILE_BYTES || String(5 * 1024 * 1024), 10),
+    files: 1,
+  },
+  fileFilter: (_req, file, cb) => {
+    const allowedMimeTypes = new Set([
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-excel',
+      'application/octet-stream',
+    ]);
+    const allowedExt = /\.(xlsx|xls)$/i.test(file.originalname || '');
+    if (allowedExt || allowedMimeTypes.has(file.mimetype)) return cb(null, true);
+    return cb(new Error('INVALID_EXCEL_FILE'));
+  },
+});
 
 // Aplica autenticação em todas as rotas (aceita JWT ou telefone)
 router.use(authenticateFlexible);
@@ -1018,6 +1040,80 @@ router.get('/export/report', dashboardExportLimiter, async (req, res) => {
   } catch (error) {
     console.error('Error exporting report:', error);
     res.status(500).json({ error: 'Failed to export report' });
+  }
+});
+
+// POST /api/dashboard/import/excel/preview
+router.post('/import/excel/preview', dashboardExportLimiter, excelUpload.single('file'), async (req, res) => {
+  try {
+    if (!req.file?.buffer) {
+      return res.status(400).json({ error: 'Arquivo Excel é obrigatório no campo file' });
+    }
+
+    const result = await excelService.importFromExcel(req.user.id, req.file.buffer, {
+      filename: req.file.originalname,
+    });
+    return res.json(result);
+  } catch (error) {
+    console.error('Error previewing Excel import:', error);
+    if (error.message === 'INVALID_EXCEL_FILE' || error.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({
+        error: 'Arquivo inválido. Envie .xlsx ou .xls com até 5MB.',
+      });
+    }
+    return res.status(500).json({ error: 'Failed to preview Excel import' });
+  }
+});
+
+// POST /api/dashboard/import/excel/confirm
+router.post('/import/excel/confirm', dashboardExportLimiter, async (req, res) => {
+  try {
+    const importToken = req.body?.import_token;
+    if (!importToken) {
+      return res.status(400).json({ error: 'import_token é obrigatório' });
+    }
+
+    const result = await excelService.confirmImport(req.user.id, importToken);
+    if (req.user.telefone) {
+      evolutionService
+        .sendMessage(req.user.telefone, excelImportWhatsappCopy.importConfirmed(result.summary))
+        .catch((notifyError) => console.warn('[EXCEL_IMPORT] Falha ao notificar WhatsApp:', notifyError.message));
+    }
+    return res.json(result);
+  } catch (error) {
+    console.error('Error confirming Excel import:', error);
+    if (error.code === 'IMPORT_NOT_FOUND') {
+      return res.status(404).json({ error: error.message });
+    }
+    if (error.code === 'IMPORT_NOT_PREVIEW') {
+      return res.status(409).json({ error: error.message });
+    }
+    return res.status(500).json({ error: 'Failed to confirm Excel import' });
+  }
+});
+
+// GET /api/dashboard/import/excel/history
+router.get('/import/excel/history', heavyDashboardReadLimiter, async (req, res) => {
+  try {
+    const history = await excelService.getImportHistory(req.user.id, req.query.limit);
+    return res.json({ data: history });
+  } catch (error) {
+    console.error('Error listing Excel imports:', error);
+    return res.status(500).json({ error: 'Failed to list Excel imports' });
+  }
+});
+
+// DELETE /api/dashboard/import/excel/:batchId
+router.delete('/import/excel/:batchId', dashboardExportLimiter, async (req, res) => {
+  try {
+    const result = await excelService.undoImport(req.user.id, req.params.batchId);
+    return res.json(result);
+  } catch (error) {
+    console.error('Error undoing Excel import:', error);
+    if (error.code === 'IMPORT_NOT_FOUND') {
+      return res.status(404).json({ error: error.message });
+    }
+    return res.status(500).json({ error: 'Failed to undo Excel import' });
   }
 });
 
