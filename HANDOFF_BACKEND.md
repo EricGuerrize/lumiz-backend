@@ -1109,6 +1109,10 @@ Se o RPC Postgres `is_user_admin` falhar (ou degradar por erro técnico), a resp
 
 Design system aplicado ao dashboard; **5 páginas admin** atrás do `whoami`: `/admin`, `/admin/usuarios`, `/admin/assinaturas`, `/admin/feedback`, `/admin/diagnostico`. Qualidade build: `npx tsc --noEmit` (exit 0) e `npm run build` (sucesso).
 
-### Follow-up pendente
+### Sidebar + navegação (✅ follow-up produto — 09/05/2026)
 
-**Decisão de produto:** o sidebar atual ainda contém blocos extras além das 17 abas do espec (**Operações extras**, outlook, pricing). Limpeza ficou para **PR separada** — não faz parte desta rodada.
+O alinhamento do menu ao espec de produto foi **concluído** na branch `feat/audit-log-fase15`, commit **`79c9a4a`** (push enviado). PR contra `main` a abrir via compare: https://github.com/EricGuerrize/lumiz-financeiro/compare/feat/audit-log-fase15 — verificações na data: **`npx tsc --noEmit`** e **`npm run build`** verdes no `lumiz-financeiro`.
+
+- **Sidebar — 20 itens em 4 grupos:** **Operacional (6)** — Visão geral, Faturamento, Contas a pagar, Pacientes, Procedimentos, Estoque. **Inteligência (5)** — Calendário financeiro, Simulador "e se?", Metas, Insights, Inadimplência. **Powered by Alter (4)** — Recebíveis (badge), Maquininha, Score de saúde, Relatório do sócio. **Administração (5)** — Painel admin, Usuários, Assinaturas, Feedback, Diagnóstico.
+- **Footer (como mockup):** toggle de tema Claro/Escuro; linha de perfil com dropdown → Configurações / Perfil / Sair.
+- **Hooks LGPD (consentimento no dashboard — consomem API já entregue no backend, commit `e006e24`):** `useConsentStatus()` — prefetch no `AppLayout`; `useAcceptCurrentTerms()` — mutation com tratamento **409**. Endpoints: **`GET /api/user/consent`** e **`POST /api/user/consent`**.

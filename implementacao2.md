@@ -1,6 +1,6 @@
 # Lumiz — Monitoramento de Implementação (Phases 1–6)
 
-> **Última atualização:** 2026-05-09 (Hardening pré-launch — Asaas webhook fail-closed + LGPD consent prova auditável + Fase 17 PostHog + Fase 12 Importador Excel + Fase 18 MFA + Fase 15 Audit Log UI frontend + Database Security Hardening)
+> **Última atualização:** 2026-05-09 (Hardening pré-launch — Asaas webhook fail-closed + LGPD consent prova auditável + Fase 17 PostHog + Fase 12 Importador Excel + Fase 18 MFA + Fase 15 Audit Log UI + cleanup definitivo sidebar + hooks consent frontend + Database Security Hardening)
 > **Repositório backend:** https://github.com/EricGuerrize/lumiz-backend
 > **Repositório frontend:** https://github.com/EricGuerrize/lumiz-financeiro
 > **Deploy backend:** Railway (branch `main` → auto-deploy)
@@ -617,9 +617,20 @@ Após review do Supabase Advisor: **4 ERRORS críticos eliminados**. Migrations 
 
 ### Fase 15 — Audit log (frontend UI) — 09/05/2026
 
-- Repo **lumiz-financeiro**: branch `feat/audit-log-fase15`, commit `530c206`, push OK → `origin/feat/audit-log-fase15`. PR contra `main` a abrir (sem inventar URL).
+- Repo **lumiz-financeiro**: branch `feat/audit-log-fase15`, commit `530c206` (Audit Log UI), push OK → `origin/feat/audit-log-fase15`. Na **mesma branch**, commit **`79c9a4a`** consolidou **cleanup definitivo do sidebar** + hooks de consent LGPD (ver entrada abaixo). PR contra `main` a abrir via compare: https://github.com/EricGuerrize/lumiz-financeiro/compare/feat/audit-log-fase15
 - Rota `/dashboard/configuracoes/audit-log` integrada ao endpoint `GET /api/dashboard/audit-log` com filtros e paginação.
 - Nota: ambiente local com disco cheio dificulta `git fetch` e anexos de evidência — screenshots/PR link podem ficar pendente até liberar espaço.
+
+### Cleanup definitivo do sidebar + hooks de consent (frontend) — 09/05/2026
+
+- **Repo / branch:** `lumiz-financeiro` · `feat/audit-log-fase15` · commit **`79c9a4a`** — push OK; PR a abrir: https://github.com/EricGuerrize/lumiz-financeiro/compare/feat/audit-log-fase15
+- **Verificação:** `npx tsc --noEmit` e `npm run build` verdes.
+- **Removidos do sidebar (itens/abas não desejadas no espec):** Sazonalidade, Outlook, Pricing, Custo real, Previsões; grupo **Análises** inteiro incluindo Contas a receber, Documentos de fornecedor, Fornecedores, NF/Validade, Compras fornecedor, Colaboradores.
+- **Renomeações:** Dashboard → Visão geral; Calendário/Cashflow → Calendário financeiro; Simulador → Simulador "e se?"; Contas a pagar (painel) → Contas a pagar.
+- **Realocações:** Maquininha e Relatório do sócio passaram para o grupo **Powered by Alter**.
+- **Adicionados:** Faturamento, Pacientes, Procedimentos, Metas, Recebíveis, Score de saúde (estrutura final: 20 links — Operacional 6, Inteligência 5, Alter 4, Administração 5).
+- **Footer:** igual ao mockup — theme toggle Claro/Escuro; linha de perfil com dropdown (Configurações / Perfil / Sair).
+- **Hooks LGPD:** `useConsentStatus()` com prefetch no `AppLayout`; `useAcceptCurrentTerms()` — mutation com tratamento **409**. Consomem `GET` / `POST /api/user/consent` — backend já documentado (`e006e24`).
 
 ### Fase 13 — Export OFX para contador (backend)
 - [src/services/exportService.js](src/services/exportService.js) ganhou `exportOFX(userId, monthStr)`:
