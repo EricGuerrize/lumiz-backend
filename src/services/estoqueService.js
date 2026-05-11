@@ -428,6 +428,7 @@ class EstoqueService {
     const { data: profiles, error } = await supabase
       .from('profiles')
       .select('id, telefone')
+      .eq('alertas_whatsapp_ativos', true)
       .not('telefone', 'is', null);
 
     if (error) {
@@ -479,6 +480,7 @@ class EstoqueService {
     const { data: profiles, error } = await supabase
       .from('profiles')
       .select('id, telefone')
+      .eq('alertas_whatsapp_ativos', true)
       .not('telefone', 'is', null);
 
     if (error) {

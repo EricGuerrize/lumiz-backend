@@ -1457,24 +1457,61 @@ router.get('/emergency/history', async (req, res) => {
   }
 });
 
-// PUT /api/dashboard/preferences — opt-ins (ex.: relatório mensal WhatsApp)
-router.put('/preferences', async (req, res) => {
+// GET /api/dashboard/preferences — opt-ins do usuário autenticado
+router.get('/preferences', async (req, res) => {
   try {
-    const { reporte_mensal_whatsapp } = req.body || {};
-    if (typeof reporte_mensal_whatsapp !== 'boolean') {
-      return res
-        .status(400)
-        .json({ error: 'Body deve incluir reporte_mensal_whatsapp (boolean)' });
-    }
     const { data, error } = await supabase
       .from('profiles')
-      .update({ reporte_mensal_whatsapp })
+      .select('reporte_mensal_whatsapp, alertas_whatsapp_ativos')
       .eq('id', req.user.id)
-      .select('id, reporte_mensal_whatsapp')
       .single();
 
     if (error) throw error;
-    res.json(data);
+
+    res.json({
+      reporte_mensal_whatsapp: Boolean(data?.reporte_mensal_whatsapp),
+      alertas_whatsapp_ativos: Boolean(data?.alertas_whatsapp_ativos),
+    });
+  } catch (error) {
+    console.error('Error getting preferences:', error);
+    res.status(500).json({ error: 'Failed to get preferences' });
+  }
+});
+
+// PUT /api/dashboard/preferences — opt-ins (ex.: relatório mensal WhatsApp)
+router.put('/preferences', async (req, res) => {
+  try {
+    const { reporte_mensal_whatsapp, alertas_whatsapp_ativos } = req.body || {};
+    const payload = {};
+
+    if (typeof reporte_mensal_whatsapp === 'boolean') {
+      payload.reporte_mensal_whatsapp = reporte_mensal_whatsapp;
+    }
+    if (typeof alertas_whatsapp_ativos === 'boolean') {
+      payload.alertas_whatsapp_ativos = alertas_whatsapp_ativos;
+    }
+
+    if (!Object.keys(payload).length) {
+      return res
+        .status(400)
+        .json({
+          error: 'Body deve incluir ao menos um boolean: reporte_mensal_whatsapp ou alertas_whatsapp_ativos'
+        });
+    }
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .update(payload)
+      .eq('id', req.user.id)
+      .select('id, reporte_mensal_whatsapp, alertas_whatsapp_ativos')
+      .single();
+
+    if (error) throw error;
+    res.json({
+      id: data.id,
+      reporte_mensal_whatsapp: Boolean(data?.reporte_mensal_whatsapp),
+      alertas_whatsapp_ativos: Boolean(data?.alertas_whatsapp_ativos),
+    });
   } catch (error) {
     console.error('Error updating preferences:', error);
     res.status(500).json({ error: 'Failed to update preferences' });

@@ -61,6 +61,7 @@ class InsightService {
       .from('profiles')
       .select('id, telefone, nome_clinica, nome_completo')
       .eq('is_active', true)
+      .eq('alertas_whatsapp_ativos', true)
       .not('telefone', 'is', null);
 
     if (error) {

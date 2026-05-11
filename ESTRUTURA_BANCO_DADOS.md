@@ -1,6 +1,6 @@
 # 📊 Estrutura do Banco de Dados - Lumiz
 
-**Última atualização:** 07/05/2026 (Fase 19 — `account_deletion_tokens`)
+**Última atualização:** 11/05/2026 (Preferências de alertas WhatsApp)
 
 Esta documentação detalha a estrutura completa do banco de dados Supabase utilizado pelo sistema Lumiz.
 
@@ -23,6 +23,8 @@ Esta documentação detalha a estrutura completa do banco de dados Supabase util
 - `ticket_medio`
 - `procedimentos_mes`
 - `is_active`
+- `reporte_mensal_whatsapp` (opt-in do resumo mensal via WhatsApp)
+- `alertas_whatsapp_ativos` (opt-in de alertas/insights automáticos via WhatsApp, default `false`)
 - `created_at`, `updated_at`
 
 **Uso:** Autenticação, Onboarding, Configurações de Perfil

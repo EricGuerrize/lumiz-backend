@@ -128,6 +128,7 @@ class MargemAlertaService {
       .from('profiles')
       .select('id, telefone, is_active')
       .eq('is_active', true)
+      .eq('alertas_whatsapp_ativos', true)
       .not('telefone', 'is', null);
 
     if (error) {

@@ -53,10 +53,19 @@ As fases 9 e 10 são majoritariamente frontend. No backend, o foco é garantir c
   - serviço: `src/services/emailReportService.js`
   - status: `{ success: true }` ou `{ skipped: true, reason }`.
 
+- `GET /api/dashboard/preferences`
+  - lê preferências do usuário autenticado em `profiles`.
+  - contrato atual: `{ reporte_mensal_whatsapp, alertas_whatsapp_ativos }`.
+
+- `PUT /api/dashboard/preferences`
+  - aceita update parcial com `{ reporte_mensal_whatsapp?: boolean, alertas_whatsapp_ativos?: boolean }`.
+  - `alertas_whatsapp_ativos` nasce com default `false` e controla alertas/insights automáticos via WhatsApp.
+
 ## Cron atualizado
 
 - Cron diário 8h (`src/server.js`) agora também executa:
   - `margemAlertaService.checkAndAlertMargemCaindo()`
+  - `emergencyModeService`, `estoqueService`, `goalReminderService`, `insightService` e `alterInsightCronService` agora só enviam WhatsApp se `profiles.alertas_whatsapp_ativos = true`.
 - Cron mensal mantém WhatsApp e, no mesmo fluxo, chama e-mail:
   - `monthlyReportDeliveryService` -> `emailReportService.sendMonthlyReportEmail()`
 

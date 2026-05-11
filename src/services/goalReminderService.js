@@ -22,6 +22,7 @@ class GoalReminderService {
     const { data: profiles, error } = await supabase
       .from('profiles')
       .select('id, telefone, meta_mensal')
+      .eq('alertas_whatsapp_ativos', true)
       .not('meta_mensal', 'is', null)
       .not('telefone', 'is', null);
 
