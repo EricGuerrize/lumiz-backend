@@ -2,6 +2,7 @@ const transactionController = require('../transactionController');
 const analyticsService = require('../../services/analyticsService');
 const knowledgeService = require('../../services/knowledgeService');
 const conversationRuntimeStateService = require('../../services/conversationRuntimeStateService');
+const vendorClassificationService = require('../../services/vendorClassificationService');
 const crypto = require('crypto');
 const { formatarMoeda } = require('../../utils/currency');
 const {
@@ -70,6 +71,15 @@ class TransactionHandler {
     };
 
     normalizedData.nome_cliente = this.sanitizeClientName(normalizedData.nome_cliente, normalizedData.categoria);
+
+    // Verifica classificação de fornecedor para custos antes de usar a do LLM
+    if (tipo === 'saida' && descricao && !normalizedData.categoria) {
+      const categoriaVendor = await vendorClassificationService.classifyVendor(descricao, user.id);
+      if (categoriaVendor) {
+        normalizedData.categoria = categoriaVendor;
+        normalizedData._vendor_category_trigger = `Identifiquei como ${categoriaVendor} (${descricao} está na minha lista de fornecedores).`;
+      }
+    }
 
     if (tipo === 'entrada') {
       const paymentCheck = this.resolvePaymentRequirements(normalizedData, originalText);

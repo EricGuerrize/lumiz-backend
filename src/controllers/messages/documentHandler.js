@@ -7,6 +7,7 @@ const userRateLimit = require('../../middleware/userRateLimit');
 const { normalizePhone } = require('../../utils/phone');
 const { isLowConfidence, lowConfidenceBanner } = require('../../copy/captureConfirmCopy');
 const supplierCopy = require('../../copy/supplierDocWhatsappCopy');
+const vendorClassificationService = require('../../services/vendorClassificationService');
 
 /**
  * Handler para documentos e imagens
@@ -138,6 +139,15 @@ class DocumentHandler {
 
     const parsed = supplierDocumentService.fromDocumentResult(result);
     if (!parsed.valor_total || parsed.valor_total <= 0) return null;
+
+    // Enriquece categoria via tabela de fornecedores antes de mostrar confirmação
+    if (parsed.fornecedor && !parsed.categoria) {
+      const categoriaVendor = await vendorClassificationService.classifyVendor(parsed.fornecedor, user.id);
+      if (categoriaVendor) {
+        parsed.categoria = categoriaVendor;
+        parsed._vendor_category_trigger = `${parsed.fornecedor} está na minha lista de distribuidores`;
+      }
+    }
 
     const fileHash = buffer ? supplierDocumentService.computeFileHash(buffer) : null;
 
