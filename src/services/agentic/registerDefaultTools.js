@@ -588,6 +588,7 @@ async function registerCoreTools(toolRegistry) {
         fee_total: Number((pricing.valorBruto - pricing.valorLiquido).toFixed(2)),
         fee_percent: pricing.mdrPercentApplied,
         confidence: feeConfig.confidence,
+        rate_confidence: feeConfig.confidence, // alias explícito para o system prompt
         breakdown: pricing.parcelasPlan.map((item) => ({
           installment: item.numero,
           gross_value: item.valor_bruto,
@@ -609,7 +610,10 @@ async function registerCoreTools(toolRegistry) {
     execute: async (params, context) => {
       const userId = resolveUserId(params, context);
       if (!userId) throw new Error('user_id ausente para calculate_margin');
-      const report = await procedimentoCustoService.getCustoRealProcedimentos(userId, 6);
+      const [report, feeConfig] = await Promise.all([
+        procedimentoCustoService.getCustoRealProcedimentos(userId, 6),
+        resolveFeeConfig(userId, context?.phone, null)
+      ]);
       const match = (report.procedimentos || []).find((item) =>
         String(item.nome || '').toLowerCase().includes(String(params.procedure).toLowerCase())
         || String(params.procedure).toLowerCase().includes(String(item.nome || '').toLowerCase())
@@ -621,7 +625,8 @@ async function registerCoreTools(toolRegistry) {
           insumo_estimate: 0,
           net_revenue_estimate: 0,
           margin_percent: 0,
-          sample_size: 0
+          sample_size: 0,
+          rate_confidence: feeConfig.confidence
         };
       }
 
@@ -630,7 +635,8 @@ async function registerCoreTools(toolRegistry) {
         insumo_estimate: match.custo_material_medio,
         net_revenue_estimate: Number((match.valor_cobrado_medio - match.custo_total_real).toFixed(2)),
         margin_percent: match.margem_real,
-        sample_size: match.atendimentos_no_periodo
+        sample_size: match.atendimentos_no_periodo,
+        rate_confidence: feeConfig.confidence
       };
     }
   });
