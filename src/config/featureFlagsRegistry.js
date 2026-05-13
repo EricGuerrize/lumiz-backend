@@ -12,6 +12,28 @@
  */
 
 const KNOWN_FLAGS = Object.freeze({
+  agentic_router_enabled: {
+    default: false,
+    description:
+      'Fase Agentic: ativa roteamento para LLM+tools; com `agentic_tools_enabled`, intenções fora da lista exclusiva usam `default_agentic_preferred` (ver agentRouterService).'
+  },
+  agentic_shadow_mode: {
+    default: false,
+    description: 'Fase Agentic: modo shadow - decide agentic mas executa determinístico (para comparação).'
+  },
+  agentic_tools_enabled: {
+    default: false,
+    description: 'Fase Agentic: permite execução de tools pelo agente.'
+  },
+  agentic_onboarding_enabled: {
+    default: false,
+    description:
+      'Fase Agentic: assistência LLM híbrida no onboarding (ex.: extração JSON da primeira venda em texto livre via `onboardingAgenticAssistService`).'
+  },
+  profile_builder_enabled: {
+    default: false,
+    description: 'Fase Agentic: job assíncrono de profile builder.'
+  },
   alter_enabled: {
     default: false,
     description: 'Roteamento Alter (recebíveis, antecipação, cobertura, pagar fornecedor com recebível).'

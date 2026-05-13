@@ -20,7 +20,7 @@ class ConversationHistoryService {
       // Busca conversas com feedback positivo que contenham palavras similares
       let query = supabase
         .from('conversation_history')
-        .select('user_message, bot_response, intent, context')
+        .select('id, created_at, user_message, bot_response, intent, context')
         .eq('user_id', userId)
         .eq('feedback', 'positive')
         .order('created_at', { ascending: false })

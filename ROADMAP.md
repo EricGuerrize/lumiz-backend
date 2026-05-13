@@ -1,7 +1,7 @@
 # Lumiz Financeiro — Roadmap de Implementação
 
 > Documento vivo. Atualizar status a cada entrega.
-> Fases 1–10 concluídas (back + front, quando aplicável). Preset opcional: simulador “cortar pró-labore”. Fases 11–20 pendentes.
+> Fases 1–10 concluídas (back + front, quando aplicável). Preset opcional: simulador “cortar pró-labore”. Fases 11–22 em grande parte concluídas; ver tabela abaixo. **Fase 23 (Agentic)** — backend + schema remoto **entregues (12/05/2026)**; checklist E2E documentada (`docs/AGENTIC_WHATSAPP_E2E_CHECKLIST.md`); **execução E2E WhatsApp em homolog** e **webhook Asaas** (conta-fantasma → dados reais) **pendentes** (ver seção Fase 23).
 
 ---
 
@@ -32,6 +32,33 @@
 | 21 | Ondas 2–4 frontend (Supplier Docs, Fornecedores, Contas a receber, painéis Alter) | Front | G | ✅ Concluído — ver `lumiz-financeiro/HANDOFF_FRONTEND.md` (Onda 1–4) |
 | 22 | Design system Lumiz NB Clinic + admin global RBAC (`GET /api/user/whoami`) | Back + Front | G | ✅ Concluído (back + front) — 09/05/2026 — Backend: `GET /api/user/whoami` (commit `6e9cdf4`) + 6 testes. Front: design system `lumiz-nb-clinic.html`; 5 páginas admin com gating via `whoami`. **✅ Follow-up sidebar (produto) concluído em 09/05/2026:** commit `79c9a4a`, branch `feat/audit-log-fase15`, push OK; PR via compare https://github.com/EricGuerrize/lumiz-financeiro/compare/feat/audit-log-fase15 — 20 itens finais no menu + footer (tema/perfil); `tsc --noEmit` e `npm run build` verdes no front. Detalhes: `lumiz-financeiro/HANDOFF_FRONTEND.md` + `implementacao2.md` (entrada cleanup). |
 | 20.4 | Alter — telas dashboard | Front | M | 🟡 Concluído (mock) — `/dashboard/alter/*` atrás de `alter_enabled`; produção depende da fase 20 |
+| 23 | **Agentic Lumiz** (PDF `lumizchatbotdesign.md`): router + tools + memória + profile builder + parser/NF + trial `trial_accounts` + onboarding Ato 5 (CTA por persona) + atalho `ASSINAR` | Back + DB | G | 🟡 **Backend entregue (12/05/2026)** — checklist E2E em `docs/AGENTIC_WHATSAPP_E2E_CHECKLIST.md`; métricas `agentic_turn_completed` + NPS conversacional; benchmarks Anexo A (`domain_procedure_benchmarks`). **Pendente operacional:** E2E WhatsApp em homolog com flags reais; **webhook Asaas** (conta-fantasma → dados reais). |
+
+---
+
+## Fase 23 — Agentic Lumiz (design `lumizchatbotdesign.md`)
+
+**Objetivo:** evoluir o bot para arquitetura agentic (LLM + tools + memória), onboarding com conta-fantasma e fechamento por persona, sem perder guardrails do fluxo atual.
+
+**Status backend (12/05/2026):**
+
+- **Código:** `src/services/agentic/*` (router shadow, registry, contexto, tools core, profile builder, learned facts), integração Gemini function calling, prompts agentic/documento, `trialAccountService`, `onboardingAgenticAssistService` + `extractOnboardingSaleJson` (flag `agentic_onboarding_enabled`), `conversationalNpsService`, ajustes em `onboardingFlowService`, `messageController` (atalhos `ASSINAR` / dúvida / call), `paymentService` (migração pós-pagamento da conta-fantasma).
+- **Flags:** registry em `src/config/featureFlagsRegistry.js` (`agentic_*`, `profile_builder_enabled`, etc.).
+- **Testes:** unitários relevantes (ex.: `trialAccountService`, `onboardingFlowService.act5`, `messageController.optionGuard` para `ASSINAR`, `agentRouterService`, `onboardingAgenticAssistService`, `conversationalNpsService`, `contextHandlers.multiChoice`).
+
+**Status Supabase remoto (12/05/2026):**
+
+- Migrations aplicadas e histórico alinhado ao repo: `20260512100000`–`20260512100003` (agentic), `20260512181259` (`trial_accounts`), `20260512182618` (hardening `search_path` em funções agentic), `20260512203000` (`domain_procedure_benchmarks`), `20260512203100` (`conversational_nps_responses`). `supabase db push --dry-run` → **Remote database is up to date.**
+- Drift antigo de **nomes de arquivo** vs remoto foi corrigido (renomeação local + `migration repair` onde o schema já existia sem registro).
+
+**Próximos passos (para retomar depois):**
+
+1. **E2E WhatsApp** — seguir `docs/AGENTIC_WHATSAPP_E2E_CHECKLIST.md`; dois fluxos: dona/gestora (CTA + link setup quando aplicável) vs secretária (resumo encaminhável); confirmar persistência em `trial_accounts` e mensagens esperadas.
+2. **Billing ponta a ponta** — evento Asaas (`PAYMENT_CONFIRMED` / `PAYMENT_RECEIVED`): `paymentService.handleWebhook` → `subscriptions` `paid` + `trialAccountService.migrateToLiveAccount` + analytics `subscription_activated_via_webhook`; **idempotência** por `last_payment_id` com retry só da migração. Smoke: `tests/unit/paymentService.webhook.test.js` + webhook real em sandbox.
+3. **Rollout** — ligar flags agentic gradualmente (`agentic_shadow_mode` → `agentic_tools_enabled` → `agentic_router_enabled`) em homolog/staging antes de produção.
+4. **Advisor Supabase (legado / fora do escopo imediato)** — `reminders_sent` sem policy RLS; extensão `vector` em `public`; leaked password protection no Auth — tratar em fase de hardening separada se desejado.
+
+**Referências:** `lumizchatbotdesign.md`, `ESTRUTURA_BANCO_DADOS.md` (tabelas agentic + `trial_accounts`), `HANDOFF_BACKEND.md` (`FOUNDER_CALL_URL`).
 
 ---
 

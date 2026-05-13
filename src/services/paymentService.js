@@ -1,5 +1,7 @@
 const subscriptionService = require('./subscriptionService');
 const userRepository = require('../repositories/userRepository');
+const analyticsService = require('./analyticsService');
+const { trialAccountService } = require('./trialAccountService');
 
 const PLAN_VALUE = 149.99;
 const ASAAS_BASE_URL = process.env.ASAAS_API_URL || 'https://sandbox.asaas.com/api/v3';
@@ -84,15 +86,53 @@ async function handleWebhook(payload) {
     return;
   }
 
+  const paymentId = payment.id;
+  if (sub.last_payment_id && paymentId && sub.last_payment_id === paymentId) {
+    console.warn('[PAYMENT] Webhook idempotente (mesmo payment.id) — reexecutando só migração trial se pendente:', paymentId);
+    try {
+      const migration = await trialAccountService.migrateToLiveAccount(sub.clinic_id);
+      if (migration?.migrated) {
+        console.log(`[PAYMENT] Conta-fantasma convertida (retry) clinic_id=${sub.clinic_id} vendas=${migration.sales} custos=${migration.costs}`);
+      }
+    } catch (migrationError) {
+      console.error('[PAYMENT] Falha ao converter conta-fantasma (retry):', migrationError?.message || migrationError);
+    }
+    return;
+  }
+
   await subscriptionService.activate(sub.clinic_id, {
-    asaasPaymentId: payment.id,
+    asaasPaymentId: paymentId,
     paymentUrl: sub.payment_url
   });
 
-  console.log(`[PAYMENT] Plano ativado para clinic_id=${sub.clinic_id} (payment=${payment.id})`);
+  let migrationSummary = { migrated: false, sales: 0, costs: 0 };
+  try {
+    const migration = await trialAccountService.migrateToLiveAccount(sub.clinic_id);
+    migrationSummary = migration || migrationSummary;
+    if (migration?.migrated) {
+      console.log(`[PAYMENT] Conta-fantasma convertida clinic_id=${sub.clinic_id} vendas=${migration.sales} custos=${migration.costs}`);
+    }
+  } catch (migrationError) {
+    console.error('[PAYMENT] Falha ao converter conta-fantasma:', migrationError?.message || migrationError);
+  }
+
+  await analyticsService
+    .track('subscription_activated_via_webhook', {
+      phone: null,
+      userId: sub.clinic_id,
+      source: 'asaas_webhook',
+      properties: {
+        payment_id: paymentId,
+        trial_migrated: Boolean(migrationSummary?.migrated),
+        migrated_sales: migrationSummary?.sales || 0,
+        migrated_costs: migrationSummary?.costs || 0
+      }
+    })
+    .catch(() => {});
+
+  console.log(`[PAYMENT] Plano ativado para clinic_id=${sub.clinic_id} (payment=${paymentId})`);
 
   try {
-    const userRepository = require('../repositories/userRepository');
     const evolutionService = require('./evolutionService');
     const subscriptionCopy = require('../copy/subscriptionCopy');
     const profile = await userRepository.findById(sub.clinic_id);

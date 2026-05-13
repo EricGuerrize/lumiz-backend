@@ -33,7 +33,8 @@ describe('MessageController - guard de opções órfãs', () => {
       processOnboarding: jest.fn(),
       startIntroFlow: jest.fn(),
       startNewOnboarding: jest.fn(),
-      getOnboardingStep: jest.fn().mockReturnValue(null)
+      getOnboardingStep: jest.fn().mockReturnValue(null),
+      isOnboarding: jest.fn().mockReturnValue(false)
     }));
 
     jest.doMock('../../src/controllers/transactionController', () => ({}));
@@ -52,8 +53,23 @@ describe('MessageController - guard de opções órfãs', () => {
 
     jest.doMock('../../src/services/conversationRuntimeStateService', () => ({
       getAllActive: runtimeGetAllActiveMock,
+      get: jest.fn().mockResolvedValue(null),
       upsert: jest.fn().mockResolvedValue(true),
       clear: jest.fn().mockResolvedValue(true)
+    }));
+
+    jest.doMock('../../src/services/featureFlagService', () => ({
+      isEnabled: jest.fn().mockResolvedValue(false),
+      listForUser: jest.fn().mockResolvedValue({})
+    }));
+
+    jest.doMock('../../src/services/agentic', () => ({
+      agentRouterService: {
+        decide: jest.fn().mockResolvedValue({ route: 'deterministic', reason: 'test' })
+      },
+      toolRegistry: {
+        execute: jest.fn().mockResolvedValue({ success: true, result: {} })
+      }
     }));
 
     jest.doMock('../../src/db/supabase', () => ({
@@ -155,6 +171,13 @@ describe('MessageController - guard de opções órfãs', () => {
       capture: jest.fn().mockResolvedValue(true)
     }));
 
+    jest.doMock('../../src/services/paymentService', () => ({
+      generatePaymentLink: jest.fn().mockResolvedValue('https://pay.lumiz.test/link')
+    }));
+    jest.doMock('../../src/copy/subscriptionCopy', () => ({
+      paymentLinkReady: jest.fn().mockReturnValue('link de pagamento pronto')
+    }));
+
     controller = require('../../src/controllers/messageController');
     controller.getAwaitingData().clear();
   });
@@ -195,5 +218,12 @@ describe('MessageController - guard de opções órfãs', () => {
     expect(handleTransactionRequestMock).toHaveBeenCalledTimes(1);
     const mergedIntent = handleTransactionRequestMock.mock.calls[0][1];
     expect(mergedIntent.dados.valor).toBe(1);
+  });
+
+  test('atalho ASSINAR devolve link sem passar pela classificação', async () => {
+    const response = await controller.handleIncomingMessage('5511999999999', 'ASSINAR');
+
+    expect(response).toBe('link de pagamento pronto');
+    expect(detectIntentMock).not.toHaveBeenCalled();
   });
 });

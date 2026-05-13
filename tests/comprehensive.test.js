@@ -491,6 +491,8 @@ describe('prompts.js — buildDocumentExtractionPromptSlim', () => {
     const slim = buildDocumentExtractionPromptSlim('texto teste');
     expect(slim.length).toBeLessThan(full.length);
     expect(slim).toMatch(/transacoes/i);
+    expect(slim).toMatch(/category_trigger/i);
+    expect(slim).toMatch(/fornecedor/i);
   });
 });
 

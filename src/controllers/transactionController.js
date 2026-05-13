@@ -216,7 +216,7 @@ class TransactionController {
     }
   }
 
-  async createContaPagar(userId, { valor, categoria, descricao, data, tipo, parcelas, condicoes_pagamento }) {
+  async createContaPagar(userId, { valor, categoria, descricao, data, tipo, parcelas, condicoes_pagamento, observacoes = null }) {
     try {
       // === GERAÇÃO DE PARCELAS (CUSTOS) ===
       // Contexto: clínicas de estética frequentemente pagam insumos em boleto parcelado
@@ -257,7 +257,10 @@ class TransactionController {
               categoria: categoria || 'Outros',
               // Todas as parcelas são PENDENTES — são pagamentos futuros (boleto/cartão a prazo)
               status_pagamento: 'pendente',
-              observacoes: `Parcela ${i + 1} de ${parcelas}`
+              observacoes: [
+                `Parcela ${i + 1} de ${parcelas}`,
+                observacoes
+              ].filter(Boolean).join(' | ')
             }])
             .select()
             .single();
@@ -291,7 +294,7 @@ class TransactionController {
           tipo: tipo || 'variavel',
           categoria: categoria || 'Outros',
           status_pagamento: 'pago',
-          observacoes: null
+          observacoes
         }])
         .select()
         .single();

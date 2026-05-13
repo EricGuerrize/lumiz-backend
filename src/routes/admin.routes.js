@@ -191,4 +191,127 @@ router.get('/feedback', async (req, res) => {
   }
 });
 
+// GET /api/admin/conversational-nps?limit=&offset=&since=
+// Respostas NPS 0–10 coletadas no WhatsApp (cap. 13.4)
+router.get('/conversational-nps', async (req, res) => {
+  try {
+    const limit = Math.min(Number(req.query.limit || 100), 500);
+    const offset = Math.max(0, Number(req.query.offset || 0));
+    const since = req.query.since ? String(req.query.since).trim() : null;
+
+    let q = supabase
+      .from('conversational_nps_responses')
+      .select('id, user_id, phone, score, comment, raw_message, source, created_at')
+      .order('created_at', { ascending: false });
+
+    if (since) {
+      q = q.gte('created_at', since);
+    }
+
+    const { data, error } = await q.range(offset, offset + limit - 1);
+    if (error) {
+      if (error.code === '42P01') {
+        return res.json({ items: [], meta: { is_empty: true, hint: 'Tabela ainda não aplicada no banco.' } });
+      }
+      throw error;
+    }
+
+    res.json({
+      items: data || [],
+      meta: {
+        is_empty: !(data && data.length),
+        hint: 'Fonte: WhatsApp (mensagens nps: 0–10).'
+      }
+    });
+  } catch (err) {
+    console.error('[ADMIN] conversational-nps:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/agentic-analytics?days=7
+// Contagens de eventos `agentic_*` e billing webhook em analytics_events (últimos N dias).
+router.get('/agentic-analytics', async (req, res) => {
+  try {
+    const days = Math.min(Math.max(Number(req.query.days || 7), 1), 90);
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+    const { data, error } = await supabase
+      .from('analytics_events')
+      .select('event_name')
+      .gte('created_at', since)
+      .limit(8000);
+
+    if (error) {
+      if (error.code === '42P01') {
+        return res.json({
+          days,
+          since,
+          counts: {},
+          meta: { is_empty: true, hint: 'Tabela analytics_events indisponível.' }
+        });
+      }
+      throw error;
+    }
+
+    const counts = {};
+    for (const row of data || []) {
+      const n = row.event_name;
+      if (!n) continue;
+      if (
+        n.startsWith('agentic_') ||
+        n === 'subscription_activated_via_webhook' ||
+        n === 'onboarding_act_entered'
+      ) {
+        counts[n] = (counts[n] || 0) + 1;
+      }
+    }
+
+    res.json({
+      days,
+      since,
+      counts,
+      meta: {
+        is_empty: Object.keys(counts).length === 0,
+        hint: 'Amostra limitada a 8000 linhas — para relatórios pesados use SQL/BI.'
+      }
+    });
+  } catch (err) {
+    console.error('[ADMIN] agentic-analytics:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/trial-accounts?limit=50
+// Contas-fantasma do onboarding (trial) para suporte e auditoria.
+router.get('/trial-accounts', async (req, res) => {
+  try {
+    const limit = Math.min(Math.max(Number(req.query.limit || 50), 1), 200);
+
+    const { data, error } = await supabase
+      .from('trial_accounts')
+      .select('id, phone, clinic_id, owner_name, clinic_name, role, status, created_at, converted_at, referral_summary')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      if (error.code === '42P01') {
+        return res.json({ items: [], meta: { is_empty: true, hint: 'Tabela trial_accounts não aplicada.' } });
+      }
+      throw error;
+    }
+
+    res.json({
+      items: data || [],
+      meta: {
+        is_empty: !(data && data.length),
+        hint: 'Não inclui snapshot completo (pode ser grande) — use clinic_id para inspeção no banco.'
+      }
+    });
+  } catch (err) {
+    console.error('[ADMIN] trial-accounts:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

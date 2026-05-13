@@ -27,6 +27,143 @@ function extractThousandWordValue(text) {
   return base * 1000;
 }
 
+function extractKValueCandidates(text) {
+  const raw = normalizeText(text);
+  const matches = [];
+  const regex = /(\d+(?:[.,]\d+)?)\s*k\b/gi;
+  let match;
+  while ((match = regex.exec(raw)) !== null) {
+    const base = parseBrazilianNumber(match[1]);
+    if (Number.isFinite(base) && base > 0) {
+      matches.push(base * 1000);
+    }
+  }
+  return matches;
+}
+
+function parsePortugueseNumberPhrase(phrase) {
+  const normalized = normalizeComparableText(phrase)
+    .replace(/-/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!normalized) return null;
+
+  const units = {
+    zero: 0,
+    um: 1,
+    uma: 1,
+    dois: 2,
+    duas: 2,
+    tres: 3,
+    quatro: 4,
+    cinco: 5,
+    seis: 6,
+    sete: 7,
+    oito: 8,
+    nove: 9,
+    dez: 10,
+    onze: 11,
+    doze: 12,
+    treze: 13,
+    catorze: 14,
+    quatorze: 14,
+    quinze: 15,
+    dezesseis: 16,
+    dezassete: 17,
+    dezessete: 17,
+    dezoito: 18,
+    dezenove: 19
+  };
+
+  const tens = {
+    vinte: 20,
+    trinta: 30,
+    quarenta: 40,
+    cinquenta: 50,
+    sessenta: 60,
+    setenta: 70,
+    oitenta: 80,
+    noventa: 90
+  };
+
+  const hundreds = {
+    cem: 100,
+    cento: 100,
+    duzentos: 200,
+    trezentos: 300,
+    quatrocentos: 400,
+    quinhentos: 500,
+    seiscentos: 600,
+    setecentos: 700,
+    oitocentos: 800,
+    novecentos: 900
+  };
+
+  const tokens = normalized.split(' ').filter(Boolean);
+  let total = 0;
+  let current = 0;
+
+  for (const token of tokens) {
+    if (token === 'e') continue;
+    if (Object.prototype.hasOwnProperty.call(units, token)) {
+      current += units[token];
+      continue;
+    }
+    if (Object.prototype.hasOwnProperty.call(tens, token)) {
+      current += tens[token];
+      continue;
+    }
+    if (Object.prototype.hasOwnProperty.call(hundreds, token)) {
+      current += hundreds[token];
+      continue;
+    }
+    if (token === 'mil') {
+      total += (current || 1) * 1000;
+      current = 0;
+      continue;
+    }
+    if (token === 'milhao' || token === 'milhoes') {
+      total += (current || 1) * 1000000;
+      current = 0;
+      continue;
+    }
+    return null;
+  }
+
+  const value = total + current;
+  return value > 0 ? value : null;
+}
+
+function extractPortugueseNumberWordValue(text) {
+  const normalized = normalizeComparableText(text);
+  if (!normalized) return null;
+
+  const numberWordPattern = '(?:zero|um|uma|dois|duas|tres|quatro|cinco|seis|sete|oito|nove|dez|onze|doze|treze|catorze|quatorze|quinze|dezesseis|dezessete|dezassete|dezoito|dezenove|vinte|trinta|quarenta|cinquenta|sessenta|setenta|oitenta|noventa|cem|cento|duzentos|trezentos|quatrocentos|quinhentos|seiscentos|setecentos|oitocentos|novecentos|milhao|milhoes)';
+  const milEMeioRegex = new RegExp(`((?:${numberWordPattern})(?:\\s+(?:${numberWordPattern}|e))*)\\s+mil\\s+e\\s+mei[ao]\\b`);
+  const milEMeioMatch = normalized.match(milEMeioRegex);
+  if (milEMeioMatch && milEMeioMatch[1]) {
+    const base = parsePortugueseNumberPhrase(milEMeioMatch[1]);
+    if (Number.isFinite(base) && base > 0) {
+      return (base * 1000) + 500;
+    }
+  }
+
+  const phraseMatches = normalized.match(new RegExp(`(?:${numberWordPattern}|mil|e)+(?:\\s+(?:${numberWordPattern}|mil|e)+)*`, 'g'));
+
+  if (!phraseMatches) return null;
+
+  let best = null;
+  for (const phrase of phraseMatches) {
+    const value = parsePortugueseNumberPhrase(phrase);
+    if (Number.isFinite(value) && value > 0) {
+      best = Math.max(best || 0, value);
+    }
+  }
+
+  return best;
+}
+
 function hasInstallmentPattern(text) {
   return /\b\d{1,2}\s*x\b/i.test(normalizeText(text)) || /\bem\s+\d{1,2}\s*x\b/i.test(normalizeText(text));
 }
@@ -143,6 +280,15 @@ function extractMonetaryCandidates(text) {
     candidates.push({ value: milValue, source: 'thousand_word' });
   }
 
+  extractKValueCandidates(raw).forEach((value) => {
+    candidates.push({ value, source: 'k_suffix' });
+  });
+
+  const extensoValue = extractPortugueseNumberWordValue(raw);
+  if (extensoValue && extensoValue > 0) {
+    candidates.push({ value: extensoValue, source: 'number_words' });
+  }
+
   const moneyRegex = /r\$\s*([0-9]{1,3}(?:[.,][0-9]{3})*(?:[.,][0-9]{2})?|[0-9]+(?:[.,][0-9]{2})?)/gi;
   let moneyMatch;
   while ((moneyMatch = moneyRegex.exec(raw)) !== null) {
@@ -161,6 +307,7 @@ function extractMonetaryCandidates(text) {
     const tail = raw.slice(end, end + 3);
 
     if (/^\s*x\b/i.test(tail)) continue; // 3x, 10x etc.
+    if (/^\s*k\b/i.test(tail)) continue; // 15k, 1,5k etc.
     if (isLikelyDateToken(raw, start, end)) continue; // 15/02, 02-03 etc.
     if (/^\d{7,}$/.test(numberText)) continue; // IDs longos/códigos
 

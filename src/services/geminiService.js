@@ -1,6 +1,15 @@
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { withTimeout, retryWithBackoff } = require('../utils/timeout');
+const {
+  buildIntentClassificationPrompt,
+  buildAgenticSystemPrompt
+} = require('../config/prompts');
+const {
+  toolRegistry,
+  conversationContextService
+} = require('./agentic');
+const { safeAgenticTrack } = require('./agenticTelemetryService');
 require('dotenv').config();
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -56,25 +65,6 @@ class GeminiService {
   }
 
   async processMessage(message, context = {}) {
-    const hoje = new Date();
-    const dataHoje = hoje.toISOString().split('T')[0];
-    const diaSemanaHoje = hoje.getDay(); // 0=domingo, 1=segunda, etc.
-    const diasSemana = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
-    const nomeDiaHoje = diasSemana[diaSemanaHoje];
-
-    // Calcula datas relativas para exemplos
-    const ontem = new Date(hoje);
-    ontem.setDate(ontem.getDate() - 1);
-    const dataOntem = ontem.toISOString().split('T')[0];
-
-    const anteontem = new Date(hoje);
-    anteontem.setDate(anteontem.getDate() - 2);
-    const dataAnteontem = anteontem.toISOString().split('T')[0];
-
-    const semanaPassada = new Date(hoje);
-    semanaPassada.setDate(semanaPassada.getDate() - 7);
-    const dataSemanaPassada = semanaPassada.toISOString().split('T')[0];
-
     // Contexto histórico (se fornecido)
     let contextSection = '';
     if (context.recentMessages && context.recentMessages.length > 0) {
@@ -91,242 +81,11 @@ class GeminiService {
       ).join('\n\n')}\n\nUse estes exemplos para entender melhor a intenção da mensagem atual. Se a mensagem atual for similar a algum exemplo, use a mesma intenção.`;
     }
 
-    const prompt = `
-TAREFA: Analisar mensagem e retornar JSON com intenção e dados extraídos.
-
-CONTEXTO: Clínica de estética.
-DATA DE HOJE: ${dataHoje} (${nomeDiaHoje}-feira)
-${contextSection}
-${ragSection}
-
-SYSTEM INSTRUCTIONS:
-- Você é a LUMIZ, uma assistente financeira para clínicas de estética e odontologia.
-- PERSONA: Sofisticada, humana, prática e segura.
-- TOM DE VOZ: Direto, profissional e gentil. Evite "economês" e termos técnicos (nada de DRE, competência, crédito/débito contábil).
-- VOCABULÁRIO: Use "entrou", "saiu", "sobrou", "lucro", "custos", "receitas".
-- FORMATAÇÃO: Use quebras de linha e emojis pontuais (✅, 💸, 📊, 💜) para clareza visual.
-- REGRA DE OURO: Nunca invente dados. Se faltar info, a intenção deve refletir isso ou assumir defaults seguros.
-
-REGRA PRINCIPAL DE CLASSIFICAÇÃO:
-- Palavras que indicam VENDA (registrar_entrada): botox, preenchimento, harmonização, bioestimulador, fios, peeling, laser, paciente, cliente, procedimento, fiz um, realizei, atendi, vendi, fechei, fiz, atendimento, tox, preench
-- Palavras que indicam CUSTO (registrar_saida): insumos, marketing, aluguel, energia, internet, material, produto, fornecedor, boleto, conta, paguei, gastei, comprei, pagar
-
-MENSAGEM ATUAL: "${message}"
-
-INTENÇÕES:
-- registrar_entrada: tem palavra de VENDA (com ou sem valor)
-- registrar_saida: tem palavra de CUSTO (com ou sem valor)
-- consultar_saldo: saldo, resumo, lucro, quanto tenho
-- consultar_historico: histórico, últimas, movimentações
-- relatorio_mensal: relatório, mês, mensal
-- comparar_meses: comparar, comparação, versus, vs, mês passado, mês anterior
-- consultar_parcelas: parcelas, parcelado, cartão, receber, a receber
-- stats_hoje: vendas hoje, faturamento hoje, quanto fiz hoje, faturamento do dia, resultado de hoje, como foi hoje, balanço de hoje
-- ranking_procedimentos: qual mais vendido, procedimento mais vendido, ranking, top procedimentos, melhores procedimentos, mais atendido
-- marcar_parcela_paga: recebi parcela, paguei parcela, parcela paga, recebeu parcela, baixar parcela, quitar parcela
-- exportar_dados: exportar, baixar relatório, me manda pdf, excel, planilha, download, gerar relatório, gerar pdf
-- consultar_agenda: agenda, agendamentos, compromissos, consultas marcadas, ver agenda
-- consultar_meta: meta, minha meta, progresso, objetivo, quanto falta, atingir meta
-- insights: insights, dicas, sugestoes, sugestões, recomendacoes, recomendações
-- estoque_entrada: entrada no estoque, entrada de estoque, dar entrada no estoque, recebi insumos, compra para estoque, material chegou, conferir entrada estoque, repor estoque
-- consultar_estoque: meu estoque, como está o estoque, inventário, inventario, falta no estoque, resumo estoque
-- adicionar_numero: cadastrar número, adicionar número, novo número, registrar número, vincular número, adicionar celular, cadastrar celular, quero adicionar outro número, preciso cadastrar um número, adicionar membro, cadastrar membro, vincular outro whatsapp, adicionar outro whatsapp, quero adicionar alguém, preciso adicionar um número, cadastrar outro telefone
-- listar_numeros: meus números, números cadastrados, listar números, ver números, quem tem acesso, quais números estão cadastrados, mostrar números, ver membros, listar membros
-- remover_numero: remover número, excluir número, deletar número, tirar número, desvincular número, remover membro, excluir membro, tirar acesso, remover acesso, revogar acesso
-- ajuda: ajuda, como usar, exemplos, o que você faz, como funciona
-- saudacao: oi, olá, bom dia, boa tarde, boa noite
-- desfazer: cancelar, desfazer, apagar última, errei, deletar última
-- editar_transacao: editar última, corrigir última, mudar última, alterar última
-- buscar_transacao: buscar, encontrar, procurar, achar, mostrar transação
-- definir_meta: minha meta é, definir meta, meta de, objetivo de, quero faturar
-- enviar_documento: boleto, extrato, nota fiscal, comprovante, documento, pdf (SÓ a palavra, sem números)
-- codigo_boleto: sequência longa de dígitos (44-48 números), pode ter pontos, hífens ou espaços. Ex: 84650000002-7 05870162202-7...
-- apenas_valor: SÓ um número isolado (até 6 dígitos), nada mais
-- apenas_procedimento: SÓ nome de procedimento/produto, sem valor
-- mensagem_ambigua: não conseguiu identificar
-
-EXTRAÇÃO (estoque_entrada):
-- quantidade: número de unidades/ml/caixas a dar entrada (não confundir com valor R$ de venda)
-- categoria: nome do procedimento/insumo cadastrado
-EXTRAÇÃO:
-- VALOR: números (1500, 2.800, 3mil = 3000). Se não houver valor, retorne null.
-- REGRA CRÍTICA DE MÚLTIPLOS NÚMEROS:
-  * Em padrões como "3x", "10x" ou "em 3x", esse número representa PARCELAS, não o valor total.
-  * Em mensagens com valor + parcelas (ex: "botox 2000 3x"), valor = 2000 e parcelas = 3.
-  * Se houver apenas parcela sem valor (ex: "botox 3x"), valor deve ser null.
-- REGRA CRÍTICA DE NOME:
-  * Não classifique procedimento como nome_cliente.
-  * Se o texto for "botox 2000 3x", nome_cliente deve ser null.
-- CATEGORIA: nome do procedimento ou tipo de custo
-- DESCRICAO: paciente, marca, forma de pagamento
-- DATA: "${dataHoje}" por padrão. Calcule datas relativas:
-  * "ontem" = subtrair 1 dia de ${dataHoje}
-  * "anteontem" = subtrair 2 dias
-  * "semana passada" = subtrair 7 dias
-  * "segunda", "terça", etc = calcular o último dia da semana mencionado (se hoje é ${nomeDiaHoje}, calcule corretamente)
-  * "dia 15" ou "15/11" = usar a data específica
-- TIPO: "entrada" (venda) ou "saida" (custo)
-- FORMA_PAGAMENTO: "pix", "dinheiro", "debito", "credito_avista", "parcelado" (se não especificado, retorne null)
-- PARCELAS: número de parcelas (se parcelado)
-- BANDEIRA_CARTAO: visa, mastercard, elo, etc (se mencionado)
-- NOME_CLIENTE: nome do paciente/cliente (se mencionado)
-
-EXEMPLOS:
-
-"Botox 2800" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":2800.00,"categoria":"Botox","forma_pagamento":"avista","data":"${dataHoje}"}}
-
-"tox 2800" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":2800.00,"categoria":"Botox","forma_pagamento":"avista","data":"${dataHoje}"}}
-
-"Botox 2800 paciente Maria" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":2800.00,"categoria":"Botox","descricao":"Paciente Maria","forma_pagamento":"avista","nome_cliente":"Maria","data":"${dataHoje}"}}
-
-"Botox 2800 pix cliente Ana" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":2800.00,"categoria":"Botox","descricao":"PIX - Cliente Ana","forma_pagamento":"pix","nome_cliente":"Ana","data":"${dataHoje}"}}
-
-"Preenchimento 1500 dinheiro Maria Silva" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":1500.00,"categoria":"Preenchimento","descricao":"Dinheiro - Maria Silva","forma_pagamento":"dinheiro","nome_cliente":"Maria Silva","data":"${dataHoje}"}}
-
-"Harmonização 3000 débito paciente João" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":3000.00,"categoria":"Harmonização","descricao":"Débito - Paciente João","forma_pagamento":"debito","nome_cliente":"João","data":"${dataHoje}"}}
-
-"Bioestimulador 4500 crédito à vista cliente Paula" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":4500.00,"categoria":"Bioestimulador","descricao":"Crédito à vista - Cliente Paula","forma_pagamento":"credito_avista","nome_cliente":"Paula","data":"${dataHoje}"}}
-
-"Botox 2800 3x cartão paciente Maria" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":2800.00,"categoria":"Botox","descricao":"Paciente Maria","forma_pagamento":"parcelado","parcelas":3,"nome_cliente":"Maria","data":"${dataHoje}"}}
-
-"Preenchimento 4500 6x visa" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":4500.00,"categoria":"Preenchimento","forma_pagamento":"parcelado","parcelas":6,"bandeira_cartao":"visa","data":"${dataHoje}"}}
-
-"Harmonização 8000 10x mastercard cliente João" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":8000.00,"categoria":"Harmonização","descricao":"Cliente João","forma_pagamento":"parcelado","parcelas":10,"bandeira_cartao":"mastercard","nome_cliente":"João","data":"${dataHoje}"}}
-
-"Preenchimento labial 1500 pix" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":1500.00,"categoria":"Preenchimento labial","forma_pagamento":"pix","data":"${dataHoje}"}}
-
-"Harmonização facial 4500" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":4500.00,"categoria":"Harmonização facial","forma_pagamento":"avista","data":"${dataHoje}"}}
-
-"Fiz um botox 2800" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":2800.00,"categoria":"Botox","forma_pagamento":"avista","data":"${dataHoje}"}}
-
-"Realizei preenchimento 3500 cliente Ana" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":3500.00,"categoria":"Preenchimento","descricao":"Cliente Ana","forma_pagamento":"avista","nome_cliente":"Ana","data":"${dataHoje}"}}
-
-"Atendi Maria botox 2200 pix" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":2200.00,"categoria":"Botox","descricao":"PIX - Maria","forma_pagamento":"pix","nome_cliente":"Maria","data":"${dataHoje}"}}
-
-"Vendi harmonização 5000 3x" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":5000.00,"categoria":"Harmonização","forma_pagamento":"parcelado","parcelas":3,"data":"${dataHoje}"}}
-"Botox 2000 3x" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":2000.00,"categoria":"Botox","forma_pagamento":"parcelado","parcelas":3,"data":"${dataHoje}"}}
-"Botox 3x" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":null,"categoria":"Botox","forma_pagamento":"parcelado","parcelas":3,"data":"${dataHoje}"}}
-"Botox 2000 3x paciente Botox" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":2000.00,"categoria":"Botox","forma_pagamento":"parcelado","parcelas":3,"nome_cliente":null,"data":"${dataHoje}"}}
-
-"Fechei bioestimulador 4500 com Paula" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":4500.00,"categoria":"Bioestimulador","descricao":"Paula","forma_pagamento":"avista","nome_cliente":"Paula","data":"${dataHoje}"}}
-
-"Atendimento preenchimento 1800" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":1800.00,"categoria":"Preenchimento","forma_pagamento":"avista","data":"${dataHoje}"}}
-
-"Romulo botox 5000 em 3x" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":5000.00,"categoria":"Botox","forma_pagamento":"parcelado","parcelas":3,"nome_cliente":"Romulo","data":"${dataHoje}"}}
-
-"Julia preenchimento 1200" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":1200.00,"categoria":"Preenchimento","forma_pagamento":"avista","nome_cliente":"Julia","data":"${dataHoje}"}}
-
-"Insumos 3200" → {"intencao":"registrar_saida","dados":{"tipo":"saida","valor":3200.00,"categoria":"Insumos","data":"${dataHoje}"}}
-
-"Marketing 800" → {"intencao":"registrar_saida","dados":{"tipo":"saida","valor":800.00,"categoria":"Marketing","data":"${dataHoje}"}}
-
-"Aluguel 5000" → {"intencao":"registrar_saida","dados":{"tipo":"saida","valor":5000.00,"categoria":"Aluguel","data":"${dataHoje}"}}
-
-"Botox 2800 ontem" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":2800.00,"categoria":"Botox","forma_pagamento":"avista","data":"${dataOntem}"}}
-
-"Preenchimento 3500 semana passada cliente Ana" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":3500.00,"categoria":"Preenchimento","descricao":"Cliente Ana","forma_pagamento":"avista","nome_cliente":"Ana","data":"${dataSemanaPassada}"}}
-
-"Insumos 1200 ontem" → {"intencao":"registrar_saida","dados":{"tipo":"saida","valor":1200.00,"categoria":"Insumos","data":"${dataOntem}"}}
-
-"Harmonização 5000 pix anteontem paciente João" → {"intencao":"registrar_entrada","dados":{"tipo":"entrada","valor":5000.00,"categoria":"Harmonização","descricao":"PIX - Paciente João","forma_pagamento":"pix","nome_cliente":"João","data":"${dataAnteontem}"}}
-
-"Saldo" → {"intencao":"consultar_saldo","dados":{}}
-"Resumo" → {"intencao":"consultar_saldo","dados":{}}
-"Histórico" → {"intencao":"consultar_historico","dados":{}}
-"Relatório" → {"intencao":"relatorio_mensal","dados":{}}
-"Comparar" → {"intencao":"comparar_meses","dados":{}}
-"Comparar meses" → {"intencao":"comparar_meses","dados":{}}
-"Como foi mês passado" → {"intencao":"comparar_meses","dados":{}}
-"Evolução" → {"intencao":"comparar_meses","dados":{}}
-"Parcelas" → {"intencao":"consultar_parcelas","dados":{}}
-"A receber" → {"intencao":"consultar_parcelas","dados":{}}
-"Cartão" → {"intencao":"consultar_parcelas","dados":{}}
-"Vendas hoje" → {"intencao":"stats_hoje","dados":{}}
-"Faturamento do dia" → {"intencao":"stats_hoje","dados":{}}
-"Quanto fiz hoje" → {"intencao":"stats_hoje","dados":{}}
-"Como foi hoje" → {"intencao":"stats_hoje","dados":{}}
-"Resultado de hoje" → {"intencao":"stats_hoje","dados":{}}
-"Balanço de hoje" → {"intencao":"stats_hoje","dados":{}}
-"Qual mais vendido" → {"intencao":"ranking_procedimentos","dados":{}}
-"Procedimento mais vendido" → {"intencao":"ranking_procedimentos","dados":{}}
-"Ranking" → {"intencao":"ranking_procedimentos","dados":{}}
-"Top procedimentos" → {"intencao":"ranking_procedimentos","dados":{}}
-"Melhores procedimentos" → {"intencao":"ranking_procedimentos","dados":{}}
-"Recebi parcela" → {"intencao":"marcar_parcela_paga","dados":{}}
-"Paguei parcela" → {"intencao":"marcar_parcela_paga","dados":{}}
-"Parcela paga" → {"intencao":"marcar_parcela_paga","dados":{}}
-"Baixar parcela" → {"intencao":"marcar_parcela_paga","dados":{}}
-"Quitar parcela" → {"intencao":"marcar_parcela_paga","dados":{}}
-"Exportar" → {"intencao":"exportar_dados","dados":{}}
-"Baixar relatório" → {"intencao":"exportar_dados","dados":{}}
-"Me manda pdf" → {"intencao":"exportar_dados","dados":{}}
-"Gerar planilha" → {"intencao":"exportar_dados","dados":{}}
-"Excel" → {"intencao":"exportar_dados","dados":{}}
-"Download relatório" → {"intencao":"exportar_dados","dados":{}}
-"Agenda" → {"intencao":"consultar_agenda","dados":{}}
-"Agendamentos" → {"intencao":"consultar_agenda","dados":{}}
-"Compromissos" → {"intencao":"consultar_agenda","dados":{}}
-"Consultas marcadas" → {"intencao":"consultar_agenda","dados":{}}
-"Ver agenda" → {"intencao":"consultar_agenda","dados":{}}
-"Meta" → {"intencao":"consultar_meta","dados":{}}
-"Minha meta" → {"intencao":"consultar_meta","dados":{}}
-"Progresso" → {"intencao":"consultar_meta","dados":{}}
-"Objetivo" → {"intencao":"consultar_meta","dados":{}}
-"Quanto falta" → {"intencao":"consultar_meta","dados":{}}
-"Atingir meta" → {"intencao":"consultar_meta","dados":{}}
-"Insights" → {"intencao":"insights","dados":{}}
-"Me dá dicas" → {"intencao":"insights","dados":{}}
-"Sugestões" → {"intencao":"insights","dados":{}}
-"Cadastrar número" → {"intencao":"adicionar_numero","dados":{}}
-"Adicionar número" → {"intencao":"adicionar_numero","dados":{}}
-"Quero cadastrar outro celular" → {"intencao":"adicionar_numero","dados":{}}
-"Vincular número da secretária" → {"intencao":"adicionar_numero","dados":{}}
-"Quero adicionar outro número" → {"intencao":"adicionar_numero","dados":{}}
-"Preciso cadastrar um número" → {"intencao":"adicionar_numero","dados":{}}
-"Adicionar membro" → {"intencao":"adicionar_numero","dados":{}}
-"Vincular outro whatsapp" → {"intencao":"adicionar_numero","dados":{}}
-"Quero adicionar alguém" → {"intencao":"adicionar_numero","dados":{}}
-"Preciso adicionar um número" → {"intencao":"adicionar_numero","dados":{}}
-"Adicionar outro telefone" → {"intencao":"adicionar_numero","dados":{}}
-"Números cadastrados" → {"intencao":"listar_numeros","dados":{}}
-"Quem tem acesso" → {"intencao":"listar_numeros","dados":{}}
-"Ver números" → {"intencao":"listar_numeros","dados":{}}
-"Remover número" → {"intencao":"remover_numero","dados":{}}
-"Excluir membro" → {"intencao":"remover_numero","dados":{}}
-"Tirar acesso" → {"intencao":"remover_numero","dados":{}}
-"Desvincular número" → {"intencao":"remover_numero","dados":{}}
-"Ajuda" → {"intencao":"ajuda","dados":{}}
-"Oi" → {"intencao":"saudacao","dados":{}}
-
-"2800" → {"intencao":"apenas_valor","dados":{"valor":2800.00}}
-"Botox" → {"intencao":"apenas_procedimento","dados":{"categoria":"Botox"}}
-
-"boleto" → {"intencao":"enviar_documento","dados":{}}
-"documento" → {"intencao":"enviar_documento","dados":{}}
-"extrato" → {"intencao":"enviar_documento","dados":{}}
-"nota fiscal" → {"intencao":"enviar_documento","dados":{}}
-
-"cancelar última" → {"intencao":"desfazer","dados":{}}
-"errei" → {"intencao":"desfazer","dados":{}}
-"apagar última" → {"intencao":"desfazer","dados":{}}
-"desfazer" → {"intencao":"desfazer","dados":{}}
-
-"84650000002-7 05870162202-7 51105719000-7 00832414587-2" → {"intencao":"codigo_boleto","dados":{"codigo":"84650000002705870162202751105719000008324145872"}}
-
-"23793.38128 60000.000003 00000.000408 1 84340000012345" → {"intencao":"codigo_boleto","dados":{"codigo":"23793381286000000000300000004081843400001234"}}
-
-"84650000002705870162202751105719000008324145872" → {"intencao":"codigo_boleto","dados":{"codigo":"84650000002705870162202751105719000008324145872"}}
-
-"o que você faz" → {"intencao":"ajuda","dados":{}}
-"como funciona" → {"intencao":"ajuda","dados":{}}
-
-"entrada estoque botox 50 ml" → {"intencao":"estoque_entrada","dados":{"categoria":"Botox","quantidade":50,"data":"${dataHoje}"}}
-"recebi 20 ml de preenchimento pro estoque" → {"intencao":"estoque_entrada","dados":{"categoria":"Preenchimento","quantidade":20,"data":"${dataHoje}"}}
-"meu estoque" → {"intencao":"consultar_estoque","dados":{}}
-"como está o inventário" → {"intencao":"consultar_estoque","dados":{}}
-
-RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
-`;
+    const prompt = [
+      buildIntentClassificationPrompt(message, context),
+      contextSection,
+      ragSection
+    ].filter(Boolean).join('\n\n');
 
     try {
       // Adiciona timeout e retry para chamadas do Gemini
@@ -349,6 +108,251 @@ RESPONDA APENAS O JSON, SEM TEXTO ADICIONAL:
       };
     }
   }
+
+  async generateAgenticContentWithFallback(request, modelOptions = {}) {
+    let lastError = null;
+
+    for (const modelName of this.modelCandidates) {
+      try {
+        const model = genAI.getGenerativeModel({
+          model: modelName,
+          ...modelOptions
+        });
+
+        const result = await retryWithBackoff(
+          () => withTimeout(
+            model.generateContent(request),
+            GEMINI_TIMEOUT_MS,
+            `Timeout ao processar com ${modelName} (${GEMINI_TIMEOUT_MS / 1000}s)`
+          ),
+          2,
+          500
+        );
+
+        return result;
+      } catch (error) {
+        lastError = error;
+        const message = String(error?.message || '').toLowerCase();
+        const modelNotFound = message.includes('not found') || message.includes('not supported');
+        const isRateLimit = error?.status === 429 || message.includes('429') || message.includes('resource exhausted') || message.includes('too many requests');
+        if (modelNotFound || isRateLimit) {
+          console.warn(`[GEMINI] Modelo ${modelName} indisponível (${isRateLimit ? 'rate limit' : 'não encontrado'}), tentando próximo fallback...`);
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    throw lastError || new Error('Nenhum modelo Gemini disponível');
+  }
+
+  extractFunctionCalls(response) {
+    const candidate = response?.candidates?.[0];
+    const parts = candidate?.content?.parts || [];
+    return parts
+      .filter((part) => part?.functionCall?.name)
+      .map((part) => ({
+        name: part.functionCall.name,
+        args: part.functionCall.args || {}
+      }));
+  }
+
+  extractResponseText(response) {
+    try {
+      const text = response?.text?.();
+      if (text && String(text).trim()) {
+        return String(text).trim();
+      }
+    } catch (err) {
+      // Resposta pode ser apenas functionCall, sem texto.
+    }
+
+    const candidate = response?.candidates?.[0];
+    const parts = candidate?.content?.parts || [];
+    return parts
+      .filter((part) => typeof part?.text === 'string' && part.text.trim())
+      .map((part) => part.text.trim())
+      .join('\n')
+      .trim();
+  }
+
+  async processAgenticMessage(message, options = {}) {
+    const toolDeclarations = toolRegistry.getGeminiFunctionDeclarations();
+    const context = options.context || await conversationContextService.buildContext({
+      phone: options.phone,
+      user: options.user,
+      message,
+      intent: options.intent || null
+    });
+    const contextSummary = conversationContextService.formatForPrompt(context);
+    const systemInstruction = buildAgenticSystemPrompt({
+      contextSummary,
+      tools: toolRegistry.list()
+    });
+
+    const contents = [
+      {
+        role: 'user',
+        parts: [{ text: message }]
+      }
+    ];
+
+    try {
+      let firstToolLogged = false;
+      let result = await this.generateAgenticContentWithFallback({ contents }, {
+        systemInstruction,
+        tools: [{ functionDeclarations: toolDeclarations }],
+        toolConfig: {
+          functionCallingConfig: {
+            mode: 'AUTO'
+          }
+        }
+      });
+
+      let response = await result.response;
+
+      for (let round = 0; round < 4; round += 1) {
+        const functionCalls = this.extractFunctionCalls(response);
+        if (!functionCalls.length) {
+          return {
+            mode: 'reply',
+            text: this.extractResponseText(response) || 'Não consegui concluir a resposta agora.',
+            context
+          };
+        }
+
+        const functionResponses = [];
+        for (const call of functionCalls) {
+          if (!firstToolLogged) {
+            firstToolLogged = true;
+            safeAgenticTrack('agentic_first_tool_invoked', {
+              phone: options.phone,
+              userId: options.user?.id,
+              properties: { tool_name: call.name, round }
+            });
+          }
+          const execution = await toolRegistry.execute(call.name, call.args, {
+            userId: options.user?.id || options.userId,
+            clinicId: context?.clinic?.id || context?.clinicProfile?.id || null,
+            phone: options.phone,
+            userConfirmed: options.userConfirmed === true
+          });
+
+          if (execution.requiresConfirmation) {
+            return {
+              mode: 'requires_confirmation',
+              function_call: call,
+              confirmation: execution.confirmationMessage,
+              context
+            };
+          }
+
+          functionResponses.push({
+            functionResponse: {
+              name: call.name,
+              response: execution.success
+                ? { success: true, result: execution.result }
+                : { success: false, error: execution.error }
+            }
+          });
+        }
+
+        contents.push({
+          role: 'model',
+          parts: functionCalls.map((call) => ({
+            functionCall: {
+              name: call.name,
+              args: call.args
+            }
+          }))
+        });
+        contents.push({
+          role: 'user',
+          parts: functionResponses
+        });
+
+        result = await this.generateAgenticContentWithFallback({ contents }, {
+          systemInstruction,
+          tools: [{ functionDeclarations: toolDeclarations }],
+          toolConfig: {
+            functionCallingConfig: {
+              mode: 'AUTO'
+            }
+          }
+        });
+
+        response = await result.response;
+      }
+
+      return {
+        mode: 'reply',
+        text: this.extractResponseText(response) || 'Consegui executar as tools, mas não gerei uma resposta final em texto.',
+        context
+      };
+    } catch (error) {
+      console.error('[GEMINI] Erro no fluxo agentic:', error.message);
+      return {
+        mode: 'error',
+        text: 'Tive um problema para decidir a próxima ação agora.',
+        error: error.message,
+        context
+      };
+    }
+  }
+
+  /**
+   * Extrai JSON estruturado da primeira venda (onboarding Ato 2) em texto livre PT-BR.
+   * Usado quando `agentic_onboarding_enabled` está ativo e o parser regex não bateu.
+   *
+   * @param {string} message
+   * @returns {Promise<{ valor: number, categoria: string, cliente: string|null }|null>}
+   */
+  async extractOnboardingSaleJson(message) {
+    const text = String(message || '').trim();
+    if (!text || text.length > 2000) return null;
+
+    const prompt = [
+      'Você extrai um único objeto JSON da mensagem do usuário sobre uma venda/procedimento em clínica de estética.',
+      'Retorne SEMPRE JSON válido neste formato exato (sem markdown, sem texto extra):',
+      '{"valor": number|null, "categoria": string|null, "cliente": string|null}',
+      '- valor: valor em reais (número). Ex.: "R$ 350" → 350, "350,50" → 350.5, "1.200" → 1200',
+      '- categoria: nome do procedimento/serviço se inferível; senão null',
+      '- cliente: nome do paciente se mencionado; senão null',
+      'Se não houver valor monetário claro, retorne {"valor":null,"categoria":null,"cliente":null}.',
+      `Mensagem: ${JSON.stringify(text)}`
+    ].join('\n');
+
+    try {
+      const result = await this.generateWithFallback(prompt);
+      const response = await result.response;
+      const raw = response
+        .text()
+        .replace(/```json\n?/g, '')
+        .replace(/```\n?/g, '')
+        .trim();
+      const parsed = JSON.parse(raw);
+      let valor = parsed.valor;
+      if (typeof valor === 'string') {
+        valor = parseFloat(valor.replace(/\./g, '').replace(',', '.'));
+      }
+      if (!Number.isFinite(valor) || valor <= 0) return null;
+
+      const categoria =
+        typeof parsed.categoria === 'string' && parsed.categoria.trim()
+          ? parsed.categoria.trim()
+          : 'Procedimento';
+      const cliente =
+        typeof parsed.cliente === 'string' && parsed.cliente.trim()
+          ? parsed.cliente.trim()
+          : null;
+
+      return { valor, categoria, cliente };
+    } catch (e) {
+      console.warn('[GEMINI] extractOnboardingSaleJson:', e?.message || e);
+      return null;
+    }
+  }
+
   async processDocument(buffer, mimeType, prompt) {
     try {
 

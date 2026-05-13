@@ -342,11 +342,12 @@ module.exports = {
         );
     },
 
-    ahaCostsConfirmation({ tipo, categoria, valor, data, pagamento }) {
+    ahaCostsConfirmation({ tipo, categoria, valor, data, pagamento, categoryTrigger }) {
         return (
             `💸 *CUSTO*\n\n` +
             `Tipo: ${tipo}\n` +
             `Categoria: ${categoria}\n` +
+            `${categoryTrigger ? `Motivo: ${categoryTrigger}\n` : ''}` +
             `Valor: ${formatarMoeda(Number(valor))}\n` +
             `${pagamento ? `Pagamento: ${pagamento}\n` : ''}` +
             `Data: ${data}\n\n` +
@@ -443,6 +444,34 @@ module.exports = {
             `Configuração 100% finalizada! 🎉 Sua clínica está pronta e sem planilhas. ` +
             `Caso queira ajustar ou adicionar algo nas configurações, só me chamar!\n\n` +
             `Bora pra primeira venda real do dia? Se tiver algo que rolou hoje, já pode mandar!`
+        );
+    },
+
+    trialClosingDecisionMaker(clinicName) {
+        return (
+            `Pronto, esse foi o teste rápido da ${clinicName || 'sua clínica'}.\n\n` +
+            `Pra continuar com isso no dia a dia + dashboard completo com gráficos, calendário financeiro e relatórios, ` +
+            `é só seguir por aqui mesmo.\n\n` +
+            `Se quiser avançar agora, me responde *ASSINAR* e eu já te mando o link.\n` +
+            `Se preferir, pode mandar *DÚVIDA* e eu te explico antes de decidir.`
+        );
+    },
+
+    trialClosingTeamMember(clinicName) {
+        return (
+            `Pronto, esse foi o teste rápido da ${clinicName || 'clínica'}.\n\n` +
+            `Como a continuação costuma passar pela dona/gestora, eu já te deixei abaixo um resumo pronto pra encaminhar. ` +
+            `Assim você não precisa montar nada do zero.`
+        );
+    },
+
+    trialForwardSummary(summaryText) {
+        return (
+            `Toma, é só copiar e mandar:\n\n` +
+            `━━━━━━━━━━━━━━━━━━━━\n` +
+            `${summaryText}\n` +
+            `━━━━━━━━━━━━━━━━━━━━\n\n` +
+            `Se ela se interessar, é só me chamar aqui que eu sigo com o próximo passo.`
         );
     },
 

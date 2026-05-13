@@ -279,6 +279,9 @@ class DocumentService {
       message += `${index + 1}. ${emoji} *${tipoTexto}*\n`;
       message += `   💵 ${formatarMoeda(t.valor)}\n`;
       message += `   📂 ${t.categoria}\n`;
+      if (t.category_trigger) {
+        message += `   🧠 ${t.category_trigger}\n`;
+      }
       if (t.descricao) {
         message += `   📝 ${t.descricao}\n`;
       }

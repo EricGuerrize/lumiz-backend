@@ -123,6 +123,10 @@ class MdrService {
    * @returns {Promise<Object>} Configuração salva
    */
   async saveManualConfig({ phone, userId, bandeiras, tiposVenda, parcelas, provider, rawPayload }) {
+    if (!Array.isArray(bandeiras) || bandeiras.length === 0) {
+      throw new Error('Informe ao menos uma bandeira (MDR).');
+    }
+
     const payload = {
       phone,
       user_id: userId,
@@ -163,6 +167,10 @@ class MdrService {
    * @returns {Promise<Object>} Resultado com jobId e status
    */
   async requestOcr({ phone, userId, imageUrl, provider }) {
+    if (!imageUrl || !String(imageUrl).trim()) {
+      throw new Error('imageUrl é obrigatório para OCR MDR.');
+    }
+
     const initialStatus = this.queueEnabled ? 'queued' : 'processing';
 
     const { data: job, error: jobError } = await supabase

@@ -7,6 +7,7 @@ const onboardingCopy = require('../../copy/onboardingWhatsappCopy');
 const analyticsService = require('../analyticsService');
 const userController = require('../../controllers/userController');
 const transactionController = require('../../controllers/transactionController');
+const onboardingAgenticAssistService = require('../onboardingAgenticAssistService');
 const { isYes, isNo } = require('./profileHandlers');
 
 // Constantes
@@ -86,16 +87,29 @@ const ahaRevenueHandlers = {
    * Registra a primeira venda
    */
   async handleAhaRevenue(onboarding, messageTrimmed, respond) {
-    // Tenta extrair dados de venda da mensagem
-    const extracted = extractSimpleSale(messageTrimmed);
-    
-    if (!extracted || !extracted.valor) {
-      // Tenta só extrair valor
+    let extracted = extractSimpleSale(messageTrimmed);
+
+    if (!extracted?.valor) {
+      const assisted = await onboardingAgenticAssistService.enrichSaleFromFreeText(
+        onboarding,
+        messageTrimmed
+      );
+      if (assisted?.valor) {
+        extracted = {
+          valor: assisted.valor,
+          categoria: assisted.categoria || 'Procedimento',
+          cliente: assisted.cliente ?? null,
+          tipo: 'entrada'
+        };
+      }
+    }
+
+    if (!extracted?.valor) {
       const valor = parseBrazilianNumber(messageTrimmed);
       if (!valor) {
         return await respond(onboardingCopy.invalidRevenue());
       }
-      
+
       onboarding.data.primeiraVenda = {
         valor,
         categoria: 'Procedimento',
@@ -103,11 +117,10 @@ const ahaRevenueHandlers = {
         raw: messageTrimmed
       };
     } else {
-      // Valida valor
       if (extracted.valor < MIN_TRANSACTION_VALUE || extracted.valor > MAX_TRANSACTION_VALUE) {
         return await respond(`Valor inválido. Por favor, informe um valor entre R$ ${MIN_TRANSACTION_VALUE.toFixed(2)} e R$ ${MAX_TRANSACTION_VALUE.toLocaleString('pt-BR')}.`);
       }
-      
+
       onboarding.data.primeiraVenda = {
         ...extracted,
         raw: messageTrimmed

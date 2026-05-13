@@ -16,6 +16,7 @@ const transactionController = require('../controllers/transactionController');
 const documentService = require('./documentService');
 const knowledgeService = require('./knowledgeService');
 const registrationTokenService = require('./registrationTokenService');
+const { trialAccountService, buildForwardSummary, computeGhostSummary } = require('./trialAccountService');
 const {
     PROCEDURE_KEYWORDS,
     sanitizeClientName
@@ -299,6 +300,10 @@ function calculateSummaryFromOnboardingData(onboarding) {
     };
 }
 
+function isDecisionMakerRole(role) {
+    return role === 'dona_gestora' || role === 'adm_financeiro';
+}
+
 // Fallback: query ao banco se necessário (para casos onde já tem dados no banco)
 async function calculateMonthlySummary(userId) {
     const now = new Date();
@@ -360,45 +365,65 @@ const VARIABLE_COST_CATEGORY_RULES = [
 function inferCostTypeAndCategoryFromText(text = '', forcedType = null) {
     const normalized = normalizeText(text);
     if (!normalized) {
-        return { tipo: forcedType || null, categoria: null, source: null };
+        return { tipo: forcedType || null, categoria: null, source: null, category_trigger: null };
     }
 
     const findCategory = (rules) => {
         for (const rule of rules) {
-            if (rule.keywords.some((keyword) => normalized.includes(normalizeText(keyword)))) {
-                return rule.category;
+            const matchedKeyword = rule.keywords.find((keyword) => normalized.includes(normalizeText(keyword)));
+            if (matchedKeyword) {
+                return { category: rule.category, matchedKeyword };
             }
         }
         return null;
     };
 
+    const buildTrigger = (match) => {
+        if (!match) return null;
+        return `Categorizei como ${match.category} porque identifiquei "${match.matchedKeyword}" no texto.`;
+    };
+
     if (forcedType === 'fixo') {
+        const match = findCategory(FIXED_COST_CATEGORY_RULES);
         return {
             tipo: 'fixo',
-            categoria: findCategory(FIXED_COST_CATEGORY_RULES),
-            source: 'fixed_forced'
+            categoria: match?.category || null,
+            source: 'fixed_forced',
+            category_trigger: buildTrigger(match)
         };
     }
 
     if (forcedType === 'variável' || forcedType === 'variavel') {
+        const match = findCategory(VARIABLE_COST_CATEGORY_RULES);
         return {
             tipo: 'variável',
-            categoria: findCategory(VARIABLE_COST_CATEGORY_RULES),
-            source: 'variable_forced'
+            categoria: match?.category || null,
+            source: 'variable_forced',
+            category_trigger: buildTrigger(match)
         };
     }
 
-    const fixedCategory = findCategory(FIXED_COST_CATEGORY_RULES);
-    if (fixedCategory) {
-        return { tipo: 'fixo', categoria: fixedCategory, source: 'fixed_inferred' };
+    const fixedMatch = findCategory(FIXED_COST_CATEGORY_RULES);
+    if (fixedMatch) {
+        return {
+            tipo: 'fixo',
+            categoria: fixedMatch.category,
+            source: 'fixed_inferred',
+            category_trigger: buildTrigger(fixedMatch)
+        };
     }
 
-    const variableCategory = findCategory(VARIABLE_COST_CATEGORY_RULES);
-    if (variableCategory) {
-        return { tipo: 'variável', categoria: variableCategory, source: 'variable_inferred' };
+    const variableMatch = findCategory(VARIABLE_COST_CATEGORY_RULES);
+    if (variableMatch) {
+        return {
+            tipo: 'variável',
+            categoria: variableMatch.category,
+            source: 'variable_inferred',
+            category_trigger: buildTrigger(variableMatch)
+        };
     }
 
-    return { tipo: null, categoria: null, source: null };
+    return { tipo: null, categoria: null, source: null, category_trigger: null };
 }
 
 function extractCostPaymentDetails(text = '') {
@@ -797,6 +822,17 @@ class OnboardingStateHandlers {
                     properties: { valor: sale.valor, is_test: true }
                 });
 
+                await trialAccountService.saveRevenue({
+                    phone: normalizedPhone,
+                    clinicId: userId,
+                    ownerName: onboarding.data.nome,
+                    clinicName: onboarding.data.clinica,
+                    role: onboarding.data.role,
+                    sale
+                }).catch((error) => {
+                    console.error('[TRIAL_ACCOUNT] Erro ao salvar venda do onboarding:', error?.message || error);
+                });
+
             } else {
                 // Se não tem userId, não pode continuar
                 return await respond(onboardingCopy.userCreationError());
@@ -805,6 +841,11 @@ class OnboardingStateHandlers {
             onboarding.data.pending_cost = null; // Limpa para garantir estado limpo
             onboarding.data.cost_type = null; // Não sabemos o tipo ainda
             onboarding.step = 'AHA_COSTS_UPLOAD';
+            await safeTrack('onboarding_act_entered', {
+                phone: normalizedPhone,
+                source: 'whatsapp',
+                properties: { act: '3', step: 'AHA_COSTS_UPLOAD' }
+            });
             // Persistência crítica após salvar transação
             return await respond(onboardingCopy.ahaRevenueRegistered() + '\n\n' + onboardingCopy.ahaCostsIntro(), true, true);
         }
@@ -998,19 +1039,14 @@ class OnboardingStateHandlers {
 
             if (inferredCost.categoria) {
                 onboarding.data.pending_cost.categoria = inferredCost.categoria;
+                onboarding.data.pending_cost.category_trigger = inferredCost.category_trigger;
             }
 
             if (knownType) {
                 // Se já sabemos o tipo e a categoria veio no texto, já confirma direto
                 if (onboarding.data.pending_cost.categoria) {
                     onboarding.step = 'AHA_COSTS_CONFIRM';
-                    return await respond(onboardingCopy.ahaCostsConfirmation({
-                        tipo: onboarding.data.pending_cost.tipo === 'fixa' ? 'Fixo' : 'Variável',
-                        categoria: onboarding.data.pending_cost.categoria,
-                        valor: onboarding.data.pending_cost.valor,
-                        data: formatDate(onboarding.data.pending_cost.data),
-                        pagamento: this._formatCostPaymentText(onboarding.data.pending_cost)
-                    }));
+                    return await respond(onboardingCopy.ahaCostsConfirmation(this._buildCostConfirmationPayload(onboarding.data.pending_cost)));
                 }
 
                 // Se já sabemos o tipo, pula a classificação e vai para categoria
@@ -1020,13 +1056,7 @@ class OnboardingStateHandlers {
             } else {
                 if (onboarding.data.pending_cost.tipo && onboarding.data.pending_cost.categoria) {
                     onboarding.step = 'AHA_COSTS_CONFIRM';
-                    return await respond(onboardingCopy.ahaCostsConfirmation({
-                        tipo: onboarding.data.pending_cost.tipo === 'fixa' ? 'Fixo' : 'Variável',
-                        categoria: onboarding.data.pending_cost.categoria,
-                        valor: onboarding.data.pending_cost.valor,
-                        data: formatDate(onboarding.data.pending_cost.data),
-                        pagamento: this._formatCostPaymentText(onboarding.data.pending_cost)
-                    }));
+                    return await respond(onboardingCopy.ahaCostsConfirmation(this._buildCostConfirmationPayload(onboarding.data.pending_cost)));
                 }
 
                 if (onboarding.data.pending_cost.tipo && !onboarding.data.pending_cost.categoria) {
@@ -1087,7 +1117,11 @@ class OnboardingStateHandlers {
                         tipo: knownType === 'fixo' ? 'fixa' : (knownType === 'variável' ? 'variavel' : null),
                         descricao: transacao.descricao || fileName || 'Documento',
                         data: transacao.data || getLocalIsoDate(),
-                        categoria: transacao.categoria || null
+                        categoria: transacao.categoria || null,
+                        category_trigger: transacao.category_trigger || null,
+                        forma_pagamento: transacao.parcelas > 1 ? 'boleto_parcelado' : null,
+                        parcelas: transacao.parcelas || null,
+                        datas_vencimento: transacao.condicoes_pagamento || null
                     };
 
                     if (!onboarding.data.pending_cost.tipo && inferredCost.tipo) {
@@ -1095,6 +1129,7 @@ class OnboardingStateHandlers {
                     }
                     if (!onboarding.data.pending_cost.categoria && inferredCost.categoria) {
                         onboarding.data.pending_cost.categoria = inferredCost.categoria;
+                        onboarding.data.pending_cost.category_trigger = onboarding.data.pending_cost.category_trigger || inferredCost.category_trigger;
                     }
 
                     if (knownType) {
@@ -1103,13 +1138,7 @@ class OnboardingStateHandlers {
                             return await respond(
                                 onboardingCopy.documentReceivedSimple({ valor: transacao.valor }) +
                                 '\n\n' +
-                                onboardingCopy.ahaCostsConfirmation({
-                                    tipo: onboarding.data.pending_cost.tipo === 'fixa' ? 'Fixo' : 'Variável',
-                                    categoria: onboarding.data.pending_cost.categoria,
-                                    valor: onboarding.data.pending_cost.valor,
-                                    data: formatDate(onboarding.data.pending_cost.data),
-                                    pagamento: this._formatCostPaymentText(onboarding.data.pending_cost)
-                                })
+                                onboardingCopy.ahaCostsConfirmation(this._buildCostConfirmationPayload(onboarding.data.pending_cost))
                             );
                         }
 
@@ -1126,13 +1155,7 @@ class OnboardingStateHandlers {
                             return await respond(
                                 onboardingCopy.documentReceivedSimple({ valor: transacao.valor }) +
                                 '\n\n' +
-                                onboardingCopy.ahaCostsConfirmation({
-                                    tipo: onboarding.data.pending_cost.tipo === 'fixa' ? 'Fixo' : 'Variável',
-                                    categoria: onboarding.data.pending_cost.categoria,
-                                    valor: onboarding.data.pending_cost.valor,
-                                    data: formatDate(onboarding.data.pending_cost.data),
-                                    pagamento: this._formatCostPaymentText(onboarding.data.pending_cost)
-                                })
+                                onboardingCopy.ahaCostsConfirmation(this._buildCostConfirmationPayload(onboarding.data.pending_cost))
                             );
                         }
 
@@ -1198,18 +1221,13 @@ class OnboardingStateHandlers {
             );
             if (inferred.categoria) {
                 onboarding.data.pending_cost.categoria = inferred.categoria;
+                onboarding.data.pending_cost.category_trigger = inferred.category_trigger;
             }
         }
 
         if (onboarding.data.pending_cost.categoria) {
             onboarding.step = 'AHA_COSTS_CONFIRM';
-            return await respond(onboardingCopy.ahaCostsConfirmation({
-                tipo: onboarding.data.pending_cost.tipo === 'fixa' ? 'Fixo' : 'Variável',
-                categoria: onboarding.data.pending_cost.categoria,
-                valor: onboarding.data.pending_cost.valor,
-                data: formatDate(onboarding.data.pending_cost.data),
-                pagamento: this._formatCostPaymentText(onboarding.data.pending_cost)
-            }));
+            return await respond(onboardingCopy.ahaCostsConfirmation(this._buildCostConfirmationPayload(onboarding.data.pending_cost)));
         }
 
         onboarding.step = 'AHA_COSTS_CATEGORY';
@@ -1246,18 +1264,13 @@ class OnboardingStateHandlers {
             );
             if (inferred.categoria) {
                 onboarding.data.pending_cost.categoria = inferred.categoria;
+                onboarding.data.pending_cost.category_trigger = inferred.category_trigger;
             }
         }
 
         if (onboarding.data.pending_cost.categoria) {
             onboarding.step = 'AHA_COSTS_CONFIRM';
-            return await respond(onboardingCopy.ahaCostsConfirmation({
-                tipo: onboarding.data.pending_cost.tipo === 'fixa' ? 'Fixo' : 'Variável',
-                categoria: onboarding.data.pending_cost.categoria,
-                valor: onboarding.data.pending_cost.valor,
-                data: formatDate(onboarding.data.pending_cost.data),
-                pagamento: this._formatCostPaymentText(onboarding.data.pending_cost)
-            }));
+            return await respond(onboardingCopy.ahaCostsConfirmation(this._buildCostConfirmationPayload(onboarding.data.pending_cost)));
         }
 
         onboarding.step = 'AHA_COSTS_CATEGORY';
@@ -1292,14 +1305,9 @@ class OnboardingStateHandlers {
             }) || 'Outros');
 
         onboarding.data.pending_cost.categoria = categoria;
+        onboarding.data.pending_cost.category_trigger = 'Categoria escolhida manualmente no onboarding.';
         onboarding.step = 'AHA_COSTS_CONFIRM';
-        return await respond(onboardingCopy.ahaCostsConfirmation({
-            tipo: onboarding.data.pending_cost.tipo === 'fixa' ? 'Fixo' : 'Variável',
-            categoria,
-            valor: onboarding.data.pending_cost.valor,
-            data: formatDate(onboarding.data.pending_cost.data),
-            pagamento: this._formatCostPaymentText(onboarding.data.pending_cost)
-        }));
+        return await respond(onboardingCopy.ahaCostsConfirmation(this._buildCostConfirmationPayload(onboarding.data.pending_cost)));
     }
 
     async handleAhaCostsConfirm(onboarding, messageTrimmed, normalizedPhone, respond) {
@@ -1316,13 +1324,8 @@ class OnboardingStateHandlers {
         if (!confirmed && onboarding.data.pending_cost && (paymentInfo.forma_pagamento || paymentInfo.parcelas)) {
             onboarding.data.pending_cost.forma_pagamento = paymentInfo.forma_pagamento || onboarding.data.pending_cost.forma_pagamento || null;
             onboarding.data.pending_cost.parcelas = paymentInfo.parcelas || null;
-            return await respond(onboardingCopy.ahaCostsConfirmation({
-                tipo: onboarding.data.pending_cost.tipo === 'fixa' ? 'Fixo' : 'Variável',
-                categoria: onboarding.data.pending_cost.categoria || 'Outros',
-                valor: onboarding.data.pending_cost.valor,
-                data: formatDate(onboarding.data.pending_cost.data),
-                pagamento: this._formatCostPaymentText(onboarding.data.pending_cost)
-            }));
+            onboarding.data.pending_cost.datas_vencimento = paymentInfo.datas_vencimento || onboarding.data.pending_cost.datas_vencimento || null;
+            return await respond(onboardingCopy.ahaCostsConfirmation(this._buildCostConfirmationPayload(onboarding.data.pending_cost)));
         }
 
         if (confirmed) {
@@ -1357,6 +1360,17 @@ class OnboardingStateHandlers {
                     userId,
                     source: 'whatsapp',
                     properties: { valor: cost.valor, tipo: cost.tipo, is_test: true }
+                });
+
+                await trialAccountService.saveCost({
+                    phone: normalizedPhone,
+                    clinicId: userId,
+                    ownerName: onboarding.data.nome,
+                    clinicName: onboarding.data.clinica,
+                    role: onboarding.data.role,
+                    cost
+                }).catch((error) => {
+                    console.error('[TRIAL_ACCOUNT] Erro ao salvar custo do onboarding:', error?.message || error);
                 });
 
             } else {
@@ -1442,16 +1456,13 @@ class OnboardingStateHandlers {
         }
 
         if (choice === 'no') {
-            return await respondAndClearMulti([
-                onboardingCopy.handoffToDailyUse(),
-                onboardingCopy.onboardingCompletionNoMdr()
-            ]);
+            return await respondAndClearMulti(this._buildAct5Messages(onboarding));
         }
 
         return await respond(onboardingCopy.invalidChoice(`1️⃣ Sim, vou mandar\n2️⃣ Não agora, seguimos assim`));
     }
 
-    async handleBalanceInput(onboarding, messageTrimmed, respond, respondAndClear, respondAndClearMulti) {
+    async handleBalanceInput(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear, respondAndClearMulti) {
         // Valida valor usando utilitário existente
         const result = validateAndExtractValue(messageTrimmed);
 
@@ -1474,22 +1485,31 @@ class OnboardingStateHandlers {
             .from('profiles')
             .update({ initial_balance: saldo })
             .eq('id', onboarding.data.userId);
+
+          await trialAccountService.setInitialBalance({
+            phone: normalizedPhone,
+            clinicId: onboarding.data.userId,
+            ownerName: onboarding.data.nome,
+            clinicName: onboarding.data.clinica,
+            role: onboarding.data.role,
+            initialBalance: saldo
+          }).catch((error) => {
+            console.error('[TRIAL_ACCOUNT] Erro ao salvar saldo inicial do onboarding:', error?.message || error);
+          });
         }
 
-        return await respondAndClearMulti([
-            onboardingCopy.balanceConfirmation(saldo) + '\n\n' + onboardingCopy.handoffToDailyUse(),
-            onboardingCopy.onboardingCompletionNoMdr()
-        ]);
+        const act5Messages = this._buildAct5Messages(onboarding);
+        if (act5Messages.length > 0) {
+            act5Messages[0] = onboardingCopy.balanceConfirmation(saldo) + '\n\n' + act5Messages[0];
+        }
+        return await respondAndClearMulti(act5Messages);
     }
 
     async handleHandoffToDailyUse(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear, respondAndClearMulti) {
         // Caso legacy: força handoff e finaliza onboarding sem MDR
         if (onboarding.data?.force_handoff) {
             delete onboarding.data.force_handoff;
-            return await respondAndClearMulti([
-                onboardingCopy.handoffToDailyUse(),
-                onboardingCopy.onboardingCompletionNoMdr()
-            ]);
+            return await respondAndClearMulti(this._buildAct5Messages(onboarding));
         }
 
         // Detecta se a mensagem parece ser uma transação (venda ou custo)
@@ -1555,8 +1575,7 @@ class OnboardingStateHandlers {
         }
 
         return await respondAndClearMulti([
-            onboardingCopy.handoffToDailyUse(),
-            onboardingCopy.onboardingCompletionNoMdr()
+            ...this._buildAct5Messages(onboarding)
         ]);
     }
 
@@ -1686,6 +1705,17 @@ class OnboardingStateHandlers {
         return await respondAndClear(onboardingCopy.mdrSetupComplete());
     }
 
+    _buildCostConfirmationPayload(cost = {}) {
+        return {
+            tipo: cost.tipo === 'fixa' ? 'Fixo' : 'Variável',
+            categoria: cost.categoria || 'Outros',
+            categoryTrigger: cost.category_trigger || null,
+            valor: cost.valor,
+            data: formatDate(cost.data),
+            pagamento: this._formatCostPaymentText(cost)
+        };
+    }
+
     _formatCostPaymentText(cost = {}) {
         if (cost.forma_pagamento === 'boleto_parcelado') {
             return cost.parcelas ? `Boleto ${cost.parcelas}x` : 'Boleto parcelado';
@@ -1732,6 +1762,47 @@ class OnboardingStateHandlers {
                 metodo_label: metodoLabel
             };
         });
+    }
+
+    _buildTrialSnapshotFromOnboarding(onboarding) {
+        const sale = onboarding?.data?.pending_sale;
+        const savedCosts = Array.isArray(onboarding?.data?.saved_costs) ? onboarding.data.saved_costs : [];
+
+        const snapshot = {
+            sales: sale?.saved ? [sale] : [],
+            costs: savedCosts.filter((cost) => cost?.saved),
+            initial_balance: Number.isFinite(Number(onboarding?.data?.initial_balance))
+                ? Number(onboarding.data.initial_balance)
+                : null
+        };
+        snapshot.totals = computeGhostSummary(snapshot);
+        return snapshot;
+    }
+
+    _buildAct5Messages(onboarding) {
+        const role = onboarding?.data?.role || null;
+        const clinicName = onboarding?.data?.clinica || 'sua clínica';
+        const ownerName = onboarding?.data?.nome || null;
+
+        const messages = [
+            onboardingCopy.handoffToDailyUse(),
+            onboardingCopy.onboardingCompletionNoMdr()
+        ];
+
+        if (isDecisionMakerRole(role)) {
+            messages.push(onboardingCopy.trialClosingDecisionMaker(clinicName));
+            return messages;
+        }
+
+        const summaryText = buildForwardSummary({
+            clinicName,
+            testedByName: ownerName,
+            snapshot: this._buildTrialSnapshotFromOnboarding(onboarding)
+        });
+
+        messages.push(onboardingCopy.trialClosingTeamMember(clinicName));
+        messages.push(onboardingCopy.trialForwardSummary(summaryText));
+        return messages;
     }
 }
 
@@ -1958,13 +2029,7 @@ class OnboardingFlowService {
             case 'AHA_COSTS_CONFIRM':
                 const cost = onboarding.data?.pending_cost;
                 if (cost) {
-                    return onboardingCopy.ahaCostsConfirmation({
-                        tipo: cost.tipo === 'fixa' ? 'Fixo' : 'Variável',
-                        categoria: cost.categoria || 'Outros',
-                        valor: cost.valor,
-                        data: cost.data || 'Hoje',
-                        pagamento: this.handlers._formatCostPaymentText(cost)
-                    });
+                    return onboardingCopy.ahaCostsConfirmation(this.handlers._buildCostConfirmationPayload(cost));
                 }
                 return (onboarding.data?.pending_cost?.tipo === 'fixa')
                     ? onboardingCopy.ahaCostsCategoryQuestionFixed()
@@ -2097,17 +2162,19 @@ class OnboardingFlowService {
             let finalText = text || onboardingCopy.lostState();
 
             // Ao finalizar onboarding, envia CTA com link unico para ativar o dashboard (sem SMS).
-            try {
-                const setupToken = await registrationTokenService.generateSetupToken(
-                    normalizedPhone,
-                    onboarding?.data?.userId || null,
-                    24
-                );
-                if (setupToken?.registrationLink) {
-                    finalText += '\n\n' + onboardingCopy.dashboardAccessLink(setupToken.registrationLink);
+            if (isDecisionMakerRole(onboarding?.data?.role)) {
+                try {
+                    const setupToken = await registrationTokenService.generateSetupToken(
+                        normalizedPhone,
+                        onboarding?.data?.userId || null,
+                        24
+                    );
+                    if (setupToken?.registrationLink) {
+                        finalText += '\n\n' + onboardingCopy.dashboardAccessLink(setupToken.registrationLink);
+                    }
+                } catch (setupError) {
+                    console.error('[ONBOARDING] Falha ao gerar link de setup:', setupError?.message || setupError);
                 }
-            } catch (setupError) {
-                console.error('[ONBOARDING] Falha ao gerar link de setup:', setupError?.message || setupError);
             }
 
             try {
@@ -2131,6 +2198,16 @@ class OnboardingFlowService {
             const clinicId = onboarding?.data?.userId;
             if (clinicId) {
                 try {
+                    await trialAccountService.saveReferralSummary({
+                        phone: normalizedPhone,
+                        clinicId,
+                        ownerName: onboarding?.data?.nome || null,
+                        clinicName: onboarding?.data?.clinica || null,
+                        role: onboarding?.data?.role || null
+                    }).catch((error) => {
+                        console.error('[TRIAL_ACCOUNT] Falha ao salvar resumo do onboarding:', error?.message || error);
+                    });
+
                     const subscriptionService = require('./subscriptionService');
                     const evolutionSvc = require('./evolutionService');
                     const subscriptionCopy = require('../copy/subscriptionCopy');
@@ -2243,7 +2320,7 @@ class OnboardingFlowService {
                 case 'BALANCE_QUESTION':
                     return await handlers.handleBalanceQuestion(onboarding, messageTrimmed, respond, respondAndClear, respondAndClearMulti);
                 case 'BALANCE_INPUT':
-                    return await handlers.handleBalanceInput(onboarding, messageTrimmed, respond, respondAndClear, respondAndClearMulti);
+                    return await handlers.handleBalanceInput(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear, respondAndClearMulti);
                 case 'HANDOFF_TO_DAILY_USE':
                     return await handlers.handleHandoffToDailyUse(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear, respondAndClearMulti);
                 case 'MDR_SETUP_INTRO':

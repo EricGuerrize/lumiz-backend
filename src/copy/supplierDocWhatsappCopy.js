@@ -44,6 +44,12 @@ function confirmacaoSupplierDoc(parsed, options = {}) {
   linhas.push(`📄 *${tipo}*\n`);
   linhas.push(`🏢 ${fornecedorNome}${cnpj}`);
   linhas.push(`💰 *${valorTotal}*${totalParcelas > 1 ? ` em ${totalParcelas}x` : ''}`);
+  if (parsed?.category) {
+    linhas.push(`📂 ${parsed.category}`);
+  }
+  if (parsed?.category_trigger) {
+    linhas.push(`   ${parsed.category_trigger}`);
+  }
 
   if (totalParcelas > 1 && Array.isArray(parsed?.vencimentos)) {
     const previewParcelas = parsed.vencimentos.slice(0, 4).map((v, idx) => {

@@ -7,6 +7,7 @@ const onboardingFlowService = require('../services/onboardingFlowService');
 const transactionController = require('./transactionController');
 const conversationHistoryService = require('../services/conversationHistoryService');
 const analyticsService = require('../services/analyticsService');
+const { safeAgenticTrack } = require('../services/agenticTelemetryService');
 const pdfQueueService = require('../services/pdfQueueService');
 const intentHeuristicService = require('../services/intentHeuristicService');
 const conversationRuntimeStateService = require('../services/conversationRuntimeStateService');
@@ -32,6 +33,9 @@ const MemberHandler = require('./messages/memberHandler');
 const EstoqueHandler = require('./messages/estoqueHandler');
 const mdrChatFlowService = require('../services/mdrChatFlowService');
 const betaFeedbackService = require('../services/betaFeedbackService');
+const conversationalNpsService = require('../services/conversationalNpsService');
+const featureFlagService = require('../services/featureFlagService');
+const { agentRouterService, toolRegistry } = require('../services/agentic');
 
 /**
  * MessageController refatorado - Orquestrador principal
@@ -89,7 +93,10 @@ class MessageController {
     ].includes(String(messageLower || '').trim());
   }
 
-  hasPendingConversationContext(phone) {
+  async hasPendingConversationContext(phone) {
+    const agenticRow = await conversationRuntimeStateService.get(phone, 'agentic_confirm');
+    if (agenticRow?.payload?.toolName) return true;
+
     return (
       this.pendingTransactions.has(phone) ||
       this.pendingDocumentTransactions.has(phone) ||
@@ -104,6 +111,90 @@ class MessageController {
 
   getOrphanOptionReplyMessage() {
     return 'Não encontrei confirmação pendente agora. Se era confirmação, repita o último comando. Se era valor, envie com contexto (ex: _R$ 100_ ou _Insumos R$ 100_).';
+  }
+
+  _normalizeIntentForRouter(intent) {
+    if (!intent || typeof intent !== 'object') {
+      return {
+        intencao: 'mensagem_ambigua',
+        dados: {},
+        confidence: 0,
+        confidence_score: 0,
+        confianca: 0
+      };
+    }
+    const confidence = Number(
+      intent.confidence ?? intent.confidence_score ?? intent.confianca ?? 0
+    );
+    return {
+      ...intent,
+      confidence,
+      confidence_score: confidence,
+      confianca: confidence
+    };
+  }
+
+  _formatAgenticConfirmedResult(toolName, result) {
+    if (toolName === 'register_sale') {
+      return 'Feito. Lancei a venda com sucesso.';
+    }
+    if (toolName === 'register_cost') {
+      return 'Feito. Registrei o custo / contas a pagar.';
+    }
+    if (toolName === 'compare_machine_fees') {
+      return 'Ok, atualizei a leitura das suas taxas de maquininha.';
+    }
+    return 'Pronto.';
+  }
+
+  /**
+   * Se existe confirmação pendente de tool agentic e o usuário respondeu sim/não, executa ou cancela.
+   * @returns {string|null} resposta WhatsApp ou null se não aplicável
+   */
+  async _tryResolveAgenticToolConfirmation(phone, message, user) {
+    const row = await conversationRuntimeStateService.get(phone, 'agentic_confirm');
+    const payload = row?.payload;
+    if (!payload?.toolName || !user?.id) return null;
+
+    const msg = String(message || '').trim().toLowerCase();
+    const yes = ['sim', 's', 'confirmar', '1', 'ok', 'pode', 'pode ser', 'isso', 'uhum'].includes(msg);
+    const no = ['não', 'nao', 'n', 'cancelar', '2', 'cancela', 'deixa'].includes(msg);
+    if (!yes && !no) return null;
+
+    await conversationRuntimeStateService.clear(phone, 'agentic_confirm');
+    if (no) {
+      safeAgenticTrack('agentic_tool_confirmation_rejected', {
+        phone,
+        userId: user.id,
+        properties: { tool_name: payload.toolName }
+      });
+      return 'Combinado, cancelei essa ação. Se quiser registrar de novo, manda os dados de novo.';
+    }
+
+    try {
+      const exec = await toolRegistry.execute(payload.toolName, payload.args || {}, {
+        userId: user.id,
+        phone,
+        userConfirmed: true
+      });
+      if (exec.success) {
+        safeAgenticTrack('agentic_tool_confirmation_accepted', {
+          phone,
+          userId: user.id,
+          properties: { tool_name: payload.toolName }
+        });
+        return this._formatAgenticConfirmedResult(payload.toolName, exec.result);
+      }
+      safeAgenticTrack('agentic_tool_confirmation_failed', {
+        phone,
+        userId: user.id,
+        properties: { tool_name: payload.toolName, error: String(exec.error || '').slice(0, 200) }
+      });
+      return `Não consegui finalizar: ${exec.error || 'erro desconhecido'}. Tenta de novo ou simplifica o pedido.`;
+    } catch (e) {
+      console.warn('[MESSAGE] agentic_confirm execute:', e?.message);
+      return 'Deu um erro ao confirmar. Pode tentar de novo?';
+    }
   }
 
   async rehydrateRuntimeStates(phone) {
@@ -370,6 +461,20 @@ class MessageController {
         }
       }
 
+      if (user?.id) {
+        const agenticConfirmReply = await this._tryResolveAgenticToolConfirmation(normalizedPhone, message, user);
+        if (typeof agenticConfirmReply === 'string') {
+          conversationHistoryService.saveConversation(
+            user.id,
+            message,
+            agenticConfirmReply,
+            'agentic_confirm',
+            {}
+          ).catch(() => {});
+          return agenticConfirmReply;
+        }
+      }
+
       if (user && user.id) {
         const mdrResponse = await mdrChatFlowService.handleMessageIfNeeded({
           phone: normalizedPhone,
@@ -392,7 +497,7 @@ class MessageController {
         }
       }
 
-      if (this.isOptionToken(normalizedMessage) && !this.hasPendingConversationContext(normalizedPhone)) {
+      if (this.isOptionToken(normalizedMessage) && !(await this.hasPendingConversationContext(normalizedPhone))) {
         return this.getOrphanOptionReplyMessage();
       }
 
@@ -409,6 +514,38 @@ class MessageController {
       }
       if (['dashboard', 'link', 'painel'].includes(msgSimples)) {
         return this.helpHandler.handleDashboard();
+      }
+      if (user && (
+        msgSimples === 'assinar' ||
+        msgSimples === 'assinatura' ||
+        msgSimples === 'quero assinar' ||
+        msgSimples === 'quero finalizar' ||
+        msgSimples === 'manda o link' ||
+        msgSimples === 'manda link'
+      )) {
+        const paymentService = require('../services/paymentService');
+        const subscriptionCopy = require('../copy/subscriptionCopy');
+        const paymentUrl = await paymentService.generatePaymentLink(user.id);
+        return subscriptionCopy.paymentLinkReady(paymentUrl);
+      }
+      if (user && (
+        msgSimples === 'duvida' ||
+        msgSimples === 'dúvida' ||
+        msgSimples === 'tenho duvida' ||
+        msgSimples === 'tenho dúvida'
+      )) {
+        return 'Pode me mandar sua dúvida por aqui mesmo. Se eu não conseguir resolver tudo sozinha, eu sinalizo pro time humano continuar com você.';
+      }
+      if (user && (
+        msgSimples === 'call' ||
+        msgSimples === 'falar com o eric' ||
+        msgSimples === 'prefiro conversar antes'
+      )) {
+        const founderCallUrl = process.env.FOUNDER_CALL_URL;
+        if (founderCallUrl) {
+          return `Perfeito. Aqui está o link para agendar uma conversa rápida:\n\n${founderCallUrl}`;
+        }
+        return 'Perfeito. Me manda seu melhor horário e um telefone ou email de contato que eu sinalizo pro time seguir com você.';
       }
 
       // Tenta heurística primeiro (economiza ~60% das chamadas Gemini)
@@ -488,11 +625,138 @@ class MessageController {
         return 'Anotado, obrigado! 👍';
       }
 
+      if (user?.id) {
+        const npsReply = await conversationalNpsService.tryConsumeNpsMessage({
+          userId: user.id,
+          phone: normalizedPhone,
+          message
+        });
+        if (typeof npsReply === 'string') {
+          conversationHistoryService.saveConversation(user.id, message, npsReply, 'conversational_nps', {}).catch(() => {});
+          return npsReply;
+        }
+      }
+
+      // Rota agentic (LLM + tools) — flags `agentic_router_enabled` (ou shadow) + `agentic_tools_enabled`
+      let response = null;
+      let messageHandlingSource = 'deterministic';
+      if (user?.id && typeof message === 'string' && message.trim().length > 0) {
+        const toolsOn = await featureFlagService.isEnabled('agentic_tools_enabled', user.id);
+        if (toolsOn) {
+          const intentForRouter = this._normalizeIntentForRouter(intent);
+          const agenticPending = await conversationRuntimeStateService.get(normalizedPhone, 'agentic_confirm');
+          const routerDecision = await agentRouterService.decide({
+            message,
+            intent: intentForRouter,
+            user,
+            phone: normalizedPhone,
+            context: {
+              isOnboarding: onboardingFlowService.isOnboarding(normalizedPhone),
+              hasPendingConfirmation: !!(agenticPending?.payload?.toolName),
+              inSpecializedFlow: false,
+              flowName: null
+            }
+          });
+
+          if (routerDecision.route === 'agentic') {
+            let agentResult = null;
+            const turnStartedAt = Date.now();
+            try {
+              agentResult = await geminiService.processAgenticMessage(message, {
+                user,
+                phone: normalizedPhone,
+                intent: intentForRouter,
+                userConfirmed: false
+              });
+
+              if (agentResult.mode === 'reply' && agentResult.text) {
+                const responseText = String(agentResult.text).trim();
+                if (responseText.length > 0) {
+                  response = responseText;
+                  messageHandlingSource = 'agentic';
+                }
+              }
+
+              if (!response && agentResult.mode === 'requires_confirmation' && agentResult.function_call) {
+                await conversationRuntimeStateService.upsert(
+                  normalizedPhone,
+                  'agentic_confirm',
+                  {
+                    toolName: agentResult.function_call.name,
+                    args: agentResult.function_call.args || {}
+                  },
+                  15 * 60 * 1000
+                );
+                const hint = '\n\nResponda *sim* para confirmar ou *não* para cancelar.';
+                const body = agentResult.confirmation || 'Confirma essa ação?';
+                response = `${body}${hint}`;
+                messageHandlingSource = 'agentic';
+              }
+
+              if (messageHandlingSource === 'agentic' && user?.id) {
+                analyticsService
+                  .track('agentic_turn_completed', {
+                    phone: normalizedPhone,
+                    userId: user.id,
+                    source: 'whatsapp',
+                    properties: {
+                      mode: agentResult?.mode || null,
+                      intent: intentForRouter?.intencao || null,
+                      had_text: Boolean(response),
+                      latency_ms: Date.now() - turnStartedAt,
+                      router_reason: routerDecision.reason || null
+                    }
+                  })
+                  .catch(() => {});
+              }
+
+              if (!response && user?.id) {
+                const reason =
+                  agentResult?.mode === 'error'
+                    ? 'agent_error'
+                    : agentResult?.mode === 'reply'
+                      ? 'empty_or_unusable_reply'
+                      : 'no_reply_mode';
+                safeAgenticTrack('agentic_deterministic_fallback', {
+                  phone: normalizedPhone,
+                  userId: user.id,
+                  properties: {
+                    reason,
+                    intent: intentForRouter?.intencao || null,
+                    agent_mode: agentResult?.mode || null,
+                    latency_ms: Date.now() - turnStartedAt
+                  }
+                });
+              }
+            } catch (e) {
+              console.warn('[MESSAGE] Fluxo agentic falhou, usando rota determinística:', e?.message || e);
+              if (user?.id) {
+                safeAgenticTrack('agentic_deterministic_fallback', {
+                  phone: normalizedPhone,
+                  userId: user.id,
+                  properties: {
+                    reason: 'exception',
+                    intent: intentForRouter?.intencao || null,
+                    message: String(e?.message || e).slice(0, 240),
+                    latency_ms: Date.now() - turnStartedAt
+                  }
+                });
+              }
+            }
+          }
+        }
+      }
+
       // Roteia para handlers baseado no intent
-      let response = await this.routeIntent(intent, user, normalizedPhone, message);
+      if (!response) {
+        response = await this.routeIntent(intent, user, normalizedPhone, message);
+      }
 
       // Captura falhas de entendimento como feedback passivo
-      if (intent.intencao === 'erro' || intent.intencao === 'mensagem_ambigua') {
+      if (
+        messageHandlingSource === 'deterministic' &&
+        (intent.intencao === 'erro' || intent.intencao === 'mensagem_ambigua')
+      ) {
         betaFeedbackService.capture({
           phone: normalizedPhone,
           type: 'failed_intent',
@@ -508,7 +772,7 @@ class MessageController {
           user.id,
           message,
           response,
-          intent.intencao,
+          messageHandlingSource === 'agentic' ? 'agentic' : intent.intencao,
           { dados: intent.dados }
         ).catch((error) => {
           console.error('[MESSAGE] Erro ao salvar histórico (não crítico):', error.message);

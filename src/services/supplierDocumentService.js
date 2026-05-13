@@ -4,6 +4,7 @@ const documentService = require('./documentService');
 const openaiService = require('./openaiService');
 const estoqueService = require('./estoqueService');
 const { buildDocumentExtractionPromptSlim } = require('../config/prompts');
+const { extractInstallmentDays, calcularVencimentosBoleto } = require('../utils/moneyParser');
 
 /**
  * Onda 2 — Supplier Document Service.
@@ -46,6 +47,136 @@ function normalizeName(value) {
     .toLowerCase()
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function normalizeIsoDate(value) {
+  if (!value) return null;
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value.trim())) {
+    return value.trim();
+  }
+
+  const raw = String(value).trim();
+  const brMatch = raw.match(/^(\d{2})[/-](\d{2})[/-](\d{4})$/);
+  if (brMatch) {
+    return `${brMatch[3]}-${brMatch[2]}-${brMatch[1]}`;
+  }
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString().split('T')[0];
+}
+
+function normalizeFornecedorShape(docResult) {
+  if (docResult?.fornecedor && typeof docResult.fornecedor === 'object') {
+    return {
+      nome: docResult.fornecedor.nome || null,
+      cnpj: sanitizeCnpj(docResult.fornecedor.cnpj),
+      email: docResult.fornecedor.email || null,
+      whatsapp: docResult.fornecedor.whatsapp || null
+    };
+  }
+
+  return {
+    nome: docResult?.fornecedor || docResult?.emitente || null,
+    cnpj: sanitizeCnpj(docResult?.cnpj || docResult?.emitente_cnpj),
+    email: docResult?.fornecedor_email || null,
+    whatsapp: docResult?.fornecedor_whatsapp || null
+  };
+}
+
+function normalizeItens(docResult, transacoes) {
+  if (Array.isArray(docResult?.itens) && docResult.itens.length > 0) {
+    return docResult.itens;
+  }
+
+  const transacaoComItens = (transacoes || []).find((item) => Array.isArray(item?.itens) && item.itens.length > 0);
+  return transacaoComItens?.itens || [];
+}
+
+function inferSupplierCategory({ fornecedorNome, itens, rawText, existingCategory }) {
+  if (existingCategory && existingCategory !== 'Outros') {
+    return {
+      category: existingCategory,
+      categoryTrigger: `Categorizei como ${existingCategory} porque o documento já trouxe essa classificação.`
+    };
+  }
+
+  const haystack = normalizeName([
+    fornecedorNome,
+    ...(itens || []).map((item) => item?.descricao || item?.nome || ''),
+    rawText
+  ].filter(Boolean).join(' '));
+
+  const supplierKeywords = ['biogelis', 'elfa', 'pharmapele', 'gmc', 'velladerm', 'mediq', 'zenscience', 'allergan', 'galderma', 'merz', 'sinclair', 'hans biomed'];
+  const injectablesKeywords = ['botox', 'toxina', 'acido hialuronico', 'bioestimulador', 'preenchedor', 'sculptra', 'radiesse', 'juvederm', 'restylane'];
+  const equipmentKeywords = ['equipamento', 'aparelho', 'laser', 'ultraformer', 'hifu'];
+  const servicesKeywords = ['servico', 'manutencao', 'frete', 'consultoria'];
+
+  const matchedSupplier = supplierKeywords.find((keyword) => haystack.includes(keyword));
+  if (matchedSupplier) {
+    return {
+      category: 'Insumos',
+      categoryTrigger: `Categorizei como Insumos porque identifiquei o emitente "${matchedSupplier}" como fornecedor recorrente do setor.`
+    };
+  }
+
+  const matchedInjectable = injectablesKeywords.find((keyword) => haystack.includes(keyword));
+  if (matchedInjectable) {
+    return {
+      category: 'Insumos',
+      categoryTrigger: `Categorizei como Insumos porque os itens/documento mencionam "${matchedInjectable}".`
+    };
+  }
+
+  const matchedEquipment = equipmentKeywords.find((keyword) => haystack.includes(keyword));
+  if (matchedEquipment) {
+    return {
+      category: 'Equipamentos',
+      categoryTrigger: `Categorizei como Equipamentos porque o documento menciona "${matchedEquipment}".`
+    };
+  }
+
+  const matchedService = servicesKeywords.find((keyword) => haystack.includes(keyword));
+  if (matchedService) {
+    return {
+      category: 'Serviços',
+      categoryTrigger: `Categorizei como Serviços porque o documento menciona "${matchedService}".`
+    };
+  }
+
+  return {
+    category: 'Fornecedores',
+    categoryTrigger: 'Categorizei como Fornecedores porque é um documento de compra/pagamento para fornecedor sem gatilho mais específico.'
+  };
+}
+
+function buildVencimentosFromTransacao(transacao, emissionDate, rawText) {
+  const explicitDates = Array.isArray(transacao?.condicoes_pagamento)
+    ? transacao.condicoes_pagamento.map(normalizeIsoDate).filter(Boolean)
+    : [];
+
+  let dueDates = explicitDates;
+  if (dueDates.length === 0 && emissionDate) {
+    const installmentDays = extractInstallmentDays(rawText || '');
+    if (installmentDays?.length) {
+      dueDates = calcularVencimentosBoleto(emissionDate, installmentDays) || [];
+    }
+  }
+
+  if (dueDates.length > 0) {
+    const valorParcela = Math.round((Math.abs(Number(transacao?.valor) || 0) / dueDates.length) * 100) / 100;
+    return dueDates.map((data, idx) => ({
+      numero: idx + 1,
+      valor: valorParcela,
+      data
+    }));
+  }
+
+  return [{
+    numero: 1,
+    valor: Math.abs(Number(transacao?.valor) || 0),
+    data: normalizeIsoDate(transacao?.data) || emissionDate || new Date().toISOString().split('T')[0]
+  }];
 }
 
 /**
@@ -115,6 +246,7 @@ class SupplierDocumentService {
   fromDocumentResult(docResult) {
     const transacoes = Array.isArray(docResult.transacoes) ? docResult.transacoes : [];
     const tipoBruto = String(docResult.tipo_documento || 'outro').toLowerCase();
+    const rawText = docResult.text || docResult.raw_text || null;
 
     let tipo = 'outro';
     if (tipoBruto.includes('nota')) tipo = 'nf';
@@ -125,34 +257,20 @@ class SupplierDocumentService {
       || Number(docResult.valor_total)
       || 0;
 
-    const vencimentos = [];
-    for (const t of transacoes) {
-      if (Array.isArray(t.condicoes_pagamento) && t.condicoes_pagamento.length > 0) {
-        const valorPorParcela = Math.round((Math.abs(Number(t.valor) || 0) / t.condicoes_pagamento.length) * 100) / 100;
-        t.condicoes_pagamento.forEach((data, idx) => {
-          vencimentos.push({
-            numero: idx + 1,
-            valor: valorPorParcela,
-            data
-          });
-        });
-      } else {
-        vencimentos.push({
-          numero: 1,
-          valor: Math.abs(Number(t.valor) || 0),
-          data: t.data || new Date().toISOString().split('T')[0]
-        });
-      }
+    const emissionDate = normalizeIsoDate(docResult.data_emissao || docResult.data || transacoes[0]?.data);
+    const vencimentos = transacoes.flatMap((t) => buildVencimentosFromTransacao(t, emissionDate, rawText));
+    if (vencimentos.length === 0 && valorTotal > 0) {
+      vencimentos.push({
+        numero: 1,
+        valor: Math.round(valorTotal * 100) / 100,
+        data: emissionDate || new Date().toISOString().split('T')[0]
+      });
     }
-
-    const fornecedor = {
-      nome: docResult.fornecedor || transacoes[0]?.descricao || null,
-      cnpj: sanitizeCnpj(docResult.cnpj || transacoes[0]?.cnpj),
-      email: docResult.fornecedor_email || null,
-      whatsapp: docResult.fornecedor_whatsapp || null
-    };
-
-    const itens = Array.isArray(docResult.itens) ? docResult.itens : [];
+    const fornecedor = normalizeFornecedorShape(docResult);
+    if (!fornecedor.nome) {
+      fornecedor.nome = transacoes[0]?.descricao || null;
+    }
+    const itens = normalizeItens(docResult, transacoes);
 
     const docConfidence = typeof docResult.confidence_score === 'number'
       ? docResult.confidence_score
@@ -169,15 +287,26 @@ class SupplierDocumentService {
       ? Math.min(...confidenceCandidates)
       : null;
 
+    const categoryInfo = inferSupplierCategory({
+      fornecedorNome: fornecedor.nome,
+      itens,
+      rawText,
+      existingCategory: transacoes[0]?.categoria || docResult?.categoria
+    });
+
     return {
       tipo,
       tipo_documento_raw: tipoBruto,
       fornecedor,
+      numero_documento: docResult.numero_documento || docResult.numero_nf || null,
+      data_emissao: emissionDate,
       valor_total: Math.round(valorTotal * 100) / 100,
+      category: categoryInfo.category,
+      category_trigger: docResult.category_trigger || transacoes[0]?.category_trigger || categoryInfo.categoryTrigger,
       vencimentos,
       itens,
       confidence_score,
-      raw_text: docResult.text || null,
+      raw_text: rawText,
       transacoes
     };
   }
@@ -277,7 +406,11 @@ class SupplierDocumentService {
       raw_text: parsed.raw_text || null,
       parsed_json: {
         fornecedor: parsed.fornecedor,
+        numero_documento: parsed.numero_documento || null,
+        data_emissao: parsed.data_emissao || null,
         valor_total: parsed.valor_total,
+        category: parsed.category || null,
+        category_trigger: parsed.category_trigger || null,
         vencimentos: parsed.vencimentos,
         itens: parsed.itens,
         confidence_score: parsed.confidence_score
@@ -329,9 +462,12 @@ class SupplierDocumentService {
       data: venc.data || new Date().toISOString().split('T')[0],
       data_vencimento: venc.data || null,
       tipo: 'variavel',
-      categoria: 'Fornecedores',
+      categoria: parsed?.category || 'Fornecedores',
       status_pagamento: 'pendente',
-      observacoes: parsed?.fornecedor?.cnpj ? `CNPJ ${parsed.fornecedor.cnpj}` : null,
+      observacoes: [
+        parsed?.fornecedor?.cnpj ? `CNPJ ${parsed.fornecedor.cnpj}` : null,
+        parsed?.category_trigger || null
+      ].filter(Boolean).join(' | ') || null,
       origem,
       supplier_document_id: options.supplierDocumentId || null,
       fornecedor_id: fornecedorId || null,

@@ -1,6 +1,6 @@
 # 📊 Estrutura do Banco de Dados - Lumiz
 
-**Última atualização:** 11/05/2026 (Preferências de alertas WhatsApp)
+**Última atualização:** 12/05/2026 (Anexo A benchmarks + NPS conversacional)
 
 Esta documentação detalha a estrutura completa do banco de dados Supabase utilizado pelo sistema Lumiz.
 
@@ -390,7 +390,7 @@ Campos adicionados:
 ### `feature_flags`
 **Descrição:** Flags globais ou por usuário para ativar/desativar features sem deploy.
 
-**Migration:** `supabase/migrations/20260507000030_create_feature_flags.sql`
+**Migrations:** `supabase/migrations/20260507192545_create_feature_flags.sql` (tabela); `supabase/migrations/20260512203000_seed_global_agentic_feature_flags.sql` (seed global opcional: `agentic_tools_enabled`, `agentic_router_enabled` ON; `agentic_shadow_mode` OFF).
 
 **Colunas principais:**
 - `id` (PK)
@@ -400,7 +400,7 @@ Campos adicionados:
 - `meta` (JSONB)
 - `created_at`, `updated_at`
 
-**Uso:** `alter_enabled`, `alter_antecipacao_automatica_off`, `alter_insight_last_sent` e futuras flags de rollout.
+**Uso:** `alter_enabled`, flags agentic (`agentic_*`), rollout por `user_id` ou linha global (`user_id` NULL). Precedência vs env: ver `featureFlagService.js`. Guia ops: `docs/AGENTIC_GLOBAL_ROLLOUT.md`.
 
 ### `alter_recebiveis`
 **Descrição:** Agenda de recebíveis por clínica. No mock, é derivada de `parcelas`; no futuro, será sincronizada da API Alter.
@@ -511,6 +511,131 @@ Campos adicionados:
 
 ---
 
+## 🤖 Fase Agentic — Tabelas de Agente
+
+### `clinic_profiles`
+**Descrição:** Perfil rico da clínica com patterns, preferences e learned_facts. Injetado no contexto LLM a cada turno.
+
+**Migration:** `supabase/migrations/20260512100001_create_clinic_profiles.sql`
+
+**Colunas principais:**
+- `id` (PK uuid)
+- `user_id` (FK → profiles, UNIQUE)
+- `clinic_name`, `clinic_type`, `tier`, `city`
+- `professionals` (JSONB) - array de profissionais
+- `tax_regime`, `tax_bracket`
+- `patterns` (JSONB) - ticket médio, top procedures, sazonalidade, payment mix, acquirer fees, recurring costs
+- `preferences` (JSONB) - estilo de comunicação, horário de notificação
+- `learned_facts_summary` (JSONB) - resumo dos fatos aprendidos
+- `profile_version`, `data_points_total`, `last_builder_run_at`
+- `created_at`, `updated_at`
+
+**Uso:** Contexto persistente da clínica para o agente LLM.
+
+---
+
+### `learned_facts_agentic`
+**Descrição:** Fatos aprendidos sobre a clínica (memória de longo prazo) com busca semântica via embeddings.
+
+**Migration:** `supabase/migrations/20260512100002_create_learned_facts_agentic.sql`
+
+**Colunas principais:**
+- `id` (PK uuid)
+- `clinic_id` (FK → clinic_profiles)
+- `user_id` (FK → profiles)
+- `fact` (text) - o fato aprendido
+- `fact_type` (varchar) - vendor_pattern, payment_pattern, seasonality, client_pattern, procedure_pattern, general
+- `embedding` (vector 1536) - para busca semântica
+- `confidence` (float 0-1)
+- `supporting_records` (text[]) - IDs de evidências
+- `is_active`, `invalidated_at`, `invalidated_reason`
+- `source` - inferred, user_stated, document_extracted, profile_builder
+- `learned_at`, `last_used_at`, `use_count`
+- `created_at`, `updated_at`
+
+**RPC:** `match_learned_facts_agentic(query_embedding, match_threshold, match_count, p_clinic_id)` para busca semântica.
+
+**Uso:** Memória de longo prazo do agente sobre padrões da clínica.
+
+---
+
+### Helpers Agentic de Perfil
+**Descrição:** Funções auxiliares para atualização incremental do perfil rico.
+
+**Migration:** `supabase/migrations/20260512100003_add_agentic_profile_builder_helpers.sql`
+
+**RPCs:**
+- `increment_clinic_data_points(p_user_id, p_count)` - incrementa o contador usado como gatilho do `profileBuilderService`
+
+**Uso:** Permitir rebuild assíncrono do perfil com base em novos lançamentos sem recalcular tudo a cada turno.
+
+---
+
+### `agentic_tool_calls`
+**Descrição:** Log de todas as chamadas de tools do agente para auditoria, debugging e métricas.
+
+**Migration:** `supabase/migrations/20260512100000_create_agentic_tool_calls.sql`
+
+**Colunas principais:**
+- `id` (PK uuid)
+- `user_id`, `clinic_id`, `phone`
+- `tool_name`, `tool_version`
+- `input_params`, `output_result` (JSONB)
+- `status` - pending, executing, success, failed, cancelled, requires_confirmation
+- `error_message`, `error_code`
+- `conversation_turn_id`
+- `triggered_by` - llm, user_explicit, system, fallback
+- `confidence_score`
+- `required_confirmation`, `user_confirmed`, `confirmed_at`
+- `execution_time_ms`, `tokens_used`
+- `created_at`, `completed_at`
+
+**Uso:** Auditoria, debugging e métricas de qualidade do agente.
+
+---
+
+### `trial_accounts`
+**Descrição:** Conta-fantasma do onboarding. Guarda os lançamentos do teste rápido antes da conversão em uso real após pagamento.
+
+**Migration:** `supabase/migrations/20260512181259_create_trial_accounts.sql`
+
+**Colunas principais:**
+- `id` (PK uuid)
+- `phone` (varchar, UNIQUE) - telefone principal do teste
+- `clinic_id` (FK → profiles, nullable até o profile ser criado)
+- `owner_name`, `clinic_name`, `role`
+- `status` - active, converted, discarded
+- `snapshot` (JSONB) - vendas, custos, saldo inicial e totais do onboarding
+- `referral_summary` (text) - resumo pronto para encaminhamento à dona/gestora
+- `metadata` (JSONB) - trilhas auxiliares da conversão
+- `converted_at`, `created_at`, `updated_at`
+
+**Uso:** Persistir a experiência agentic do trial e migrar os dados para `atendimentos` / `contas_pagar` quando a assinatura é confirmada.
+
+---
+
+### `domain_procedure_benchmarks`
+**Descrição:** Catálogo global read-only de benchmarks de procedimentos estéticos (faixas de preço, insumo, margem, tempo) — **Anexo A** do `lumizchatbotdesign.md`. Distinto de `procedimentos` (por `user_id` / estoque da clínica).
+
+**Migration:** `supabase/migrations/20260512203000_domain_procedure_benchmarks.sql`
+
+**Colunas principais:** `slug` (unique), `nome`, `categoria`, `preco_min_brl`, `preco_max_brl`, `insumo_pct_min/max`, `margem_tipica`, `tempo_medio_min`, `sort_order`, `active`, `created_at`.
+
+**Uso:** `domainProcedureBenchmarkService` carrega linhas ativas e injeta texto em `conversationContextService` / prompt agentic.
+
+---
+
+### `conversational_nps_responses`
+**Descrição:** Respostas NPS 0–10 coletadas no WhatsApp (ex.: mensagem `nps: 9 comentário...`).
+
+**Migration:** `supabase/migrations/20260512203100_conversational_nps_responses.sql`
+
+**Colunas principais:** `user_id` (FK profiles, nullable), `phone`, `score` (0–10), `comment`, `raw_message`, `source`, `created_at`.
+
+**Uso:** `conversationalNpsService.tryConsumeNpsMessage` + evento `conversational_nps_submitted` no `analyticsService`. INSERT apenas via backend (service role); RLS: owner `SELECT` para `authenticated`.
+
+---
+
 ## 📊 Relacionamentos Principais
 
 ```
@@ -525,6 +650,11 @@ profiles (1) ──→ (N) alter_antecipacoes
 profiles (1) ──→ (N) alter_cobertura_snapshots
 profiles (1) ──→ (N) audit_log
 profiles (1) ──→ (N) account_deletion_tokens
+profiles (1) ──→ (1) clinic_profiles
+profiles (1) ──→ (0..1) trial_accounts
+profiles (1) ──→ (N) agentic_tool_calls
+
+clinic_profiles (1) ──→ (N) learned_facts_agentic
 
 atendimentos (1) ──→ (N) atendimento_procedimentos
 atendimentos (1) ──→ (N) parcelas
@@ -544,9 +674,9 @@ parcelas (1) ──→ (0..1) alter_recebiveis
 ## 🎯 Resumo
 
 **Tabelas Core:** 8 tabelas principais  
-**Tabelas Auxiliares:** 11+ tabelas de suporte  
+**Tabelas Auxiliares:** 12+ tabelas de suporte  
 **Views:** 2 views otimizadas  
-**Total:** 21+ estruturas principais
+**Total:** 22+ estruturas principais
 
 **Princípio:** Separação clara entre entradas (`atendimentos`) e saídas (`contas_pagar`) para facilitar cálculos financeiros e relatórios.
 

@@ -194,6 +194,7 @@ As fases 9 e 10 são majoritariamente frontend. No backend, o foco é garantir c
 - `OPENAI_API_KEY` (já existia; reforçado) — usado por Whisper e Vision quando ativo.
 - `WHISPER_MODEL`, `WHISPER_LANGUAGE` — opcionais; defaults `whisper-1` / `pt`.
 - `CAPTURE_LOW_CONFIDENCE_THRESHOLD` — default `0.8`.
+- `FOUNDER_CALL_URL` — opcional; se definido, o CTA de pós-onboarding para "falar com o Eric" devolve esse link diretamente no WhatsApp.
 - `ALTER_ENABLED` — boolean, ativa rotas Alter (alternativa: registro em `feature_flags`).
 - `ALTER_API_URL`, `ALTER_API_KEY` — opcionais; quando ambos definidos, factory usa `realAlterAdapter`.
 - `ALTER_FEE_SPOT_PCT` / `ALTER_FEE_SPOT_MIN_PCT` / `ALTER_FEE_SPOT_MAX_PCT` — taxas mock spot.
@@ -1010,6 +1011,12 @@ Sem ela em produção: backend nem sobe (depende de `validate()` em `server.js`)
 - dev com secret errado → 401
 - test sem secret → 200 (não polui suite)
 
+### Endpoint real + idempotência + trial
+
+- **URL no servidor:** `POST /webhooks/asaas` (ver [`src/server.js`](src/server.js) — `app.use('/webhooks', ...)`). Alguns testes montam o router em `/api/webhooks` só para isolamento.
+- **`paymentService.handleWebhook`**: em `PAYMENT_CONFIRMED` / `PAYMENT_RECEIVED`, localiza `subscriptions` por `asaas_customer_id`; se `last_payment_id` já for igual ao `payment.id`, **não** chama `activate` de novo e **reexecuta** `trialAccountService.migrateToLiveAccount` (recuperação se a migração falhou após o primeiro webhook).
+- No primeiro processamento: `subscriptionService.activate` + migração trial + evento **`subscription_activated_via_webhook`** em `analytics_events` (via [`analyticsService`](src/services/analyticsService.js)).
+
 ## 2. Prova de consentimento LGPD
 
 ### Problema
@@ -1125,3 +1132,92 @@ O alinhamento do menu ao espec de produto foi **concluído** na branch `feat/aud
 - **Sidebar — 20 itens em 4 grupos:** **Operacional (6)** — Visão geral, Faturamento, Contas a pagar, Pacientes, Procedimentos, Estoque. **Inteligência (5)** — Calendário financeiro, Simulador "e se?", Metas, Insights, Inadimplência. **Powered by Alter (4)** — Recebíveis (badge), Maquininha, Score de saúde, Relatório do sócio. **Administração (5)** — Painel admin, Usuários, Assinaturas, Feedback, Diagnóstico.
 - **Footer (como mockup):** toggle de tema Claro/Escuro; linha de perfil com dropdown → Configurações / Perfil / Sair.
 - **Hooks LGPD (consentimento no dashboard — consomem API já entregue no backend, commit `e006e24`):** `useConsentStatus()` — prefetch no `AppLayout`; `useAcceptCurrentTerms()` — mutation com tratamento **409**. Endpoints: **`GET /api/user/consent`** e **`POST /api/user/consent`**.
+
+---
+
+## Agente conversacional (WhatsApp) — LLM + tools (Fase Agentic)
+
+Integração no fluxo real do webhook: após classificar intenção (heurística +/ou Gemini) e **antes** de `routeIntent`, o backend pode delegar a resposta ao loop **Gemini function calling** (`geminiService.processAgenticMessage`), com tools registradas em `src/services/agentic/registerDefaultTools.js` e roteamento em `src/services/agentic/agentRouterService.js`.
+
+### Flags (`feature_flags` / `FEATURE_FLAGS` JSON / registry)
+
+Definições e defaults: [`src/config/featureFlagsRegistry.js`](src/config/featureFlagsRegistry.js). As relevantes para o bot:
+
+| Flag | Papel |
+|------|--------|
+| `agentic_shadow_mode` | Se **true**, o router **calcula** rota agentic e **loga** (`[AgentRouter] Shadow decision`), mas a execução no WhatsApp continua **determinística** (sem `processAgenticMessage`). `_isAgenticEnabled` considera shadow como “agentic ligado para observabilidade”. |
+| `agentic_router_enabled` | Se **true** (e shadow **false**), decisões `route === 'agentic'` podem seguir para o loop LLM+tools **quando** `agentic_tools_enabled` também estiver true (ver abaixo). |
+| `agentic_tools_enabled` | **Obrigatória** para executar o agente no `messageController`: sem ela, mesmo com router agentic, o código **não** chama `processAgenticMessage`. |
+| `agentic_onboarding_enabled` | Quando **true**, o onboarding usa assistência LLM na **primeira venda** (Ato 2): `onboardingAgenticAssistService` → `geminiService.extractOnboardingSaleJson` se o parser regex não extrair valor. |
+
+### Matriz de prioridade (confirmações sim/não)
+
+Alinhar testes manuais a esta ordem (detalhe em [`docs/AGENTIC_WHATSAPP_E2E_CHECKLIST.md`](docs/AGENTIC_WHATSAPP_E2E_CHECKLIST.md)):
+
+1. Confirmação de transação em memória (`pendingTransactions`).
+2. Confirmação de documento / OCR (`pendingDocumentTransactions` / `getPersistedPendingConfirmation`).
+3. Edição pendente (`pendingEdits`).
+4. **`agentic_confirm`** (tool com `requiresConfirmation`).
+
+### Checklist E2E (homolog)
+
+- [`docs/AGENTIC_WHATSAPP_E2E_CHECKLIST.md`](docs/AGENTIC_WHATSAPP_E2E_CHECKLIST.md) — saldo, histórico, confirmação de tool, shadow, membro vs dono, timeout.
+
+### Ordem sugerida de rollout (homolog → prod)
+
+1. **`agentic_shadow_mode`** (sozinha ou com router off): validar logs de decisão vs tráfego real, sem mudar resposta ao usuário.
+2. **`agentic_router_enabled` + `agentic_tools_enabled`** em cohort pequeno: respostas reais via tools; monitorar erros e confirmações.
+3. Ajustar cohort / thresholds no router conforme métricas (ver `agentRouterService` — intents alinhados ao prompt em `buildIntentClassificationPrompt`).
+
+### Confirmação de tools
+
+Tools marcadas com `requiresConfirmation` (ex.: `register_sale`, `register_cost`) interrompem o loop e persistem estado em **`conversation_runtime_states`** com `flow = 'agentic_confirm'` e payload `{ toolName, args }`. O usuário responde **sim** / **não**; o `messageController` resolve via `_tryResolveAgenticToolConfirmation` e executa `toolRegistry.execute(..., { userConfirmed: true })`.
+
+### Histórico e analytics
+
+- Respostas geradas pelo agente são salvas em `conversation_history` com intent **`agentic`** (não dispara captura passiva de `failed_intent` para `mensagem_ambigua` quando a resposta veio do agente).
+- `hasPendingConversationContext` considera `agentic_confirm` para não tratar `sim`/`1` como opção órfã.
+- **Eventos (cap. 13 / PostHog + `analytics_events`):**
+  - `agentic_turn_completed` — turno agentic com resposta ao usuário: `mode`, `intent`, `had_text`, **`latency_ms`**, **`router_reason`**.
+  - `agentic_deterministic_fallback` — router mandou agentic mas não houve resposta utilizável ou houve exceção (`messageController` + `safeAgenticTrack` em [`src/services/agenticTelemetryService.js`](src/services/agenticTelemetryService.js)).
+  - `agentic_first_tool_invoked` — primeira `functionCall` do turno (`geminiService.processAgenticMessage`).
+  - `agentic_tool_requires_confirmation` | `agentic_tool_executed` (success/fail) | `agentic_tool_not_found` | `agentic_tool_validation_failed` — [`toolRegistry.js`](src/services/agentic/toolRegistry.js).
+  - `agentic_tool_confirmation_accepted` | `agentic_tool_confirmation_rejected` | `agentic_tool_confirmation_failed` — `_tryResolveAgenticToolConfirmation` no `messageController`.
+  - `conversational_nps_submitted` — [`conversationalNpsService.js`](src/services/conversationalNpsService.js); persistência em `conversational_nps_responses`.
+  - `subscription_activated_via_webhook` — [`paymentService.handleWebhook`](src/services/paymentService.js) após primeiro `PAYMENT_RECEIVED`/`PAYMENT_CONFIRMED` conhecido (com migração trial quando aplicável).
+  - `onboarding_act_entered` — marcos Ato 2 / Ato 3 (`contextHandlers`, `onboardingFlowService`).
+- **Admin — export NPS:** `GET /api/admin/conversational-nps?limit=&offset=&since=` (JWT admin via `is_user_admin`), mesmo stack de [`admin.routes.js`](src/routes/admin.routes.js).
+- **Admin — agentic / billing:** `GET /api/admin/agentic-analytics?days=7` (contagens em `analytics_events` para eventos `agentic_*`, `subscription_activated_via_webhook`, `onboarding_act_entered`).
+- **Admin — trial:** `GET /api/admin/trial-accounts?limit=50` (lista `trial_accounts` para suporte).
+
+**Comportamento “agente-LLM” (rollout):** com `agentic_router_enabled` e `agentic_tools_enabled`, o [`agentRouterService`](src/services/agentic/agentRouterService.js) usa **`default_agentic_preferred`**: qualquer intenção **fora** de `DETERMINISTIC_ONLY_INTENTS` vai para `processAgenticMessage`. Intenções de membro (`adicionar_numero`, `listar_numeros`, `remover_numero`), documento, MDR, edição, ajuda export, etc. permanecem determinísticas.
+
+**Ligar o agente para todos os usuários:** guia operacional em [`docs/AGENTIC_GLOBAL_ROLLOUT.md`](docs/AGENTIC_GLOBAL_ROLLOUT.md). Resumo: (1) `FEATURE_FLAGS={"agentic_router_enabled":true,"agentic_tools_enabled":true,"agentic_shadow_mode":false}` no deploy, **ou** (2) aplicar migration `20260512203000_seed_global_agentic_feature_flags.sql` (linhas globais `user_id` NULL). Não ativar `agentic_shadow_mode` se o objetivo é resposta agentic real (shadow só loga “o que faria”). Auditar overrides por usuário na tabela `feature_flags`. **`agentic_onboarding_enabled`:** opcional e separado (onboarding assist); recomenda-se validar o fluxo pós-onboarding antes de ligar no mesmo rollout.
+
+### Arquivos principais
+
+- Orquestração: [`src/controllers/messageController.js`](src/controllers/messageController.js)
+- Loop LLM + tools: [`src/services/geminiService.js`](src/services/geminiService.js) (`processAgenticMessage`)
+- Router: [`src/services/agentic/agentRouterService.js`](src/services/agentic/agentRouterService.js)
+- Módulo: [`src/services/agentic/index.js`](src/services/agentic/index.js)
+- Telemetria agentic: [`src/services/agenticTelemetryService.js`](src/services/agenticTelemetryService.js)
+
+### Testes
+
+- `tests/unit/agentRouterService.test.js`
+- `tests/unit/featureFlagService.agenticGlobal.test.js`
+- `tests/unit/messageController.optionGuard.test.js` (mocks de `featureFlagService`, `agentic`, `conversationRuntimeStateService.get`, `onboardingFlowService.isOnboarding`)
+- `tests/unit/onboardingAgenticAssistService.test.js`, `tests/unit/conversationalNpsService.test.js`, `tests/unit/contextHandlers.multiChoice.test.js`, `tests/unit/agenticTelemetryService.test.js`, `tests/unit/paymentService.webhook.test.js`
+
+### Referência de produto
+
+- Especificação: `lumizchatbotdesign.md` / `ROADMAP.md` (Fase 23).
+
+### Reconciliação anexos B–E (implementação v2.1)
+
+| Anexo | Onde vive no código |
+|-------|---------------------|
+| B — System prompt | `src/config/prompts.js` (`buildAgenticSystemPrompt`, `buildIntentClassificationPrompt`, extração documento/MDR conforme fase) |
+| C — Perfil da clínica | `src/services/agentic/clinicProfileService.js`, tabela `clinic_profiles` |
+| D — Tools | `src/services/agentic/registerDefaultTools.js`, `toolRegistry.js` |
+| E — Mensagens | `src/copy/*WhatsappCopy.js` (onboarding, MDR, etc.); sem strings soltas em controllers |

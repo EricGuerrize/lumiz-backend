@@ -64,6 +64,8 @@ describe('SupplierDocumentService.fromDocumentResult', () => {
     expect(parsed.tipo).toBe('nf');
     expect(parsed.fornecedor.nome).toBe('Distribuidora XYZ');
     expect(parsed.fornecedor.cnpj).toBe('12345678000190');
+    expect(parsed.category).toBe('Insumos');
+    expect(parsed.category_trigger).toMatch(/acido hialuronico|insumos/i);
     expect(parsed.valor_total).toBe(4000);
     expect(parsed.vencimentos).toHaveLength(2);
     expect(parsed.vencimentos[0]).toMatchObject({ numero: 1, valor: 2000, data: '2026-06-06' });
@@ -102,5 +104,34 @@ describe('SupplierDocumentService.fromDocumentResult', () => {
       confidence_score: 0.95
     });
     expect(parsed.confidence_score).toBe(0.5);
+  });
+
+  it('reconstrói parcelas pelo texto bruto quando o OCR não traz condicoes_pagamento', () => {
+    const parsed = supplierDocumentService.fromDocumentResult({
+      tipo_documento: 'nota_fiscal',
+      fornecedor: 'Biogelis',
+      cnpj: '12.345.678/0001-90',
+      data_emissao: '2026-03-05',
+      text: 'NF com condição 30/60/90/120 dias',
+      itens: [{ descricao: 'Ácido hialurônico', quantidade: 2, valor_unitario: 2500 }],
+      transacoes: [
+        {
+          tipo: 'saida',
+          valor: 10000,
+          data: '2026-03-05',
+          categoria: 'Outros',
+          parcelas: 4
+        }
+      ]
+    });
+
+    expect(parsed.category).toBe('Insumos');
+    expect(parsed.category_trigger).toMatch(/biogelis/i);
+    expect(parsed.vencimentos).toEqual([
+      { numero: 1, valor: 2500, data: '2026-04-04' },
+      { numero: 2, valor: 2500, data: '2026-05-04' },
+      { numero: 3, valor: 2500, data: '2026-06-03' },
+      { numero: 4, valor: 2500, data: '2026-07-03' }
+    ]);
   });
 });

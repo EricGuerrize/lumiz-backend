@@ -22,6 +22,16 @@ describe('moneyParser', () => {
     expect(extractPrimaryMonetaryValue('vendi 1500 em 10x mastercard')).toBe(1500);
   });
 
+  it('accepts shorthand thousands like 15k and 1,5k', () => {
+    expect(extractPrimaryMonetaryValue('full face 15k no cartao')).toBe(15000);
+    expect(extractPrimaryMonetaryValue('botox 1,5k no pix')).toBe(1500);
+  });
+
+  it('accepts portuguese number words like quinze mil', () => {
+    expect(extractPrimaryMonetaryValue('cristiane fez full face quinze mil')).toBe(15000);
+    expect(extractPrimaryMonetaryValue('o valor era quinze mil e meio')).toBe(15500);
+  });
+
   it('does not treat installments as money when value is missing', () => {
     expect(extractInstallments('botox 3x')).toBe(3);
     expect(extractPrimaryMonetaryValue('botox 3x')).toBeNull();

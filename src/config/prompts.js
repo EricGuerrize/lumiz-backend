@@ -219,12 +219,24 @@ const FORMATO_RESPOSTA_DOCUMENTO = `
 RETORNE APENAS JSON NO SEGUINTE FORMATO (sem texto fora do JSON):
 {
   "tipo_documento": "boleto" | "extrato" | "comprovante_pix" | "comprovante" | "nota_fiscal" | "fatura" | "recibo" | "nao_identificado",
+  "fornecedor": "Nome do emitente/beneficiário quando houver",
+  "cnpj": "Apenas dígitos ou null",
+  "numero_documento": "Número da NF/fatura/boleto quando houver",
+  "data_emissao": "YYYY-MM-DD ou null",
+  "itens": [
+    {
+      "descricao": "Produto/serviço",
+      "quantidade": 1,
+      "valor_unitario": 0.0
+    }
+  ],
   "confidence_score": 0.0,
   "transacoes": [
     {
       "tipo": "entrada" | "saida",
       "valor": 1234.56,
       "categoria": "Nome da categoria",
+      "category_trigger": "Explique por que escolheu a categoria",
       "data": "YYYY-MM-DD",
       "descricao": "Descrição detalhada (inclua nome do fornecedor/destinatário)",
       "parcelas": 1,
@@ -244,12 +256,24 @@ REGRA OBRIGATÓRIA DO confidence_score (0..1):
 EXEMPLO — Nota fiscal de insumos com boleto parcelado 30/60/90/120:
 {
   "tipo_documento": "nota_fiscal",
+  "fornecedor": "Distribuidora XYZ",
+  "cnpj": "12345678000190",
+  "numero_documento": "4521",
+  "data_emissao": "2026-03-05",
+  "itens": [
+    {
+      "descricao": "Ácido hialurônico",
+      "quantidade": 4,
+      "valor_unitario": 3200.00
+    }
+  ],
   "confidence_score": 0.94,
   "transacoes": [
     {
       "tipo": "saida",
       "valor": 18212.29,
       "categoria": "Insumos",
+      "category_trigger": "Categorizei como Insumos porque a NF é de distribuidora de estética e os itens são ácido hialurônico/botox.",
       "data": "2026-03-05",
       "descricao": "Compra de insumos — Ácido hialurônico + Botox — Distribuidora XYZ (NF 4521)",
       "parcelas": 4,
@@ -518,6 +542,64 @@ EXEMPLO — usuário diz "comprei insumos na distribuidora, 18200 reais, pago em
 }
 
 /**
+ * Prompt system para o runtime agentic.
+ *
+ * Regras:
+ * - o modelo deve preferir tools para qualquer cálculo, consulta ou mutação;
+ * - não deve inventar números;
+ * - mutações financeiras exigem confirmação explícita do usuário;
+ * - o perfil da clínica é parte do contexto, não enfeite.
+ *
+ * @param {Object} options
+ * @param {string} [options.contextSummary]
+ * @param {Array<{name: string, description: string}>} [options.tools]
+ */
+function buildAgenticSystemPrompt(options = {}) {
+  const { contextSummary = '', tools = [] } = options;
+
+  const toolList = (tools || [])
+    .map((tool) => `- ${tool.name}: ${tool.description}`)
+    .join('\n');
+
+  return `
+Você é a ${PERSONA.nome}, uma ${PERSONA.descricao}, operando como agente financeiro especializado em clínicas de estética.
+
+OBJETIVO DO AGENTE:
+- entender a intenção do usuário em linguagem natural;
+- decidir quando responder diretamente e quando usar tools;
+- usar memória da clínica para personalizar respostas;
+- nunca fazer conta financeira "de cabeça" quando existir uma tool apropriada.
+
+${CONTEXTO_CLINICAS}
+
+${JARGOES_FINANCEIROS}
+
+${REGRAS_BOLETO}
+
+${REGRAS_OURO}
+
+REGRAS DE COMPORTAMENTO AGENTIC:
+- Sempre que a tarefa envolver número, taxa, parcelas, datas, projeção, margem ou saldo, prefira chamar uma tool.
+- Sempre que a tarefa envolver escrita em banco (registrar venda, registrar custo, atualizar taxas, atualizar perfil), confirme antes de executar.
+- Se faltar informação essencial, faça uma pergunta objetiva e curta.
+- Use o perfil da clínica ativamente quando ele ajudar a interpretar contexto, padrões e linguagem do usuário.
+- Não invente benchmark, taxa ou fato histórico. Se estiver estimando, diga que é estimativa.
+- Se a confiança dos dados for baixa, seja conservadora e peça confirmação.
+
+TOOLS DISPONÍVEIS:
+${toolList || '- Nenhuma tool registrada.'}
+
+CONTEXTO DA CLÍNICA:
+${contextSummary || 'Sem contexto adicional disponível.'}
+
+FORMATO DE TRABALHO:
+- Quando precisar agir no sistema, use function calling.
+- Quando não precisar de tool, responda em texto claro e curto.
+- Ao receber resultado de tool, incorpore o resultado na resposta final sem expor estrutura interna desnecessária.
+`.trim();
+}
+
+/**
  * Prompt compacto para quando o texto já foi extraído via OCR (Google Vision).
  * Omite contexto de negócio e exemplos — reduz ~70% de tokens vs buildDocumentExtractionPrompt.
  * Use apenas quando textoExtraido já está disponível.
@@ -535,12 +617,15 @@ REGRAS:
 - Valores sempre positivos. Data de emissão no formato YYYY-MM-DD.
 - Categoria (use exatamente uma): "Aluguel"|"Salários"|"Insumos"|"Fornecedores"|"Internet / Telefone"|"Água / Luz / Gás"|"Impostos"|"Marketing"|"Equipamentos"|"Serviços"|"Outros"
 - NUNCA use nomes de pessoas ou empresas como categoria.
+- Preencha "category_trigger" explicando de forma curta o gatilho da categorização.
+- Se houver emitente/fornecedor, preencha "fornecedor" e "cnpj" no topo.
+- Se for nota/fatura, extraia "numero_documento", "data_emissao" e "itens" quando visíveis.
 - BOLETO PARCELADO: "30/60"=2x, "30/60/90"=3x, "30/60/90/120"=4x. Calcule cada vencimento somando os dias à data de emissão. Campo "Fatura" no DANFE: liste cada parcela em condicoes_pagamento.
 - Se não houver parcelamento: parcelas=1, condicoes_pagamento=null.
 - Nota com "CANCELADA": alerte na descricao, NÃO registre como transação válida.
 
 RETORNE APENAS JSON (sem texto fora do JSON):
-{"tipo_documento":"nota_fiscal"|"boleto"|"comprovante_pix"|"extrato"|"fatura"|"recibo"|"nao_identificado","transacoes":[{"tipo":"entrada"|"saida","valor":0.00,"categoria":"","data":"YYYY-MM-DD","descricao":"","parcelas":1,"condicoes_pagamento":null}]}`.trim();
+{"tipo_documento":"nota_fiscal"|"boleto"|"comprovante_pix"|"extrato"|"fatura"|"recibo"|"nao_identificado","fornecedor":"","cnpj":"","numero_documento":"","data_emissao":"YYYY-MM-DD","itens":[{"descricao":"","quantidade":1,"valor_unitario":0.0}],"confidence_score":0.0,"transacoes":[{"tipo":"entrada"|"saida","valor":0.00,"categoria":"","category_trigger":"","data":"YYYY-MM-DD","descricao":"","parcelas":1,"condicoes_pagamento":null,"confidence_score":0.0}]}`.trim();
 }
 
 module.exports = {
@@ -555,6 +640,7 @@ module.exports = {
   buildDocumentExtractionPrompt,
   buildDocumentExtractionPromptSlim,
   buildMdrExtractionPrompt,
+  buildAgenticSystemPrompt,
   buildIntentClassificationPrompt,
   getDataHoje
 };
