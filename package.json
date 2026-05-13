@@ -64,6 +64,7 @@
       "/node_modules/",
       "/.claude/worktrees/",
       "tests/apiSmoke.test.js"
-    ]
+    ],
+    "setupFiles": ["./tests/setup.js"]
   }
 }

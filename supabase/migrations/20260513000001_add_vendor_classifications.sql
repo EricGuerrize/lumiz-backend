@@ -9,9 +9,17 @@ CREATE TABLE IF NOT EXISTS vendor_classifications (
   category TEXT NOT NULL CHECK (category IN ('insumos', 'aluguel', 'pessoal', 'marketing', 'cartao', 'imposto', 'estrutura', 'outro')),
   is_global BOOLEAN DEFAULT TRUE,
   user_id UUID REFERENCES auth.users(id),
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(vendor_name_normalized, COALESCE(user_id, '00000000-0000-0000-0000-000000000000'::UUID))
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Unique: global entries by name, per-user entries by name+user
+CREATE UNIQUE INDEX IF NOT EXISTS idx_vendor_classifications_global_unique
+  ON vendor_classifications(vendor_name_normalized)
+  WHERE user_id IS NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_vendor_classifications_user_unique
+  ON vendor_classifications(vendor_name_normalized, user_id)
+  WHERE user_id IS NOT NULL;
 
 -- Seed com fornecedores conhecidos do setor estético
 INSERT INTO vendor_classifications (vendor_name, category, is_global) VALUES
