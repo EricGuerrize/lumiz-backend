@@ -1779,15 +1779,56 @@ class OnboardingStateHandlers {
         return snapshot;
     }
 
+    _buildAhaInsightMessage(onboarding) {
+        const snapshot = this._buildTrialSnapshotFromOnboarding(onboarding);
+        const sale = snapshot.sales && snapshot.sales.length > 0 ? snapshot.sales[0] : null;
+        const costs = snapshot.costs || [];
+
+        if (!sale) return null;
+
+        const receita = Number(sale.valor_total || sale.value || sale.valor || 0);
+        if (receita <= 0) return null;
+
+        const custoVariavel = costs
+            .filter((c) => c.tipo_custo === 'variável' || c.categoria === 'Insumos' || c.tipo === 'variavel')
+            .reduce((acc, c) => acc + Number(c.valor || c.value || 0), 0);
+
+        if (custoVariavel <= 0) return null;
+
+        const margemPct = (custoVariavel / receita) * 100;
+        const margemStr = margemPct.toFixed(1);
+        const procedimento = sale.procedimento || sale.categoria || sale.descricao || 'esse procedimento';
+
+        let msg = `💡 *Insight rápido:*\n\n`;
+        msg += `No ${procedimento}, seu custo variável ficou em *${margemStr}%* da receita.\n`;
+        msg += `Referência saudável pra estética: 25–35%.\n`;
+
+        if (margemPct > 35) {
+            msg += `_Tá um pouco acima — vale checar se o fornecedor tem margem pra negociar ou se o preço precisa de ajuste._`;
+        } else if (margemPct < 25) {
+            msg += `_Boa margem. Você tá bem posicionada nesse procedimento._`;
+        } else {
+            msg += `_Dentro do intervalo saudável. Bom sinal._`;
+        }
+
+        return msg;
+    }
+
     _buildAct5Messages(onboarding) {
         const role = onboarding?.data?.role || null;
         const clinicName = onboarding?.data?.clinica || 'sua clínica';
         const ownerName = onboarding?.data?.nome || null;
 
+        const ahaInsight = this._buildAhaInsightMessage(onboarding);
+
         const messages = [
             onboardingCopy.handoffToDailyUse(),
             onboardingCopy.onboardingCompletionNoMdr()
         ];
+
+        if (ahaInsight) {
+            messages.unshift(ahaInsight);
+        }
 
         if (isDecisionMakerRole(role)) {
             messages.push(onboardingCopy.trialClosingDecisionMaker(clinicName));
