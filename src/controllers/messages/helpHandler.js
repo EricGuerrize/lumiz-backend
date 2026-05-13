@@ -48,7 +48,7 @@ class HelpHandler {
    * Mensagem para envio de documento
    */
   handleDocumentPrompt() {
-    return `Claro! Manda a foto do documento que eu analiso pra você 📸\n\nPode ser:\n• Boleto\n• Nota fiscal\n• Extrato bancário\n• Comprovante de pagamento\n\nEu vou ler e te mostrar as informações certinho!\n\nSe preferir, pode colar o código de barras do boleto também (aquele número grande) que eu reconheço 😉`;
+    return `Claro! Manda a foto do documento que eu analiso pra você 📸\n\nPode ser:\n• Boleto\n• Nota fiscal\n• Extrato bancário\n• Comprovante de pagamento\n\nEu vou ler e te mostrar as informações certinho!\n\nSe preferir, pode colar o código de barras do boleto também (aquele número grande) que eu reconheço 😉\n\n_Para baixar o relatório mensal em PDF (gerado pela Lumiz), diga por exemplo: "relatório em pdf" ou "me manda o pdf"._`;
   }
 
   /**

@@ -53,7 +53,8 @@ class IntentHeuristicService {
       ],
       relatorio_mensal: [
         'relatório', 'relatorio', 'mês', 'mes', 'mensal', 'relatório mensal',
-        'relatorio mensal', 'resumo mensal', 'faturamento mensal'
+        'relatorio mensal', 'resumo mensal', 'faturamento mensal', 'pdf do mês',
+        'pdf do mes', 'relatório pdf', 'relatorio pdf'
       ],
       stats_hoje: [
         'vendas hoje', 'faturamento hoje', 'quanto fiz hoje', 'faturamento do dia',
@@ -342,6 +343,26 @@ class IntentHeuristicService {
           source: 'heuristic'
         };
       }
+    }
+
+    // Exportação PDF/Excel do relatório (antes do loop — evita confusão com outras intents)
+    const exportRel =
+      /(?:relat[oó]rio|relatorio|mensal).*(?:pdf|planilha|excel)|(?:pdf|planilha|excel).*(?:relat[oó]rio|relatorio|mensal)|\b(?:gerar|baixar)\s+(?:o\s+)?(?:relat[oó]rio|relatorio).*(?:pdf|planilha|excel)/i;
+    const mandaPdf =
+      /\b(?:me\s+)?(?:manda|mande|envia|envie)\s+(?:o\s+)?pdf\b/i.test(normalized) ||
+      /\bgerar\s+pdf\b/i.test(normalized) ||
+      /\brelat[oó]rio\s+em\s+pdf\b/i.test(normalized) ||
+      /\brelatorio\s+em\s+pdf\b/i.test(normalized);
+    if (exportRel.test(original) || mandaPdf) {
+      const formato = /excel|planilha|xlsx|csv/i.test(original) ? 'excel' : 'pdf';
+      const out = {
+        intencao: 'exportar_dados',
+        dados: { formato },
+        confidence: 0.93,
+        source: 'heuristic'
+      };
+      await cacheService.set(cacheKey, out, CACHE_TTL_SECONDS);
+      return out;
     }
 
     // Detecta intent por palavras-chave

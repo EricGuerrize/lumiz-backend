@@ -140,7 +140,7 @@ class QueryHandler {
         });
     }
 
-    response += `\nPara PDF completo, digite "me manda pdf" ou "gerar pdf".`;
+    response += `\nPara PDF completo: "me manda pdf", "relatório em pdf" ou "gerar pdf do mês".`;
 
     if (lucro > 0) {
       response += `\n\nMandando bem!`;

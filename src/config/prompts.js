@@ -436,6 +436,10 @@ ${REGRAS_BOLETO}
 
 ${REGRAS_OURO}
 
+REGRA CRÍTICA (export vs anexo):
+- Pedido de *relatório mensal*, *exportar*, *gerar/baixar PDF ou planilha da Lumiz*, *manda o PDF* = **exportar_dados** ou **relatorio_mensal** (com dados.formato "pdf"/"excel" quando explícito).
+- **enviar_documento** = usuário vai *anexar* comprovante/nota/boleto **escaneado** para a Lumiz ler — **não** use para pedido de relatório gerado pelo sistema. A palavra "pdf" **sozinha** ou junto de "relatório/mensal/exportar" conta como exportação, não como envio de documento.
+
 REGRA PRINCIPAL DE CLASSIFICAÇÃO DE INTENÇÃO:
 - Palavras que indicam VENDA (registrar_entrada):
   botox, preenchimento, harmonização, bioestimulador, fios, peeling, laser,
@@ -457,7 +461,7 @@ INTENÇÕES DISPONÍVEIS:
 - stats_hoje: vendas hoje, faturamento hoje, quanto fiz hoje
 - ranking_procedimentos: qual mais vendido, procedimento mais vendido, ranking
 - marcar_parcela_paga: recebi parcela, paguei parcela, parcela paga
-- exportar_dados: exportar, baixar relatório, pdf, excel, planilha
+- exportar_dados: exportar, baixar relatório, gerar pdf, manda pdf, relatório em pdf, planilha, excel, csv
 - consultar_agenda: agenda, agendamentos, compromissos
 - consultar_meta: meta, minha meta, progresso, objetivo
 - insights: insights, dicas, sugestões, recomendações
@@ -467,7 +471,7 @@ INTENÇÕES DISPONÍVEIS:
 - editar_transacao: editar última, corrigir última, mudar última
 - buscar_transacao: buscar, encontrar, procurar, achar
 - definir_meta: minha meta é, definir meta, meta de
-- enviar_documento: boleto, extrato, nota fiscal, comprovante, documento, pdf
+- enviar_documento: enviar comprovante/nota/boleto **para a Lumiz analisar** (anexo no WhatsApp). Não inclui pedido de relatório mensal em PDF.
 - codigo_boleto: sequência longa de dígitos (44-48 números)
 - apenas_valor: SÓ um número isolado (até 6 dígitos)
 - apenas_procedimento: SÓ nome de procedimento/produto, sem valor

@@ -922,8 +922,18 @@ class MessageController {
       case 'remover_numero':
         return await this.memberHandler.handleRemoveMember(user, phone);
 
-      case 'enviar_documento':
+      case 'enviar_documento': {
+        const raw = String(message || '');
+        const low = raw.toLowerCase();
+        const wantsExport =
+          /\b(pdf|excel|planilha|csv|xlsx)\b/i.test(raw) &&
+          /relat[oó]rio|relatorio|mensal|export|baixar|gerar|manda|mande|envia|lumiz/i.test(low);
+        if (wantsExport) {
+          const formato = /excel|planilha|xlsx|csv/i.test(low) ? 'excel' : 'pdf';
+          return await this.exportHandler.handleExportData(user, phone, { formato });
+        }
         return this.helpHandler.handleDocumentPrompt();
+      }
 
       case 'codigo_boleto':
         return await this.handleBarcodeMessage(user, intent, phone);

@@ -53,4 +53,17 @@ describe('IntentHeuristicService', () => {
       learned: true
     }));
   });
+
+  test('detectIntent prioriza exportar_dados para pedido de relatorio em PDF', async () => {
+    knowledgeService.searchSimilarity.mockResolvedValue([]);
+    const result = await intentHeuristicService.detectIntent('me manda o relatorio em pdf', null);
+    expect(result).toEqual(
+      expect.objectContaining({
+        intencao: 'exportar_dados',
+        dados: { formato: 'pdf' },
+        source: 'heuristic'
+      })
+    );
+    expect(knowledgeService.searchSimilarity).not.toHaveBeenCalled();
+  });
 });
