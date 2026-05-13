@@ -499,8 +499,24 @@ class ProfileBuilderService {
   }
 }
 
-module.exports = new ProfileBuilderService();
+const _defaultInstance = new ProfileBuilderService();
+module.exports = _defaultInstance;
 module.exports.ProfileBuilderService = ProfileBuilderService;
+
+/**
+ * Recalcula o perfil rico de uma clínica específica.
+ * Alias conveniente para uso em handlers e cron jobs.
+ *
+ * @param {string} userId - UUID do usuário.
+ * @returns {Promise<void>}
+ */
+module.exports.rebuildClinicProfile = async (userId) => {
+  try {
+    await _defaultInstance.runForUser(userId);
+  } catch (err) {
+    console.warn('[PROFILE_BUILDER] Falha ao recalcular perfil:', err?.message);
+  }
+};
 module.exports._helpers = {
   buildPaymentMix,
   normalizeSeasonality,

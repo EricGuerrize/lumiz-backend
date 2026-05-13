@@ -436,6 +436,47 @@ app.get('/api/cron/alter-insights', async (req, res) => {
   }
 });
 
+// Fase 15 — Cron de reconstrução de perfis (todos usuários ativos, diário ou on-demand).
+app.get('/api/cron/rebuild-profiles', async (req, res) => {
+  try {
+    const cronSecret = req.headers['x-cron-secret'];
+    if (process.env.CRON_SECRET && cronSecret !== process.env.CRON_SECRET) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const { rebuildClinicProfile } = require('./services/agentic/profileBuilderService');
+    const supabase = require('./db/supabase');
+
+    // Busca usuários ativos com pelo menos 1 atendimento nos últimos 90 dias
+    const since = new Date();
+    since.setDate(since.getDate() - 90);
+    const { data: users, error } = await supabase
+      .from('atendimentos')
+      .select('user_id')
+      .gte('created_at', since.toISOString())
+      .limit(500);
+
+    if (error) throw error;
+
+    const uniqueUserIds = [...new Set((users || []).map((r) => r.user_id))];
+    let rebuilt = 0;
+    let failed = 0;
+
+    for (const userId of uniqueUserIds) {
+      try {
+        await rebuildClinicProfile(userId);
+        rebuilt++;
+      } catch (_) {
+        failed++;
+      }
+    }
+
+    res.json({ timestamp: new Date().toISOString(), total: uniqueUserIds.length, rebuilt, failed });
+  } catch (error) {
+    console.error('[CRON] rebuild-profiles:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+});
+
 app.get('/', (req, res) => {
   res.json({
     name: 'Lumiz Backend',

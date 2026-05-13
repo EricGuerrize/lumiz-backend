@@ -3,6 +3,7 @@ const analyticsService = require('../../services/analyticsService');
 const knowledgeService = require('../../services/knowledgeService');
 const conversationRuntimeStateService = require('../../services/conversationRuntimeStateService');
 const vendorClassificationService = require('../../services/vendorClassificationService');
+const { rebuildClinicProfile } = require('../../services/agentic/profileBuilderService');
 const crypto = require('crypto');
 const { formatarMoeda } = require('../../utils/currency');
 const {
@@ -214,6 +215,18 @@ class TransactionHandler {
           user.id
         ).catch(err => console.error('[KNOWLEDGE] Erro ao salvar transação:', err.message));
       }
+
+      // A cada 10 lançamentos, recalcula perfil assincronamente
+      try {
+        const { data: countData } = await require('../../db/supabase')
+          .from('atendimentos')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', user.id);
+        const total = countData?.count ?? 0;
+        if (total > 0 && total % 10 === 0) {
+          setImmediate(() => rebuildClinicProfile(user.id));
+        }
+      } catch (_) { /* não-crítico */ }
 
       analyticsService.track('transaction_created', {
         phone,
