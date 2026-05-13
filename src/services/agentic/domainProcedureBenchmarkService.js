@@ -3,7 +3,7 @@
  * Usado pelo agente via conversationContextService.
  */
 
-const supabase = require('../db/supabase');
+const supabase = require('../../db/supabase');
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 let cache = { rows: null, expiresAt: 0 };
