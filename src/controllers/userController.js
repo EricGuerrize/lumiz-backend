@@ -443,31 +443,41 @@ class UserController {
     }
 
     const saldoInicial = receitaTotal - custosVariaveis - custosFixos;
+    const custoTotal = custosVariaveis + custosFixos;
 
-    let resumo = `Perfeito! Já organizei suas três primeiras informações 🎉\n\n`;
-    resumo += `Aqui vai um resumo inicial, só para você ver como tudo começa a tomar forma:\n\n`;
+    let resumo = `Show. Já tenho o suficiente pra te mostrar algo útil:\n\n`;
     resumo += `📊 *Primeiros dados da sua clínica*\n\n`;
-    resumo += `• Receita cadastrada: ${formatarMoeda(receitaTotal)}\n`;
-    resumo += `• Custos do mês (parciais):\n`;
-    resumo += `  • Custos variáveis registrados: ${formatarMoeda(custosVariaveis)}\n`;
-    resumo += `  • Custos fixos registrados: ${formatarMoeda(custosFixos)}\n`;
+    resumo += `• Receita registrada: ${formatarMoeda(receitaTotal)}\n`;
+    resumo += `• Custo variável: ${formatarMoeda(custosVariaveis)}\n`;
+    resumo += `• Custo fixo (parcial): ${formatarMoeda(custosFixos)}\n`;
     resumo += `• Saldo inicial: ${formatarMoeda(saldoInicial)}\n\n`;
-    resumo += `(esse saldo muda rápido conforme você registra suas vendas e custos reais)\n\n`;
-    resumo += `Com mais dados, te mostro gráficos, histórico, totais, projeções e muito mais — tudo automaticamente 💜\n\n`;
+
+    // AHA moment: margem de insumo vs benchmark do setor
+    if (receitaTotal > 0 && custosVariaveis > 0) {
+      const margemInsumo = (custosVariaveis / receitaTotal) * 100;
+      const margemFormatada = margemInsumo.toFixed(1);
+      resumo += `💡 *Insight rápido:*\n\n`;
+      resumo += `Seu custo variável ficou em *${margemFormatada}%* da receita.\n`;
+      resumo += `Referência saudável pra estética: 25–35%.\n`;
+
+      if (margemInsumo > 35) {
+        resumo += `_Tá um pouco acima — vale checar se o fornecedor tem margem pra negociar ou se o preço do procedimento precisa de ajuste._\n\n`;
+      } else if (margemInsumo < 25) {
+        resumo += `_Boa margem. Você tá bem posicionada nesse procedimento._\n\n`;
+      } else {
+        resumo += `_Tá dentro do intervalo saudável. Bom sinal._\n\n`;
+      }
+    }
+
+    resumo += `Com mais dados, te mostro gráficos, histórico, projeções e muito mais — tudo automaticamente.\n\n`;
 
     if (registrationLink) {
-      // Link do dashboard desativado temporariamente conforme solicitado
-      // resumo += `*CADASTRE-SE PARA ACESSO COMPLETO*\n\n`;
-      // resumo += `Clique no link abaixo para criar sua conta:\n\n`;
-      // resumo += `${registrationLink}\n\n`;
-
-      resumo += `*Tudo pronto!* 🚀\n\n`;
-      resumo += `Seu cadastro foi realizado com sucesso.\n\n`;
+      resumo += `*Tudo pronto!*\n\n`;
       resumo += `Agora é só usar! Pode me mandar suas vendas e custos por aqui mesmo.\n\n`;
       resumo += `Exemplos:\n`;
-      resumo += `_"Vendi um botox por R$ 1500"_\n`;
+      resumo += `_"Vendi um botox por R$ 1.500"_\n`;
       resumo += `_"Gastei R$ 200 com luvas"_\n\n`;
-      resumo += `Qualquer dúvida, é só mandar "ajuda"! 😊`;
+      resumo += `Qualquer dúvida, é só mandar "ajuda"!`;
     }
 
     return resumo;
