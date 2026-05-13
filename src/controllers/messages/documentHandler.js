@@ -480,7 +480,8 @@ class DocumentHandler {
     // Confirmação
     if (isConfirm) {
       const transactionController = require('../transactionController');
-      
+      const parcelasRegistradas = []; // para mensagem final de boleto parcelado
+
       for (const transacao of pending.transacoes) {
         if (transacao.tipo === 'entrada') {
           await transactionController.createAtendimento(user.id, {
@@ -490,20 +491,61 @@ class DocumentHandler {
             data: transacao.data || new Date().toISOString().split('T')[0]
           });
         } else {
-          await transactionController.createContaPagar(user.id, {
-            valor: Math.abs(transacao.valor),
-            descricao: transacao.descricao || transacao.categoria,
-            data: transacao.data || new Date().toISOString().split('T')[0],
-            categoria: transacao.categoria || 'Documento',
-            parcelas: transacao.parcelas || null,
-            condicoes_pagamento: transacao.condicoes_pagamento || null,
-            observacoes: transacao.category_trigger || null
-          });
+          // Verifica se LLM retornou parcelas como array de objetos {valor, vencimento, numero}
+          const parcelasArray = Array.isArray(transacao.parcelas) ? transacao.parcelas : null;
+
+          if (parcelasArray && parcelasArray.length > 1) {
+            // Boleto parcelado: cria uma conta_pagar por parcela
+            const descricaoBase = transacao.descricao || transacao.categoria || 'Despesa';
+            for (const parcela of parcelasArray) {
+              const descParcela = `${descricaoBase} - parcela ${parcela.numero || parcelasArray.indexOf(parcela) + 1}`;
+              await transactionController.createContaPagar(user.id, {
+                valor: Math.abs(parcela.valor),
+                descricao: descParcela,
+                data: parcela.vencimento || transacao.data || new Date().toISOString().split('T')[0],
+                categoria: transacao.categoria || 'Documento',
+                parcelas: null,
+                condicoes_pagamento: null,
+                observacoes: transacao.category_trigger || null
+              });
+              parcelasRegistradas.push({
+                valor: parcela.valor,
+                vencimento: parcela.vencimento,
+                numero: parcela.numero || parcelasArray.indexOf(parcela) + 1
+              });
+            }
+          } else {
+            // Comportamento original: parcelas como número ou sem parcelas
+            await transactionController.createContaPagar(user.id, {
+              valor: Math.abs(transacao.valor),
+              descricao: transacao.descricao || transacao.categoria,
+              data: transacao.data || new Date().toISOString().split('T')[0],
+              categoria: transacao.categoria || 'Documento',
+              parcelas: typeof transacao.parcelas === 'number' ? transacao.parcelas : null,
+              condicoes_pagamento: transacao.condicoes_pagamento || null,
+              observacoes: transacao.category_trigger || null
+            });
+          }
         }
       }
 
       this.pendingDocumentTransactions.delete(normalizedPhone);
       await this.clearPersistedPendingConfirmation(normalizedPhone);
+
+      // Se registrou boleto com múltiplas parcelas, resposta detalhada
+      if (parcelasRegistradas.length > 1) {
+        const formatDate = (d) => {
+          if (!d) return '?';
+          const parts = String(d).split('-');
+          return parts.length === 3 ? `${parts[2]}/${parts[1]}` : d;
+        };
+        const formatCurrency = (v) => `R$ ${Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+        const listaParc = parcelasRegistradas
+          .map((p) => `${formatCurrency(p.valor)} em ${formatDate(p.vencimento)}`)
+          .join(', ');
+        return `✅ Registrei ${parcelasRegistradas.length} parcelas: ${listaParc}\n\nQuer ver suas contas a pagar? Digite "contas a pagar"`;
+      }
+
       return `✅ *${pending.transacoes.length} transação(ões) registrada(s) da nota fiscal!*\n\nQuer ver seu saldo? Digite "saldo"`;
     }
 
