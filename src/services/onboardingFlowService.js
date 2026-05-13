@@ -1845,6 +1845,208 @@ class OnboardingStateHandlers {
         messages.push(onboardingCopy.trialForwardSummary(summaryText));
         return messages;
     }
+
+    // ============================================================
+    // REDESIGN 5 ATOS (Fase 15)
+    // ============================================================
+
+    /**
+     * Ato 1 — interpreta livremente se é dona ou equipe.
+     */
+    async handleAct1Role(onboarding, messageTrimmed, normalizedPhone, respond) {
+        const v = normalizeText(messageTrimmed);
+        const isDona = /dona|sócia|socia|proprietária|proprietaria|gestora|eu mesma|sou eu|dono/.test(v);
+        const isEquipe = /secretar|recepcionist|adm|financeiro|sócio|funcionaria|funcionário|team|equipe/.test(v);
+
+        if (!isDona && !isEquipe) {
+            return await respond(onboardingCopy.act1RoleUnrecognized());
+        }
+
+        onboarding.data.role = isDona ? 'owner' : 'team';
+        // Registra consentimento inline (rodapé do act1Welcome já tem o link)
+        const consentService = require('./consentService');
+        consentService.recordConsent({ phone: normalizedPhone, req: onboarding?.req }).catch(() => {});
+
+        onboarding.step = 'ACT2_SALE';
+        return await respond(onboardingCopy.act2SalePrompt(), true);
+    }
+
+    /**
+     * Ato 2 — extrai venda do texto livre e pede confirmação.
+     */
+    async handleAct2Sale(onboarding, messageTrimmed, respond) {
+        const valor = extractPrimaryMonetaryValue(messageTrimmed);
+        if (!valor || valor <= 0) {
+            return await respond(`Não consegui identificar o valor 🤔 Tenta assim: _"botox R$ 1.200 no pix"_`);
+        }
+
+        // Extrai procedimento (primeira palavra significativa antes do valor)
+        const procedimentoMatch = messageTrimmed.match(/^([a-záàãâäéèêëíìîïóòõôöúùûüçñ\s]+?)(?:\s+r\$|\s+\d)/i);
+        const procedimento = procedimentoMatch ? procedimentoMatch[1].trim() : 'Procedimento';
+
+        // Extrai forma de pagamento
+        const vNorm = normalizeText(messageTrimmed);
+        let pagamento = 'PIX';
+        if (vNorm.includes('dinheiro') || vNorm.includes('especie')) pagamento = 'dinheiro';
+        else if (vNorm.includes('debito')) pagamento = 'debito';
+        else if (vNorm.includes('credito') || vNorm.includes('cartao') || vNorm.includes('parcel')) pagamento = 'credito';
+        else if (vNorm.includes('pix')) pagamento = 'pix';
+
+        onboarding.data.act2_pending = { procedimento, valor, pagamento };
+        onboarding.step = 'ACT2_SALE_CONFIRM';
+        return await respond(onboardingCopy.act2SaleConfirm(procedimento, valor, pagamento));
+    }
+
+    /**
+     * Ato 2 — confirmação da venda extraída.
+     */
+    async handleAct2SaleConfirm(onboarding, messageTrimmed, normalizedPhone, respond) {
+        if (isNo(messageTrimmed) || messageTrimmed === '2') {
+            onboarding.step = 'ACT2_SALE';
+            return await respond(onboardingCopy.act2SaleAdjust());
+        }
+
+        if (isYes(messageTrimmed) || messageTrimmed === '1') {
+            const { procedimento, valor, pagamento } = onboarding.data.act2_pending || {};
+
+            // Salva a venda
+            try {
+                const userId = onboarding.data.userId;
+                if (userId) {
+                    await transactionController.createAtendimento(userId, {
+                        valor,
+                        categoria: procedimento,
+                        descricao: procedimento,
+                        data: getLocalIsoDate(),
+                        forma_pagamento: pagamento === 'pix' ? 'pix' : pagamento === 'dinheiro' ? 'dinheiro' : pagamento === 'debito' ? 'debito' : 'credito_avista'
+                    });
+                }
+                onboarding.data.act2_saved = { procedimento, valor, pagamento };
+            } catch (err) {
+                console.warn('[ACT2] Falha ao salvar venda:', err?.message);
+            }
+
+            onboarding.step = 'ACT3_COST';
+            return await respond(onboardingCopy.act3CostPrompt(), true);
+        }
+
+        return await respond(onboardingCopy.act2SaleConfirm(
+            onboarding.data.act2_pending?.procedimento,
+            onboarding.data.act2_pending?.valor,
+            onboarding.data.act2_pending?.pagamento
+        ));
+    }
+
+    /**
+     * Ato 3 — extrai custo do texto livre e pede confirmação.
+     */
+    async handleAct3Cost(onboarding, messageTrimmed, respond) {
+        const valor = extractPrimaryMonetaryValue(messageTrimmed);
+        if (!valor || valor <= 0) {
+            return await respond(`Não consegui identificar o valor 🤔 Tenta assim: _"Insumos R$ 800"_`);
+        }
+
+        const descricaoMatch = messageTrimmed.match(/^([a-záàãâäéèêëíìîïóòõôöúùûüçñ\s\-]+?)(?:\s+r\$|\s+\d)/i);
+        const descricao = descricaoMatch ? descricaoMatch[1].trim() : 'Custo';
+
+        onboarding.data.act3_pending = { descricao, valor };
+        onboarding.step = 'ACT3_COST_CONFIRM';
+        return await respond(onboardingCopy.act3CostConfirm(descricao, valor));
+    }
+
+    /**
+     * Ato 3 — confirmação do custo extraído.
+     */
+    async handleAct3CostConfirm(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear) {
+        if (isNo(messageTrimmed) || messageTrimmed === '2') {
+            onboarding.step = 'ACT3_COST';
+            return await respond(onboardingCopy.act3CostAdjust());
+        }
+
+        if (isYes(messageTrimmed) || messageTrimmed === '1') {
+            const { descricao, valor } = onboarding.data.act3_pending || {};
+
+            try {
+                const userId = onboarding.data.userId;
+                if (userId) {
+                    await transactionController.createContaPagar(userId, {
+                        valor,
+                        descricao,
+                        data: getLocalIsoDate(),
+                        categoria: 'outro'
+                    });
+                }
+                onboarding.data.act3_saved = { descricao, valor };
+            } catch (err) {
+                console.warn('[ACT3] Falha ao salvar custo:', err?.message);
+            }
+
+            onboarding.step = 'ACT4_AHA';
+            const ahaMsg = this._buildAct4AhaMessage(onboarding);
+            return await respond(ahaMsg || onboardingCopy.act4Aha({}), true);
+        }
+
+        return await respond(onboardingCopy.act3CostConfirm(
+            onboarding.data.act3_pending?.descricao,
+            onboarding.data.act3_pending?.valor
+        ));
+    }
+
+    /**
+     * Ato 4 — constrói o AHA insight a partir da venda e custo salvos.
+     */
+    _buildAct4AhaMessage(onboarding) {
+        const sale = onboarding.data.act2_saved || {};
+        const cost = onboarding.data.act3_saved || {};
+
+        const receita = Number(sale.valor || 0);
+        const custo = Number(cost.valor || 0);
+        if (!receita) return null;
+
+        const insumoPercent = receita > 0 ? Math.round((custo / receita) * 100) : null;
+        const liquidoPix = sale.pagamento === 'pix' || sale.pagamento === 'dinheiro' ? receita : null;
+        const taxaEstimada = 0.04; // 4% crédito à vista — estimativa
+        const liquidoCredito = receita > 0 ? Math.round(receita * (1 - taxaEstimada) * 100) / 100 : null;
+
+        return onboardingCopy.act4Aha({
+            procedimento: sale.procedimento,
+            insumoPercent,
+            insumoMin: 25,
+            insumoMax: 40,
+            liquidoPix,
+            liquidoCredito: sale.pagamento !== 'pix' ? null : liquidoCredito,
+            taxaCredito: 4,
+            rateConfidence: 'estimate'
+        });
+    }
+
+    /**
+     * Ato 4 — resposta do usuário ao AHA insight (qualquer coisa avança).
+     */
+    async handleAct4Aha(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear) {
+        onboarding.step = 'ACT5_CTA';
+
+        const isOwner = onboarding.data.role === 'owner';
+        let ctaMsg;
+
+        if (isOwner) {
+            let dashboardLink = null;
+            try {
+                const registrationTokenService = require('./registrationTokenService');
+                const token = await registrationTokenService.generateSetupToken(
+                    normalizedPhone,
+                    onboarding.data.userId || null,
+                    24
+                );
+                dashboardLink = token?.registrationLink || null;
+            } catch (_) {}
+            ctaMsg = onboardingCopy.act5CtaOwner(dashboardLink);
+        } else {
+            ctaMsg = onboardingCopy.act5CtaTeam();
+        }
+
+        return await respondAndClear(ctaMsg);
+    }
 }
 
 class OnboardingFlowService {
@@ -1972,8 +2174,12 @@ class OnboardingFlowService {
             console.error('[ONBOARDING] Falha ao carregar estado persistido:', e?.message || e);
         }
 
+        // Fase 15: novo fluxo 5 Atos ativado via ONBOARDING_V2=true (env)
+        const useNewFlow = process.env.ONBOARDING_V2 === 'true';
+        const initialStep = useNewFlow ? 'ACT1_ROLE' : 'START';
+
         this.onboardingStates.set(normalizedPhone, {
-            step: 'START',
+            step: initialStep,
             startTime: Date.now(),
             data: {
                 telefone: normalizedPhone
@@ -1985,7 +2191,7 @@ class OnboardingFlowService {
             source: 'whatsapp'
         });
 
-        return onboardingCopy.startMessage();
+        return useNewFlow ? onboardingCopy.act1Welcome() : onboardingCopy.startMessage();
     }
 
     getPromptForStep(phone) {
@@ -2089,6 +2295,26 @@ class OnboardingFlowService {
                 return onboardingCopy.mdrSetupQuestion();
             case 'MDR_SETUP_UPLOAD':
                 return onboardingCopy.mdrSetupUpload();
+            // 5 Atos — novo fluxo (Fase 15)
+            case 'ACT1_ROLE':
+                return onboardingCopy.act1Welcome();
+            case 'ACT2_SALE':
+                return onboardingCopy.act2SalePrompt();
+            case 'ACT2_SALE_CONFIRM':
+                return onboardingCopy.act2SaleConfirm(
+                    onboarding.data?.act2_pending?.procedimento,
+                    onboarding.data?.act2_pending?.valor,
+                    onboarding.data?.act2_pending?.pagamento
+                );
+            case 'ACT3_COST':
+                return onboardingCopy.act3CostPrompt();
+            case 'ACT3_COST_CONFIRM':
+                return onboardingCopy.act3CostConfirm(
+                    onboarding.data?.act3_pending?.descricao,
+                    onboarding.data?.act3_pending?.valor
+                );
+            case 'ACT4_AHA':
+                return onboardingCopy.act4Aha({});
             default:
                 return onboardingCopy.startMessage();
         }
@@ -2372,6 +2598,19 @@ class OnboardingFlowService {
                     return await handlers.handleMdrSetupUpload(onboarding, messageTrimmed, mediaUrl, respond, respondAndClear, mediaBuffer);
                 case 'MDR_SETUP_COMPLETE':
                     return await handlers.handleMdrSetupComplete(respond, respondAndClear);
+                // 5 Atos — novo fluxo (Fase 15)
+                case 'ACT1_ROLE':
+                    return await handlers.handleAct1Role(onboarding, messageTrimmed, normalizedPhone, respond);
+                case 'ACT2_SALE':
+                    return await handlers.handleAct2Sale(onboarding, messageTrimmed, respond);
+                case 'ACT2_SALE_CONFIRM':
+                    return await handlers.handleAct2SaleConfirm(onboarding, messageTrimmed, normalizedPhone, respond);
+                case 'ACT3_COST':
+                    return await handlers.handleAct3Cost(onboarding, messageTrimmed, respond);
+                case 'ACT3_COST_CONFIRM':
+                    return await handlers.handleAct3CostConfirm(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear);
+                case 'ACT4_AHA':
+                    return await handlers.handleAct4Aha(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear);
                 default:
                     return await respond(onboardingCopy.lostState());
             }

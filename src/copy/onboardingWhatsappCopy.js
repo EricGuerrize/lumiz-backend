@@ -793,5 +793,112 @@ module.exports = {
 
     entryMenu() {
         return this.startMessage();
+    },
+
+    // ============================================================
+    // REDESIGN 5 ATOS (Fase 15)
+    // Novos usuários: ACT1_ROLE → ACT2_SALE → ACT2_SALE_CONFIRM
+    //                → ACT3_COST → ACT3_COST_CONFIRM → ACT4_AHA → ACT5_CTA
+    // ============================================================
+
+    /** Ato 1 — Boas-vindas + papel (com LGPD inline) */
+    act1Welcome() {
+        return (
+            `Oi! Sou a Lumiz, sua CFO no WhatsApp 💜\n\n` +
+            `Você é a *dona da clínica* ou alguém da equipe?`  +
+            `\n\n_(Ao continuar, você concorda com nossa política de privacidade: https://lumiz.app/privacidade)_`
+        );
+    },
+
+    act1RoleUnrecognized() {
+        return `Não entendi muito bem 😅 Você é a *dona / sócia* da clínica ou faz parte do time (secretária, recepcionista, adm)?`;
+    },
+
+    /** Ato 2 — Primeira venda */
+    act2SalePrompt() {
+        return (
+            `Me conta uma venda que você fez essa semana 💰\n\n` +
+            `Pode ser simples assim: _"fiz botox, 1.2k no pix"_`
+        );
+    },
+
+    act2SaleConfirm(procedimento, valor, pagamento) {
+        const valorFmt = typeof valor === 'number'
+            ? `R$ ${valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+            : String(valor || '?');
+        return (
+            `Entendi: *${procedimento || 'Procedimento'}* ${valorFmt}` +
+            (pagamento ? ` no ${pagamento}` : '') +
+            `. Tá certo?\n\n` +
+            `1️⃣ Sim\n2️⃣ Corrigir`
+        );
+    },
+
+    act2SaleAdjust() {
+        return `Ok! Me manda o valor e a forma de pagamento corrigidos:`;
+    },
+
+    /** Ato 3 — Primeiro custo */
+    act3CostPrompt() {
+        return (
+            `E um custo recente? 💸\n\n` +
+            `Pode mandar a *nota fiscal* (foto/PDF) ou digitar:\n` +
+            `_"Insumos Biogelis R$ 800"_`
+        );
+    },
+
+    act3CostConfirm(descricao, valor) {
+        const valorFmt = typeof valor === 'number'
+            ? `R$ ${valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+            : String(valor || '?');
+        return (
+            `Entendi: *${descricao || 'Custo'}* ${valorFmt}. Confirma?\n\n` +
+            `1️⃣ Sim\n2️⃣ Corrigir`
+        );
+    },
+
+    act3CostAdjust() {
+        return `Ok! Me manda o custo correto:`;
+    },
+
+    /** Ato 4 — AHA insight */
+    act4Aha({ procedimento, insumoPercent, insumoMin, insumoMax, liquidoPix, liquidoCredito, taxaCredito, rateConfidence }) {
+        const liquidoPixFmt = liquidoPix != null ? `R$ ${Number(liquidoPix).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : null;
+        const liquidoCreditoFmt = liquidoCredito != null ? `R$ ${Number(liquidoCredito).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : null;
+        const insumoLine = insumoPercent != null
+            ? `\nNesse ${procedimento || 'procedimento'}, seu insumo ficou em *${insumoPercent}% da receita* — ${insumoPercent >= insumoMin && insumoPercent <= insumoMax ? 'dentro da faixa saudável' : 'fora da faixa recomendada'} (${insumoMin}-${insumoMax}% pra esse tipo).`
+            : '';
+
+        const creditoLine = liquidoCreditoFmt
+            ? (rateConfidence === 'estimate'
+                ? `\nSe fosse parcelado no crédito, entraria *~${liquidoCreditoFmt}* (estimativa de mercado — me diz sua taxa real pra refinar).`
+                : `\nSe fosse parcelado no crédito, entraria *~${liquidoCreditoFmt}* (taxa ${taxaCredito}%).`)
+            : '';
+
+        const pixLine = liquidoPixFmt ? `\nNo PIX você recebe *${liquidoPixFmt}* líquido.` : '';
+
+        return (
+            `Show 🎯 Já tenho algo útil pra você:` +
+            insumoLine +
+            pixLine +
+            creditoLine +
+            `\n\nQuer ver isso pra todos os seus procedimentos?`
+        );
+    },
+
+    /** Ato 5 — CTA por persona */
+    act5CtaOwner(dashboardLink) {
+        return (
+            `Esse é o dashboard da Lumiz com tudo organizado 📊\n` +
+            (dashboardLink ? `${dashboardLink}\n\n` : '\n') +
+            `Posso te ajudar a assinar agora ou prefere testar mais alguns dias?`
+        );
+    },
+
+    act5CtaTeam() {
+        return (
+            `Legal! Que tal a gente mostrar isso pra dona da clínica? 🤝\n\n` +
+            `Posso montar um resuminho financeiro pra você encaminhar pra ela. Quer?`
+        );
     }
 };
