@@ -13,6 +13,8 @@ const featureFlagService = require('../featureFlagService');
 const clinicProfileService = require('./clinicProfileService');
 const learnedFactsService = require('./learnedFactsService');
 const domainProcedureBenchmarkService = require('./domainProcedureBenchmarkService');
+
+class ConversationContextService {
   constructor() {
     this.contextCache = new Map();
     this.CACHE_TTL_MS = 30_000;
