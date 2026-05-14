@@ -1412,10 +1412,12 @@ router.get('/insights/simular-desconto', heavyDashboardReadLimiter, async (req, 
   }
 });
 
-// GET /api/dashboard/insights/margem-comparativa
+// GET /api/dashboard/insights/margem-comparativa?months=3
 router.get('/insights/margem-comparativa', heavyDashboardReadLimiter, async (req, res) => {
   try {
-    const result = await margemAlertaService.getMargemComparativa(req.user.id);
+    const raw = req.query.months != null ? Number.parseInt(req.query.months, 10) : 3;
+    const meses = Number.isInteger(raw) && raw >= 1 && raw <= 12 ? raw : 3;
+    const result = await margemAlertaService.getMargemComparativaPorProcedimento(req.user.id, meses);
     res.json(result);
   } catch (error) {
     console.error('Error getting margem comparativa:', error);

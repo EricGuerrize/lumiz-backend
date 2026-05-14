@@ -23,6 +23,10 @@ class HelpHandler {
       `"buscar 2800" - Busca por valor\n\n` +
       `📄 Documentos:\n` +
       `Envie foto de boleto, nota fiscal ou extrato\n\n` +
+      `📥 Exportar:\n` +
+      `"gerar pdf" - Relatório mensal em PDF\n` +
+      `"relatório em pdf" - Relatório mensal em PDF\n` +
+      `"excel" - Relatório em planilha Excel\n\n` +
       `⚙️ Outros:\n` +
       `"desfazer" - Remove última transação\n` +
       `"editar" - Edita uma transação\n` +

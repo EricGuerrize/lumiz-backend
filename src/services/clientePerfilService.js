@@ -112,6 +112,7 @@ class ClientePerfilService {
     }
 
     const clientes = [...byClient.values()].map((c) => ({
+      cliente_id: c.clienteId,
       clienteId: c.clienteId,
       nome: c.nome,
       forma_preferida: _formaPreferida(c.formas_usadas),
@@ -147,7 +148,7 @@ class ClientePerfilService {
       ).length,
     };
 
-    return { clientes, resumo };
+    return { items: clientes, clientes, resumo };
   }
 }
 

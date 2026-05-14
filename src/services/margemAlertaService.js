@@ -164,6 +164,72 @@ class MargemAlertaService {
 
     return sent;
   }
+
+  /**
+   * Agrega margem por procedimento nos últimos N meses.
+   * Retorna { items: [{ procedimento, margem_media_pct, margem_min_pct, margem_max_pct, atendimentos, receita_total, custo_total }] }
+   */
+  async getMargemComparativaPorProcedimento(userId, meses = 3) {
+    const today = new Date();
+    const startDate = new Date(today.getFullYear(), today.getMonth() - meses + 1, 1);
+    const startStr = startDate.toISOString().split('T')[0];
+    const endStr = today.toISOString().split('T')[0];
+
+    const { data: rows, error } = await supabase
+      .from('atendimento_procedimentos')
+      .select(`
+        procedimento_id,
+        custo_material,
+        valor_cobrado,
+        procedimentos ( id, nome ),
+        atendimentos!inner ( user_id, data )
+      `)
+      .eq('atendimentos.user_id', userId)
+      .gte('atendimentos.data', startStr)
+      .lte('atendimentos.data', endStr);
+
+    if (error) throw error;
+
+    const byProc = new Map();
+
+    for (const row of rows || []) {
+      const pid = row.procedimento_id;
+      const nome = row.procedimentos?.nome || 'Procedimento';
+      const custo = parseFloat(row.custo_material) || 0;
+      const valor = parseFloat(row.valor_cobrado) || 0;
+      const margem = valor > 0 ? ((valor - custo) / valor) * 100 : 0;
+
+      if (!byProc.has(pid)) {
+        byProc.set(pid, { nome, custoSum: 0, valorSum: 0, count: 0, margens: [] });
+      }
+      const g = byProc.get(pid);
+      g.custoSum += custo;
+      g.valorSum += valor;
+      g.count += 1;
+      g.margens.push(parseFloat(margem.toFixed(1)));
+    }
+
+    const items = [...byProc.values()]
+      .map((g) => {
+        const margem_media_pct =
+          g.valorSum > 0
+            ? parseFloat(((g.valorSum - g.custoSum) / g.valorSum * 100).toFixed(1))
+            : 0;
+        const sorted = [...g.margens].sort((a, b) => a - b);
+        return {
+          procedimento: g.nome,
+          margem_media_pct,
+          margem_min_pct: sorted[0] ?? 0,
+          margem_max_pct: sorted[sorted.length - 1] ?? 0,
+          atendimentos: g.count,
+          receita_total: parseFloat(g.valorSum.toFixed(2)),
+          custo_total: parseFloat(g.custoSum.toFixed(2)),
+        };
+      })
+      .sort((a, b) => b.margem_media_pct - a.margem_media_pct);
+
+    return { items };
+  }
 }
 
 module.exports = new MargemAlertaService();

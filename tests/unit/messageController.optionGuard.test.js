@@ -1,3 +1,6 @@
+/** Ambientes com REDIS_URL (ex. shell do CI) ativam BullMQ por padrão; isso vaza worker após o teste. */
+process.env.REDIS_QUEUE_ENABLED = 'false';
+
 describe('MessageController - guard de opções órfãs', () => {
   let controller;
   let detectIntentMock;
