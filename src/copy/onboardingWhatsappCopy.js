@@ -14,9 +14,7 @@ module.exports = {
         return (
             `Oi! Eu sou a Lumiz 👋 Eu organizo o financeiro da sua clínica aqui no WhatsApp, sem planilhas.\n\n` +
             `Pra te mostrar como a Lumiz vira seu organizador financeiro diário, vamos fazer um teste rápido de 3 minutos.\n\n` +
-            `Posso começar?\n\n` +
-            `1️⃣ Sim!\n` +
-            `2️⃣ Como a Lumiz funciona?`
+            `Posso começar? (Se quiser saber mais antes, é só me perguntar como funciona!)`
         );
     },
 
@@ -29,8 +27,7 @@ module.exports = {
             `• Categorização automática (insumos, aluguel, procedimentos...)\n` +
             `• Resumo do mês: quanto entrou, saiu e sobrou\n\n` +
             `Sem planilhas. Sem apps extras. Tudo aqui no WhatsApp.\n\n` +
-            `Ficou claro? Posso começar o teste rápido (3 minutinhos)?\n\n` +
-            `1️⃣ Sim, vamos começar!`
+            `Ficou claro? Posso começar o teste rápido (3 minutinhos)?`
         );
     },
 
@@ -40,17 +37,14 @@ module.exports = {
     consentQuestion() {
         return (
             `Antes de começarmos: posso usar os dados que você me enviar aqui só pra organizar seu financeiro? Você pode parar quando quiser.\n\n` +
-            `1️⃣ Autorizo\n` +
-            `2️⃣ Não`
+            `_(Responde "sim" pra autorizar ou "não" caso prefira não continuar)_`
         );
     },
 
     consentDenied() {
         return (
-            `Puxa que pena, para você ver na prática como vamos mudar seu dia a dia, preciso da sua confirmação.\n\n` +
-            `Posso usar os dados que você me enviar aqui só pra organizar seu financeiro?\n\n` +
-            `1️⃣ Autorizo\n` +
-            `2️⃣ Não`
+            `Puxa que pena — pra te mostrar como funciona na prática, preciso da sua confirmação.\n\n` +
+            `Posso usar os dados que você me enviar aqui só pra organizar seu financeiro?`
         );
     },
 
@@ -67,11 +61,8 @@ module.exports = {
 
     profileRoleQuestion() {
         return (
-            `Você é a dona/gestora ou alguém do time?\n\n` +
-            `1️⃣ 👑 Dona / gestora\n` +
-            `2️⃣ 🧾 Adm / financeiro\n` +
-            `3️⃣ 💬 Secretária\n` +
-            `4️⃣ ⚕️ Profissional (aplico)`
+            `Você é a *dona/gestora* ou alguém do time?\n\n` +
+            `(Dona/gestora, adm/financeiro, secretária ou profissional que aplica?)`
         );
     },
 
@@ -82,18 +73,14 @@ module.exports = {
         return (
             `Deseja cadastrar algum outro número da equipe pra acessar a Lumiz?\n` +
             `(Ex: o celular da dona, secretária, etc.)\n\n` +
-            `1️⃣ Sim, quero adicionar\n` +
-            `2️⃣ Não, depois faço isso`
+            `Responde "sim" pra adicionar ou "não" pra fazer isso depois.`
         );
     },
 
     profileAddMemberRoleQuestion() {
         return (
             `Qual a função dessa pessoa?\n\n` +
-            `1️⃣ 👑 Dona / gestora\n` +
-            `2️⃣ 🧾 Adm / financeiro\n` +
-            `3️⃣ 💬 Secretária\n` +
-            `4️⃣ ⚕️ Profissional`
+            `(Dona/gestora, adm/financeiro, secretária ou profissional?)`
         );
     },
 
@@ -104,9 +91,7 @@ module.exports = {
     profileAddMemberNameCorrection() {
         return (
             `Parece que você enviou um número de telefone no lugar do nome. 📱\n\n` +
-            `O que você prefere fazer?\n\n` +
-            `1️⃣ Corrigir e enviar o nome\n` +
-            `2️⃣ Continuar (usar o número como nome)`
+            `Quer me mandar o nome dessa pessoa ou prefere continuar usando o número mesmo?`
         );
     },
 
@@ -121,9 +106,7 @@ module.exports = {
     profileAddMemberSuccess(nome) {
         return (
             `✅ ${nome} cadastrado(a)!\n\n` +
-            `Deseja adicionar mais alguém?\n\n` +
-            `1️⃣ Sim, mais um\n` +
-            `2️⃣ Não, vamos continuar`
+            `Quer adicionar mais alguém? (Responde "sim" ou "não")`
         );
     },
 
@@ -137,9 +120,7 @@ module.exports = {
     profileAddMemberAlreadyLinked(clinicName) {
         return (
             `⚠️ Este número já está vinculado à clínica "${clinicName}".\n` +
-            `Deseja adicionar outro número?\n\n` +
-            `1️⃣ Sim\n` +
-            `2️⃣ Não`
+            `Quer adicionar outro número? (Responde "sim" ou "não")`
         );
     },
 
@@ -148,19 +129,14 @@ module.exports = {
     // ============================================================
     contextWhyQuestion() {
         return (
-            `Hoje, você quer usar a Lumiz mais pra:\n\n` +
-            `1️⃣ Organizar o dia a dia\n` +
-            `2️⃣ Ter clareza do mês\n` +
-            `3️⃣ Controlar custos`
+            `Hoje, você quer usar a Lumiz mais pra organizar o dia a dia, ter clareza do mês ou controlar custos?\n\n` +
+            `_(Pode responder com suas palavras mesmo)_`
         );
     },
 
     contextPaymentQuestion() {
         return (
-            `Em média, sua clínica recebe mais por:\n\n` +
-            `1️⃣ À vista (pix/dinheiro)\n` +
-            `2️⃣ Cartão parcelado\n` +
-            `3️⃣ Meio a meio`
+            `Em média, sua clínica recebe mais à vista (pix/dinheiro), no cartão parcelado ou meio a meio?`
         );
     },
 
@@ -237,19 +213,13 @@ module.exports = {
             `Pagamento: ${pagamentoLabel}\n` +
             `${splitText}` +
             `Data: ${data}\n\n` +
-            `Tá ok?\n\n` +
-            `1️⃣ Tá ok\n` +
-            `2️⃣ ✏️ Ajustar`
+            `Tá certo? Me diz se quiser ajustar alguma coisa.`
         );
     },
 
     ahaRevenueAdjustMenu() {
         return (
-            `O que você quer ajustar?\n\n` +
-            `1️⃣ Valor total\n` +
-            `2️⃣ Forma de pagamento\n` +
-            `3️⃣ Parcelas do cartão\n` +
-            `4️⃣ Procedimento/descrição`
+            `O que você quer ajustar? Pode me dizer o valor correto, a forma de pagamento, as parcelas ou o procedimento.`
         );
     },
 
@@ -294,10 +264,8 @@ module.exports = {
 
     ahaCostsClassify() {
         return (
-            `Esse custo é mais:\n\n` +
-            `1️⃣ 🧱 Fixo (todo mês)\n` +
-            `2️⃣ 🧪 Variável (depende do mês)\n` +
-            `3️⃣ Não sei`
+            `Esse custo é fixo (acontece todo mês, como aluguel) ou variável (depende do mês, como insumos)?\n\n` +
+            `_(Se não souber ao certo, me conta o que é o custo que eu classifico pra você)_`
         );
     },
 
@@ -311,11 +279,8 @@ module.exports = {
     ahaCostsDocumentReceived({ valor, vencimento, fornecedor }) {
         return (
             `Recebi ✅ Vou organizar isso rapidinho.\n\n` +
-            `Encontrei: ${formatarMoeda(Number(valor))}, vencimento ${vencimento}, fornecedor ${fornecedor || '—'}.\n` +
-            `Isso é um custo fixo ou variável?\n\n` +
-            `1️⃣ Fixo\n` +
-            `2️⃣ Variável\n` +
-            `3️⃣ Não sei`
+            `Encontrei: ${formatarMoeda(Number(valor))}, vencimento ${vencimento}, fornecedor ${fornecedor || '—'}.\n\n` +
+            `Esse custo é fixo (todo mês) ou variável (depende do mês)? _(Se não souber, me conta o que é que eu classifico)_`
         );
     },
 
@@ -323,12 +288,13 @@ module.exports = {
         return (
             `Beleza → fixo ✅\n\n` +
             `Pra eu organizar certinho, isso entra mais como:\n\n` +
-            `1️⃣ Aluguel\n` +
-            `2️⃣ Salários\n` +
-            `3️⃣ Internet / Utilitários (luz, água…)\n` +
-            `4️⃣ Marketing\n` +
-            `5️⃣ Impostos\n` +
-            `6️⃣ Outros`
+            `• Aluguel\n` +
+            `• Salários\n` +
+            `• Internet / Utilitários (luz, água…)\n` +
+            `• Marketing\n` +
+            `• Impostos\n` +
+            `• Outros\n\n` +
+            `Qual se encaixa melhor?`
         );
     },
 
@@ -336,9 +302,10 @@ module.exports = {
         return (
             `Beleza → variável ✅\n\n` +
             `Pra eu organizar certinho, isso entra mais como:\n\n` +
-            `1️⃣ Insumos / materiais (Ex: luvas, máscara, touca, gaze…)\n` +
-            `2️⃣ Fornecedores de injetáveis (Ex: ácido hialurônico, toxina botulínica, bioestimuladores…)\n` +
-            `3️⃣ Outros`
+            `• Insumos / materiais (luvas, máscara, touca, gaze…)\n` +
+            `• Fornecedores de injetáveis (ácido hialurônico, toxina botulínica, bioestimuladores…)\n` +
+            `• Outros\n\n` +
+            `Qual se encaixa melhor?`
         );
     },
 
@@ -351,9 +318,7 @@ module.exports = {
             `Valor: ${formatarMoeda(Number(valor))}\n` +
             `${pagamento ? `Pagamento: ${pagamento}\n` : ''}` +
             `Data: ${data}\n\n` +
-            `Tá ok?\n\n` +
-            `1️⃣ Tá ok\n` +
-            `2️⃣ ✏️ Ajustar`
+            `Tá certo? Me diz se quiser ajustar alguma coisa.`
         );
     },
 
@@ -402,8 +367,7 @@ module.exports = {
     balanceQuestion() {
         return (
             `Quer me mandar o saldo que você tem hoje pra eu ir ajustando?\n\n` +
-            `1️⃣ Sim, vou mandar\n` +
-            `2️⃣ Não agora, seguimos assim`
+            `_(Responde "sim" pra me mandar o valor, ou "não" pra seguirmos assim)_`
         );
     },
 
@@ -494,9 +458,7 @@ module.exports = {
             `Configurando isso, eu já mostro pra você o valor líquido real em cada venda.\n` +
             `Exemplo: "Uma venda de R$ 1.500 em 3x no cartão → cai R$ 460 por mês na conta, já com as taxas MDR descontadas."\n\n` +
             `Assim o caixa fica mais previsível!\n\n` +
-            `Quer configurar as taxas do seu cartão agora?\n\n` +
-            `1️⃣ Configurar agora\n` +
-            `2️⃣ Pular por enquanto`
+            `Quer configurar as taxas do seu cartão agora ou prefere pular por enquanto?`
         );
     },
 
@@ -601,10 +563,8 @@ module.exports = {
     documentReceivedMessage({ valor, vencimento, fornecedor }) {
         return (
             `Recebi ✅ Vou organizar isso rapidinho.\n\n` +
-            `Encontrei: ${formatarMoeda(Number(valor))}, vencimento ${vencimento || '—'}, fornecedor ${fornecedor || '—'}.\n` +
-            `Isso é um custo fixo ou variável?\n\n` +
-            `1️⃣ Fixo\n` +
-            `2️⃣ Variável`
+            `Encontrei: ${formatarMoeda(Number(valor))}, vencimento ${vencimento || '—'}, fornecedor ${fornecedor || '—'}.\n\n` +
+            `Esse custo é fixo (todo mês) ou variável (depende do mês)?`
         );
     },
 
@@ -673,11 +633,7 @@ module.exports = {
     addMemberStart() {
         return (
             `Vou te ajudar a cadastrar um novo número! 📱\n\n` +
-            `Qual a função dessa pessoa?\n\n` +
-            `1️⃣ 👑 Dona / gestora\n` +
-            `2️⃣ 🧾 Adm / financeiro\n` +
-            `3️⃣ 💬 Secretária\n` +
-            `4️⃣ ⚕️ Profissional`
+            `Qual a função dessa pessoa? (Dona/gestora, adm/financeiro, secretária ou profissional?)`
         );
     },
 
@@ -716,8 +672,7 @@ module.exports = {
             `Olá! 👋\n\n` +
             `Você foi adicionado(a) à clínica *${clinicName}* por ${addedByName}.\n\n` +
             `Confirma o vínculo para ter acesso aos dados financeiros?\n\n` +
-            `1️⃣ Sim, confirmo\n` +
-            `2️⃣ Não, não sou dessa clínica`
+            `_(Responde "confirmo" ou "não sou dessa clínica")_`
         );
     },
 
@@ -751,8 +706,7 @@ module.exports = {
             `⚠️ Tem certeza que deseja remover *${nome}*?\n` +
             `📞 ${telefone}\n\n` +
             `Essa pessoa perderá acesso aos dados financeiros da clínica.\n\n` +
-            `1️⃣ Sim, remover\n` +
-            `2️⃣ Não, cancelar`
+            `_(Responde "sim, remover" para confirmar ou "cancelar" para desistir)_`
         );
     },
 
@@ -771,8 +725,7 @@ module.exports = {
             `⚠️ Aviso importante!\n\n` +
             `O número ${phone} está sendo transferido para a clínica "${newClinicName}".\n\n` +
             `Confirma a remoção deste número da sua clínica?\n\n` +
-            `1️⃣ Sim, pode transferir\n` +
-            `2️⃣ Não, manter vinculado aqui`
+            `_(Responde "sim, pode transferir" para confirmar ou "não, manter" para cancelar)_`
         );
     },
 
@@ -829,8 +782,7 @@ module.exports = {
         return (
             `Entendi: *${procedimento || 'Procedimento'}* ${valorFmt}` +
             (pagamento ? ` no ${pagamento}` : '') +
-            `. Tá certo?\n\n` +
-            `1️⃣ Sim\n2️⃣ Corrigir`
+            `. Tá certo? Me diz se quiser corrigir algo.`
         );
     },
 
@@ -852,8 +804,7 @@ module.exports = {
             ? `R$ ${valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
             : String(valor || '?');
         return (
-            `Entendi: *${descricao || 'Custo'}* ${valorFmt}. Confirma?\n\n` +
-            `1️⃣ Sim\n2️⃣ Corrigir`
+            `Entendi: *${descricao || 'Custo'}* ${valorFmt}. Confirma? Me diz se precisar corrigir.`
         );
     },
 

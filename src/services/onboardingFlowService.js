@@ -501,11 +501,8 @@ class OnboardingStateHandlers {
             return await respond(onboardingCopy.consentQuestion(), true); // Persist imediato em transição de estado
         }
 
-        // Se o usuário já viu a explicação, o fallback não deve oferecer "Como a Lumiz funciona?" novamente
-        const fallbackOptions = onboarding.explained
-            ? `1️⃣ Sim, vamos começar!`
-            : `1️⃣ Sim!\n2️⃣ Como a Lumiz funciona?`;
-        return await respond(onboardingCopy.invalidChoice(fallbackOptions));
+        // Fallback: pede confirmação de forma natural sem menu numerado
+        return await respond(`Posso começar o teste rápido? É só me dizer "sim"!`);
     }
 
     async handleConsent(onboarding, messageTrimmed, normalizedPhone, respond) {
@@ -531,7 +528,7 @@ class OnboardingStateHandlers {
             return await respond(questionText, true);
         }
 
-        return await respond(onboardingCopy.invalidChoice(`1️⃣ Autorizo\n2️⃣ Não`));
+        return await respond(onboardingCopy.consentDenied());
     }
 
     async handleProfileName(onboarding, messageTrimmed, respond) {
@@ -578,14 +575,14 @@ class OnboardingStateHandlers {
 
     async handleProfileRole(onboarding, messageTrimmed, respond) {
         const role = validateChoice(messageTrimmed, {
-            'dona_gestora': ['1', 'dona', 'gestora'],
-            'adm_financeiro': ['2', 'adm', 'financeiro'],
-            'secretaria': ['3', 'secretária', 'secretaria'],
-            'profissional': ['4', 'profissional', 'aplico']
+            'dona_gestora': ['1', 'dona', 'gestora', 'sócia', 'socia', 'proprietária', 'proprietaria', 'dono'],
+            'adm_financeiro': ['2', 'adm', 'financeiro', 'administrativa', 'administrativo', 'financeira'],
+            'secretaria': ['3', 'secretária', 'secretaria', 'recepcionista', 'recepção', 'recepcao'],
+            'profissional': ['4', 'profissional', 'aplico', 'esteticista', 'esteta', 'enfermeira', 'medica', 'médica', 'aplica', 'aplicadora']
         });
 
         if (!role) {
-            return await respond(onboardingCopy.invalidChoice(`1️⃣ 👑 Dona / gestora\n2️⃣ 🧾 Adm / financeiro\n3️⃣ 💬 Secretária\n4️⃣ ⚕️ Profissional (aplico)`));
+            return await respond(onboardingCopy.profileRoleQuestion());
         }
 
         onboarding.data.role = role;
@@ -607,13 +604,14 @@ class OnboardingStateHandlers {
 
     async handleContextWhy(onboarding, messageTrimmed, respond) {
         const why = validateChoice(messageTrimmed, {
-            'organizar_dia_a_dia': ['1', 'organizar', 'dia a dia'],
-            'clareza_mes': ['2', 'clareza', 'mês', 'mes'],
-            'controlar_custos': ['3', 'controlar', 'custos']
+            'organizar_dia_a_dia': ['1', 'organizar', 'dia a dia', 'dia-a-dia', 'rotina', 'diário', 'diario', 'cotidiano'],
+            'clareza_mes': ['2', 'clareza', 'mês', 'mes', 'mensal', 'visão', 'visao', 'panorama', 'resultado'],
+            'controlar_custos': ['3', 'controlar', 'custos', 'custo', 'gastos', 'despesas', 'gasto', 'despesa', 'reduzir']
         });
 
         if (!why) {
-            return await respond(onboardingCopy.invalidChoice(`1️⃣ Organizar o dia a dia\n2️⃣ Ter clareza do mês\n3️⃣ Controlar custos`));
+            // Resposta não reconhecida: aceita texto livre, assume o objetivo mais próximo ou repergunta de forma aberta
+            return await respond(onboardingCopy.contextWhyQuestion());
         }
 
         onboarding.data.context_why = why;
@@ -624,13 +622,13 @@ class OnboardingStateHandlers {
     async handleContextHow(onboarding, messageTrimmed, normalizedPhone, respond) {
         // Suporte às opções de pagamento (com meio a meio)
         const payment = validateChoice(messageTrimmed, {
-            'avista': ['1', 'pix', 'dinheiro', 'a vista', 'à vista'],
-            'parcelado': ['2', 'cartão parcelado', 'cartao parcelado', 'parcelado'],
-            'misto': ['3', 'meio a meio', 'meio a meia', 'meio-meio', '50/50', 'metade', 'metade metade']
+            'avista': ['1', 'pix', 'dinheiro', 'a vista', 'à vista', 'espécie', 'especie', 'cash', 'débito', 'debito'],
+            'parcelado': ['2', 'cartão parcelado', 'cartao parcelado', 'parcelado', 'parcela', 'crédito', 'credito', 'cartão', 'cartao'],
+            'misto': ['3', 'meio a meio', 'meio a meia', 'meio-meio', '50/50', 'metade', 'metade metade', 'misto', 'misturado', 'variado', 'varia', 'depende']
         });
 
         if (!payment) {
-            return await respond(onboardingCopy.invalidChoice(`1️⃣ À vista (PIX / dinheiro)\n2️⃣ Cartão parcelado\n3️⃣ Meio a meio`));
+            return await respond(onboardingCopy.contextPaymentQuestion());
         }
 
         // Mantém compatibilidade com campo antigo e novo
@@ -850,18 +848,19 @@ class OnboardingStateHandlers {
             return await respond(onboardingCopy.ahaRevenueRegistered() + '\n\n' + onboardingCopy.ahaCostsIntro(), true, true);
         }
 
-        return await respond(onboardingCopy.invalidChoice(`1️⃣ Tá ok\n2️⃣ ✏️ Ajustar`));
+        // Resposta não reconhecida como confirmação nem correção: repergunta naturalmente
+        return await respond(`Tá certo assim ou quer ajustar alguma coisa?`);
     }
 
     async handleAhaRevenueAdjust(onboarding, messageTrimmed, respond) {
         const choice = validateChoice(messageTrimmed, {
-            'valor': ['1', 'valor', 'valor total'],
-            'pagamento': ['2', 'forma', 'pagamento'],
-            'parcelas': ['3', 'parcelas', 'parcela'],
-            'procedimento': ['4', 'procedimento', 'descricao', 'descrição']
+            'valor': ['1', 'valor', 'valor total', 'preço', 'preco', 'quantia', 'montante', 'total'],
+            'pagamento': ['2', 'forma', 'pagamento', 'pix', 'cartão', 'cartao', 'dinheiro', 'débito', 'debito', 'crédito', 'credito'],
+            'parcelas': ['3', 'parcelas', 'parcela', 'vezes', 'x cartão', 'parcelamento'],
+            'procedimento': ['4', 'procedimento', 'descricao', 'descrição', 'serviço', 'servico', 'tratamento', 'nome', 'descrição']
         });
 
-        if (!choice) return await respond(onboardingCopy.invalidChoice(onboardingCopy.ahaRevenueAdjustMenu()));
+        if (!choice) return await respond(onboardingCopy.ahaRevenueAdjustMenu());
 
         if (choice === 'valor') {
             onboarding.step = 'AHA_REVENUE_ADJUST_VALUE';
@@ -869,7 +868,7 @@ class OnboardingStateHandlers {
         }
         if (choice === 'pagamento') {
             onboarding.step = 'AHA_REVENUE_ADJUST_PAYMENT';
-            return await respond('Me diga a forma de pagamento:\n\n1️⃣ PIX\n2️⃣ Dinheiro\n3️⃣ Débito\n4️⃣ Crédito à vista\n5️⃣ Cartão parcelado\n6️⃣ Meio a meio', true);
+            return await respond('Me diga a forma de pagamento: foi PIX, dinheiro, débito, crédito à vista, cartão parcelado ou meio a meio?', true);
         }
         if (choice === 'parcelas') {
             onboarding.step = 'AHA_REVENUE_ADJUST_INSTALLMENTS';
@@ -913,7 +912,7 @@ class OnboardingStateHandlers {
             'parcelado': ['5', 'parcelado', 'cartao parcelado', 'cartão parcelado'],
             'misto': ['6', 'meio a meio', 'metade', '50/50']
         });
-        if (!choice) return await respond(onboardingCopy.invalidChoice(`1️⃣ PIX\n2️⃣ Dinheiro\n3️⃣ Débito\n4️⃣ Crédito à vista\n5️⃣ Cartão parcelado\n6️⃣ Meio a meio`));
+        if (!choice) return await respond(`Não entendi a forma de pagamento. Pode me dizer se foi PIX, dinheiro, débito, crédito à vista, cartão parcelado ou meio a meio?`);
         if (!onboarding.data.pending_sale) onboarding.data.pending_sale = {};
         onboarding.data.pending_sale.forma_pagamento = choice;
         if (choice !== 'misto') onboarding.data.pending_sale.payment_split = null;
@@ -997,7 +996,7 @@ class OnboardingStateHandlers {
         }
 
         if (!costType) {
-            return await respond(onboardingCopy.invalidChoice(onboardingCopy.ahaCostsClassify()));
+            return await respond(onboardingCopy.ahaCostsClassify());
         }
 
         onboarding.data.pending_cost.tipo = costType === 'fixo' ? 'fixa' : 'variavel';
@@ -1190,21 +1189,20 @@ class OnboardingStateHandlers {
 
     async handleAhaCostsClassify(onboarding, messageTrimmed, respond) {
         const costType = validateChoice(messageTrimmed, {
-            'fixo': ['1', 'fixo'],
-            'variável': ['2', 'variável', 'variavel'],
-            'não_sei': ['3', 'não sei', 'nao sei']
+            'fixo': ['1', 'fixo', 'mensal', 'todo mês', 'todo mes', 'recorrente', 'sempre', 'aluguel', 'salário', 'salario', 'internet', 'luz', 'água', 'agua'],
+            'variável': ['2', 'variável', 'variavel', 'muda', 'varia', 'depende', 'insumo', 'material', 'produto', 'compra'],
+            'não_sei': ['3', 'não sei', 'nao sei', 'sei lá', 'sei la', 'incerto', 'duvida', 'dúvida']
         });
 
         if (costType === 'não_sei') {
-            // Script diz: "Tranquilo. É aluguel, salário...?"
-            // E diz "Usuário responde -> Lumiz classifica"
-            // Por simplificação (e robustez), vamos classificar baseado nessa resposta
             onboarding.step = 'AHA_COSTS_CLASSIFY_HELP';
             return await respond(onboardingCopy.ahaCostsDontKnow());
         }
 
         if (!costType) {
-            return await respond(onboardingCopy.invalidChoice(onboardingCopy.ahaCostsClassify()));
+            // Não reconheceu: manda para classify_help para interpretar o texto livre
+            onboarding.step = 'AHA_COSTS_CLASSIFY_HELP';
+            return await respond(onboardingCopy.ahaCostsDontKnow());
         }
 
         if (!onboarding.data.pending_cost) {
@@ -1431,7 +1429,8 @@ class OnboardingStateHandlers {
             );
         }
 
-        return await respond(onboardingCopy.invalidChoice(`1️⃣ Tá ok\n2️⃣ ✏️ Ajustar`));
+        // Resposta não reconhecida: repergunta naturalmente
+        return await respond(`Tá certo assim ou quer ajustar alguma coisa?`);
     }
 
     async handleAhaSummary(onboarding, normalizedPhone, respond) {
@@ -1459,7 +1458,7 @@ class OnboardingStateHandlers {
             return await respondAndClearMulti(this._buildAct5Messages(onboarding));
         }
 
-        return await respond(onboardingCopy.invalidChoice(`1️⃣ Sim, vou mandar\n2️⃣ Não agora, seguimos assim`));
+        return await respond(onboardingCopy.balanceQuestion());
     }
 
     async handleBalanceInput(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear, respondAndClearMulti) {
@@ -1656,7 +1655,7 @@ class OnboardingStateHandlers {
             return null;
         }
 
-        return await respond(onboardingCopy.invalidChoice(`1️⃣ Configurar agora\n2️⃣ Pular por enquanto`));
+        return await respond(onboardingCopy.mdrSetupIntro());
     }
 
     async handleMdrSetupQuestion(onboarding, messageTrimmed, respond) {
@@ -2242,7 +2241,7 @@ class OnboardingFlowService {
             case 'AHA_REVENUE_ADJUST_VALUE':
                 return 'Me manda só o novo valor total da venda (ex: R$ 5000).';
             case 'AHA_REVENUE_ADJUST_PAYMENT':
-                return 'Me diga a forma de pagamento:\n\n1️⃣ PIX\n2️⃣ Dinheiro\n3️⃣ Débito\n4️⃣ Crédito à vista\n5️⃣ Cartão parcelado\n6️⃣ Meio a meio';
+                return 'Me diga a forma de pagamento: foi PIX, dinheiro, débito, crédito à vista, cartão parcelado ou meio a meio?';
             case 'AHA_REVENUE_ADJUST_INSTALLMENTS':
                 return 'Quantas parcelas no cartão? (ex: 6x)';
             case 'AHA_REVENUE_ADJUST_PROCEDURE':
