@@ -20,7 +20,8 @@ const supabase = require('../db/supabase');
  */
 async function classifyVendor(vendorName, userId) {
   if (!vendorName) return null;
-  const normalized = vendorName.toLowerCase().trim();
+  const nameStr = typeof vendorName === 'string' ? vendorName : String(vendorName);
+  const normalized = nameStr.toLowerCase().trim();
 
   const { data, error } = await supabase
     .from('vendor_classifications')
