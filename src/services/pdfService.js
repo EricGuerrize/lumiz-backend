@@ -120,7 +120,7 @@ class PdfService {
   }
 
   /**
-   * Gera PDF do relatório mensal (layout alinhado ao mock "Relatório do sócio" em lumiz-app.html).
+   * Gera PDF do relatório mensal (layout estilo relatório do sócio: cabeçalho, resumo, DRE).
    */
   async generateMonthlyReportPDF(userId, year, month) {
     try {

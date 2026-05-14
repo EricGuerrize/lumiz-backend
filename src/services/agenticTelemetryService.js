@@ -1,5 +1,5 @@
 /**
- * Telemetria do fluxo agentic (cap. 13 lumizchatbotdesign.md).
+ * Telemetria do fluxo agentic.
  * Centraliza nomes de eventos e garante que falhas de analytics nunca quebrem o bot.
  */
 
