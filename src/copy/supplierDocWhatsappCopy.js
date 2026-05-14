@@ -45,10 +45,10 @@ function confirmacaoSupplierDoc(parsed, options = {}) {
   linhas.push(`🏢 ${fornecedorNome}${cnpj}`);
   linhas.push(`💰 *${valorTotal}*${totalParcelas > 1 ? ` em ${totalParcelas}x` : ''}`);
   if (parsed?.category) {
-    linhas.push(`📂 ${parsed.category}`);
-  }
-  if (parsed?.category_trigger) {
-    linhas.push(`   ${parsed.category_trigger}`);
+    const categoryLine = parsed?.category_trigger
+      ? `📂 ${parsed.category} · ${fornecedorNome}`
+      : `📂 ${parsed.category}`;
+    linhas.push(categoryLine);
   }
 
   if (totalParcelas > 1 && Array.isArray(parsed?.vencimentos)) {
@@ -70,9 +70,7 @@ function confirmacaoSupplierDoc(parsed, options = {}) {
   }
 
   linhas.push('');
-  linhas.push('Posso lançar como conta a pagar?');
-  linhas.push('1️⃣ *Confirmar*');
-  linhas.push('2️⃣ *Cancelar*');
+  linhas.push('Posso lançar como conta a pagar? (responde *sim* ou *não*)');
 
   return linhas.join('\n');
 }
