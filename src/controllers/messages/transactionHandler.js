@@ -525,6 +525,14 @@ class TransactionHandler {
     }
 
     if (pending.stage === 'awaiting_payment_method') {
+      const combinedInstallments = this.parseCreditoParceladoCombined(messageLower);
+      if (combinedInstallments) {
+        pending.dados = { ...current, forma_pagamento: 'parcelado', parcelas: combinedInstallments };
+        pending.stage = 'confirm';
+        await this.setPendingTransaction(phone, pending);
+        return this.buildConfirmationMessage(pending.dados);
+      }
+
       const method = this.parsePaymentMethodChoice(messageLower);
       if (!method) {
         return 'Não entendi. Responde com:\n1 PIX\n2 Débito\n3 Crédito à vista\n4 Cartão parcelado';
@@ -581,6 +589,25 @@ class TransactionHandler {
     pending.stage = 'confirm';
     await this.setPendingTransaction(phone, pending);
     return this.buildConfirmationMessage(pending.dados);
+  }
+
+  /**
+   * Crédito/cartão parcelado em uma frase (ex.: "crédito em 3x") durante awaiting_payment_method.
+   * @param {string} messageLower
+   * @returns {number|null} número de parcelas (2–12) ou null
+   */
+  parseCreditoParceladoCombined(messageLower) {
+    const n = this.normalizeText(messageLower);
+    const m = n.match(/\b(\d{1,2})x\b/);
+    if (!m) return null;
+    const installments = parseInt(m[1], 10);
+    if (!Number.isFinite(installments) || installments < 2 || installments > 12) return null;
+    const creditish =
+      /\bcredito\b/.test(n) ||
+      /\bcartao\b/.test(n) ||
+      /\bparcelad/.test(n);
+    if (!creditish) return null;
+    return installments;
   }
 
   parsePaymentMethodChoice(text) {

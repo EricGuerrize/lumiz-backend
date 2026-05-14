@@ -36,6 +36,7 @@ const betaFeedbackService = require('../services/betaFeedbackService');
 const conversationalNpsService = require('../services/conversationalNpsService');
 const featureFlagService = require('../services/featureFlagService');
 const { agentRouterService, toolRegistry } = require('../services/agentic');
+const { getHelpShortcutIntent } = require('../config/helpCommandContract');
 
 /**
  * MessageController refatorado - Orquestrador principal
@@ -132,6 +133,22 @@ class MessageController {
       confidence_score: confidence,
       confianca: confidence
     };
+  }
+
+  /**
+   * Atalhos alinhados a {@link ../config/helpCommandContract.js} e aos exemplos de HelpHandler.handleHelp.
+   * @param {string} msgSimples
+   * @param {string} messageTrimmed
+   * @returns {{ intencao: string, dados?: object, confidence: number, source: string }|null}
+   */
+  /**
+   * Delega para {@link ../config/helpCommandContract.getHelpShortcutIntent}.
+   * @param {string} msgSimples
+   * @param {string} messageTrimmed
+   * @returns {{ intencao: string, dados?: object, confidence: number, source: string }|null}
+   */
+  tryHelpCommandIntentFromShortcut(msgSimples, messageTrimmed) {
+    return getHelpShortcutIntent(msgSimples, messageTrimmed);
   }
 
   _formatAgenticConfirmedResult(toolName, result) {
@@ -548,6 +565,19 @@ class MessageController {
         return 'Perfeito. Me manda seu melhor horário e um telefone ou email de contato que eu sinalizo pro time seguir com você.';
       }
 
+      if (user?.id) {
+        const shortcutIntent = this.tryHelpCommandIntentFromShortcut(msgSimples, message.trim());
+        if (shortcutIntent) {
+          const shortcutReply = await this.routeIntent(shortcutIntent, user, normalizedPhone, message);
+          if (shortcutReply != null && user.id) {
+            conversationHistoryService
+              .saveConversation(user.id, message, shortcutReply, shortcutIntent.intencao, { dados: shortcutIntent.dados || {} })
+              .catch(() => {});
+          }
+          return shortcutReply;
+        }
+      }
+
       // Tenta heurística primeiro (economiza ~60% das chamadas Gemini)
       let intent = await intentHeuristicService.detectIntent(message, user?.id || null);
       let usedHeuristic = false;
@@ -902,6 +932,7 @@ class MessageController {
         return await this.scheduleHandler.handleSchedule(user);
 
       case 'consultar_meta':
+      case 'meta':
         return await this.goalHandler.handleGoalProgress(user);
 
       case 'insights':

@@ -22,7 +22,7 @@ describe('agentRouterService', () => {
     agentRouterService.clearLog();
   });
 
-  it('roteia agentic para consultar_saldo (nome alinhado ao prompt)', async () => {
+  it('roteia determinístico para consultar_saldo (contrato da ajuda)', async () => {
     const d = await agentRouterService.decide({
       message: 'quanto tenho de saldo?',
       intent: { intencao: 'consultar_saldo', confidence: 0.95 },
@@ -30,11 +30,11 @@ describe('agentRouterService', () => {
       phone: '5511999999999',
       context: {}
     });
-    expect(d.route).toBe('agentic');
-    expect(d.reason).toBe('agentic_capable_intent');
+    expect(d.route).toBe('deterministic');
+    expect(d.reason).toBe('deterministic_only_intent');
   });
 
-  it('normaliza confidence_score no objeto de decisão', async () => {
+  it('roteia determinístico para consultar_historico (contrato da ajuda)', async () => {
     const d = await agentRouterService.decide({
       message: 'meu histórico',
       intent: { intencao: 'consultar_historico', confidence_score: 0.95 },
@@ -42,7 +42,8 @@ describe('agentRouterService', () => {
       phone: '5511999999999',
       context: {}
     });
-    expect(d.route).toBe('agentic');
+    expect(d.route).toBe('deterministic');
+    expect(d.reason).toBe('deterministic_only_intent');
     expect(d.factors).toBeDefined();
   });
 
@@ -114,8 +115,8 @@ describe('agentRouterService', () => {
     });
 
     const d = await agentRouterService.decide({
-      message: 'saldo',
-      intent: { intencao: 'consultar_saldo', confidence: 0.95 },
+      message: 'me dá insights',
+      intent: { intencao: 'insights', confidence: 0.95 },
       user: baseUser,
       phone: '5511999999999',
       context: {}

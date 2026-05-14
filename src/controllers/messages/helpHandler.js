@@ -1,5 +1,9 @@
 /**
  * Handler para ajuda e comandos
+ *
+ * A lista de exemplos em handleHelp() é o contrato com o usuário; intents
+ * correspondentes devem permanecer na rota determinística — ver
+ * src/config/helpCommandContract.js e agentRouterService.
  */
 class HelpHandler {
   /**

@@ -9,24 +9,19 @@
  */
 
 const featureFlagService = require('../featureFlagService');
+const { HELP_DETERMINISTIC_INTENTS } = require('../../config/helpCommandContract');
 
-/** Alinhado a `buildIntentClassificationPrompt` + `routeIntent` em messageController.js */
+/**
+ * Intents que seguem no fluxo LLM+tools (fora do contrato literal da ajuda).
+ * @see HELP_DETERMINISTIC_INTENTS em helpCommandContract.js
+ */
 const AGENTIC_CAPABLE_INTENTS = new Set([
-  'registrar_entrada',
-  'registrar_saida',
-  'consultar_saldo',
-  'consultar_historico',
-  'relatorio_mensal',
   'comparar_meses',
   'consultar_parcelas',
-  'stats_hoje',
   'ranking_procedimentos',
   'marcar_parcela_paga',
-  'exportar_dados',
   'consultar_agenda',
-  'consultar_meta',
   'insights',
-  'buscar_transacao',
   'definir_meta',
   'estoque_entrada',
   'consultar_estoque',
@@ -54,7 +49,8 @@ const DETERMINISTIC_ONLY_INTENTS = new Set([
   'saudacao',
   'ver_dashboard',
   'apenas_valor',
-  'apenas_procedimento'
+  'apenas_procedimento',
+  ...HELP_DETERMINISTIC_INTENTS
 ]);
 
 class AgentRouterService {

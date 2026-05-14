@@ -74,6 +74,11 @@ As fases 9 e 10 são majoritariamente frontend. No backend, o foco é garantir c
 - Opcional: `RESEND_API_KEY`
   - sem chave: fluxo degrada graceful com `skipped: missing_api_key`.
 
+### Agente WhatsApp (`agentic_*`)
+
+- **Railway / `.env`:** ver guia **[docs/AGENTIC_ENV_RAILWAY.md](docs/AGENTIC_ENV_RAILWAY.md)** (JSON `FEATURE_FLAGS` ou `AGENTIC_ROUTER_ENABLED` / `AGENTIC_TOOLS_ENABLED` / `AGENTIC_SHADOW_MODE`).
+- **Supabase:** tabela `feature_flags` (override por `user_id` ou linhas globais `user_id` NULL); precedência acima do JSON vazio — ver `src/services/featureFlagService.js`.
+
 ## Dependências
 
 - Adicionada: `resend`
