@@ -84,6 +84,11 @@ class IntentHeuristicService {
         'equipamento', 'reparo', 'conserto', 'limpeza', 'seguro', 'licença', 'licenca',
         'saida de', 'saída de', 'paguei o', 'paguei a', 'gastei com'
       ],
+      consultar_contas_pagar: [
+        'contas a pagar', 'contas pagar', 'ver contas', 'minhas contas',
+        'vencimentos', 'calendario de vencimentos', 'calendário de vencimentos',
+        'boletos a pagar', 'o que tenho pra pagar', 'o que vence', 'contas do mês'
+      ],
       consultar_parcelas: [
         'parcelas', 'parcelado', 'cartão', 'cartao', 'receber', 'a receber',
         'parcelas pendentes', 'parcelas a receber'

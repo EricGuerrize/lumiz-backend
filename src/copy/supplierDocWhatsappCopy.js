@@ -93,7 +93,7 @@ function supplierDocConfirmado({ contasCount, valorTotal, estoqueAplicados, esto
     linhas.push(`⚠️ ${estoquePendentes} item(ns) ficaram pendentes de match — confirme no painel.`);
   }
   linhas.push('');
-  linhas.push('Para ver o calendário de vencimentos, digite "contas a pagar".');
+  linhas.push('Me diz "contas a pagar" pra ver o calendário de vencimentos.');
   return linhas.join('\n');
 }
 

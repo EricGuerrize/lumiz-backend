@@ -1,4 +1,5 @@
 const transactionController = require('../transactionController');
+const cashflowService = require('../../services/cashflowService');
 const { formatarMoeda } = require('../../utils/currency');
 
 /**
@@ -316,6 +317,35 @@ class QueryHandler {
     } catch (error) {
       console.error('Erro ao comparar períodos:', error);
       return 'Erro ao comparar períodos. Tente novamente.';
+    }
+  }
+
+  async handleContasPagar(user) {
+    try {
+      const { items, valorTotal } = await cashflowService.getContasPagarPriority(user.id, { daysAhead: 60, limit: 10 });
+
+      if (!items || items.length === 0) {
+        return `Nenhuma conta a pagar pendente nos próximos 60 dias 👍`;
+      }
+
+      const formatDate = (d) => {
+        if (!d) return '—';
+        const [y, m, day] = d.split('-');
+        return `${day}/${m}`;
+      };
+
+      const linhas = [`📋 *Contas a pagar* (próximos 60 dias)\n`];
+      for (const c of items) {
+        const venc = formatDate(c.data_vencimento);
+        const atraso = c.diasAtraso > 0 ? ` ⚠️ ${c.diasAtraso}d atraso` : '';
+        linhas.push(`• ${c.descricao || c.categoria || 'Sem descrição'} — ${formatarMoeda(c.valor)} · venc. ${venc}${atraso}`);
+      }
+      linhas.push(`\n*Total: ${formatarMoeda(valorTotal)}*`);
+
+      return linhas.join('\n');
+    } catch (error) {
+      console.error('Erro ao consultar contas a pagar:', error);
+      return 'Erro ao buscar contas. Tente novamente.';
     }
   }
 

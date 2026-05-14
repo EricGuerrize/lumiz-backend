@@ -553,7 +553,7 @@ class DocumentHandler {
         const listaParc = parcelasRegistradas
           .map((p) => `${formatCurrency(p.valor)} em ${formatDate(p.vencimento)}`)
           .join(', ');
-        return `✅ Registrei ${parcelasRegistradas.length} parcelas: ${listaParc}\n\nQuer ver suas contas a pagar? Digite "contas a pagar"`;
+        return `✅ Registrei ${parcelasRegistradas.length} parcelas: ${listaParc}\n\nMe diz "contas a pagar" pra ver o calendário de vencimentos.`;
       }
 
       return `✅ *${pending.transacoes.length} transação(ões) registrada(s) da nota fiscal!*\n\nQuer ver seu saldo? Digite "saldo"`;

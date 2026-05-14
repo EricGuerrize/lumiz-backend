@@ -916,6 +916,9 @@ class MessageController {
         }
         return await this.queryHandler.handleCompareMonths(user);
 
+      case 'consultar_contas_pagar':
+        return await this.queryHandler.handleContasPagar(user);
+
       case 'consultar_parcelas':
         return await this.installmentHandler.handlePendingInstallments(user);
 
