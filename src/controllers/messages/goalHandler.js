@@ -1,6 +1,7 @@
 const supabase = require('../../db/supabase');
 const transactionController = require('../transactionController');
 const { formatarMoeda } = require('../../utils/currency');
+const { extractPrimaryMonetaryValue } = require('../../utils/moneyParser');
 
 /**
  * Handler para metas e objetivos
@@ -9,9 +10,13 @@ class GoalHandler {
   /**
    * Define meta mensal
    */
-  async handleDefineGoal(user, phone, intent) {
+  async handleDefineGoal(user, phone, intent, rawMessage) {
     try {
-      const valor = intent.dados?.valor || intent.dados?.meta;
+      let valor = intent.dados?.valor || intent.dados?.meta;
+      // Fallback: heurística não extrai valor, tenta direto da mensagem
+      if (!valor || valor <= 0) {
+        valor = extractPrimaryMonetaryValue(rawMessage || '');
+      }
 
       if (!valor || valor <= 0) {
         return 'Qual é a sua meta de faturamento?\n\nExemplos:\n• "minha meta é R$ 50000"\n• "definir meta R$ 50k"\n• "objetivo de R$ 50000"';
@@ -31,7 +36,7 @@ class GoalHandler {
         return 'Erro ao definir meta. Tente novamente.';
       }
 
-      return `*Meta definida com sucesso!*\n\nMeta mensal: ${formatarMoeda(parseFloat(valor))}\n\nPara ver seu progresso, digite "meta".`;
+      return `✅ Meta de ${formatarMoeda(parseFloat(valor))} definida!\n\nManda "meta" a qualquer momento pra ver seu progresso.`;
     } catch (error) {
       console.error('Erro ao definir meta:', error);
       return 'Erro ao definir meta. Tente novamente.';

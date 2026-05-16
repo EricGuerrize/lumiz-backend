@@ -22,7 +22,6 @@ const AGENTIC_CAPABLE_INTENTS = new Set([
   'marcar_parcela_paga',
   'consultar_agenda',
   'insights',
-  'definir_meta',
   'estoque_entrada',
   'consultar_estoque',
   'mensagem_ambigua'
@@ -37,6 +36,7 @@ const DETERMINISTIC_ONLY_INTENTS = new Set([
   'exportar',
   'agenda',
   'meta',
+  'definir_meta',
   'membro',
   // Fluxos estruturados de membro (não delegar ao LLM)
   'adicionar_numero',

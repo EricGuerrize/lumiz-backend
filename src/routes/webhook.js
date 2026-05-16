@@ -9,22 +9,33 @@ const userRateLimit = require('../middleware/userRateLimit');
 const audioTranscriptionService = require('../services/audioTranscriptionService');
 const { extractPhoneFromWebhookBody } = require('../utils/phone');
 
-// Deduplicação de mensagens: previne reprocessamento quando a Evolution reenvia o webhook
-// por timeout. Guarda IDs processados por 5 minutos em memória.
-const _processedMsgIds = new Map(); // messageId -> timestamp
+// Deduplicação de mensagens: previne double-send quando a Evolution API dispara o webhook
+// nas duas rotas (/webhook e /webhook/messages-upsert) para a mesma mensagem, ou reenvia
+// por timeout. Usa Set atômico de IDs + fallback por phone+conteúdo (janela 3s).
+const _processedMsgIds = new Set();
+const _processedMsgTimes = new Map(); // key -> timestamp (para TTL)
 const MSG_DEDUP_TTL = 5 * 60 * 1000; // 5 minutos
 
-// Cleanup periódico garantido — independente do volume de tráfego
 const _dedupCleanupInterval = setInterval(() => {
   const now = Date.now();
-  for (const [id, ts] of _processedMsgIds.entries()) {
-    if (now - ts > MSG_DEDUP_TTL) _processedMsgIds.delete(id);
+  for (const [id, ts] of _processedMsgTimes.entries()) {
+    if (now - ts > MSG_DEDUP_TTL) {
+      _processedMsgIds.delete(id);
+      _processedMsgTimes.delete(id);
+    }
   }
-}, MSG_DEDUP_TTL).unref(); // unref: não impede graceful shutdown
+}, MSG_DEDUP_TTL).unref();
 
-function isMessageAlreadyProcessed(messageId) {
-  if (_processedMsgIds.has(messageId)) return true;
-  _processedMsgIds.set(messageId, Date.now());
+function isMessageAlreadyProcessed(messageId, phone, messageText) {
+  // Chave primária: messageId da Evolution
+  if (messageId && _processedMsgIds.has(messageId)) return true;
+  // Chave secundária: phone + conteúdo truncado (janela 3s) — cobre double-fire com IDs diferentes
+  const contentKey = `${phone}::${String(messageText || '').substring(0, 100)}`;
+  const lastSeen = _processedMsgTimes.get(contentKey);
+  if (lastSeen && Date.now() - lastSeen < 3000) return true;
+  // Registra ambas as chaves
+  if (messageId) { _processedMsgIds.add(messageId); _processedMsgTimes.set(messageId, Date.now()); }
+  _processedMsgTimes.set(contentKey, Date.now());
   return false;
 }
 
@@ -137,13 +148,6 @@ const webhookHandler = async (req, res) => {
         return res.status(200).json({ status: 'ignored', reason: 'own message' });
       }
 
-      // Ignora mensagens já processadas (a Evolution reenvia o webhook quando o servidor
-      // demora mais de ~30s para responder — a dedup evita processar a mesma msg duas vezes)
-      if (key.id && isMessageAlreadyProcessed(key.id)) {
-        console.error(`[WEBHOOK] ⚠️ Mensagem duplicada ignorada: ${key.id}`);
-        return res.status(200).json({ status: 'ignored', reason: 'duplicate message' });
-      }
-
       // Valida e sanitiza telefone (suporta payloads com remoteJid=@lid)
       const phone = extractPhoneFromWebhookBody(normalized.body);
       if (!phone) {
@@ -159,6 +163,14 @@ const webhookHandler = async (req, res) => {
       const messageText = (message.conversation ||
         message.extendedTextMessage?.text ||
         '').substring(0, 5000); // Limita tamanho
+
+      // Dedup: ignora mensagens já processadas.
+      // Checa por key.id (Evolution reenvia após timeout) E por phone+conteúdo (janela 3s —
+      // cobre o caso em que /webhook e /webhook/messages-upsert recebem o mesmo evento).
+      if (isMessageAlreadyProcessed(key.id, phone, messageText)) {
+        console.error(`[WEBHOOK] ⚠️ Mensagem duplicada ignorada: id=${key.id}`);
+        return res.status(200).json({ status: 'ignored', reason: 'duplicate message' });
+      }
 
       // Verifica se é imagem, documento ou áudio
       const imageMessage = message.imageMessage;

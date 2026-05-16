@@ -49,8 +49,14 @@ function normalizeText(value = '') {
 function isYes(value = '') {
     const v = normalizeText(value);
     const result = v === '1' || v === 'sim' || v === 's' || v === 'ok' || v === 'confirmar' ||
-        v.includes('pode registrar') || v.includes('tá ok') || v.includes('ta ok') ||
-        v.includes('confere') || v.includes('autorizo') || v.includes('autorizar');
+        v === 'certo' || v === 'correto' || v === 'exato' || v === 'isso' || v === 'perfeito' ||
+        v === 'show' || v === 'beleza' || v === 'pode' || v === 'bora' || v === 'aceito' ||
+        v === 'topa' || v === 'topei' || v === 'concordo' || v === 'claro' || v === 'obvio' ||
+        v.includes('ta certo') || v.includes('tá certo') || v.includes('ta ok') || v.includes('tá ok') ||
+        v.includes('pode registrar') || v.includes('confere') || v.includes('autorizo') ||
+        v.includes('autorizar') || v.includes('ta bom') || v.includes('tá bom') ||
+        v.includes('pode salvar') || v.includes('salva') || v.includes('registra') ||
+        v.includes('claro que sim') || v.includes('com certeza');
     return result;
 }
 
@@ -700,6 +706,29 @@ class OnboardingStateHandlers {
     async handleAhaRevenueConfirm(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear) {
         const confirmed = isYes(messageTrimmed);
         const correction = isNo(messageTrimmed);
+
+        // Detecção direta de forma de pagamento como correção ("Foi no Pix", "pix", "foi dinheiro", etc.)
+        const msgLower = messageTrimmed.toLowerCase();
+        const paymentInlineMatch = (
+            /\bpix\b/.test(msgLower) ? 'pix' :
+            /\bdinheiro\b|\bcash\b/.test(msgLower) ? 'dinheiro' :
+            /\bd[ée]bito\b/.test(msgLower) ? 'debito' :
+            /\bcr[ée]dito\b/.test(msgLower) ? 'credito' :
+            null
+        );
+        if (paymentInlineMatch && !confirmed && onboarding.data.pending_sale) {
+            onboarding.data.pending_sale.forma_pagamento = paymentInlineMatch;
+            onboarding.data.pending_sale.payment_split = null;
+            const sale = onboarding.data.pending_sale;
+            return await respond(onboardingCopy.ahaRevenueConfirmation({
+                procedimento: sale.procedimento || 'Procedimento',
+                paciente: sale.paciente || null,
+                valor: sale.valor,
+                pagamento: this._formatSalePaymentText(sale),
+                split: null,
+                data: formatDate(sale.data)
+            }), true);
+        }
 
         if (correction) {
             onboarding.step = 'AHA_REVENUE_ADJUST';
@@ -1742,6 +1771,7 @@ class OnboardingStateHandlers {
             pix: 'PIX',
             dinheiro: 'Dinheiro',
             debito: 'Débito',
+            credito: 'Crédito',
             credito_avista: 'Crédito à vista',
             avista: 'Crédito à vista'
         };

@@ -982,7 +982,7 @@ class MessageController {
         return await this.searchHandler.handleSearchTransaction(user, intent, message);
 
       case 'definir_meta':
-        return await this.goalHandler.handleDefineGoal(user, phone, intent);
+        return await this.goalHandler.handleDefineGoal(user, phone, intent, message);
 
       case 'saudacao':
         // Se o usuário não existe, inicia onboarding ao invés de retornar mensagem genérica

@@ -13,7 +13,12 @@ function parseBrazilianNumber(raw) {
   if (raw === null || raw === undefined) return null;
   const value = String(raw).trim();
   if (!value) return null;
-  const cleaned = value.replace(/\./g, '').replace(',', '.');
+  // "2.5" or "2.50" → dot is decimal separator (1-2 digits after dot)
+  // "1.500" or "1.500.000" → dot is thousands separator (3 digits after each dot)
+  const isDecimalDot = /^\d+\.\d{1,2}$/.test(value);
+  const cleaned = isDecimalDot
+    ? value.replace(',', '.')
+    : value.replace(/\./g, '').replace(',', '.');
   const parsed = parseFloat(cleaned);
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -289,7 +294,9 @@ function extractMonetaryCandidates(text) {
     candidates.push({ value: extensoValue, source: 'number_words' });
   }
 
-  const moneyRegex = /r\$\s*([0-9]{1,3}(?:[.,][0-9]{3})*(?:[.,][0-9]{2})?|[0-9]+(?:[.,][0-9]{2})?)/gi;
+  // Alt 1: formatted with at least one thousands separator (ex: "2.800", "1.234,56")
+  // Alt 2: plain integer or decimal (ex: "2800", "150.50") — must come after alt1 check
+  const moneyRegex = /r\$\s*([0-9]{1,3}(?:[.,][0-9]{3})+(?:[.,][0-9]{2})?|[0-9]+(?:[.,][0-9]{2})?)/gi;
   let moneyMatch;
   while ((moneyMatch = moneyRegex.exec(raw)) !== null) {
     const parsed = parseBrazilianNumber(moneyMatch[1]);
