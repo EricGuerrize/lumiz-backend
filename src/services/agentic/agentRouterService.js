@@ -30,19 +30,31 @@ const AGENTIC_CAPABLE_INTENTS = new Set([
 const DETERMINISTIC_ONLY_INTENTS = new Set([
   'onboarding',
   'mdr_setup',
+  // Transações — handlers determinísticos testados em produção
+  'registrar_entrada',
+  'registrar_saida',
+  // Consultas — respostas estruturadas, não delegadas ao LLM
+  'consultar_saldo',
+  'consultar_historico',
+  'relatorio_mensal',
+  'stats_hoje',
+  'buscar_transacao',
+  'consultar_contas_pagar',
+  // Edição e desfazer
   'editar_transacao',
   'desfazer',
+  // Ajuda e onboarding de funcionalidades
   'ajuda',
   'exportar',
   'agenda',
   'meta',
   'definir_meta',
   'membro',
-  // Fluxos estruturados de membro (não delegar ao LLM)
+  // Fluxos estruturados de membro
   'adicionar_numero',
   'listar_numeros',
   'remover_numero',
-  // Fluxos sensíveis / pipeline existente (documento, boleto, saudação, prompts de valor isolado)
+  // Fluxos sensíveis / pipeline existente
   'enviar_documento',
   'codigo_boleto',
   'erro',

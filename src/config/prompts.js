@@ -514,12 +514,10 @@ RETORNE APENAS JSON NO SEGUINTE FORMATO:
     "mes_referencia": null
   },
   "confianca": 0.0,
-  "confidence_score": 0.0,
   "resposta_sugerida": null
 }
 
-REGRA OBRIGATÓRIA do confidence_score (0..1):
-- Replique o mesmo valor em "confianca" e em "confidence_score" (alias para compatibilidade futura).
+REGRA OBRIGATÓRIA de confianca (0..1):
 - 0.95+: intenção e todos os campos críticos (valor + tipo) sem ambiguidade
 - 0.80–0.94: pequenas dúvidas (forma de pagamento, número de parcelas)
 - 0.50–0.79: tipo de transação foi inferido ou valor incerto
@@ -722,14 +720,6 @@ RETORNE APENAS JSON (sem texto fora do JSON):
 }
 
 module.exports = {
-  PERSONA,
-  TIPOS_DOCUMENTO,
-  CONTEXTO_CLINICAS,
-  JARGOES_FINANCEIROS,
-  REGRAS_OURO,
-  REGRAS_BOLETO,
-  REGRAS_EXTRACAO,
-  FORMATO_RESPOSTA_DOCUMENTO,
   buildDocumentExtractionPrompt,
   buildDocumentExtractionPromptSlim,
   buildMdrExtractionPrompt,
