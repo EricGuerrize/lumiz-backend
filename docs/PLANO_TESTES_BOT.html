@@ -1,0 +1,916 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lumiz — Plano de Testes do Bot</title>
+<style>
+  :root {
+    --ok: #16a34a; --ok-bg: #dcfce7;
+    --fail: #dc2626; --fail-bg: #fee2e2;
+    --skip: #9ca3af; --skip-bg: #f3f4f6;
+    --warn: #d97706; --warn-bg: #fef3c7;
+    --accent: #7c3aed;
+    --bg: #0f0f13;
+    --surface: #1a1a24;
+    --surface2: #22222f;
+    --border: #2e2e3e;
+    --text: #e2e2f0;
+    --muted: #8888aa;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; line-height: 1.5; }
+
+  header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 16px 24px; position: sticky; top: 0; z-index: 100; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  header h1 { font-size: 18px; font-weight: 700; color: #fff; flex: 1; }
+  .badge { padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .badge-ok { background: var(--ok-bg); color: var(--ok); }
+  .badge-fail { background: var(--fail-bg); color: var(--fail); }
+  .badge-skip { background: var(--skip-bg); color: #555; }
+  .badge-total { background: #1e1b4b; color: #a5b4fc; }
+
+  .progress-bar { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; width: 100%; }
+  .progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent), #06b6d4); transition: width .3s; }
+
+  .stats { display: flex; gap: 12px; align-items: center; }
+  .stat { text-align: center; }
+  .stat-num { font-size: 20px; font-weight: 700; }
+  .stat-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+
+  .controls { padding: 12px 24px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; background: var(--surface2); border-bottom: 1px solid var(--border); }
+  .btn { padding: 6px 14px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); cursor: pointer; font-size: 12px; transition: all .15s; }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn.active { border-color: var(--accent); background: #2d1b69; color: #a78bfa; }
+  input[type=search] { padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); font-size: 12px; width: 220px; }
+  input[type=search]:focus { outline: none; border-color: var(--accent); }
+  .btn-reset { margin-left: auto; color: var(--muted); border-color: transparent; }
+  .btn-reset:hover { color: var(--fail); border-color: var(--fail); }
+
+  main { padding: 24px; max-width: 1200px; margin: 0 auto; }
+
+  .section { margin-bottom: 32px; }
+  .section-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .section-icon { font-size: 20px; }
+  .section-title { font-size: 16px; font-weight: 700; color: #fff; }
+  .section-progress { font-size: 11px; color: var(--muted); margin-left: auto; }
+
+  table { width: 100%; border-collapse: collapse; background: var(--surface); border-radius: 10px; overflow: hidden; border: 1px solid var(--border); }
+  thead th { padding: 10px 14px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); border-bottom: 1px solid var(--border); background: var(--surface2); }
+  tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: var(--surface2); }
+  tbody tr.status-ok { border-left: 3px solid var(--ok); }
+  tbody tr.status-fail { border-left: 3px solid var(--fail); }
+  tbody tr.status-skip { border-left: 3px solid #555; opacity: .6; }
+  td { padding: 10px 14px; vertical-align: top; }
+  td.num { color: var(--muted); font-size: 12px; width: 36px; }
+  td.msg { font-family: 'SF Mono', Menlo, monospace; font-size: 12px; color: #c4b5fd; }
+  td.expect { font-size: 12px; color: var(--muted); }
+  td.actions { width: 160px; }
+  .tag { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 10px; font-weight: 600; margin-right: 4px; }
+  .tag-doc { background: #1e3a5f; color: #93c5fd; }
+  .tag-state { background: #1a2e1a; color: #86efac; }
+  .tag-llm { background: #2e1a3a; color: #d8b4fe; }
+  .tag-edge { background: #3a2200; color: #fbbf24; }
+
+  .btn-group { display: flex; gap: 4px; }
+  .btn-status { padding: 4px 10px; border: 1px solid var(--border); border-radius: 5px; cursor: pointer; font-size: 11px; font-weight: 600; background: var(--surface2); color: var(--muted); transition: all .1s; }
+  .btn-ok { border-color: var(--ok); color: var(--ok); }
+  .btn-ok.active, .btn-ok:hover { background: var(--ok); color: #fff; }
+  .btn-fail { border-color: var(--fail); color: var(--fail); }
+  .btn-fail.active, .btn-fail:hover { background: var(--fail); color: #fff; }
+  .btn-skip { border-color: #555; color: #777; }
+  .btn-skip.active, .btn-skip:hover { background: #555; color: #fff; }
+
+  .note-input { margin-top: 4px; width: 100%; padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text); font-size: 11px; resize: none; height: 32px; display: none; }
+  .note-input:focus { outline: none; border-color: var(--accent); height: 60px; }
+  tr.status-fail .note-input { display: block; }
+
+  .hidden { display: none !important; }
+
+  .session-bar { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .session-bar label { font-size: 12px; color: var(--muted); }
+  .session-bar input { background: var(--surface); border: 1px solid var(--border); border-radius: 5px; color: var(--text); padding: 4px 10px; font-size: 12px; }
+  .session-bar input:focus { outline: none; border-color: var(--accent); }
+
+  @media print {
+    header { position: static; }
+    .controls, .btn-group, .note-input { display: none !important; }
+    body { background: #fff; color: #000; }
+    table { border: 1px solid #ddd; }
+    tr.status-ok { background: #dcfce7; }
+    tr.status-fail { background: #fee2e2; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div style="flex:1">
+    <h1>🤖 Lumiz — Plano de Testes Completo</h1>
+    <div class="progress-bar" style="margin-top:6px"><div class="progress-fill" id="prog-fill" style="width:0%"></div></div>
+  </div>
+  <div class="stats">
+    <div class="stat"><div class="stat-num" id="cnt-ok" style="color:var(--ok)">0</div><div class="stat-label">✅ OK</div></div>
+    <div class="stat"><div class="stat-num" id="cnt-fail" style="color:var(--fail)">0</div><div class="stat-label">❌ Falhou</div></div>
+    <div class="stat"><div class="stat-num" id="cnt-skip" style="color:var(--muted)">0</div><div class="stat-label">⏭ Pulou</div></div>
+    <div class="stat"><div class="stat-num" id="cnt-pend" style="color:#a78bfa">0</div><div class="stat-label">⏳ Pendente</div></div>
+  </div>
+</header>
+
+<div class="controls">
+  <input type="search" id="search" placeholder="🔍 Buscar cenário…" oninput="applyFilters()">
+  <button class="btn active" onclick="filterSection('all',this)">Todos</button>
+  <button class="btn" onclick="filterSection('onboarding',this)">Onboarding</button>
+  <button class="btn" onclick="filterSection('transacao',this)">Transações</button>
+  <button class="btn" onclick="filterSection('documento',this)">Documentos</button>
+  <button class="btn" onclick="filterSection('consulta',this)">Consultas</button>
+  <button class="btn" onclick="filterSection('agente',this)">Agente</button>
+  <button class="btn" onclick="filterSection('edge',this)">Edge cases</button>
+  <button class="btn" onclick="filterSection('api',this)">API / Admin</button>
+  <button class="btn btn-reset" onclick="resetAll()">🗑 Resetar tudo</button>
+  <button class="btn" onclick="exportResults()" style="margin-left:4px">📋 Copiar resultados</button>
+</div>
+
+<main>
+  <div class="session-bar">
+    <label>Sessão de teste:</label>
+    <input type="text" id="sess-date" placeholder="Data (ex: 2026-05-16)">
+    <input type="text" id="sess-build" placeholder="Build / commit">
+    <input type="text" id="sess-tester" placeholder="Testador">
+    <input type="text" id="sess-phone" placeholder="Telefone de teste">
+  </div>
+
+  <!-- ═══════════════════════════════════════════ ONBOARDING ═══════════════ -->
+  <div class="section" data-section="onboarding">
+    <div class="section-header">
+      <span class="section-icon">🚀</span>
+      <span class="section-title">1. Onboarding (fluxo completo)</span>
+      <span class="section-progress" id="sp-onboarding"></span>
+    </div>
+    <table>
+      <thead><tr><th>#</th><th>O que mandar / fazer</th><th>Resultado esperado</th><th>Tags</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr data-section="onboarding" data-id="ob1">
+          <td class="num">OB1</td>
+          <td class="msg">Número novo nunca registrado envia qualquer mensagem<br><small>Ex: "Oi"</small></td>
+          <td class="expect">Bot apresenta a Lumiz e pede consentimento LGPD. Não exibe menu numerado.</td>
+          <td><span class="tag tag-state">state</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="onboarding" data-id="ob2">
+          <td class="num">OB2</td>
+          <td class="msg">Responde consentimento com texto livre<br><small>"sim pode", "aceito", "topa"</small></td>
+          <td class="expect">Reconhece como "sim" e avança para PROFILE_NAME. Não pede para "responder 1 ou 2".</td>
+          <td><span class="tag tag-state">state</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="onboarding" data-id="ob3">
+          <td class="num">OB3</td>
+          <td class="msg">Informa nome completo<br><small>"Maria Clara"</small></td>
+          <td class="expect">Salva o nome e pergunta o nome da clínica.</td>
+          <td></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="onboarding" data-id="ob4">
+          <td class="num">OB4</td>
+          <td class="msg">Informa nome da clínica<br><small>"Studio Glam"</small></td>
+          <td class="expect">Pergunta a função (dona, recepção, etc.) sem usar menu numerado.</td>
+          <td></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="onboarding" data-id="ob5">
+          <td class="num">OB5</td>
+          <td class="msg">Informa função com texto livre<br><small>"sou a dono", "proprietária", "sócia"</small></td>
+          <td class="expect">Reconhece como dona/gestora e avança. Não pede reescolha.</td>
+          <td></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="onboarding" data-id="ob6">
+          <td class="num">OB6</td>
+          <td class="msg">Responde contexto "por quê" com texto livre<br><small>"quero organizar as finanças"</small></td>
+          <td class="expect">Aceita qualquer resposta e avança para AHA_REVENUE.</td>
+          <td></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="onboarding" data-id="ob7">
+          <td class="num">OB7</td>
+          <td class="msg">Registra primeira venda<br><small>"Giovanna pagou 1000 reais full face"</small></td>
+          <td class="expect">Resume: Procedimento, Cliente, Valor, Pagamento, Data. Pergunta "Tá certo?"</td>
+          <td><span class="tag tag-llm">LLM</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="onboarding" data-id="ob8">
+          <td class="num">OB8</td>
+          <td class="msg">Corrige forma de pagamento inline<br><small>"foi no Pix"</small></td>
+          <td class="expect">Atualiza para PIX e reexibe o resumo atualizado. Não entra em loop.</td>
+          <td><span class="tag tag-state">state</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="onboarding" data-id="ob9">
+          <td class="num">OB9</td>
+          <td class="msg">Confirma venda com texto livre<br><small>"ta certo", "ta certo assim", "perfeito"</small></td>
+          <td class="expect">Avança para AHA_COSTS. Não repete "Tá certo assim ou quer ajustar?"</td>
+          <td><span class="tag tag-state">state</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="onboarding" data-id="ob10">
+          <td class="num">OB10</td>
+          <td class="msg">Envia PDF de custo (NF ou boleto) no onboarding</td>
+          <td class="expect">OCR extrai dados, mostra resumo do custo. Não dá TypeError. Não exige reenvio.</td>
+          <td><span class="tag tag-doc">doc</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="onboarding" data-id="ob11">
+          <td class="num">OB11</td>
+          <td class="msg">Confirma custo com texto livre<br><small>"sim", "certo", "pode"</small></td>
+          <td class="expect">Avança para próximo custo ou para BALANCE_QUESTION.</td>
+          <td><span class="tag tag-state">state</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="onboarding" data-id="ob12">
+          <td class="num">OB12</td>
+          <td class="msg">Pergunta de saldo inicial — responde valor<br><small>"tenho 15000 na conta"</small></td>
+          <td class="expect">Registra saldo e avança para MDR_SETUP.</td>
+          <td></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="onboarding" data-id="ob13">
+          <td class="num">OB13</td>
+          <td class="msg">Pula configuração de maquininha<br><small>"pular", "não tenho maquininha", "agora não"</small></td>
+          <td class="expect">Finaliza onboarding e libera bot normal. Usuário marcado como onboarded.</td>
+          <td></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="onboarding" data-id="ob14">
+          <td class="num">OB14</td>
+          <td class="msg">Onboarding completo — primeira mensagem pós-onboarding<br><small>"oi"</small></td>
+          <td class="expect">Bot responde como agente financeiro, NÃO como onboarding. Sem menus numerados.</td>
+          <td><span class="tag tag-state">state</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ TRANSAÇÕES ═══════════════ -->
+  <div class="section" data-section="transacao">
+    <div class="section-header">
+      <span class="section-icon">💰</span>
+      <span class="section-title">2. Registro de Transações</span>
+      <span class="section-progress" id="sp-transacao"></span>
+    </div>
+    <table>
+      <thead><tr><th>#</th><th>O que mandar / fazer</th><th>Resultado esperado</th><th>Tags</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr data-section="transacao" data-id="tx1">
+          <td class="num">TX1</td>
+          <td class="msg">"Botox R$ 2800"</td>
+          <td class="expect">Registra entrada. Confirma com valor, categoria e data. Nenhum campo "undefined".</td>
+          <td></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="transacao" data-id="tx2">
+          <td class="num">TX2</td>
+          <td class="msg">"Maria Clara botox 2.5k pix"</td>
+          <td class="expect">Registra R$ 2.500 (2k = 2000), PIX, cliente Maria Clara. Confirma valores corretos.</td>
+          <td><span class="tag tag-llm">LLM</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="transacao" data-id="tx3">
+          <td class="num">TX3</td>
+          <td class="msg">"Preenchimento 4500 crédito 3x"</td>
+          <td class="expect">Registra R$ 4.500, crédito parcelado 3x. Mostra data de recebimento futura (D+30/60/90).</td>
+          <td><span class="tag tag-llm">LLM</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="transacao" data-id="tx4">
+          <td class="num">TX4</td>
+          <td class="msg">"metade pix metade crédito 8000"</td>
+          <td class="expect">Detecta pagamento misto. Resume split R$4k PIX + R$4k crédito. Pergunta confirmação.</td>
+          <td><span class="tag tag-llm">LLM</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="transacao" data-id="tx5">
+          <td class="num">TX5</td>
+          <td class="msg">"custo seringa 150 reais"</td>
+          <td class="expect">Registra saída R$ 150, categoria insumos (ou similar). Confirma como custo.</td>
+          <td></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="transacao" data-id="tx6">
+          <td class="num">TX6</td>
+          <td class="msg">"aluguel 5000 ontem"</td>
+          <td class="expect">Registra saída R$ 5.000, data de ontem (não hoje). Categoria aluguel.</td>
+          <td><span class="tag tag-llm">LLM</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="transacao" data-id="tx7">
+          <td class="num">TX7</td>
+          <td class="msg">"comprei insumos 18200 boleto 30/60/90/120"</td>
+          <td class="expect">4 parcelas de R$ 4.550 com datas de vencimento corretas. Registrado como conta a pagar.</td>
+          <td><span class="tag tag-llm">LLM</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="transacao" data-id="tx8">
+          <td class="num">TX8</td>
+          <td class="msg">"pró-labore 8000"</td>
+          <td class="expect">Registra como saída categoria Pró-labore. Não confunde com venda.</td>
+          <td></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="transacao" data-id="tx9">
+          <td class="num">TX9</td>
+          <td class="msg">Confirma transação com "sim" → depois tenta desfazer<br><small>"desfazer" / "apagar último"</small></td>
+          <td class="expect">Desfaz a última transação e confirma remoção.</td>
+          <td><span class="tag tag-state">state</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="transacao" data-id="tx10">
+          <td class="num">TX10</td>
+          <td class="msg">"editar última" → valor novo<br><small>"mudar para 3500"</small></td>
+          <td class="expect">Edita a última transação e confirma o novo valor.</td>
+          <td><span class="tag tag-state">state</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ DOCUMENTOS ═══════════════ -->
+  <div class="section" data-section="documento">
+    <div class="section-header">
+      <span class="section-icon">📄</span>
+      <span class="section-title">3. Documentos (NF / Boleto / Comprovante)</span>
+      <span class="section-progress" id="sp-documento"></span>
+    </div>
+    <table>
+      <thead><tr><th>#</th><th>O que mandar / fazer</th><th>Resultado esperado</th><th>Tags</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr data-section="documento" data-id="dc1">
+          <td class="num">DC1</td>
+          <td class="msg">Envia PDF de nota fiscal pós-onboarding</td>
+          <td class="expect">OCR extrai: fornecedor, CNPJ, valor total, vencimentos. Exibe resumo. Sem TypeError de .toLowerCase.</td>
+          <td><span class="tag tag-doc">doc</span><span class="tag tag-llm">LLM</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="documento" data-id="dc2">
+          <td class="num">DC2</td>
+          <td class="msg">Responde "sim" para salvar NF como conta a pagar</td>
+          <td class="expect">Salva conta(s) a pagar. Confirma com valor total e fornecedor. Exibe "contas a pagar" como sugestão.</td>
+          <td><span class="tag tag-state">state</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="documento" data-id="dc3">
+          <td class="num">DC3</td>
+          <td class="msg">NF com múltiplos vencimentos (ex: 3 parcelas)</td>
+          <td class="expect">Exibe 3 parcelas com datas e valores individuais. Registra 3 contas a pagar no banco.</td>
+          <td><span class="tag tag-doc">doc</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="documento" data-id="dc4">
+          <td class="num">DC4</td>
+          <td class="msg">Responde "não" para cancelar NF</td>
+          <td class="expect">Descarta o documento. Resposta: "Documento descartado." Sem estado travado.</td>
+          <td><span class="tag tag-state">state</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="documento" data-id="dc5">
+          <td class="num">DC5</td>
+          <td class="msg">Envia o mesmo PDF novamente (reenvio)</td>
+          <td class="expect">Processa novamente sem erro. Não duplica se ainda há confirmação pendente.</td>
+          <td><span class="tag tag-edge">edge</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="documento" data-id="dc6">
+          <td class="num">DC6</td>
+          <td class="msg">Envia imagem de boleto (não PDF)</td>
+          <td class="expect">OCR via Gemini Vision. Extrai código, valor, vencimento. Sem erro.</td>
+          <td><span class="tag tag-doc">doc</span><span class="tag tag-llm">LLM</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="documento" data-id="dc7">
+          <td class="num">DC7</td>
+          <td class="msg">Cola código de barras longo<br><small>(44–48 dígitos)</small></td>
+          <td class="expect">Detectado como código de boleto. Extrai valor e vencimento via parsing. Não tenta classificar como mensagem.</td>
+          <td><span class="tag tag-edge">edge</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="documento" data-id="dc8">
+          <td class="num">DC8</td>
+          <td class="msg">NF com itens (produtos no corpo da nota)</td>
+          <td class="expect">Mensagem menciona que vai tentar atualizar estoque. Itens aparecem na confirmação.</td>
+          <td><span class="tag tag-doc">doc</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ CONSULTAS ═══════════════ -->
+  <div class="section" data-section="consulta">
+    <div class="section-header">
+      <span class="section-icon">📊</span>
+      <span class="section-title">4. Consultas e Relatórios</span>
+      <span class="section-progress" id="sp-consulta"></span>
+    </div>
+    <table>
+      <thead><tr><th>#</th><th>O que mandar / fazer</th><th>Resultado esperado</th><th>Tags</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr data-section="consulta" data-id="co1">
+          <td class="num">CO1</td>
+          <td class="msg">"quanto tenho de saldo"</td>
+          <td class="expect">Exibe entradas, saídas, lucro e margem % do mês. Sem valores "null" ou "undefined".</td>
+          <td></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="consulta" data-id="co2">
+          <td class="num">CO2</td>
+          <td class="msg">"últimas movimentações" / "histórico"</td>
+          <td class="expect">Lista as últimas 5 transações com emoji, valor, categoria e data.</td>
+          <td></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="consulta" data-id="co3">
+          <td class="num">CO3</td>
+          <td class="msg">"relatório" / "relatório do mês"</td>
+          <td class="expect">Relatório mensal com faturamento, custos, lucro, margem e top categorias. Menciona opção de PDF.</td>
+          <td></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="consulta" data-id="co4">
+          <td class="num">CO4</td>
+          <td class="msg">"relatório de março"</td>
+          <td class="expect">Relatório do mês correto (março). Não usa o mês atual.</td>
+          <td></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="consulta" data-id="co5">
+          <td class="num">CO5</td>
+          <td class="msg">"comparar com mês passado"</td>
+          <td class="expect">Comparativo mês atual vs anterior com variação % de faturamento, custos e lucro.</td>
+          <td></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="consulta" data-id="co6">
+          <td class="num">CO6</td>
+          <td class="msg">"contas a pagar" / "o que tenho pra pagar"</td>
+          <td class="expect">Lista contas a pagar dos próximos 60 dias. NÃO tenta registrar nova saída.</td>
+          <td><span class="tag tag-edge">edge</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="consulta" data-id="co7">
+          <td class="num">CO7</td>
+          <td class="msg">"vendas de hoje"</td>
+          <td class="expect">Estatísticas do dia atual: entradas, saídas, lucro do dia.</td>
+          <td></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="consulta" data-id="co8">
+          <td class="num">CO8</td>
+          <td class="msg">"top procedimentos" / "ranking"</td>
+          <td class="expect">Top 5 procedimentos do mês por receita.</td>
+          <td></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="consulta" data-id="co9">
+          <td class="msg">"minha meta é 10k"</td>
+          <td class="num">CO9</td>
+          <td class="expect">Define meta de R$ 10.000 direto, SEM perguntar "faturamento ou lucro?". Confirma: "✅ Meta de R$ 10.000 definida!"</td>
+          <td><span class="tag tag-edge">edge</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="consulta" data-id="co10">
+          <td class="num">CO10</td>
+          <td class="msg">"meta" / "meu progresso"</td>
+          <td class="expect">Mostra barra de progresso visual, valor atual vs meta, quanto falta.</td>
+          <td></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="consulta" data-id="co11">
+          <td class="num">CO11</td>
+          <td class="msg">"buscar Botox de ontem"</td>
+          <td class="expect">Retorna transações de ontem com categoria Botox (ou similar). Sem crash.</td>
+          <td></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="consulta" data-id="co12">
+          <td class="num">CO12</td>
+          <td class="msg">"estoque" / "ver estoque"</td>
+          <td class="expect">Lista itens em estoque com quantidade. Se vazio, mensagem de empty state útil.</td>
+          <td></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="consulta" data-id="co13">
+          <td class="num">CO13</td>
+          <td class="msg">"insights" / "dicas"</td>
+          <td class="expect">Gera insights financeiros baseados no histórico. Sem inventar números.</td>
+          <td><span class="tag tag-llm">LLM</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="consulta" data-id="co14">
+          <td class="num">CO14</td>
+          <td class="msg">"ajuda" / "como usar"</td>
+          <td class="expect">Exibe menu de comandos disponíveis. Sem menus numerados. Inclui PDF/Excel/contas.</td>
+          <td></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ EXPORT ═══════════════ -->
+  <div class="section" data-section="consulta">
+    <div class="section-header">
+      <span class="section-icon">📤</span>
+      <span class="section-title">5. Exportação</span>
+      <span class="section-progress" id="sp-export"></span>
+    </div>
+    <table>
+      <thead><tr><th>#</th><th>O que mandar / fazer</th><th>Resultado esperado</th><th>Tags</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr data-section="consulta" data-id="ex1">
+          <td class="num">EX1</td>
+          <td class="msg">"me manda o pdf" / "relatório em pdf"</td>
+          <td class="expect">Bot envia arquivo PDF no WhatsApp com relatório mensal. Não diz "não consigo enviar PDF".</td>
+          <td><span class="tag tag-doc">doc</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="consulta" data-id="ex2">
+          <td class="num">EX2</td>
+          <td class="msg">"exportar excel" / "planilha do mês"</td>
+          <td class="expect">Bot envia arquivo .xlsx com transações do mês.</td>
+          <td><span class="tag tag-doc">doc</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="consulta" data-id="ex3">
+          <td class="num">EX3</td>
+          <td class="msg">"exportar OFX"</td>
+          <td class="expect">Bot envia arquivo .ofx compatível com software contábil.</td>
+          <td><span class="tag tag-doc">doc</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ AGENTE ═══════════════ -->
+  <div class="section" data-section="agente">
+    <div class="section-header">
+      <span class="section-icon">🤖</span>
+      <span class="section-title">6. Agente Conversacional (LLM + tools)</span>
+      <span class="section-progress" id="sp-agente"></span>
+    </div>
+    <table>
+      <thead><tr><th>#</th><th>O que mandar / fazer</th><th>Resultado esperado</th><th>Tags</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr data-section="agente" data-id="ag1">
+          <td class="num">AG1</td>
+          <td class="msg">Mensagem ambígua longa<br><small>"tenho um procedimento novo que fiz semana passada mas não sei se botei aqui"</small></td>
+          <td class="expect">Agente pede mais informações de forma natural. Não trava. Não retorna erro.</td>
+          <td><span class="tag tag-llm">LLM</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="agente" data-id="ag2">
+          <td class="num">AG2</td>
+          <td class="msg">Pergunta complexa multi-parte<br><small>"qual meu procedimento mais lucrativo e quando foi a última venda dele?"</small></td>
+          <td class="expect">Agente usa tools e retorna resposta completa. Sem inventar dados.</td>
+          <td><span class="tag tag-llm">LLM</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="agente" data-id="ag3">
+          <td class="num">AG3</td>
+          <td class="msg">Ação que exige confirmação de tool<br><small>(agente propõe registrar algo)</small></td>
+          <td class="expect">Bot pede confirmação "sim/não". "sim" executa. "não" cancela. Estado limpo após ambos.</td>
+          <td><span class="tag tag-state">state</span><span class="tag tag-llm">LLM</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="agente" data-id="ag4">
+          <td class="num">AG4</td>
+          <td class="msg">Tom descontraído / brincalhão<br><small>"miau", "ruf ruf", "oi sumida"</small></td>
+          <td class="expect">Bot entra na brincadeira antes de ajudar. Espelha o tom. Não responde como robô.</td>
+          <td><span class="tag tag-llm">LLM</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="agente" data-id="ag5">
+          <td class="num">AG5</td>
+          <td class="msg">Gemini timeout (simular queda)<br><small>Desligar GEMINI_API_KEY por 1 req</small></td>
+          <td class="expect">Fallback amigável. Não quebra o webhook. Não envia mensagem de erro técnico ao usuário.</td>
+          <td><span class="tag tag-edge">edge</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="agente" data-id="ag6">
+          <td class="num">AG6</td>
+          <td class="msg">Com confirmação agentic pendente, envia NF/PDF</td>
+          <td class="expect">Documento processado normalmente (prioridade documentHandler). Confirmação agentic permanece pendente.</td>
+          <td><span class="tag tag-state">state</span><span class="tag tag-edge">edge</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ EDGE CASES ════════════ -->
+  <div class="section" data-section="edge">
+    <div class="section-header">
+      <span class="section-icon">⚠️</span>
+      <span class="section-title">7. Edge Cases e Resiliência</span>
+      <span class="section-progress" id="sp-edge"></span>
+    </div>
+    <table>
+      <thead><tr><th>#</th><th>O que mandar / fazer</th><th>Resultado esperado</th><th>Tags</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr data-section="edge" data-id="ec1">
+          <td class="num">EC1</td>
+          <td class="msg">Só um número<br><small>"2800"</small></td>
+          <td class="expect">Pergunta se é entrada ou saída e de qual procedimento. Não registra nada ainda.</td>
+          <td><span class="tag tag-edge">edge</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="edge" data-id="ec2">
+          <td class="num">EC2</td>
+          <td class="msg">Só o nome do procedimento<br><small>"Botox"</small></td>
+          <td class="expect">Pergunta o valor. Não registra com valor zero.</td>
+          <td><span class="tag tag-edge">edge</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="edge" data-id="ec3">
+          <td class="num">EC3</td>
+          <td class="msg">Mensagem vazia ou só emoji<br><small>"🔥"</small></td>
+          <td class="expect">Resposta amigável. Não quebra. Não tenta classificar como transação.</td>
+          <td><span class="tag tag-edge">edge</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="edge" data-id="ec4">
+          <td class="num">EC4</td>
+          <td class="msg">Valor com vírgula brasileira<br><small>"1.500,50"</small></td>
+          <td class="expect">Parseado como R$ 1.500,50 (não R$ 150.050). Confirmação mostra valor correto.</td>
+          <td><span class="tag tag-edge">edge</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="edge" data-id="ec5">
+          <td class="num">EC5</td>
+          <td class="msg">Valor com abreviação "k"<br><small>"25k"</small></td>
+          <td class="expect">Parseado como R$ 25.000 (não R$ 25). Regra Nk = N × 1000.</td>
+          <td><span class="tag tag-edge">edge</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="edge" data-id="ec6">
+          <td class="num">EC6</td>
+          <td class="msg">Mensagem duplicada (usuário manda 2x rápido)</td>
+          <td class="expect">Bot não registra duplicado. Idempotência ou segunda mensagem tratada como nova intenção.</td>
+          <td><span class="tag tag-edge">edge</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="edge" data-id="ec7">
+          <td class="num">EC7</td>
+          <td class="msg">Mensagem de áudio enviada</td>
+          <td class="expect">Bot transcreve via Whisper e processa a intenção normalmente.</td>
+          <td><span class="tag tag-llm">LLM</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="edge" data-id="ec8">
+          <td class="num">EC8</td>
+          <td class="msg">Estado awaiting pendente e user manda nova transação completa<br><small>(pending de "Botox", manda "Aluguel 3000")</small></td>
+          <td class="expect">Descarta pending anterior e processa novo comando. Não mistura dados.</td>
+          <td><span class="tag tag-edge">edge</span><span class="tag tag-state">state</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="edge" data-id="ec9">
+          <td class="num">EC9</td>
+          <td class="msg">Restart do servidor Railway mid-conversation</td>
+          <td class="expect">Estado de conversa recuperado do Supabase (conversationRuntimeStateService). Bot não perde contexto pendente.</td>
+          <td><span class="tag tag-state">state</span><span class="tag tag-edge">edge</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ API / ADMIN ══════════ -->
+  <div class="section" data-section="api">
+    <div class="section-header">
+      <span class="section-icon">🔧</span>
+      <span class="section-title">8. API / Admin / Infraestrutura</span>
+      <span class="section-progress" id="sp-api"></span>
+    </div>
+    <table>
+      <thead><tr><th>#</th><th>Endpoint / Verificação</th><th>Resultado esperado</th><th>Tags</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr data-section="api" data-id="ap1">
+          <td class="num">AP1</td>
+          <td class="msg">GET /health</td>
+          <td class="expect">200 OK. JSON com status "ok". Redis e Supabase conectados.</td>
+          <td></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="api" data-id="ap2">
+          <td class="num">AP2</td>
+          <td class="msg">GET /api/admin/agentic-analytics?days=1</td>
+          <td class="expect">200 OK. Retorna contagens de eventos agentic/deterministic.</td>
+          <td></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="api" data-id="ap3">
+          <td class="num">AP3</td>
+          <td class="msg">GET /api/admin/trial-accounts?limit=10</td>
+          <td class="expect">200 OK. Lista contas trial.</td>
+          <td></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="api" data-id="ap4">
+          <td class="num">AP4</td>
+          <td class="msg">GET /api/cron/reminders (com header x-cron-secret)</td>
+          <td class="expect">200 OK. Sem erro de autenticação. Envia lembretes (ou skip se nenhum usuário elegível).</td>
+          <td></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="api" data-id="ap5">
+          <td class="num">AP5</td>
+          <td class="msg">Evolution API — webhook recebe mensagem e processa</td>
+          <td class="expect">Logs mostram processamento normal. Sem "Bad MAC" ou "unexpected error in 'init queries'".</td>
+          <td><span class="tag tag-edge">edge</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="api" data-id="ap6">
+          <td class="num">AP6</td>
+          <td class="msg">npm run test:regression</td>
+          <td class="expect">Todos os testes passam em menos de 5s. Nenhum novo failure.</td>
+          <td></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="api" data-id="ap7">
+          <td class="num">AP7</td>
+          <td class="msg">GET /api/config/features (usuário autenticado)</td>
+          <td class="expect">Retorna feature flags ativas para o usuário. Inclui agentic flags.</td>
+          <td></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+        <tr data-section="api" data-id="ap8">
+          <td class="num">AP8</td>
+          <td class="msg">Asaas webhook de pagamento (teste)</td>
+          <td class="expect">subscriptions.status → paid. trial_accounts.status → converted. Sem duplicação.</td>
+          <td><span class="tag tag-state">state</span></td>
+          <td class="actions"><div class="btn-group"><button class="btn-status btn-ok" onclick="setStatus(this,'ok')">✅</button><button class="btn-status btn-fail" onclick="setStatus(this,'fail')">❌</button><button class="btn-status btn-skip" onclick="setStatus(this,'skip')">⏭</button></div><textarea class="note-input" placeholder="Descreva o bug…"></textarea></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+</main>
+
+<script>
+const STATE_KEY = 'lumiz_test_state_v1';
+
+function save() {
+  const state = {};
+  document.querySelectorAll('tr[data-id]').forEach(tr => {
+    const id = tr.dataset.id;
+    const status = tr.dataset.status || '';
+    const note = tr.querySelector('.note-input')?.value || '';
+    state[id] = { status, note };
+  });
+  const session = {
+    date: document.getElementById('sess-date').value,
+    build: document.getElementById('sess-build').value,
+    tester: document.getElementById('sess-tester').value,
+    phone: document.getElementById('sess-phone').value
+  };
+  localStorage.setItem(STATE_KEY, JSON.stringify({ tests: state, session }));
+  updateStats();
+}
+
+function load() {
+  try {
+    const raw = localStorage.getItem(STATE_KEY);
+    if (!raw) return;
+    const { tests, session } = JSON.parse(raw);
+    if (session) {
+      document.getElementById('sess-date').value = session.date || '';
+      document.getElementById('sess-build').value = session.build || '';
+      document.getElementById('sess-tester').value = session.tester || '';
+      document.getElementById('sess-phone').value = session.phone || '';
+    }
+    Object.entries(tests || {}).forEach(([id, { status, note }]) => {
+      const tr = document.querySelector(`tr[data-id="${id}"]`);
+      if (!tr) return;
+      if (status) applyStatus(tr, status);
+      if (note) { const ni = tr.querySelector('.note-input'); if (ni) ni.value = note; }
+    });
+  } catch(e) {}
+  updateStats();
+}
+
+function setStatus(btn, status) {
+  const tr = btn.closest('tr');
+  applyStatus(tr, status);
+  save();
+}
+
+function applyStatus(tr, status) {
+  tr.dataset.status = status;
+  tr.className = status ? `status-${status}` : '';
+  tr.querySelectorAll('.btn-status').forEach(b => b.classList.remove('active'));
+  const active = tr.querySelector(`.btn-${status}`);
+  if (active) active.classList.add('active');
+  const note = tr.querySelector('.note-input');
+  if (note) note.style.display = status === 'fail' ? 'block' : 'none';
+}
+
+function updateStats() {
+  const rows = document.querySelectorAll('tr[data-id]');
+  let ok=0, fail=0, skip=0, pend=0;
+  rows.forEach(tr => {
+    const s = tr.dataset.status;
+    if (s === 'ok') ok++;
+    else if (s === 'fail') fail++;
+    else if (s === 'skip') skip++;
+    else pend++;
+  });
+  const total = rows.length;
+  document.getElementById('cnt-ok').textContent = ok;
+  document.getElementById('cnt-fail').textContent = fail;
+  document.getElementById('cnt-skip').textContent = skip;
+  document.getElementById('cnt-pend').textContent = pend;
+  const done = ok + fail + skip;
+  document.getElementById('prog-fill').style.width = total ? `${(done/total*100).toFixed(1)}%` : '0%';
+
+  // Section progress
+  document.querySelectorAll('.section[data-section]').forEach(sec => {
+    const sName = sec.dataset.section;
+    const sRows = sec.querySelectorAll('tr[data-id]');
+    let sOk=0, sFail=0, sSkip=0;
+    sRows.forEach(r => {
+      if (r.dataset.status==='ok') sOk++;
+      else if (r.dataset.status==='fail') sFail++;
+      else if (r.dataset.status==='skip') sSkip++;
+    });
+    const sp = sec.querySelector('[id^="sp-"]');
+    if (sp) sp.textContent = `${sOk+sFail+sSkip}/${sRows.length} feitos · ${sFail} falhas`;
+  });
+}
+
+let activeSection = 'all';
+function filterSection(section, btn) {
+  activeSection = section;
+  document.querySelectorAll('.controls .btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  applyFilters();
+}
+
+function applyFilters() {
+  const q = document.getElementById('search').value.toLowerCase();
+  document.querySelectorAll('tr[data-id]').forEach(tr => {
+    const matchSection = activeSection === 'all' || tr.dataset.section === activeSection;
+    const matchSearch = !q || tr.textContent.toLowerCase().includes(q);
+    tr.classList.toggle('hidden', !(matchSection && matchSearch));
+  });
+  document.querySelectorAll('.section').forEach(sec => {
+    const visible = sec.querySelectorAll('tr[data-id]:not(.hidden)').length;
+    sec.classList.toggle('hidden', visible === 0);
+  });
+}
+
+function resetAll() {
+  if (!confirm('Resetar TODOS os resultados? Isso apaga tudo.')) return;
+  document.querySelectorAll('tr[data-id]').forEach(tr => {
+    tr.dataset.status = '';
+    tr.className = '';
+    tr.querySelectorAll('.btn-status').forEach(b => b.classList.remove('active'));
+    const ni = tr.querySelector('.note-input');
+    if (ni) { ni.value = ''; ni.style.display = 'none'; }
+  });
+  localStorage.removeItem(STATE_KEY);
+  updateStats();
+}
+
+function exportResults() {
+  const lines = ['# Lumiz — Resultados de Teste', ''];
+  const sess = {
+    date: document.getElementById('sess-date').value,
+    build: document.getElementById('sess-build').value,
+    tester: document.getElementById('sess-tester').value
+  };
+  lines.push(`Data: ${sess.date || '—'} | Build: ${sess.build || '—'} | Testador: ${sess.tester || '—'}`, '');
+  document.querySelectorAll('tr[data-id]').forEach(tr => {
+    if (tr.classList.contains('hidden')) return;
+    const id = tr.dataset.id?.toUpperCase();
+    const status = tr.dataset.status || 'pendente';
+    const icon = status==='ok'?'✅':status==='fail'?'❌':status==='skip'?'⏭':'⏳';
+    const msg = tr.querySelector('.msg')?.innerText?.split('\n')[0] || '';
+    const note = tr.querySelector('.note-input')?.value || '';
+    lines.push(`${icon} ${id} — ${msg}${note ? `\n   Bug: ${note}` : ''}`);
+  });
+  navigator.clipboard.writeText(lines.join('\n'))
+    .then(() => alert('Resultados copiados para o clipboard!'))
+    .catch(() => alert(lines.join('\n')));
+}
+
+// Auto-save on changes
+document.addEventListener('change', save);
+document.addEventListener('input', e => { if (e.target.classList.contains('note-input')) save(); });
+
+load();
+</script>
+</body>
+</html>
