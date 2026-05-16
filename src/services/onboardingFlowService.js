@@ -1932,9 +1932,14 @@ class OnboardingFlowService {
             return null;
         }
 
-        // Correção #11: Normalizar texto uma vez no início
         const messageTrimmed = message?.trim() || '';
         const messageLower = messageTrimmed.toLowerCase();
+
+        // Log estruturado de cada passo do onboarding — facilita debugging de loops e desvios
+        console.log(
+          `[ONBOARDING] phone=${normalizedPhone.slice(-4)} step=${onboarding.step}` +
+          ` text="${messageTrimmed.substring(0, 60).replace(/\n/g, ' ')}"`
+        );
 
         // Correção #4: Debounce persistência
         const persistState = async (immediate = false) => {

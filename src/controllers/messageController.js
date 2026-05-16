@@ -286,14 +286,14 @@ class MessageController {
   async handleIncomingMessage(phone, message) {
     try {
       const normalizedPhone = normalizePhone(phone) || phone;
-      console.log(`[MESSAGE] v2 - Recebida mensagem de ${normalizedPhone}: ${message?.substring(0, 30)}`);
+      console.log(`[MESSAGE] recv phone=...${normalizedPhone.slice(-4)} len=${message?.length ?? 0}`);
 
       // IMPORTANTE: Primeiro verifica se é membro de clínica (clinic_members)
       // Isso tem prioridade sobre o estado de onboarding para evitar que membros
       // cadastrados fiquem presos em onboarding antigo
       const clinicMemberService = require('../services/clinicMemberService');
       const existingMember = await clinicMemberService.findMemberByPhone(normalizedPhone);
-      console.log(`[MESSAGE] existingMember encontrado:`, existingMember ? `${existingMember.nome} (clinic_id: ${existingMember.clinic_id})` : 'NAO');
+      console.log(`[MESSAGE] member_lookup phone=...${normalizedPhone.slice(-4)} found=${!!existingMember}`);
 
       // Verifica assinatura ativa antes de processar qualquer mensagem
       if (existingMember && existingMember.clinic_id) {
@@ -322,7 +322,7 @@ class MessageController {
 
         // Se está em onboarding ATIVO (não em step final), continua o onboarding
         if (isOnboarding && !isInFinalStep) {
-          console.log(`[MESSAGE] Membro ${normalizedPhone} está em onboarding ativo (step: ${onboardingStep}), continuando fluxo`);
+          console.log(`[MESSAGE] Membro ...${normalizedPhone.slice(-4)} em onboarding ativo (step: ${onboardingStep}), continuando fluxo`);
           const result = await onboardingFlowService.processOnboarding(normalizedPhone, message);
           if (result === null) {
             // Onboarding foi finalizado, continua para processamento normal
@@ -331,7 +331,7 @@ class MessageController {
           }
         } else if (isOnboarding && isInFinalStep) {
           // Está em step final - pode limpar se quiser sair do onboarding
-          console.log(`[MESSAGE] Membro ${normalizedPhone} em step final de onboarding (${onboardingStep}), processando normalmente`);
+          console.log(`[MESSAGE] Membro ...${normalizedPhone.slice(-4)} em step final de onboarding (${onboardingStep}), processando normalmente`);
         }
         // Continua para processamento normal como membro da clínica
       } else {
@@ -638,9 +638,20 @@ class MessageController {
         usedHeuristic = true;
       }
 
-      // Log para métricas (opcional, pode remover em produção)
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`[MESSAGE] Intent detectado: ${intent.intencao}, source: ${usedHeuristic ? 'heuristic' : 'gemini'}, confidence: ${intent.confidence || 'N/A'}`);
+      // Log estruturado de cada mensagem recebida — visível em Railway e Sentry
+      const intentSource = usedHeuristic ? 'heuristic' : (intent.source === 'fallback' ? 'fallback' : 'gemini');
+      console.log(
+        `[MSG] phone=${normalizedPhone.slice(-4)} intent=${intent.intencao} source=${intentSource}` +
+        ` conf=${Number(intent.confianca ?? intent.confidence ?? 0).toFixed(2)}` +
+        ` text="${String(message || '').substring(0, 60).replace(/\n/g, ' ')}"`
+      );
+
+      // Alerta quando o bot não entende — sinal de buraco no sistema
+      if (intent.intencao === 'mensagem_ambigua' || intent.intencao === 'erro') {
+        console.warn(
+          `[MSG_FALLBACK] phone=${normalizedPhone.slice(-4)} source=${intentSource}` +
+          ` text="${String(message || '').substring(0, 100).replace(/\n/g, ' ')}"`
+        );
       }
 
       // Verifica se estamos aguardando dados (ex: valor)
