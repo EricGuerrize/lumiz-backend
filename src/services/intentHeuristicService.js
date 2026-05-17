@@ -101,9 +101,13 @@ class IntentHeuristicService {
         'agenda', 'agendamentos', 'compromissos', 'consultas marcadas', 'ver agenda',
         'próximos agendamentos', 'proximos agendamentos'
       ],
+      definir_meta: [
+        'minha meta e', 'minha meta é', 'definir meta', 'meta de faturamento',
+        'objetivo de faturamento', 'quero faturar', 'meta para', 'objetivo para'
+      ],
       consultar_meta: [
-        'meta', 'minha meta', 'progresso', 'objetivo', 'quanto falta', 'atingir meta',
-        'progresso da meta', 'quanto falta pra meta'
+        'ver meta', 'minha meta', 'progresso', 'quanto falta', 'atingir meta',
+        'progresso da meta', 'quanto falta pra meta', 'qual minha meta'
       ],
       insights: [
         'insights', 'dicas', 'sugestoes', 'sugestões', 'recomendacoes', 'recomendações',
@@ -129,10 +133,6 @@ class IntentHeuristicService {
       editar_transacao: [
         'editar última', 'editar ultima', 'corrigir última', 'corrigir ultima',
         'mudar última', 'mudar ultima', 'alterar última', 'alterar ultima'
-      ],
-      definir_meta: [
-        'minha meta é', 'minha meta e', 'definir meta', 'meta de', 'objetivo de',
-        'quero faturar', 'meta para', 'objetivo para'
       ],
       exportar_dados: [
         'exportar', 'baixar relatório', 'baixar relatorio', 'me manda pdf', 'mandar pdf',
@@ -384,8 +384,8 @@ class IntentHeuristicService {
         const matchRatio = matches.length / keywords.length;
         let baseConfidence = isExactMatch ? 0.95 : Math.min(0.5 + (matchRatio * 0.4), 0.9);
 
-        // Aumenta confiança se tiver valor numérico para transações
-        if ((intent === 'registrar_entrada' || intent === 'registrar_saida') && this.extractValue(original)) {
+        // Aumenta confiança se tiver valor numérico para transações e definição de meta
+        if ((intent === 'registrar_entrada' || intent === 'registrar_saida' || intent === 'definir_meta') && this.extractValue(original)) {
           confidence = Math.min(baseConfidence + 0.2, 0.95);
         } else {
           confidence = baseConfidence;
