@@ -9,8 +9,10 @@ const mockProfile = { id: 'user-1', telefone: '5511999990001', meta_mensal: '100
 function setupSupabaseMock(profiles) {
   supabase.from = jest.fn(() => ({
     select: jest.fn(() => ({
-      not: jest.fn(() => ({
-        not: jest.fn(() => Promise.resolve({ data: profiles, error: null }))
+      eq: jest.fn(() => ({
+        not: jest.fn(() => ({
+          not: jest.fn(() => Promise.resolve({ data: profiles, error: null }))
+        }))
       }))
     }))
   }));

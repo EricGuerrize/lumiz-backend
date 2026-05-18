@@ -52,7 +52,7 @@ describe('OnboardingFlowService - Funções Utilitárias', () => {
 
       const response = await onboardingFlowService.processOnboarding(phone, 'Botox 2800 pix');
       expect(response).toContain('2.800,00');
-      expect(response).toContain('Tá ok?');
+      expect(response).toContain('Tá certo?');
     });
 
     test('deve extrair valor de "2000" mesmo parecendo ano', async () => {
@@ -176,7 +176,7 @@ describe('OnboardingFlowService - Funções Utilitárias', () => {
 
       const response = await onboardingFlowService.processOnboarding(phone, 'Maria botox 2800 pix');
       expect(response).toContain('2.800,00');
-      expect(response).toContain('Tá ok?');
+      expect(response).toContain('Tá certo?');
     });
 
     test('deve detectar forma de pagamento PIX', async () => {

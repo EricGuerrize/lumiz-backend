@@ -54,6 +54,11 @@ class KnowledgeService {
      * @returns {Promise<Array>}
      */
     async searchSimilarity(text, clinicId = null, threshold = 0.8) {
+        if (process.env.KNOWLEDGE_ENABLED !== 'true') return [];
+
+        const rollout = parseInt(process.env.KNOWLEDGE_ROLLOUT_PERCENT ?? '100', 10);
+        if (rollout <= 0) return [];
+
         // Tabela indisponível (ex: migration ainda não rodou) — pula sem chamar embedding
         if (!this._tableAvailable) return [];
 

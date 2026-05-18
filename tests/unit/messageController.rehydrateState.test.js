@@ -61,6 +61,7 @@ describe('MessageController - reidratação de estado runtime', () => {
 
     jest.doMock('../../src/services/conversationRuntimeStateService', () => ({
       getAllActive: runtimeGetAllActiveMock,
+      get: jest.fn().mockResolvedValue(null),
       upsert: jest.fn().mockResolvedValue(true),
       clear: jest.fn().mockResolvedValue(true)
     }));

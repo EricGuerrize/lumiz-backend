@@ -305,7 +305,8 @@ function extractMonetaryCandidates(text) {
     }
   }
 
-  const numberRegex = /(\d+(?:[.,]\d+)?)/g;
+  // Captures: "1.500,50" (BR full), "2.800" (thousands only), "2.5"/"150.50" (decimal dot), plain int
+  const numberRegex = /(\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:,\d{1,2})?|\d+\.\d{1,2})/g;
   let numberMatch;
   while ((numberMatch = numberRegex.exec(raw)) !== null) {
     const numberText = numberMatch[1];
