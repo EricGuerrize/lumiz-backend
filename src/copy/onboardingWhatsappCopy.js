@@ -154,7 +154,7 @@ module.exports = {
             `Agora vou te mostrar em 3 etapas como funcionamos\n` +
             `Me manda uma venda real, do jeito que você lembraria. Pode ser simples.\n\n` +
             `Exemplos:\n` +
-            `• "Botox R$ 1.200 no pix hoje"\n` +
+            `• "Botox R$ 8.000 no pix hoje"\n` +
             `• "Júlia fez full face, pagou R$ 15.600. Sendo 3.000 pix + 6x cartão"`
         );
     },

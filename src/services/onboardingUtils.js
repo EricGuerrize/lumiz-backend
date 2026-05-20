@@ -281,16 +281,17 @@ async function calculateMonthlySummary(userId) {
 // ── Categorização de custos ─────────────────────────────────────────────────
 
 const FIXED_COST_CATEGORY_RULES = [
-    { category: 'Aluguel', keywords: ['aluguel', 'locacao', 'locação'] },
-    { category: 'Salários', keywords: ['salario', 'salários', 'folha', 'funcionario', 'funcionário', 'prolabore', 'pro-labore'] },
-    { category: 'Internet / Utilitários', keywords: ['internet', 'wifi', 'wi-fi', 'luz', 'energia', 'agua', 'água', 'utilitario', 'utilitário'] },
-    { category: 'Marketing', keywords: ['marketing', 'trafego', 'tráfego', 'ads', 'publicidade', 'anuncio', 'anúncio'] },
-    { category: 'Impostos', keywords: ['imposto', 'tributo', 'das', 'iss', 'taxa', 'contador', 'contabilidade'] }
+    { category: 'Aluguel', keywords: ['aluguel', 'locacao', 'locação', 'imovel', 'imóvel', 'sala', 'espaco', 'espaço', 'ponto', 'escritorio', 'escritório', 'condominio', 'condomínio', 'iptu'] },
+    { category: 'Salários', keywords: ['salario', 'salários', 'folha', 'funcionario', 'funcionário', 'funcionarios', 'funcionários', 'prolabore', 'pro-labore', 'colaborador', 'colaboradora', 'estagiario', 'estagiária', 'clt', 'mei', 'autonomo', 'autônomo', 'pagamento equipe', 'pagamento time'] },
+    { category: 'Internet / Utilitários', keywords: ['internet', 'wifi', 'wi-fi', 'luz', 'energia', 'agua', 'água', 'utilitario', 'utilitário', 'telefone', 'celular', 'plano', 'gas', 'gás', 'conta de luz', 'conta de agua', 'conta de gas', 'enel', 'sabesp', 'claro', 'vivo', 'tim', 'oi'] },
+    { category: 'Marketing', keywords: ['marketing', 'trafego', 'tráfego', 'ads', 'publicidade', 'anuncio', 'anúncio', 'instagram', 'google', 'meta', 'facebook', 'social media', 'midia', 'mídia', 'campanha', 'impulsionamento', 'influencer', 'fotografia', 'fotografo', 'fotógrafo', 'video', 'vídeo'] },
+    { category: 'Impostos', keywords: ['imposto', 'tributo', 'das', 'iss', 'contador', 'contabilidade', 'contadora', 'nota fiscal', 'simples nacional', 'irpj', 'csll', 'pis', 'cofins', 'inss', 'fgts', 'contribuicao', 'contribuição'] },
+    { category: 'Outros', keywords: ['seguro', 'mensalidade', 'assinatura', 'sistema', 'software', 'manutencao', 'manutenção', 'conserto', 'reparo', 'limpeza', 'higienizacao', 'higienização', 'financiamento', 'parcela fixa', 'boleto fixo'] }
 ];
 
 const VARIABLE_COST_CATEGORY_RULES = [
-    { category: 'Insumos / materiais', keywords: ['insumo', 'insumos', 'material', 'materiais', 'luva', 'mascara', 'máscara', 'touca', 'gaze'] },
-    { category: 'Fornecedores de injetáveis', keywords: ['injetavel', 'injetáveis', 'injetaveis', 'toxina', 'botox', 'acido', 'ácido', 'hialuronico', 'hialurônico', 'bioestimulador', 'preenchedor'] }
+    { category: 'Insumos / materiais', keywords: ['insumo', 'insumos', 'material', 'materiais', 'luva', 'mascara', 'máscara', 'touca', 'gaze', 'algodao', 'algodão', 'curativo', 'seringa', 'agulha', 'descartavel', 'descartável', 'embalagem', 'kit', 'produto', 'compra de produto', 'estoque', 'creme', 'gel', 'serum', 'sérum', 'ampola', 'esfoliante', 'protetor', 'solucao', 'solução', 'sabonete', 'hidratante'] },
+    { category: 'Fornecedores de injetáveis', keywords: ['injetavel', 'injetáveis', 'injetaveis', 'toxina', 'botox', 'acido', 'ácido', 'hialuronico', 'hialurônico', 'bioestimulador', 'preenchedor', 'sculptra', 'radiesse', 'belotero', 'juvederm', 'restylane', 'rennova', 'fio', 'fios', 'pdrn', 'skinbooster', 'biorevitalizador', 'mesoterapia', 'enzima', 'fosatidilcolina'] }
 ];
 
 function inferCostTypeAndCategoryFromText(text = '', forcedType = null) {
