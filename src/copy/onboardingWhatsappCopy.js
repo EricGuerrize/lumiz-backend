@@ -349,15 +349,18 @@ module.exports = {
     // 7) AHA_SUMMARY - Resumo AHA
     // ============================================================
     ahaSummary({ entradas, custosFixos, custosVariaveis, saldoParcial }) {
+        const entradasNum = Number(entradas) || 0;
+        const saldoNum = Number(saldoParcial) || 0;
+        const margem = entradasNum > 0 ? Math.round((saldoNum / entradasNum) * 100) : 0;
         return (
             `Pronto ✅\n\n` +
             `Olha que legal o resumo inicial:\n\n` +
             `📌 *Resumo parcial do mês:*\n\n` +
-            `• Entradas: ${formatarMoeda(Number(entradas))}\n` +
+            `• Entradas: ${formatarMoeda(entradasNum)}\n` +
             `• Custos fixos: ${formatarMoeda(Number(custosFixos))}\n` +
             `• Custos variáveis: ${formatarMoeda(Number(custosVariaveis))}\n` +
-            `• Saldo parcial: ${formatarMoeda(Number(saldoParcial))}\n\n` +
-            `ℹ️ Esse saldo parcial é só uma referência do que passou por aqui até agora. Ele pode não bater exatamente com o que você vê no banco, e tá tudo bem.`
+            `• Resultado líquido: ${formatarMoeda(saldoNum)}\n\n` +
+            `💡 *Insight rápido:* Com esse cenário de teste, seu resultado líquido seria de ${formatarMoeda(saldoNum)} — equivalente a ${margem}% de margem. Quando você começar a usar de verdade, esses insights aparecem em tempo real com os seus números.`
         );
     },
 
@@ -389,35 +392,19 @@ module.exports = {
     handoffToDailyUse() {
         return (
             `Onboarding feito ✅\n\n` +
-            `Agora é só me usar no dia a dia.\n` +
-            `Não tem regra nem formulário.\n` +
-            `Tudo que entrar ou sair da clínica, me manda aqui.\n\n` +
-            `Exemplos:\n\n` +
-            `"Recebi 1.500 no pix hoje de fulana, que fez tal procedimento"\n\n` +
-            `"Paguei parcela do fornecedor 2.300"\n\n` +
-            `"Quanto entrou esse mês?"\n\n` +
-            `"O que ainda falta cair?"\n\n` +
-            `Para gerenciar os números da equipe, use o dashboard em Configurações/Integrações.\n\n` +
-            `Quanto mais você me usa, melhor eu entendo sua rotina e mais claros ficam seus números!\n` +
-            `Vamos nessa juntos?`
+            `A partir de agora é só me mandar o que entra e sai da clínica — sem formulário, sem regra.\n\n` +
+            `Exemplos: _"Recebi 1.500 no pix de fulana"_, _"Paguei 2.300 pro fornecedor"_, _"Quanto entrou esse mês?"_`
         );
     },
 
     onboardingCompletionNoMdr() {
-        return (
-            `Configuração 100% finalizada! 🎉 Sua clínica está pronta e sem planilhas. ` +
-            `Caso queira ajustar ou adicionar algo nas configurações, só me chamar!\n\n` +
-            `Bora pra primeira venda real do dia? Se tiver algo que rolou hoje, já pode mandar!`
-        );
+        return `Tudo pronto! 🎉 Qualquer ajuste nas configurações é só me chamar.`;
     },
 
     trialClosingDecisionMaker(clinicName) {
         return (
-            `Pronto, esse foi o teste rápido da ${clinicName || 'sua clínica'}.\n\n` +
-            `Pra continuar com isso no dia a dia + dashboard completo com gráficos, calendário financeiro e relatórios, ` +
-            `é só seguir por aqui mesmo.\n\n` +
-            `Se quiser avançar agora, me responde *ASSINAR* e eu já te mando o link.\n` +
-            `Se preferir, pode mandar *DÚVIDA* e eu te explico antes de decidir.`
+            `Esse foi o teste da ${clinicName || 'sua clínica'} ✅\n\n` +
+            `Pra usar de verdade, me responde *ASSINAR* ou *DÚVIDA*.`
         );
     },
 
@@ -441,10 +428,9 @@ module.exports = {
 
     dashboardAccessLink(link) {
         return (
-            `Seu dashboard já está liberado ✅\n\n` +
-            `Para criar seu acesso, abra este link (válido por 24h):\n` +
+            `Para acessar o dashboard, abra o link abaixo (válido por 24h):\n` +
             `${link}\n\n` +
-            `Depois é só entrar pelo dashboard usando seu e-mail (ou telefone) e a senha que você acabou de cadastrar.`
+            `Use o e-mail (ou telefone) e a senha que você escolher para entrar.`
         );
     },
 

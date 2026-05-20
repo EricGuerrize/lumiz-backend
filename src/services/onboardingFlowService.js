@@ -905,7 +905,7 @@ class OnboardingStateHandlers {
         return await respond(onboardingCopy.ahaCostsConfirmation(this._buildCostConfirmationPayload(onboarding.data.pending_cost)));
     }
 
-    async handleAhaCostsConfirm(onboarding, messageTrimmed, normalizedPhone, respond) {
+    async handleAhaCostsConfirm(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClearMulti) {
         const confirmed = isYes(messageTrimmed);
         const correction = isNo(messageTrimmed);
         const paymentInfo = extractCostPaymentDetails(messageTrimmed);
@@ -1006,24 +1006,19 @@ class OnboardingStateHandlers {
                 }
             }
 
-            // Se já tem os dois tipos, vai para o resumo
-            onboarding.step = 'BALANCE_QUESTION';
-            // Correção #2: Usa dados salvos (com flag saved) para calcular resumo
+            // Se já tem os dois tipos, vai para o resumo e encerra onboarding
             const summary = calculateSummaryFromOnboardingData(onboarding);
             await safeTrack('onboarding_summary_viewed', {
                 phone: normalizedPhone,
                 userId: onboarding.data.userId || null,
                 source: 'whatsapp'
             });
-            return await respond(
+            const summaryMsg =
                 onboardingCopy.ahaCostsRegistered() +
                 '\n\n' +
-                onboardingCopy.ahaSummary(summary) +
-                '\n\n' +
-                onboardingCopy.balanceQuestion(),
-                true,
-                true
-            );
+                onboardingCopy.ahaSummary(summary);
+            const act5Messages = this._buildAct5Messages(onboarding);
+            return await respondAndClearMulti([summaryMsg, ...act5Messages]);
         }
 
         // Resposta não reconhecida: repergunta naturalmente
@@ -2183,7 +2178,7 @@ class OnboardingFlowService {
                 case 'AHA_COSTS_CATEGORY':
                     return await handlers.handleAhaCostsCategory(onboarding, messageTrimmed, respond);
                 case 'AHA_COSTS_CONFIRM':
-                    return await handlers.handleAhaCostsConfirm(onboarding, messageTrimmed, normalizedPhone, respond);
+                    return await handlers.handleAhaCostsConfirm(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClearMulti);
                 case 'AHA_SUMMARY':
                     return await handlers.handleAhaSummary(onboarding, normalizedPhone, respond);
                 case 'BALANCE_QUESTION':
