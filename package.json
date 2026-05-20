@@ -12,6 +12,8 @@
     "test:integration": "jest tests/integration --coverage",
     "test:e2e": "jest tests/e2e --coverage",
     "test:onboarding": "jest tests --testNamePattern=onboarding --coverage",
+    "onboarding:repl": "node tests/test-onboarding-repl.js",
+    "onboarding:web": "node tests/test-onboarding-web.js",
     "test:all": "npm run test && npm run test:unit && npm run test:integration && npm run test:e2e",
     "check:migrations": "node scripts/check-migrations.js",
     "check:rls": "node scripts/security/rls-check.js",
