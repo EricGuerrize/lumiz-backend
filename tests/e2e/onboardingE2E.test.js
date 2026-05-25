@@ -71,6 +71,23 @@ jest.mock('../../src/services/subscriptionService', () => ({
   startTrial: jest.fn().mockResolvedValue({ success: true })
 }));
 
+jest.mock('../../src/services/trialAccountService', () => ({
+  trialAccountService: {
+    getTrialSummary: jest.fn().mockResolvedValue(null),
+    saveRevenue: jest.fn().mockResolvedValue({ id: 'trial-revenue-123' }),
+    saveCost: jest.fn().mockResolvedValue({ id: 'trial-cost-123' }),
+    setInitialBalance: jest.fn().mockResolvedValue(true),
+    saveReferralSummary: jest.fn().mockResolvedValue(true),
+  },
+  buildForwardSummary: jest.fn().mockReturnValue('(resumo de encaminhamento)'),
+  computeGhostSummary: jest.fn().mockReturnValue(null),
+}));
+
+jest.mock('../../src/services/consentService', () => ({
+  recordConsent: jest.fn().mockResolvedValue({ ok: true }),
+  hasConsent: jest.fn().mockResolvedValue(true),
+}));
+
 jest.mock('../../src/services/documentService', () => ({
   processImage: jest.fn().mockResolvedValue({ transacoes: [] }),
   processDocumentFromBuffer: jest.fn().mockResolvedValue({ transacoes: [] })

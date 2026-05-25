@@ -2061,7 +2061,9 @@ class OnboardingFlowService {
             }
 
             const evolutionSvc = require('./evolutionService');
-            const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+            const delay = process.env.NODE_ENV === 'test'
+                ? () => Promise.resolve()
+                : (ms) => new Promise((r) => setTimeout(r, ms));
             for (let i = 0; i < list.length - 1; i++) {
                 try {
                     await evolutionSvc.sendMessage(normalizedPhone, list[i]);
