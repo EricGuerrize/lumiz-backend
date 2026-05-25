@@ -63,6 +63,14 @@ jest.mock('../../src/services/intentHeuristicService', () => ({
   detectIntent: jest.fn().mockResolvedValue(null)
 }));
 
+jest.mock('../../src/services/evolutionService', () => ({
+  sendMessage: jest.fn().mockResolvedValue({ success: true })
+}));
+
+jest.mock('../../src/services/subscriptionService', () => ({
+  startTrial: jest.fn().mockResolvedValue({ success: true })
+}));
+
 jest.mock('../../src/services/documentService', () => ({
   processImage: jest.fn().mockResolvedValue({ transacoes: [] }),
   processDocumentFromBuffer: jest.fn().mockResolvedValue({ transacoes: [] })
@@ -102,13 +110,13 @@ describe('Onboarding E2E (sem banco)', () => {
     }
   });
 
-  test('deve completar o fluxo completo do passo 0 ao fim com link de dashboard', async () => {
+  test('deve completar o fluxo completo do passo 0 ao fim', async () => {
     const phone = `5511${Date.now().toString().slice(-8)}`;
     resetOnboardingState(phone);
 
     let response = await onboardingFlowService.startIntroFlow(phone);
-    expect(response).toContain('Oi! Eu sou a Lumiz');
-    expect(response).toContain('Posso começar?');
+    expect(response).toContain('Oi! Sou a Lumiz');
+    expect(response).toContain('Topa eu te mostrar como funciona?');
 
     response = await onboardingFlowService.processOnboarding(phone, '1');
     expect(response).toContain('posso usar os dados');
@@ -126,7 +134,7 @@ describe('Onboarding E2E (sem banco)', () => {
     expect(response).toContain('usar a Lumiz mais pra');
 
     response = await onboardingFlowService.processOnboarding(phone, '1');
-    expect(response).toContain('recebe mais por');
+    expect(response).toContain('recebe mais');
 
     response = await onboardingFlowService.processOnboarding(phone, '1');
     expect(response).toContain('Me manda uma venda real');
@@ -151,22 +159,16 @@ describe('Onboarding E2E (sem banco)', () => {
     expect(response).toContain('Fixo');
 
     response = await onboardingFlowService.processOnboarding(phone, '1');
-    expect(response).toContain('Resumo parcial do mês');
-    expect(response).toContain('Entradas: R$ 2.800,00');
-    expect(response).toContain('Custos fixos: R$ 1.200,00');
-    expect(response).toContain('Custos variáveis: R$ 500,00');
-    expect(response).toContain('Quer me mandar o saldo que você tem hoje');
-
-    response = await onboardingFlowService.processOnboarding(phone, '2');
-    expect(response).toContain('Onboarding feito');
-    expect(response).toContain('Configuração 100% finalizada');
-    expect(response).toContain('Seu dashboard já está liberado');
-    expect(response).toContain('https://app.lumiz.com/setup/e2e-link-24h');
+    // Resumo é enviado via Evolution (primeira mensagem do respondAndClearMulti).
+    // A resposta retornada é o fechamento do onboarding (trialClosingDecisionMaker).
+    expect(response).toContain('Esse foi o teste');
+    expect(response).toContain('ASSINAR');
 
     expect(userController.createUserFromOnboarding).toHaveBeenCalledTimes(1);
-    expect(registrationTokenService.generateSetupToken).toHaveBeenCalledTimes(1);
+    // Link do dashboard desativado por ora — foco na experiência WhatsApp primeiro
+    expect(registrationTokenService.generateSetupToken).not.toHaveBeenCalled();
 
-    // Durante onboarding atual, transacoes sao simuladas e nao salvas no banco
+    // Transações simuladas durante onboarding, não salvas no banco
     expect(transactionController.createAtendimento).not.toHaveBeenCalled();
     expect(transactionController.createContaPagar).not.toHaveBeenCalled();
 
@@ -178,10 +180,10 @@ describe('Onboarding E2E (sem banco)', () => {
     resetOnboardingState(phone);
 
     let response = await onboardingFlowService.startIntroFlow(phone);
-    expect(response).toContain('Posso começar?');
+    expect(response).toContain('Topa eu te mostrar como funciona?');
 
     response = await onboardingFlowService.processOnboarding(phone, '2');
-    expect(response).toContain('Em 3 minutos você me manda 1 venda e 1 custo');
+    expect(response).toContain('Claro! A Lumiz é sua assistente financeira');
 
     response = await onboardingFlowService.processOnboarding(phone, '1');
     expect(response).toContain('posso usar os dados');
