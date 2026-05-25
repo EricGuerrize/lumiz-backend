@@ -1411,20 +1411,8 @@ class OnboardingStateHandlers {
         const clinicName = onboarding?.data?.clinica || 'sua clínica';
         const ownerName = onboarding?.data?.nome || null;
 
-        const ahaInsight = this._buildAhaInsightMessage(onboarding);
-
-        const messages = [
-            onboardingCopy.handoffToDailyUse(),
-            onboardingCopy.onboardingCompletionNoMdr()
-        ];
-
-        if (ahaInsight) {
-            messages.unshift(ahaInsight);
-        }
-
         if (isDecisionMakerRole(role)) {
-            messages.push(onboardingCopy.trialClosingDecisionMaker(clinicName));
-            return messages;
+            return [onboardingCopy.trialClosingDecisionMaker(clinicName)];
         }
 
         const summaryText = buildForwardSummary({
@@ -1433,9 +1421,10 @@ class OnboardingStateHandlers {
             snapshot: this._buildTrialSnapshotFromOnboarding(onboarding)
         });
 
-        messages.push(onboardingCopy.trialClosingTeamMember(clinicName));
-        messages.push(onboardingCopy.trialForwardSummary(summaryText));
-        return messages;
+        return [
+            onboardingCopy.trialClosingTeamMember(clinicName),
+            onboardingCopy.trialForwardSummary(summaryText)
+        ];
     }
 
     // ============================================================
@@ -1622,17 +1611,7 @@ class OnboardingStateHandlers {
         let ctaMsg;
 
         if (isOwner) {
-            let dashboardLink = null;
-            try {
-                const registrationTokenService = require('./registrationTokenService');
-                const token = await registrationTokenService.generateSetupToken(
-                    normalizedPhone,
-                    onboarding.data.userId || null,
-                    24
-                );
-                dashboardLink = token?.registrationLink || null;
-            } catch (_) {}
-            ctaMsg = onboardingCopy.act5CtaOwner(dashboardLink);
+            ctaMsg = onboardingCopy.act5CtaOwner(null);
         } else {
             ctaMsg = onboardingCopy.act5CtaTeam();
         }
@@ -2025,22 +2004,6 @@ class OnboardingFlowService {
         const respondAndClear = async (text) => {
             let finalText = text || onboardingCopy.lostState();
 
-            // Ao finalizar onboarding, envia CTA com link unico para ativar o dashboard (sem SMS).
-            if (isDecisionMakerRole(onboarding?.data?.role)) {
-                try {
-                    const setupToken = await registrationTokenService.generateSetupToken(
-                        normalizedPhone,
-                        onboarding?.data?.userId || null,
-                        24
-                    );
-                    if (setupToken?.registrationLink) {
-                        finalText += '\n\n' + onboardingCopy.dashboardAccessLink(setupToken.registrationLink);
-                    }
-                } catch (setupError) {
-                    console.error('[ONBOARDING] Falha ao gerar link de setup:', setupError?.message || setupError);
-                }
-            }
-
             try {
                 const existingTimer = this.persistTimers.get(normalizedPhone);
                 if (existingTimer) {
@@ -2098,9 +2061,11 @@ class OnboardingFlowService {
             }
 
             const evolutionSvc = require('./evolutionService');
+            const delay = (ms) => new Promise((r) => setTimeout(r, ms));
             for (let i = 0; i < list.length - 1; i++) {
                 try {
                     await evolutionSvc.sendMessage(normalizedPhone, list[i]);
+                    await delay(1200);
                 } catch (e) {
                     console.error('[ONBOARDING] Falha ao enviar mensagem intermediária:', e?.message || e);
                 }

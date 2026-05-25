@@ -12,9 +12,9 @@ module.exports = {
     // ============================================================
     startMessage() {
         return (
-            `Oi! Eu sou a Lumiz 👋 Eu organizo o financeiro da sua clínica aqui no WhatsApp, sem planilhas.\n\n` +
-            `Pra te mostrar como a Lumiz vira seu organizador financeiro diário, vamos fazer um teste rápido de 3 minutos.\n\n` +
-            `Posso começar? (Se quiser saber mais antes, é só me perguntar como funciona!)`
+            `Oi! Sou a Lumiz 👋 O financeiro da sua clínica, no WhatsApp.\n\n` +
+            `Em 3 minutos você sabe quanto entrou hoje, sua margem real, o que tá vazando, e o que vale mudar.\n\n` +
+            `Topa eu te mostrar como funciona?`
         );
     },
 
