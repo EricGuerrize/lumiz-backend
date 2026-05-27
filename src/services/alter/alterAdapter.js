@@ -31,7 +31,7 @@ const realAlterAdapter = require('./realAlterAdapter');
  * @returns {object} adapter selecionado
  */
 function _resolveAdapter() {
-  if (process.env.ALTER_API_URL && process.env.ALTER_API_KEY) {
+  if (process.env.ALTER_CLIENT_ID && process.env.ALTER_CLIENT_SECRET) {
     return realAlterAdapter;
   }
   return mockAlterAdapter;
@@ -85,7 +85,12 @@ const METHODS = [
   'simulateAntecipacaoSpot',
   'executeAntecipacaoSpot',
   'cancelAutomatica',
-  'syncFromParcelas'
+  'syncFromParcelas',
+  // Métodos extras do adapter real (no-op ou erro claro no mock)
+  'registerBusinessPartner',
+  'requestOptIn',
+  'getBusinessPartner',
+  'setWebhookUrl'
 ];
 
 for (const method of METHODS) {

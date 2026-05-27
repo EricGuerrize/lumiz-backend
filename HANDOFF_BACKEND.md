@@ -147,8 +147,8 @@ As fases 9 e 10 são majoritariamente frontend. No backend, o foco é garantir c
 ### Adapter
 - Contrato: `src/services/alter/alterAdapterContract.js` — interface base com `NotImplementedError`.
 - Mock: `src/services/alter/mockAlterAdapter.js` — deriva `alter_recebiveis` de `parcelas` + `mdr_configs`. Custo spot configurável: `ALTER_FEE_SPOT_PCT` (default 2.5%), `ALTER_FEE_SPOT_MIN_PCT` (1.5%), `ALTER_FEE_SPOT_MAX_PCT` (4.5%).
-- Real: `src/services/alter/realAlterAdapter.js` — stub; lança `NotImplementedError` enquanto `ALTER_API_URL`/`ALTER_API_KEY` não definidos.
-- Factory: `src/services/alter/alterAdapter.js` resolve por env (`ALTER_API_URL` + `ALTER_API_KEY` → real; senão → mock).
+- Real: `src/services/alter/realAlterAdapter.js` — **implementado (27/05/2026)**. OAuth2 client_credentials com token cache. Métodos: `listRecebiveis`, `getAggregatePosition`, `simulateAntecipacaoSpot`, `executeAntecipacaoSpot`, `cancelAutomatica`, `registerBusinessPartner`, `requestOptIn`, `getBusinessPartner`, `setWebhookUrl`.
+- Factory: `src/services/alter/alterAdapter.js` resolve por env (`ALTER_CLIENT_ID` + `ALTER_CLIENT_SECRET` → real; senão → mock).
 
 ### Services
 - `alterRecebiveisService` — list/getPosicao/getAging/getMix.
@@ -170,6 +170,9 @@ As fases 9 e 10 são majoritariamente frontend. No backend, o foco é garantir c
 ### Endpoints (todos atrás de `requireFeature('alter_enabled')`)
 | Método | Rota | Body / Query |
 |---|---|---|
+| POST | `/api/dashboard/alter/onboarding/registrar` | `{ name, cnpj, email?, phone? }` — cria BP Alter + salva `alter_bp_id` em profiles |
+| POST | `/api/dashboard/alter/onboarding/opt-in` | — dispara opt-in Núclea |
+| GET | `/api/dashboard/alter/onboarding/status` | — retorna BP + `nuclea_opt_in` (polling) |
 | GET | `/api/dashboard/alter/recebiveis` | `status`, `adquirente`, `from`, `to` |
 | GET | `/api/dashboard/alter/recebiveis/aging` | — |
 | GET | `/api/dashboard/alter/recebiveis/mix` | — |
@@ -180,6 +183,13 @@ As fases 9 e 10 são majoritariamente frontend. No backend, o foco é garantir c
 | GET | `/api/dashboard/alter/cobertura` | `horizonte_dias`, `snapshot=true` |
 | POST | `/api/dashboard/alter/pagar-fornecedor` | `{ supplier_document_id?, conta_pagar_id? }` |
 | POST | `/api/dashboard/alter/pagar-fornecedor/executar` | `{ recebiveis_ids[], conta_pagar_id? }` |
+
+### Webhook Alter
+- `POST /webhooks/alter` — recebe eventos Alter (HMAC-SHA256, spec Alter).
+- Trata `opt_in.confirmed` → `profiles.alter_opt_in_status = 'active'`.
+- Trata `opt_in.failed` → `profiles.alter_opt_in_status = 'failed'`.
+- Secret: `ALTER_WEBHOOK_SECRET` (fornecido pela Alter em canal privado após registrar URL com `alterAdapter.setWebhookUrl()`).
+- Fail-closed em produção sem secret (503). Em dev sem secret, aceita com warning.
 
 ### Health Score
 - `healthScoreService.getScore(userId)` ganha 5º componente `cobertura_fornecedor` quando `alter_enabled` ligado. Peso configurável: `HEALTH_SCORE_COBERTURA_FORNECEDOR_PESO` (default 10 pontos). Fallback graceful se cobertura falhar.
@@ -201,7 +211,8 @@ As fases 9 e 10 são majoritariamente frontend. No backend, o foco é garantir c
 - `CAPTURE_LOW_CONFIDENCE_THRESHOLD` — default `0.8`.
 - `FOUNDER_CALL_URL` — opcional; se definido, o CTA de pós-onboarding para "falar com o Eric" devolve esse link diretamente no WhatsApp.
 - `ALTER_ENABLED` — boolean, ativa rotas Alter (alternativa: registro em `feature_flags`).
-- `ALTER_API_URL`, `ALTER_API_KEY` — opcionais; quando ambos definidos, factory usa `realAlterAdapter`.
+- `ALTER_CLIENT_ID`, `ALTER_CLIENT_SECRET` — credenciais OAuth2 da API Alter; quando ambos definidos, factory usa `realAlterAdapter`.
+- `ALTER_WEBHOOK_SECRET` — secret HMAC para validar eventos webhook Alter; fornecido pela Alter em canal privado.
 - `ALTER_FEE_SPOT_PCT` / `ALTER_FEE_SPOT_MIN_PCT` / `ALTER_FEE_SPOT_MAX_PCT` — taxas mock spot.
 - `ALTER_RECOMEND_SAFETY_PCT` — buffer de segurança em `antecipacaoService.recomendar` (default 0.10).
 - `HEALTH_SCORE_COBERTURA_FORNECEDOR_PESO` — peso do novo componente (default 10).

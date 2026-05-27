@@ -42,6 +42,7 @@ const clinicMembersRoutes = require('./routes/clinicMembers.routes');
 const adminRoutes = require('./routes/admin.routes');
 const configRoutes = require('./routes/config.routes');
 const asaasWebhookRoutes = require('./routes/webhooks');
+const alterWebhookRoutes = require('./routes/alterWebhooks');
 const reminderService = require('./services/reminderService');
 const nudgeService = require('./services/nudgeService');
 const insightService = require('./services/insightService');
@@ -272,6 +273,7 @@ app.use('/api/clinic-members', clinicMembersRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/config', configRoutes);
 app.use('/webhooks', asaasWebhookRoutes);
+app.use('/webhooks', alterWebhookRoutes);
 
 app.get('/health', async (req, res) => {
   const startTime = Date.now();

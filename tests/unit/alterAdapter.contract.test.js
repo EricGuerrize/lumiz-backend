@@ -50,44 +50,41 @@ describe('realAlterAdapter', () => {
     }
   });
 
-  it('lança NotImplementedError quando ALTER_API_URL/ALTER_API_KEY ausentes', async () => {
-    const originalUrl = process.env.ALTER_API_URL;
-    const originalKey = process.env.ALTER_API_KEY;
-    delete process.env.ALTER_API_URL;
-    delete process.env.ALTER_API_KEY;
+  it('isConfigured() retorna false quando ALTER_CLIENT_ID/ALTER_CLIENT_SECRET ausentes', () => {
+    const origId = process.env.ALTER_CLIENT_ID;
+    const origSecret = process.env.ALTER_CLIENT_SECRET;
+    delete process.env.ALTER_CLIENT_ID;
+    delete process.env.ALTER_CLIENT_SECRET;
     const { RealAlterAdapter } = require('../../src/services/alter/realAlterAdapter');
     const fresh = new RealAlterAdapter();
     expect(fresh.isConfigured()).toBe(false);
-    for (const m of REQUIRED_METHODS) {
-      await expect(fresh[m]()).rejects.toBeInstanceOf(NotImplementedError);
-    }
-    if (originalUrl !== undefined) process.env.ALTER_API_URL = originalUrl;
-    if (originalKey !== undefined) process.env.ALTER_API_KEY = originalKey;
+    if (origId !== undefined) process.env.ALTER_CLIENT_ID = origId;
+    if (origSecret !== undefined) process.env.ALTER_CLIENT_SECRET = origSecret;
   });
 });
 
 describe('alterAdapter factory', () => {
   it('default em test/dev resolve para mock', () => {
-    const originalUrl = process.env.ALTER_API_URL;
-    const originalKey = process.env.ALTER_API_KEY;
-    delete process.env.ALTER_API_URL;
-    delete process.env.ALTER_API_KEY;
+    const origId = process.env.ALTER_CLIENT_ID;
+    const origSecret = process.env.ALTER_CLIENT_SECRET;
+    delete process.env.ALTER_CLIENT_ID;
+    delete process.env.ALTER_CLIENT_SECRET;
     alterAdapter.refresh();
     expect(alterAdapter.isMock()).toBe(true);
     expect(alterAdapter.isReal()).toBe(false);
-    if (originalUrl !== undefined) process.env.ALTER_API_URL = originalUrl;
-    if (originalKey !== undefined) process.env.ALTER_API_KEY = originalKey;
+    if (origId !== undefined) process.env.ALTER_CLIENT_ID = origId;
+    if (origSecret !== undefined) process.env.ALTER_CLIENT_SECRET = origSecret;
     alterAdapter.refresh();
   });
 
-  it('com ALTER_API_URL+KEY definidos, resolve para real', () => {
-    process.env.ALTER_API_URL = 'https://alter.test';
-    process.env.ALTER_API_KEY = 'fake_key';
+  it('com ALTER_CLIENT_ID+SECRET definidos, resolve para real', () => {
+    process.env.ALTER_CLIENT_ID = 'fake_client_id';
+    process.env.ALTER_CLIENT_SECRET = 'fake_client_secret';
     alterAdapter.refresh();
     expect(alterAdapter.isReal()).toBe(true);
     expect(alterAdapter.isMock()).toBe(false);
-    delete process.env.ALTER_API_URL;
-    delete process.env.ALTER_API_KEY;
+    delete process.env.ALTER_CLIENT_ID;
+    delete process.env.ALTER_CLIENT_SECRET;
     alterAdapter.refresh();
   });
 

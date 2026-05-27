@@ -43,6 +43,9 @@ class EnvValidator {
       'ASAAS_WEBHOOK_SECRET',
       'Secret do webhook Asaas (opcional enquanto billing Asaas estiver desativado; sem ela o webhook fica 503)'
     );
+    this.validateOptional('ALTER_CLIENT_ID',     'Client ID OAuth2 da Alter (obrigatório quando ALTER_CLIENT_SECRET definido)');
+    this.validateOptional('ALTER_CLIENT_SECRET',  'Client Secret OAuth2 da Alter (ativa realAlterAdapter quando definido junto com ALTER_CLIENT_ID)');
+    this.validateOptional('ALTER_WEBHOOK_SECRET', 'Secret HMAC para webhooks Alter (fornecido pela Alter em canal privado; sem ele o webhook fica 503 em produção)');
 
     // Validações específicas
     this.validateUrl('SUPABASE_URL');

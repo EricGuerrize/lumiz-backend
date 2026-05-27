@@ -26,6 +26,7 @@ const supplierDocumentService = require('../services/supplierDocumentService');
 const contasReceberService = require('../services/contasReceberService');
 const alterRecebiveisService = require('../services/alter/alterRecebiveisService');
 const antecipacaoService = require('../services/alter/antecipacaoService');
+const alterAdapter = require('../services/alter/alterAdapter');
 const coberturaFornecedorService = require('../services/alter/coberturaFornecedorService');
 const pagarComRecebivelService = require('../services/alter/pagarComRecebivelService');
 const { requireFeature } = require('../services/featureFlagService');
@@ -2145,6 +2146,50 @@ router.post('/alter/pagar-fornecedor/executar', alterGuard, requireMFA, async (r
   } catch (error) {
     console.error('Error executing pagar com recebivel:', error);
     res.status(500).json({ error: 'Failed to execute pagar com recebivel' });
+  }
+});
+
+// ── Alter onboarding (cadastro BP + opt-in Núclea) ──────────────────────────
+
+// POST /api/dashboard/alter/onboarding/registrar
+// Cria o Business Partner na Alter e persiste alter_bp_id no perfil.
+router.post('/alter/onboarding/registrar', alterGuard, async (req, res) => {
+  try {
+    const { name, cnpj, email, phone } = req.body;
+    if (!cnpj) return res.status(400).json({ error: 'cnpj é obrigatório.' });
+    const bp = await alterAdapter.registerBusinessPartner(req.user.id, { name, cnpj, email, phone });
+    res.status(201).json(bp);
+  } catch (error) {
+    console.error('[ALTER] Erro ao registrar BP:', error?.message);
+    res.status(500).json({ error: 'Falha ao registrar Business Partner na Alter.' });
+  }
+});
+
+// POST /api/dashboard/alter/onboarding/opt-in
+// Dispara opt-in Núclea para o BP já cadastrado (idempotente).
+router.post('/alter/onboarding/opt-in', alterGuard, async (req, res) => {
+  try {
+    const result = await alterAdapter.requestOptIn(req.user.id);
+    res.json(result);
+  } catch (error) {
+    console.error('[ALTER] Erro ao solicitar opt-in:', error?.message);
+    const status = error?.message?.includes('alter_bp_id') ? 400 : 500;
+    res.status(status).json({ error: error?.message || 'Falha ao solicitar opt-in Núclea.' });
+  }
+});
+
+// GET /api/dashboard/alter/onboarding/status
+// Retorna o BP e status atual do opt-in (polling até nuclea_opt_in.status === 'active').
+router.get('/alter/onboarding/status', alterGuard, heavyDashboardReadLimiter, async (req, res) => {
+  try {
+    const bp = await alterAdapter.getBusinessPartner(req.user.id);
+    if (!bp) {
+      return res.json({ registered: false, meta: { is_empty: true, hint: 'Chame POST /alter/onboarding/registrar primeiro.' } });
+    }
+    res.json({ registered: true, ...bp });
+  } catch (error) {
+    console.error('[ALTER] Erro ao buscar status BP:', error?.message);
+    res.status(500).json({ error: 'Falha ao buscar status do Business Partner.' });
   }
 });
 

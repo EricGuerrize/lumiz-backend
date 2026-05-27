@@ -28,7 +28,7 @@
 | 17 | Analytics de produto (PostHog) | Back + Front | M | 🟡 Backend concluído (09/05/2026) — frontend pendente |
 | 18 | MFA obrigatório | Back + Front | M | 🟡 Backend concluído — frontend pendente (`/configuracoes/seguranca` enrollment TOTP) |
 | 19 | LGPD: export de dados + direito ao esquecimento | Back + Front | M | 🟡 Backend concluído |
-| 20 | Integrações futuras (Pluggy, Adquirentes, NFe.io, Alter) | Back | G | ⏸️ Bloqueado go-live (Alter real — falta sandbox/contrato) |
+| 20 | Integrações futuras (Pluggy, Adquirentes, NFe.io, Alter) | Back | G | 🟡 Alter: realAlterAdapter implementado (OAuth2 + todos os métodos); migration `alter_bp_id`; webhook `/webhooks/alter`; endpoints onboarding BP. Pendente: frontend + rollout gradual. |
 | 21 | Ondas 2–4 frontend (Supplier Docs, Fornecedores, Contas a receber, painéis Alter) | Front | G | ✅ Concluído — ver `lumiz-financeiro/HANDOFF_FRONTEND.md` (Onda 1–4) |
 | 22 | Design system Lumiz NB Clinic + admin global RBAC (`GET /api/user/whoami`) | Back + Front | G | ✅ Concluído (back + front) — 09/05/2026 — Backend: `GET /api/user/whoami` (commit `6e9cdf4`) + 6 testes. Front: design system `lumiz-nb-clinic.html`; 5 páginas admin com gating via `whoami`. **✅ Follow-up sidebar (produto) concluído em 09/05/2026:** commit `79c9a4a`, branch `feat/audit-log-fase15`, push OK; PR via compare https://github.com/EricGuerrize/lumiz-financeiro/compare/feat/audit-log-fase15 — 20 itens finais no menu + footer (tema/perfil); `tsc --noEmit` e `npm run build` verdes no front. Detalhes: `lumiz-financeiro/HANDOFF_FRONTEND.md` + `implementacao2.md` (entrada cleanup). |
 | 20.4 | Alter — telas dashboard | Front | M | 🟡 Concluído (mock) — `/dashboard/alter/*` atrás de `alter_enabled`; produção depende da fase 20 |
@@ -813,25 +813,27 @@ Referência rápida do que está implementado. Não retrabalhar.
 
 ### 20.4 Alter — Motor de recebíveis
 
-**Status:** 🟡 Backend mock pronto via Onda 3 (A/B/C). Falta sandbox/contrato real da Alter para destravar o `realAlterAdapter`.
+**Status:** 🟢 Backend real implementado (27/05/2026). Credenciais de produção recebidas; `realAlterAdapter` completo; pendente frontend + rollout gradual.
 
 **Concluído (backend):**
-- Adapter contract + factory: `src/services/alter/{alterAdapterContract,alterAdapter,mockAlterAdapter,realAlterAdapter}.js`. Factory escolhe automaticamente entre mock e real conforme `ALTER_API_URL` + `ALTER_API_KEY`.
+- Adapter contract + factory: `src/services/alter/{alterAdapterContract,alterAdapter,mockAlterAdapter,realAlterAdapter}.js`. Factory ativa adapter real quando `ALTER_CLIENT_ID` + `ALTER_CLIENT_SECRET` definidos.
+- `realAlterAdapter`: OAuth2 client_credentials (token cache 24h), `listRecebiveis`, `getAggregatePosition`, `simulateAntecipacaoSpot`, `executeAntecipacaoSpot`, `cancelAutomatica`, `registerBusinessPartner`, `requestOptIn`, `getBusinessPartner`, `setWebhookUrl`.
 - Domínio: `alterRecebiveisService` (aging/posição/mix), `antecipacaoService` (simular/executar/recomendar/parar-automática), `coberturaFornecedorService` (cobertura por fornecedor + snapshots), `pagarComRecebivelService` (sugerir/executar pagamento via recebível).
-- Schema: migrations `20260507000031..033` (`alter_recebiveis`, `alter_antecipacoes`, `alter_cobertura_snapshots`).
-- Endpoints `/api/dashboard/alter/*` atrás de `requireFeature('alter_enabled')`.
+- Schema: migrations `20260507000031..033` (`alter_recebiveis`, `alter_antecipacoes`, `alter_cobertura_snapshots`) + `20260527095041` (`profiles.alter_bp_id`, `profiles.alter_opt_in_status`).
+- Endpoints `/api/dashboard/alter/*` atrás de `requireFeature('alter_enabled')` + 3 endpoints de onboarding BP (`/registrar`, `/opt-in`, `/status`).
+- Webhook `POST /webhooks/alter` com verificação HMAC-SHA256 (spec Alter); trata `opt_in.confirmed` + `opt_in.failed`.
 - Health score componente `cobertura_fornecedor` (peso configurável via `HEALTH_SCORE_COBERTURA_FORNECEDOR_PESO`).
 - Cron semanal `/api/cron/alter-insights` via `alterInsightCronService` + copy `src/copy/alterWhatsappCopy.js`.
 
-**Pendente (real):**
-- Implementar métodos de `realAlterAdapter.js` consumindo `ALTER_API_URL`/`ALTER_API_KEY`.
-- Score de crédito da clínica (depende de dados Alter).
-- Frontend Alter (telas dedicadas).
+**Pendente:**
+- Registrar URL de webhook na Alter: `alterAdapter.setWebhookUrl('https://lumiz.com.br/webhooks/alter')` (após deploy).
+- Score de crédito da clínica (depende de dados Alter reais acumulados).
+- Frontend Alter (telas dedicadas já existem como mock; precisam de dado real).
 
-**Definition of Done para go-live real:**
-- Contrato API Alter assinado e sandbox disponível.
-- `realAlterAdapter` implementado e validado contra sandbox.
-- Frontend consumindo endpoints `/api/dashboard/alter/*`.
+**Definition of Done para go-live:**
+- `ALTER_CLIENT_ID`, `ALTER_CLIENT_SECRET`, `ALTER_WEBHOOK_SECRET` configurados em Railway.
+- Migration `20260527095041` aplicada (`supabase db push`).
+- Webhook URL registrada; `ALTER_WEBHOOK_SECRET` recebido da Alter.
 - Flag `alter_enabled` ligada gradualmente (5% → 25% → 100%).
 
 **Esforço:** G (cada sub-fase)
