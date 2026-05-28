@@ -890,9 +890,34 @@ module.exports = {
     },
 
     /** Ato 5 — encerramento */
-    act5CtaOwner() {
+    act5CtaOwner(summary = {}) {
+        summary = summary || {};
+        const receitaFmt = summary.receita != null ? formatarMoeda(Number(summary.receita)) : null;
+        const custoFmt = summary.custo != null ? formatarMoeda(Number(summary.custo)) : null;
+        const margemFmt = summary.margemBruta != null ? formatarMoeda(Number(summary.margemBruta)) : null;
+        const pagamentoLine = summary.pagamento
+            ? ` no ${summary.pagamento}${summary.parcelas && summary.parcelas > 1 ? ` em ${summary.parcelas}x` : ''}`
+            : '';
+        const taxaFmt = summary.taxaCredito != null
+            ? Number(summary.taxaCredito).toLocaleString('pt-BR', { maximumFractionDigits: 2 })
+            : null;
+        const taxaLine = summary.taxaCredito != null && summary.taxaCredito > 0
+            ? `\n• taxa considerada: *${taxaFmt}%*${summary.rateConfidence === 'estimate' ? ' (estimativa)' : ''}`
+            : '';
+        const snapshot = receitaFmt
+            ? (
+                `Hoje eu já organizei:\n` +
+                `• venda: *${summary.procedimento || 'Procedimento'}* — *${receitaFmt}*${pagamentoLine}\n` +
+                (custoFmt ? `• custo informado: *${summary.custoDescricao || 'Custo'}* — *${custoFmt}*` : '') +
+                taxaLine +
+                (margemFmt ? `\n• margem estimada: *${margemFmt}*${summary.margemPercent != null ? ` (${summary.margemPercent}%)` : ''}` : '') +
+                `\n\n`
+            )
+            : '';
+
         return (
             `Perfeito. Seu primeiro raio-x financeiro está pronto ✅\n\n` +
+            snapshot +
             `A partir de agora, a Lumiz pode acompanhar a rotina financeira da clínica direto por aqui.\n\n` +
             `Nos próximos 30 dias, você pode testar a experiência completa:\n` +
             `• lançar receitas e despesas por texto, áudio, foto ou PDF;\n` +
@@ -904,9 +929,21 @@ module.exports = {
         );
     },
 
-    act5CtaDeclined() {
+    act5CtaDeclined(summary = {}) {
+        summary = summary || {};
+        const receitaFmt = summary.receita != null ? formatarMoeda(Number(summary.receita)) : null;
+        const custoFmt = summary.custo != null ? formatarMoeda(Number(summary.custo)) : null;
+        const resumoLine = receitaFmt
+            ? (
+                `Eu já organizei a venda de *${summary.procedimento || 'procedimento'}* (${receitaFmt})` +
+                (custoFmt ? ` e o custo de *${summary.custoDescricao || 'custo'}* (${custoFmt})` : '') +
+                `.\n\n`
+            )
+            : '';
+
         return (
             `Sem problema. Já deixei esse primeiro raio-x financeiro salvo ✅\n\n` +
+            resumoLine +
             `A partir daqui, você pode continuar usando a Lumiz direto por aqui: mande receitas, custos, notas, boletos ou dúvidas financeiras da clínica.\n\n` +
             `Nos próximos 30 dias, vou te ajudar a organizar os lançamentos e enxergar margem, custos e taxas com mais clareza.`
         );

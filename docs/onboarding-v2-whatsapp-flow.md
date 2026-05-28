@@ -231,6 +231,11 @@ Se o usuário responde positivamente ou segue em frente:
 ```text
 Perfeito. Seu primeiro raio-x financeiro está pronto ✅
 
+Hoje eu já organizei:
+• venda: *Botox* — *R$ 900,00* no pix
+• custo informado: *Insumos* — *R$ 200,00*
+• margem estimada: *R$ 700,00* (78%)
+
 A partir de agora, a Lumiz pode acompanhar a rotina financeira da clínica direto por aqui.
 
 Nos próximos 30 dias, você pode testar a experiência completa:
@@ -247,9 +252,17 @@ Se o usuário responde `não` no insight:
 ```text
 Sem problema. Já deixei esse primeiro raio-x financeiro salvo ✅
 
+Eu já organizei a venda de *Botox* (R$ 900,00) e o custo de *Insumos* (R$ 200,00).
+
 A partir daqui, você pode continuar usando a Lumiz direto por aqui: mande receitas, custos, notas, boletos ou dúvidas financeiras da clínica.
 
 Nos próximos 30 dias, vou te ajudar a organizar os lançamentos e enxergar margem, custos e taxas com mais clareza.
+```
+
+Em vendas no cartão, o resumo final também mostra a taxa considerada:
+
+```text
+• taxa considerada: *3,2%*
 ```
 
 Se `ONBOARDING_DASHBOARD_TEASER_VIDEO_URL` estiver configurado, o bot também envia um vídeo teaser do dashboard com a legenda:
@@ -287,3 +300,5 @@ ACT1_START
 - Vendas em cartão perguntam taxa da maquininha; se o usuário não souber, o bot usa estimativa conservadora.
 - A venda exige forma de pagamento antes de ser salva.
 - Após o onboarding, o usuário pode continuar usando o bot pelo WhatsApp.
+- A mensagem final é personalizada com venda, custo, taxa considerada quando houver, e margem estimada.
+- O vídeo teaser do dashboard continua sendo enviado no encerramento quando `ONBOARDING_DASHBOARD_TEASER_VIDEO_URL` estiver configurado.

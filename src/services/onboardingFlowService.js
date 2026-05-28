@@ -2020,15 +2020,43 @@ class OnboardingStateHandlers {
         });
     }
 
+    _buildAct5Summary(onboarding) {
+        const sale = onboarding.data.act2_saved || {};
+        const cost = onboarding.data.act3_saved || {};
+        const receita = Number(sale.valor || 0);
+        const custo = Number(cost.valor || 0);
+        if (!receita) return {};
+
+        const usesCard = this._isCardPayment(sale.pagamento);
+        const taxaCredito = usesCard ? Number(sale.mdr_rate ?? 4) : 0;
+        const liquido = Math.round(receita * (1 - (taxaCredito / 100)) * 100) / 100;
+        const margemBruta = Math.round((liquido - custo) * 100) / 100;
+        const margemPercent = Math.round((margemBruta / receita) * 100);
+
+        return {
+            procedimento: sale.procedimento,
+            receita,
+            pagamento: sale.pagamento,
+            parcelas: sale.parcelas,
+            custoDescricao: cost.descricao,
+            custo,
+            taxaCredito: usesCard ? taxaCredito : null,
+            rateConfidence: sale.mdr_confidence || (usesCard ? 'estimate' : null),
+            margemBruta,
+            margemPercent
+        };
+    }
+
     /**
      * Ato 4 — resposta do usuário ao AHA insight (qualquer coisa avança).
      */
     async handleAct4Aha(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear) {
+        const finalSummary = this._buildAct5Summary(onboarding);
         if (isNo(messageTrimmed)) {
-            return await respondAndClear(onboardingCopy.act5CtaDeclined());
+            return await respondAndClear(onboardingCopy.act5CtaDeclined(finalSummary));
         }
 
-        return await respondAndClear(onboardingCopy.act5CtaOwner(null));
+        return await respondAndClear(onboardingCopy.act5CtaOwner(finalSummary));
     }
 }
 

@@ -311,7 +311,35 @@ describe('Onboarding v2 — fluxo feliz completo', () => {
     expect(res).toBeTruthy();
     expect(res).not.toMatch(/dashboard|https?:\/\//i);
     expect(res).toContain('WhatsApp');
+    expect(res).toContain('Hoje eu já organizei');
+    expect(res).toContain('Botox');
+    expect(res).toContain('Insumos');
+    expect(res).toContain('R$ 900,00');
+    expect(res).toContain('margem estimada');
     expect(onboardingFlowService.onboardingStates.has(PHONE)).toBe(false);
+    expect(evolutionService.sendVideo).toHaveBeenCalledWith(
+      PHONE,
+      'https://cdn.example.com/dashboard-teaser.mp4',
+      expect.stringContaining('dashboard da Lumiz')
+    );
+  });
+
+  test('ACT4 → encerramento: resumo final inclui taxa real de cartão e mantém vídeo teaser', async () => {
+    process.env.ONBOARDING_DASHBOARD_TEASER_VIDEO_URL = 'https://cdn.example.com/dashboard-teaser.mp4';
+    await onboardingFlowService.startIntroFlow(PHONE);
+    await send('sim');
+    await send('Botox R$ 2500 no crédito em 2x');
+    await send('sim');
+    await send('3,2%');
+    await send('luvas 500');
+    await send('sim');
+    const res = await send('sim');
+    expect(res).toContain('Botox');
+    expect(res).toContain('R$ 2.500,00');
+    expect(res).toContain('luvas');
+    expect(res).toContain('R$ 500,00');
+    expect(res).toContain('taxa considerada: *3,2%*');
+    expect(res).toContain('margem estimada');
     expect(evolutionService.sendVideo).toHaveBeenCalledWith(
       PHONE,
       'https://cdn.example.com/dashboard-teaser.mp4',
