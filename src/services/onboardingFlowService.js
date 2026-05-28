@@ -31,7 +31,8 @@ const {
     FIXED_COST_CATEGORY_RULES,
     VARIABLE_COST_CATEGORY_RULES,
     inferCostTypeAndCategoryFromText,
-    extractCostPaymentDetails
+    extractCostPaymentDetails,
+    extractPrimaryMonetaryValue
 } = require('./onboardingUtils');
 
 // Fire-and-forget analytics helper — falhas de analytics nunca podem quebrar o onboarding
@@ -1456,7 +1457,7 @@ class OnboardingStateHandlers {
      * Ato 2 — extrai venda do texto livre e pede confirmação.
      */
     async handleAct2Sale(onboarding, messageTrimmed, respond) {
-        const valor = extractPrimaryMonetaryValue(messageTrimmed);
+        const valor = /\d/.test(messageTrimmed) ? extractPrimaryMonetaryValue(messageTrimmed) : null;
         if (!valor || valor <= 0) {
             return await respond(`Não consegui identificar o valor 🤔 Tenta assim: _"botox R$ 1.200 no pix"_`);
         }
@@ -1522,7 +1523,7 @@ class OnboardingStateHandlers {
      * Ato 3 — extrai custo do texto livre e pede confirmação.
      */
     async handleAct3Cost(onboarding, messageTrimmed, respond) {
-        const valor = extractPrimaryMonetaryValue(messageTrimmed);
+        const valor = /\d/.test(messageTrimmed) ? extractPrimaryMonetaryValue(messageTrimmed) : null;
         if (!valor || valor <= 0) {
             return await respond(`Não consegui identificar o valor 🤔 Tenta assim: _"Insumos R$ 800"_`);
         }
@@ -1605,17 +1606,10 @@ class OnboardingStateHandlers {
      * Ato 4 — resposta do usuário ao AHA insight (qualquer coisa avança).
      */
     async handleAct4Aha(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear) {
-        onboarding.step = 'ACT5_CTA';
-
         const isOwner = onboarding.data.role === 'owner';
-        let ctaMsg;
-
-        if (isOwner) {
-            ctaMsg = onboardingCopy.act5CtaOwner(null);
-        } else {
-            ctaMsg = onboardingCopy.act5CtaTeam();
-        }
-
+        const ctaMsg = isOwner
+            ? onboardingCopy.act5CtaOwner(null)
+            : onboardingCopy.act5CtaTeam();
         return await respondAndClear(ctaMsg);
     }
 }
@@ -2175,6 +2169,14 @@ class OnboardingFlowService {
                     return await handlers.handleAct3CostConfirm(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear);
                 case 'ACT4_AHA':
                     return await handlers.handleAct4Aha(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear);
+                // Fallback de segurança: estado persistiu com ACT5_CTA antes do clear
+                case 'ACT5_CTA': {
+                    const isOwner = onboarding.data?.role === 'owner';
+                    const ctaMsg = isOwner
+                        ? onboardingCopy.act5CtaOwner(null)
+                        : onboardingCopy.act5CtaTeam();
+                    return await respondAndClear(ctaMsg);
+                }
                 default:
                     return await respond(onboardingCopy.lostState());
             }

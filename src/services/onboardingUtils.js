@@ -384,5 +384,6 @@ module.exports = {
     FIXED_COST_CATEGORY_RULES,
     VARIABLE_COST_CATEGORY_RULES,
     inferCostTypeAndCategoryFromText,
-    extractCostPaymentDetails
+    extractCostPaymentDetails,
+    extractPrimaryMonetaryValue
 };
