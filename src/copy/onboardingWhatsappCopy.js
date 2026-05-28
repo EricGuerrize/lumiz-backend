@@ -832,11 +832,11 @@ module.exports = {
     },
 
     /** Ato 5 — CTA por persona */
-    act5CtaOwner(dashboardLink) {
+    act5CtaOwner() {
         return (
-            `Esse é o dashboard da Lumiz com tudo organizado 📊\n` +
-            (dashboardLink ? `${dashboardLink}\n\n` : '\n') +
-            `Posso te ajudar a assinar agora ou prefere testar mais alguns dias?`
+            `Pronto, já tenho o primeiro retrato financeiro da sua clínica no WhatsApp ✅\n\n` +
+            `Por enquanto vamos usar essa conversa pra deixar seus lançamentos bem redondos. ` +
+            `Pode continuar me mandando receitas, custos e dúvidas por aqui.`
         );
     },
 

@@ -227,6 +227,8 @@ describe('Onboarding v2 — fluxo feliz completo', () => {
     await send('sim');
     const res = await send('show');
     expect(res).toBeTruthy();
+    expect(res).not.toMatch(/dashboard|https?:\/\//i);
+    expect(res).toContain('WhatsApp');
     expect(onboardingFlowService.onboardingStates.has(PHONE)).toBe(false);
   });
 });

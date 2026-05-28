@@ -2299,9 +2299,8 @@ class OnboardingFlowService {
             return finalText;
         };
 
-        // Envia as N-1 primeiras mensagens via Evolution e usa respondAndClear na última
-        // (que será a que recebe o dashboardAccessLink). Permite quebrar a finalização
-        // do onboarding em mensagens menores e legíveis no WhatsApp.
+        // Envia as N-1 primeiras mensagens via Evolution e usa respondAndClear na última.
+        // Permite quebrar a finalização do onboarding em mensagens menores e legíveis no WhatsApp.
         const respondAndClearMulti = async (messages) => {
             const list = (messages || []).filter((m) => typeof m === 'string' && m.trim().length > 0);
             if (list.length === 0) {
