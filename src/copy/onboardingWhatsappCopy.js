@@ -798,6 +798,10 @@ module.exports = {
         );
     },
 
+    act3CostDocumentError() {
+        return `Não consegui ler o valor da nota com segurança 🤔 Pode mandar de novo com uma foto mais nítida ou digitar assim: _"Insumos R$ 800"_.`;
+    },
+
     act3CostAdjust() {
         return `Ok! Me manda o custo correto:`;
     },

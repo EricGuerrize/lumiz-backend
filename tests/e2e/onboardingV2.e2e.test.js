@@ -47,6 +47,30 @@ jest.mock('../../src/controllers/userController', () => ({
 jest.mock('../../src/services/clinicMemberService', () => ({
   addMember: jest.fn().mockResolvedValue({ success: true })
 }));
+jest.mock('../../src/services/documentService', () => ({
+  processImage: jest.fn().mockResolvedValue({
+    tipo_documento: 'nota_fiscal',
+    transacoes: [{
+      tipo: 'saida',
+      valor: 450,
+      descricao: 'Nota fiscal de insumos',
+      categoria: 'insumos',
+      fornecedor: 'Fornecedor Teste'
+    }],
+    texto_extraido: 'Nota fiscal de insumos R$ 450'
+  }),
+  processDocumentFromBuffer: jest.fn().mockResolvedValue({
+    tipo_documento: 'nota_fiscal',
+    transacoes: [{
+      tipo: 'saida',
+      valor: 450,
+      descricao: 'Nota fiscal de insumos',
+      categoria: 'insumos',
+      fornecedor: 'Fornecedor Teste'
+    }],
+    texto_extraido: 'Nota fiscal de insumos R$ 450'
+  })
+}));
 jest.mock('../../src/controllers/transactionController', () => ({
   createAtendimento: jest.fn().mockResolvedValue({ id: 'atend_001' }),
   createContaPagar: jest.fn().mockResolvedValue({ id: 'conta_001' })
@@ -65,6 +89,7 @@ jest.mock('../../src/db/supabase', () => ({
 
 const transactionController = require('../../src/controllers/transactionController');
 const userController = require('../../src/controllers/userController');
+const documentService = require('../../src/services/documentService');
 const onboardingFlowService = require('../../src/services/onboardingFlowService');
 
 const PHONE_RAW = '5511988880002';
@@ -78,6 +103,10 @@ function clearState() {
 
 async function send(msg) {
   return onboardingFlowService.processOnboarding(PHONE_RAW, msg);
+}
+
+async function sendMedia(msg, mediaUrl, fileName = 'nota.jpg', messageKey = { id: 'msg-media-1' }) {
+  return onboardingFlowService.processOnboarding(PHONE_RAW, msg, mediaUrl, fileName, messageKey);
 }
 
 beforeEach(() => {
@@ -158,6 +187,21 @@ describe('Onboarding v2 — fluxo feliz completo', () => {
     const state = onboardingFlowService.onboardingStates.get(PHONE);
     expect(state.step).toBe('ACT3_COST_CONFIRM');
     expect(state.data.act3_pending?.valor).toBe(200);
+  });
+
+  test('ACT3 → ACT3_CONFIRM: processa nota fiscal enviada por imagem', async () => {
+    await onboardingFlowService.startIntroFlow(PHONE);
+    await send('dona');
+    await send('Botox 900 pix');
+    await send('sim');
+    const res = await sendMedia('', 'https://example.com/nota.jpg');
+    expect(res).toBeTruthy();
+    const state = onboardingFlowService.onboardingStates.get(PHONE);
+    expect(documentService.processImage).toHaveBeenCalledWith('https://example.com/nota.jpg', { id: 'msg-media-1' });
+    expect(state.step).toBe('ACT3_COST_CONFIRM');
+    expect(state.data.act3_pending?.valor).toBe(450);
+    expect(state.data.act3_pending?.descricao).toBe('Nota fiscal de insumos');
+    expect(transactionController.createContaPagar).not.toHaveBeenCalled();
   });
 
   test('ACT3_CONFIRM → ACT4: confirma custo, exibe insight', async () => {

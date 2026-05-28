@@ -1560,6 +1560,35 @@ class OnboardingStateHandlers {
         };
     }
 
+    _extractActCostFromDocument(result, fileName = null) {
+        if (!result || result.tipo_documento === 'erro' || result.tipo_documento === 'erro_validacao') {
+            return null;
+        }
+
+        const transaction = Array.isArray(result.transacoes)
+            ? (result.transacoes.find((item) => item.tipo === 'saida') || result.transacoes[0])
+            : null;
+
+        if (!transaction?.valor || transaction.valor <= 0) {
+            return null;
+        }
+
+        const descricao = transaction.descricao ||
+            transaction.fornecedor ||
+            transaction.categoria ||
+            fileName ||
+            'Custo';
+
+        return {
+            descricao,
+            valor: Number(transaction.valor),
+            data: transaction.data || getLocalIsoDate(),
+            categoria: transaction.categoria || null,
+            fornecedor: transaction.fornecedor || null,
+            original_text: result.texto_extraido || fileName || 'Documento'
+        };
+    }
+
     _toAtendimentoPayment(pagamento) {
         if (pagamento === 'pix') return 'pix';
         if (pagamento === 'dinheiro') return 'dinheiro';
@@ -1699,10 +1728,33 @@ class OnboardingStateHandlers {
     /**
      * Ato 3 — extrai custo do texto livre e pede confirmação.
      */
-    async handleAct3Cost(onboarding, messageTrimmed, respond) {
+    async handleAct3Cost(onboarding, messageTrimmed, respond, mediaUrl = null, fileName = null, messageKey = null, mediaBuffer = null, mimeType = null) {
         const cost = this._extractActCost(messageTrimmed);
         const { descricao, valor } = cost;
         if (!valor || valor <= 0) {
+            if (mediaUrl || mediaBuffer) {
+                try {
+                    const processPromise = mediaBuffer
+                        ? documentService.processDocumentFromBuffer(mediaBuffer, mimeType || 'application/pdf', fileName || null)
+                        : documentService.processImage(mediaUrl, messageKey || null);
+                    const timeoutPromise = new Promise((_, reject) =>
+                        setTimeout(() => reject(new Error('Timeout ao processar documento')), 60000)
+                    );
+                    const result = await Promise.race([processPromise, timeoutPromise]);
+                    const documentCost = this._extractActCostFromDocument(result, fileName);
+
+                    if (documentCost?.valor) {
+                        onboarding.data.act3_pending = documentCost;
+                        onboarding.step = 'ACT3_COST_CONFIRM';
+                        return await respond(onboardingCopy.act3CostConfirm(documentCost.descricao, documentCost.valor));
+                    }
+                } catch (error) {
+                    console.error('[ONBOARDING_V2] Erro ao processar documento no ACT3:', error?.message || error);
+                }
+
+                return await respond(onboardingCopy.act3CostDocumentError());
+            }
+
             return await respond(`Não consegui identificar o valor 🤔 Tenta assim: _"Insumos R$ 800"_`);
         }
 
@@ -2371,7 +2423,7 @@ class OnboardingFlowService {
                 case 'ACT2_SALE_CONFIRM':
                     return await handlers.handleAct2SaleConfirm(onboarding, messageTrimmed, normalizedPhone, respond);
                 case 'ACT3_COST':
-                    return await handlers.handleAct3Cost(onboarding, messageTrimmed, respond);
+                    return await handlers.handleAct3Cost(onboarding, messageTrimmed, respond, mediaUrl, fileName, messageKey, mediaBuffer, mimeType);
                 case 'ACT3_COST_CONFIRM':
                     return await handlers.handleAct3CostConfirm(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear);
                 case 'ACT4_AHA':
