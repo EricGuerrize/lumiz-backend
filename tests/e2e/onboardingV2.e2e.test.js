@@ -183,6 +183,25 @@ describe('Onboarding v2 — fluxo feliz completo', () => {
     expect(state.data.act2_pending?.parcelas).toBe(3);
   });
 
+  test('ACT2_CONFIRM → ACT2_MDR_RATE: pergunta taxa quando venda é no cartão', async () => {
+    await onboardingFlowService.startIntroFlow(PHONE);
+    await send('sim');
+    await send('Botox R$ 2500 no crédito em 2x');
+    const res = await send('certo');
+    expect(res).toContain('taxa da maquininha');
+    let state = onboardingFlowService.onboardingStates.get(PHONE);
+    expect(state.step).toBe('ACT2_MDR_RATE');
+    expect(transactionController.createAtendimento).not.toHaveBeenCalled();
+
+    const next = await send('3,2%');
+    expect(next).toContain('custo real');
+    state = onboardingFlowService.onboardingStates.get(PHONE);
+    expect(state.step).toBe('ACT3_COST');
+    expect(state.data.act2_mdr_rate).toBe(3.2);
+    expect(state.data.act2_saved?.mdr_confidence).toBe('actual');
+    expect(transactionController.createAtendimento).toHaveBeenCalledTimes(1);
+  });
+
   test('ACT2_CONFIRM → ACT3: confirma venda e avança para custo', async () => {
     await onboardingFlowService.startIntroFlow(PHONE);
     await send('sim');

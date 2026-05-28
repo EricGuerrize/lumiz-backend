@@ -744,20 +744,21 @@ module.exports = {
     act1Welcome() {
         return (
             `Oi! Sou a Lumiz, sua CFO no WhatsApp 💜\n\n` +
-            `Quero te mostrar, em 2 minutos, onde uma venda da sua clínica ganha ou perde dinheiro.\n\n` +
-            `Posso começar?`
+            `Vou montar um mini raio-x financeiro usando uma venda real da clínica: receita, custo, taxa de cartão e margem.\n\n` +
+            `Sem planilha e sem cadastro longo. Posso começar?`
         );
     },
 
     act1RoleUnrecognized() {
-        return `Me responde só com *sim* pra começar o teste rápido aqui no WhatsApp.`;
+        return `Me responde com *sim* para eu montar o primeiro raio-x financeiro da clínica aqui no WhatsApp.`;
     },
 
     /** Ato 2 — Primeira venda */
     act2SalePrompt() {
         return (
-            `Me conta uma venda que você fez essa semana 💰\n\n` +
-            `Pode ser simples assim: _"fiz botox, 1.2k no pix"_`
+            `Perfeito. Primeiro, me manda uma *venda real* desta semana 💰\n\n` +
+            `Pode escrever natural, do jeito que falaria no balcão:\n` +
+            `_"botox R$ 2.500 no crédito em 2x"_`
         );
     },
 
@@ -766,14 +767,28 @@ module.exports = {
             ? `R$ ${valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
             : String(valor || '?');
         return (
-            `Entendi: *${procedimento || 'Procedimento'}* ${valorFmt}` +
+            `Receita-base do diagnóstico:\n` +
+            `*${procedimento || 'Procedimento'}* — ${valorFmt}` +
             (pagamento ? ` no ${pagamento}` : '') +
-            `. Tá certo? Me diz se quiser corrigir algo.`
+            `.\n\n` +
+            `Está certo? Se tiver algo diferente, pode corrigir em uma frase.`
         );
     },
 
     act2PaymentPrompt() {
-        return `Foi no PIX, dinheiro, débito ou crédito? Se foi parcelado, pode mandar tipo _"3x no cartão"_.`;
+        return `Qual foi a forma de pagamento dessa venda? PIX, dinheiro, débito ou crédito? Se foi parcelado, pode mandar tipo _"3x no cartão"_.`;
+    },
+
+    act2MdrRatePrompt() {
+        return (
+            `Boa. Como foi no cartão, tem uma parte importante: *taxa da maquininha*.\n\n` +
+            `Você sabe a taxa dessa venda? Pode responder tipo _"3,2%"_.\n` +
+            `Se não souber, manda _"não sei"_ que eu uso uma estimativa conservadora.`
+        );
+    },
+
+    act2MdrRateUnrecognized() {
+        return `Me manda a taxa em percentual, tipo _"3,2%"_, ou responde _"não sei"_ para eu seguir com uma estimativa.`;
     },
 
     act2SaleAdjust() {
@@ -783,9 +798,9 @@ module.exports = {
     /** Ato 3 — Primeiro custo */
     act3CostPrompt() {
         return (
-            `E um custo recente? 💸\n\n` +
-            `Pode mandar a *nota fiscal* (foto/PDF) ou digitar:\n` +
-            `_"Insumos Biogelis R$ 800"_`
+            `Agora vamos cruzar essa venda com um custo real 💸\n\n` +
+            `Pode mandar a *nota fiscal* em foto/PDF ou digitar o principal custo ligado ao procedimento:\n` +
+            `_"toxina R$ 800"_ ou _"luvas R$ 500"_`
         );
     },
 
@@ -794,7 +809,9 @@ module.exports = {
             ? `R$ ${valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
             : String(valor || '?');
         return (
-            `Entendi: *${descricao || 'Custo'}* ${valorFmt}. Confirma? Me diz se precisar corrigir.`
+            `Custo identificado:\n` +
+            `*${descricao || 'Custo'}* — ${valorFmt}.\n\n` +
+            `Confirma? Se não for isso, me manda a correção.`
         );
     },
 
@@ -807,36 +824,50 @@ module.exports = {
     },
 
     /** Ato 4 — AHA insight */
-    act4Aha({ procedimento, insumoPercent, insumoMin, insumoMax, liquidoPix, liquidoCredito, taxaCredito, rateConfidence }) {
+    act4Aha({ procedimento, receita, custo, margemBruta, margemPercent, insumoPercent, insumoMin, insumoMax, liquidoPix, liquidoCredito, taxaCredito, rateConfidence }) {
+        const receitaFmt = receita != null ? `R$ ${Number(receita).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : null;
+        const custoFmt = custo != null ? `R$ ${Number(custo).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : null;
+        const margemFmt = margemBruta != null ? `R$ ${Number(margemBruta).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : null;
         const liquidoPixFmt = liquidoPix != null ? `R$ ${Number(liquidoPix).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : null;
         const liquidoCreditoFmt = liquidoCredito != null ? `R$ ${Number(liquidoCredito).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : null;
+        const resumoLine = receitaFmt && custoFmt
+            ? `\n• Receita analisada: *${receitaFmt}*\n• Custo informado: *${custoFmt}*`
+            : '';
         const insumoLine = insumoPercent != null
-            ? `\nNesse ${procedimento || 'procedimento'}, seu insumo ficou em *${insumoPercent}% da receita* — ${insumoPercent >= insumoMin && insumoPercent <= insumoMax ? 'dentro da faixa saudável' : 'fora da faixa recomendada'} (${insumoMin}-${insumoMax}% pra esse tipo).`
+            ? `\n• Peso do custo: *${insumoPercent}% da receita* — ${insumoPercent >= insumoMin && insumoPercent <= insumoMax ? 'dentro da faixa saudável' : 'fora da faixa recomendada'} (${insumoMin}-${insumoMax}% como referência inicial).`
             : '';
 
         const creditoLine = liquidoCreditoFmt
             ? (rateConfidence === 'estimate'
-                ? `\nSe fosse parcelado no crédito, entraria *~${liquidoCreditoFmt}* (estimativa de mercado — me diz sua taxa real pra refinar).`
-                : `\nSe fosse parcelado no crédito, entraria *~${liquidoCreditoFmt}* (taxa ${taxaCredito}%).`)
+                ? `\n• Após taxa de cartão estimada (${taxaCredito}%): *~${liquidoCreditoFmt}* entra líquido.`
+                : `\n• Após taxa da maquininha (${taxaCredito}%): *~${liquidoCreditoFmt}* entra líquido.`)
             : '';
 
-        const pixLine = liquidoPixFmt ? `\nNo PIX você recebe *${liquidoPixFmt}* líquido.` : '';
+        const pixLine = liquidoPixFmt ? `\n• Recebimento líquido: *${liquidoPixFmt}*.` : '';
+        const margemLine = margemFmt
+            ? `\n• Margem estimada depois desse custo: *${margemFmt}*${margemPercent != null ? ` (${margemPercent}%)` : ''}.`
+            : '';
 
         return (
-            `Show 🎯 Já tenho algo útil pra você:` +
+            `Aqui está o primeiro raio-x financeiro desse ${procedimento || 'procedimento'} 🎯` +
+            resumoLine +
             insumoLine +
             pixLine +
             creditoLine +
-            `\n\nQuer ver isso pra todos os seus procedimentos?`
+            margemLine +
+            `\n\nEsse é o tipo de leitura que a Lumiz vai montar automaticamente para cada lançamento. Quer continuar por aqui no WhatsApp?`
         );
     },
 
-    /** Ato 5 — CTA por persona */
+    /** Ato 5 — encerramento */
     act5CtaOwner() {
         return (
-            `Pronto, já tenho o primeiro retrato financeiro da sua clínica no WhatsApp ✅\n\n` +
-            `Por enquanto vamos usar essa conversa pra deixar seus lançamentos bem redondos. ` +
-            `Pode continuar me mandando receitas, custos e dúvidas por aqui.`
+            `Perfeito. A Lumiz já está pronta para operar como CFO da clínica no WhatsApp ✅\n\n` +
+            `A partir de agora, pode me mandar:\n` +
+            `• receitas e despesas em texto, áudio, foto ou PDF;\n` +
+            `• notas fiscais e comprovantes;\n` +
+            `• perguntas como _"quanto entrou este mês?"_ ou _"qual custo mais pesou?"_.\n\n` +
+            `Seu teste fica ativo por 14 dias. Por enquanto vamos focar em deixar os lançamentos bem redondos aqui na conversa.`
         );
     },
 

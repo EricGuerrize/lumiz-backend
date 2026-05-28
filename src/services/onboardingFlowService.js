@@ -1600,6 +1600,75 @@ class OnboardingStateHandlers {
         return 'credito_avista';
     }
 
+    _isCardPayment(pagamento) {
+        return ['credito', 'parcelado', 'debito'].includes(pagamento);
+    }
+
+    _extractMdrRate(text) {
+        const vNorm = normalizeText(text || '');
+        if (!vNorm || /nao sei|não sei|nao tenho|não tenho|sem ideia|pula|estim/.test(vNorm)) {
+            return { known: false, rate: null };
+        }
+
+        const percentMatch = String(text || '').match(/(\d{1,2}(?:[,.]\d{1,2})?)\s*%/);
+        if (!percentMatch) {
+            return { known: null, rate: null };
+        }
+
+        const rate = Number(percentMatch[1].replace(',', '.'));
+        if (!Number.isFinite(rate) || rate < 0 || rate > 20) {
+            return { known: null, rate: null };
+        }
+
+        return { known: true, rate };
+    }
+
+    async _saveAct2Sale(onboarding, normalizedPhone) {
+        const { procedimento, valor, pagamento, parcelas } = onboarding.data.act2_pending || {};
+        const userId = await this._ensureActProfile(onboarding, normalizedPhone);
+        if (!userId) {
+            return null;
+        }
+
+        await transactionController.createAtendimento(userId, {
+            valor,
+            categoria: procedimento,
+            descricao: procedimento,
+            data: getLocalIsoDate(),
+            forma_pagamento: this._toAtendimentoPayment(pagamento),
+            parcelas
+        });
+
+        onboarding.data.act2_saved = {
+            procedimento,
+            valor,
+            pagamento,
+            parcelas,
+            mdr_rate: onboarding.data.act2_mdr_rate ?? null,
+            mdr_confidence: onboarding.data.act2_mdr_confidence || null
+        };
+
+        await trialAccountService.saveRevenue({
+            phone: normalizedPhone,
+            clinicId: userId,
+            ownerName: onboarding.data.nome,
+            clinicName: onboarding.data.clinica,
+            role: onboarding.data.inferred_role || null,
+            sale: {
+                procedimento,
+                valor_total: valor,
+                forma_pagamento: pagamento,
+                parcelas,
+                data: getLocalIsoDate(),
+                original_text: onboarding.data.act2_original_text || procedimento
+            }
+        }).catch((error) => {
+            console.error('[TRIAL_ACCOUNT] Erro ao salvar venda do onboarding v2:', error?.message || error);
+        });
+
+        return userId;
+    }
+
     _isCorrectionDenial(text) {
         const vNorm = normalizeText(text || '');
         return isNo(text) || /^(nao|não|n)\b/.test(vNorm);
@@ -1673,46 +1742,23 @@ class OnboardingStateHandlers {
         }
 
         if (isYes(messageTrimmed) || messageTrimmed === '1') {
-            const { procedimento, valor, pagamento, parcelas } = onboarding.data.act2_pending || {};
+            const { pagamento } = onboarding.data.act2_pending || {};
             if (!pagamento) {
                 onboarding.step = 'ACT2_PAYMENT';
                 return await respond(onboardingCopy.act2PaymentPrompt());
             }
 
+            if (this._isCardPayment(pagamento) && !onboarding.data.act2_mdr_answered) {
+                onboarding.step = 'ACT2_MDR_RATE';
+                return await respond(onboardingCopy.act2MdrRatePrompt(), true);
+            }
+
             // Salva a venda
             try {
-                const userId = await this._ensureActProfile(onboarding, normalizedPhone);
+                const userId = await this._saveAct2Sale(onboarding, normalizedPhone);
                 if (!userId) {
                     return await respond(onboardingCopy.userCreationError());
                 }
-                if (userId) {
-                    await transactionController.createAtendimento(userId, {
-                        valor,
-                        categoria: procedimento,
-                        descricao: procedimento,
-                        data: getLocalIsoDate(),
-                        forma_pagamento: this._toAtendimentoPayment(pagamento),
-                        parcelas
-                    });
-                }
-                onboarding.data.act2_saved = { procedimento, valor, pagamento, parcelas };
-                await trialAccountService.saveRevenue({
-                    phone: normalizedPhone,
-                    clinicId: userId,
-                    ownerName: onboarding.data.nome,
-                    clinicName: onboarding.data.clinica,
-                    role: onboarding.data.role,
-                    sale: {
-                        procedimento,
-                        valor_total: valor,
-                        forma_pagamento: pagamento,
-                        parcelas,
-                        data: getLocalIsoDate(),
-                        original_text: onboarding.data.act2_original_text || procedimento
-                    }
-                }).catch((error) => {
-                    console.error('[TRIAL_ACCOUNT] Erro ao salvar venda do onboarding v2:', error?.message || error);
-                });
             } catch (err) {
                 console.warn('[ACT2] Falha ao salvar venda:', err?.message);
             }
@@ -1726,6 +1772,49 @@ class OnboardingStateHandlers {
             onboarding.data.act2_pending?.valor,
             onboarding.data.act2_pending?.pagamento
         ));
+    }
+
+    /**
+     * Ato 2 — coleta taxa de maquininha para vendas em cartão.
+     */
+    async handleAct2MdrRate(onboarding, messageTrimmed, normalizedPhone, respond) {
+        const mdr = this._extractMdrRate(messageTrimmed);
+        const maybeCost = this._extractActCost(messageTrimmed);
+
+        if (mdr.known === null && maybeCost?.valor) {
+            onboarding.data.act2_mdr_answered = true;
+            onboarding.data.act2_mdr_rate = null;
+            onboarding.data.act2_mdr_confidence = 'estimate';
+            try {
+                const userId = await this._saveAct2Sale(onboarding, normalizedPhone);
+                if (!userId) {
+                    return await respond(onboardingCopy.userCreationError());
+                }
+            } catch (err) {
+                console.warn('[ACT2_MDR] Falha ao salvar venda:', err?.message);
+            }
+            return await this.handleAct3Cost(onboarding, messageTrimmed, respond);
+        }
+
+        if (mdr.known === null) {
+            return await respond(onboardingCopy.act2MdrRateUnrecognized());
+        }
+
+        onboarding.data.act2_mdr_answered = true;
+        onboarding.data.act2_mdr_rate = mdr.rate;
+        onboarding.data.act2_mdr_confidence = mdr.known ? 'actual' : 'estimate';
+
+        try {
+            const userId = await this._saveAct2Sale(onboarding, normalizedPhone);
+            if (!userId) {
+                return await respond(onboardingCopy.userCreationError());
+            }
+        } catch (err) {
+            console.warn('[ACT2_MDR] Falha ao salvar venda:', err?.message);
+        }
+
+        onboarding.step = 'ACT3_COST';
+        return await respond(onboardingCopy.act3CostPrompt(), true);
     }
 
     /**
@@ -1806,7 +1895,7 @@ class OnboardingStateHandlers {
                     clinicId: userId,
                     ownerName: onboarding.data.nome,
                     clinicName: onboarding.data.clinica,
-                    role: onboarding.data.role,
+                    role: onboarding.data.inferred_role || null,
                     cost: {
                         descricao,
                         valor,
@@ -1844,19 +1933,27 @@ class OnboardingStateHandlers {
         if (!receita) return null;
 
         const insumoPercent = receita > 0 ? Math.round((custo / receita) * 100) : null;
-        const liquidoPix = sale.pagamento === 'pix' || sale.pagamento === 'dinheiro' ? receita : null;
-        const taxaEstimada = 0.04; // 4% crédito à vista — estimativa
-        const liquidoCredito = receita > 0 ? Math.round(receita * (1 - taxaEstimada) * 100) / 100 : null;
+        const usesCard = this._isCardPayment(sale.pagamento);
+        const taxaPercent = usesCard
+            ? Number(sale.mdr_rate ?? 4)
+            : 0;
+        const liquido = receita > 0 ? Math.round(receita * (1 - (taxaPercent / 100)) * 100) / 100 : null;
+        const margemBruta = liquido != null ? Math.round((liquido - custo) * 100) / 100 : null;
+        const margemPercent = receita > 0 && margemBruta != null ? Math.round((margemBruta / receita) * 100) : null;
 
         return onboardingCopy.act4Aha({
             procedimento: sale.procedimento,
+            receita,
+            custo,
+            margemBruta,
+            margemPercent,
             insumoPercent,
             insumoMin: 25,
             insumoMax: 40,
-            liquidoPix,
-            liquidoCredito: sale.pagamento !== 'pix' ? null : liquidoCredito,
-            taxaCredito: 4,
-            rateConfidence: 'estimate'
+            liquidoPix: usesCard ? null : liquido,
+            liquidoCredito: usesCard ? liquido : null,
+            taxaCredito: taxaPercent,
+            rateConfidence: sale.mdr_confidence || (usesCard ? 'estimate' : null)
         });
     }
 
@@ -2122,6 +2219,8 @@ class OnboardingFlowService {
                 return onboardingCopy.act2SalePrompt();
             case 'ACT2_PAYMENT':
                 return onboardingCopy.act2PaymentPrompt();
+            case 'ACT2_MDR_RATE':
+                return onboardingCopy.act2MdrRatePrompt();
             case 'ACT2_SALE_CONFIRM':
                 return onboardingCopy.act2SaleConfirm(
                     onboarding.data?.act2_pending?.procedimento,
@@ -2281,16 +2380,14 @@ class OnboardingFlowService {
                         clinicId,
                         ownerName: onboarding?.data?.nome || null,
                         clinicName: onboarding?.data?.clinica || null,
-                        role: onboarding?.data?.role || null
+                        role: onboarding?.data?.inferred_role || null
                     }).catch((error) => {
                         console.error('[TRIAL_ACCOUNT] Falha ao salvar resumo do onboarding:', error?.message || error);
                     });
 
                     const subscriptionService = require('./subscriptionService');
                     const evolutionSvc = require('./evolutionService');
-                    const subscriptionCopy = require('../copy/subscriptionCopy');
                     await subscriptionService.startTrial(clinicId);
-                    await evolutionSvc.sendMessage(normalizedPhone, subscriptionCopy.trialStarted()).catch(() => {});
                     const dashboardTeaserVideoUrl = String(process.env.ONBOARDING_DASHBOARD_TEASER_VIDEO_URL || '').trim();
                     if (dashboardTeaserVideoUrl && typeof evolutionSvc.sendVideo === 'function') {
                         const sendTeaserVideo = () => evolutionSvc.sendVideo(
@@ -2437,6 +2534,8 @@ class OnboardingFlowService {
                     return await handlers.handleAct2Sale(onboarding, messageTrimmed, respond);
                 case 'ACT2_PAYMENT':
                     return await handlers.handleAct2Payment(onboarding, messageTrimmed, respond);
+                case 'ACT2_MDR_RATE':
+                    return await handlers.handleAct2MdrRate(onboarding, messageTrimmed, normalizedPhone, respond);
                 case 'ACT2_SALE_CONFIRM':
                     return await handlers.handleAct2SaleConfirm(onboarding, messageTrimmed, normalizedPhone, respond);
                 case 'ACT3_COST':
