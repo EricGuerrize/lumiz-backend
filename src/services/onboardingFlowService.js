@@ -1534,14 +1534,26 @@ class OnboardingStateHandlers {
     _extractActSale(text, fallback = {}) {
         const valor = /\d/.test(text || '') ? extractPrimaryMonetaryValue(text) : null;
         const procedimentoMatch = (text || '').match(/^([a-záàãâäéèêëíìîïóòõôöúùûüçñ\s]+?)(?:\s+r\$|\s+\d)/i);
-        const procedureCandidate = procedimentoMatch ? procedimentoMatch[1].trim() : null;
-        const procedimento = procedureCandidate
-            ? procedureCandidate.replace(/^(nao|não|foi|era|seria|corrigindo)\s+/i, '').trim()
-            : fallback.procedimento || 'Procedimento';
+        const fallbackProcedure = fallback.procedimento && fallback.procedimento !== 'Procedimento'
+            ? fallback.procedimento
+            : null;
+        const cleanLeadingCue = (value) => String(value || '')
+            .replace(/^(nao|não|foi|era|seria|corrigindo|na verdade)\b\s*/i, '')
+            .trim();
+        const looseProcedureCandidate = !procedimentoMatch && !valor && !this._extractActPayment(text).pagamento
+            ? String(text || '')
+                .replace(/^(nao|não|foi|era|seria|corrigindo|na verdade)\b\s*/i, '')
+                .trim()
+            : null;
+        const procedureCandidate = procedimentoMatch ? procedimentoMatch[1].trim() : looseProcedureCandidate;
+        const cleanedProcedure = cleanLeadingCue(procedureCandidate);
+        const procedimento = cleanedProcedure
+            ? cleanedProcedure
+            : fallbackProcedure || 'Procedimento';
         const { pagamento, parcelas } = this._extractActPayment(text);
 
         return {
-            procedimento: procedimento || fallback.procedimento || 'Procedimento',
+            procedimento: procedimento || fallbackProcedure || 'Procedimento',
             valor: valor || fallback.valor || null,
             pagamento: pagamento || fallback.pagamento || null,
             parcelas: parcelas || fallback.parcelas || null,
@@ -1552,13 +1564,25 @@ class OnboardingStateHandlers {
     _extractActCost(text, fallback = {}) {
         const valor = /\d/.test(text || '') ? extractPrimaryMonetaryValue(text) : null;
         const descricaoMatch = (text || '').match(/^([a-záàãâäéèêëíìîïóòõôöúùûüçñ\s\-]+?)(?:\s+r\$|\s+\d)/i);
-        const descriptionCandidate = descricaoMatch ? descricaoMatch[1].trim() : null;
-        const descricao = descriptionCandidate
-            ? descriptionCandidate.replace(/^(nao|não|foi|era|seria|corrigindo)\s+/i, '').trim()
-            : fallback.descricao || 'Custo';
+        const fallbackDescription = fallback.descricao && fallback.descricao !== 'Custo'
+            ? fallback.descricao
+            : null;
+        const cleanLeadingCue = (value) => String(value || '')
+            .replace(/^(nao|não|foi|era|seria|corrigindo|na verdade)\b\s*/i, '')
+            .trim();
+        const looseDescriptionCandidate = !descricaoMatch && !valor
+            ? String(text || '')
+                .replace(/^(nao|não|foi|era|seria|corrigindo|na verdade)\b\s*/i, '')
+                .trim()
+            : null;
+        const descriptionCandidate = descricaoMatch ? descricaoMatch[1].trim() : looseDescriptionCandidate;
+        const cleanedDescription = cleanLeadingCue(descriptionCandidate);
+        const descricao = cleanedDescription
+            ? cleanedDescription
+            : fallbackDescription || 'Custo';
 
         return {
-            descricao: descricao || fallback.descricao || 'Custo',
+            descricao: descricao || fallbackDescription || 'Custo',
             valor: valor || fallback.valor || null
         };
     }
@@ -1698,9 +1722,14 @@ class OnboardingStateHandlers {
      * Ato 2 — extrai venda do texto livre e pede confirmação.
      */
     async handleAct2Sale(onboarding, messageTrimmed, respond) {
-        const sale = this._extractActSale(messageTrimmed);
+        const sale = this._extractActSale(messageTrimmed, onboarding.data.act2_pending || {});
         const { procedimento, valor, pagamento } = sale;
         if (!valor || valor <= 0) {
+            if (procedimento && procedimento !== 'Procedimento') {
+                onboarding.data.act2_pending = sale;
+                onboarding.data.act2_original_text = messageTrimmed;
+                return await respond(onboardingCopy.act2SaleMissingValue(procedimento));
+            }
             return await respond(onboardingCopy.act2SaleAmbiguous());
         }
 
@@ -1844,7 +1873,7 @@ class OnboardingStateHandlers {
      * Ato 3 — extrai custo do texto livre e pede confirmação.
      */
     async handleAct3Cost(onboarding, messageTrimmed, respond, mediaUrl = null, fileName = null, messageKey = null, mediaBuffer = null, mimeType = null) {
-        const cost = this._extractActCost(messageTrimmed);
+        const cost = this._extractActCost(messageTrimmed, onboarding.data.act3_pending || {});
         const { descricao, valor } = cost;
         if (!valor || valor <= 0) {
             if (mediaUrl || mediaBuffer) {
@@ -1872,6 +1901,11 @@ class OnboardingStateHandlers {
 
             if (this._classifyActAnswer(messageTrimmed).type === 'unknown') {
                 return await respond(onboardingCopy.act3CostUnknown());
+            }
+
+            if (descricao && descricao !== 'Custo') {
+                onboarding.data.act3_pending = cost;
+                return await respond(onboardingCopy.act3CostMissingValue(descricao));
             }
 
             return await respond(`Não consegui identificar o valor 🤔 Tenta assim: _"Insumos R$ 800"_`);

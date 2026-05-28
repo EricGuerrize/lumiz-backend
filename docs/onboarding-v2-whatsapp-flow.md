@@ -55,6 +55,23 @@ Receita-base do diagnóstico:
 Está certo? Se tiver algo diferente, pode corrigir em uma frase.
 ```
 
+### Quando a Venda Vem Fragmentada
+
+Exemplo: usuário envia primeiro `botox`.
+
+```text
+Entendi o procedimento: *botox*.
+
+Agora me manda o valor da venda e, se lembrar, a forma de pagamento.
+Exemplo: _"R$ 2.500 no crédito em 2x"_
+```
+
+Se depois ele envia `2500`, o bot guarda o procedimento e pede só o pagamento:
+
+```text
+Qual foi a forma de pagamento dessa venda? PIX, dinheiro, débito ou crédito? Se foi parcelado, pode mandar tipo _"3x no cartão"_.
+```
+
 ### Quando a Venda É No Cartão
 
 Depois da confirmação, o bot pergunta a taxa da maquininha:
@@ -93,6 +110,11 @@ Receita-base do diagnóstico:
 Está certo? Se tiver algo diferente, pode corrigir em uma frase.
 ```
 
+Também aceita correção parcial:
+
+- `na verdade foi no crédito` mantém procedimento e valor, troca só pagamento.
+- `foi 1200` mantém procedimento e pagamento, troca só valor.
+
 ## 3. Primeiro Custo
 
 ```text
@@ -109,6 +131,26 @@ Exemplo: usuário envia `Insumos Biogelis 800`.
 ```text
 Custo identificado:
 *Insumos Biogelis* — R$ 800,00.
+
+Confirma? Se não for isso, me manda a correção.
+```
+
+### Quando o Custo Vem Fragmentado
+
+Exemplo: usuário envia primeiro `toxina`.
+
+```text
+Entendi o custo: *toxina*.
+
+Agora me manda o valor aproximado.
+Exemplo: _"R$ 800"_
+```
+
+Se depois ele envia `800`, o bot usa o custo já guardado:
+
+```text
+Custo identificado:
+*toxina* — R$ 800,00.
 
 Confirma? Se não for isso, me manda a correção.
 ```
@@ -162,6 +204,10 @@ Custo identificado:
 
 Confirma? Se não for isso, me manda a correção.
 ```
+
+Também aceita correção parcial:
+
+- `foi 350` mantém a descrição do custo, troca só valor.
 
 ## 4. Insight
 
@@ -234,6 +280,8 @@ ACT1_START
 - O fluxo V2 pode enviar um vídeo teaser do dashboard futuro se `ONBOARDING_DASHBOARD_TEASER_VIDEO_URL` estiver configurado.
 - O fluxo V2 não pergunta cargo. Ele trata quem está no WhatsApp como operador autorizado da clínica.
 - O usuário pode corrigir venda ou custo respondendo `não, foi...` ou apenas enviando a correção direta, como `foi R$ 1200 no crédito`.
+- O fluxo aceita venda e custo fragmentados em mais de uma mensagem.
+- Correções parciais preservam os campos anteriores. Exemplo: `foi 1200` troca só valor; `foi no crédito` troca só pagamento.
 - O custo aceita texto, foto ou PDF.
 - Se o usuário não sabe o custo, o fluxo pede uma estimativa aproximada em vez de travar.
 - Vendas em cartão perguntam taxa da maquininha; se o usuário não souber, o bot usa estimativa conservadora.

@@ -779,6 +779,14 @@ module.exports = {
         return `Qual foi a forma de pagamento dessa venda? PIX, dinheiro, débito ou crédito? Se foi parcelado, pode mandar tipo _"3x no cartão"_.`;
     },
 
+    act2SaleMissingValue(procedimento) {
+        return (
+            `Entendi o procedimento${procedimento ? `: *${procedimento}*` : ''}.\n\n` +
+            `Agora me manda o valor da venda e, se lembrar, a forma de pagamento.\n` +
+            `Exemplo: _"R$ 2.500 no crédito em 2x"_`
+        );
+    },
+
     act2MdrRatePrompt() {
         return (
             `Boa. Como foi no cartão, tem uma parte importante: *taxa da maquininha*.\n\n` +
@@ -828,6 +836,14 @@ module.exports = {
 
     act3CostAdjust() {
         return `Ok! Me manda o custo correto:`;
+    },
+
+    act3CostMissingValue(descricao) {
+        return (
+            `Entendi o custo${descricao ? `: *${descricao}*` : ''}.\n\n` +
+            `Agora me manda o valor aproximado.\n` +
+            `Exemplo: _"R$ 800"_`
+        );
     },
 
     act3CostUnknown() {

@@ -183,6 +183,30 @@ describe('Onboarding v2 — fluxo feliz completo', () => {
     expect(state.data.act2_pending?.parcelas).toBe(3);
   });
 
+  test('ACT2: monta venda fragmentada em várias mensagens', async () => {
+    await onboardingFlowService.startIntroFlow(PHONE);
+    await send('sim');
+    let res = await send('botox');
+    let state = onboardingFlowService.onboardingStates.get(PHONE);
+    expect(res).toContain('Entendi o procedimento');
+    expect(state.step).toBe('ACT2_SALE');
+    expect(state.data.act2_pending?.procedimento).toBe('botox');
+
+    res = await send('2500');
+    state = onboardingFlowService.onboardingStates.get(PHONE);
+    expect(res).toContain('forma de pagamento');
+    expect(state.step).toBe('ACT2_PAYMENT');
+    expect(state.data.act2_pending?.procedimento).toBe('botox');
+    expect(state.data.act2_pending?.valor).toBe(2500);
+
+    res = await send('crédito em 2x');
+    state = onboardingFlowService.onboardingStates.get(PHONE);
+    expect(res).toContain('Receita-base');
+    expect(state.step).toBe('ACT2_SALE_CONFIRM');
+    expect(state.data.act2_pending?.pagamento).toBe('parcelado');
+    expect(state.data.act2_pending?.parcelas).toBe(2);
+  });
+
   test('ACT2_CONFIRM → ACT2_MDR_RATE: pergunta taxa quando venda é no cartão', async () => {
     await onboardingFlowService.startIntroFlow(PHONE);
     await send('sim');
@@ -225,6 +249,25 @@ describe('Onboarding v2 — fluxo feliz completo', () => {
     const state = onboardingFlowService.onboardingStates.get(PHONE);
     expect(state.step).toBe('ACT3_COST_CONFIRM');
     expect(state.data.act3_pending?.valor).toBe(200);
+  });
+
+  test('ACT3: monta custo fragmentado em duas mensagens', async () => {
+    await onboardingFlowService.startIntroFlow(PHONE);
+    await send('sim');
+    await send('Botox 900 pix');
+    await send('sim');
+    let res = await send('toxina');
+    let state = onboardingFlowService.onboardingStates.get(PHONE);
+    expect(res).toContain('Entendi o custo');
+    expect(state.step).toBe('ACT3_COST');
+    expect(state.data.act3_pending?.descricao).toBe('toxina');
+
+    res = await send('800');
+    state = onboardingFlowService.onboardingStates.get(PHONE);
+    expect(res).toContain('Custo identificado');
+    expect(state.step).toBe('ACT3_COST_CONFIRM');
+    expect(state.data.act3_pending?.descricao).toBe('toxina');
+    expect(state.data.act3_pending?.valor).toBe(800);
   });
 
   test('ACT3 → ACT3_CONFIRM: processa nota fiscal enviada por imagem', async () => {
@@ -316,6 +359,34 @@ describe('Onboarding v2 — correções mid-flow', () => {
     expect(transactionController.createAtendimento).not.toHaveBeenCalled();
   });
 
+  test('ACT2_CONFIRM: correção parcial troca só forma de pagamento', async () => {
+    await onboardingFlowService.startIntroFlow(PHONE);
+    await send('sim');
+    await send('Botox 900 pix');
+    const res = await send('na verdade foi no crédito');
+    const state = onboardingFlowService.onboardingStates.get(PHONE);
+    expect(res).toBeTruthy();
+    expect(state.step).toBe('ACT2_SALE_CONFIRM');
+    expect(state.data.act2_pending?.procedimento).toBe('Botox');
+    expect(state.data.act2_pending?.valor).toBe(900);
+    expect(state.data.act2_pending?.pagamento).toBe('credito');
+    expect(transactionController.createAtendimento).not.toHaveBeenCalled();
+  });
+
+  test('ACT2_CONFIRM: correção parcial troca só valor', async () => {
+    await onboardingFlowService.startIntroFlow(PHONE);
+    await send('sim');
+    await send('Botox 900 pix');
+    const res = await send('foi 1200');
+    const state = onboardingFlowService.onboardingStates.get(PHONE);
+    expect(res).toBeTruthy();
+    expect(state.step).toBe('ACT2_SALE_CONFIRM');
+    expect(state.data.act2_pending?.procedimento).toBe('Botox');
+    expect(state.data.act2_pending?.valor).toBe(1200);
+    expect(state.data.act2_pending?.pagamento).toBe('pix');
+    expect(transactionController.createAtendimento).not.toHaveBeenCalled();
+  });
+
   test('ACT3_CONFIRM: "não" volta para ACT3_COST', async () => {
     await onboardingFlowService.startIntroFlow(PHONE);
     await send('sim');
@@ -352,6 +423,21 @@ describe('Onboarding v2 — correções mid-flow', () => {
     const state = onboardingFlowService.onboardingStates.get(PHONE);
     expect(res).toBeTruthy();
     expect(state.step).toBe('ACT3_COST_CONFIRM');
+    expect(state.data.act3_pending?.valor).toBe(350);
+    expect(transactionController.createContaPagar).not.toHaveBeenCalled();
+  });
+
+  test('ACT3_CONFIRM: correção parcial troca só valor do custo', async () => {
+    await onboardingFlowService.startIntroFlow(PHONE);
+    await send('sim');
+    await send('Botox 900 pix');
+    await send('sim');
+    await send('Insumos 200');
+    const res = await send('foi 350');
+    const state = onboardingFlowService.onboardingStates.get(PHONE);
+    expect(res).toBeTruthy();
+    expect(state.step).toBe('ACT3_COST_CONFIRM');
+    expect(state.data.act3_pending?.descricao).toBe('Insumos');
     expect(state.data.act3_pending?.valor).toBe(350);
     expect(transactionController.createContaPagar).not.toHaveBeenCalled();
   });
