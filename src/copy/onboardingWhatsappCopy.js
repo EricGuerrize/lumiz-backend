@@ -862,12 +862,15 @@ module.exports = {
     /** Ato 5 — encerramento */
     act5CtaOwner() {
         return (
-            `Perfeito. A Lumiz já está pronta para operar como CFO da clínica no WhatsApp ✅\n\n` +
-            `A partir de agora, pode me mandar:\n` +
-            `• receitas e despesas em texto, áudio, foto ou PDF;\n` +
-            `• notas fiscais e comprovantes;\n` +
-            `• perguntas como _"quanto entrou este mês?"_ ou _"qual custo mais pesou?"_.\n\n` +
-            `Seu teste fica ativo por 14 dias. Por enquanto vamos focar em deixar os lançamentos bem redondos aqui na conversa.`
+            `Perfeito. Seu primeiro raio-x financeiro está pronto ✅\n\n` +
+            `A partir de agora, a Lumiz pode acompanhar a rotina financeira da clínica direto por aqui.\n\n` +
+            `Nos próximos 30 dias, você pode testar a experiência completa:\n` +
+            `• lançar receitas e despesas por texto, áudio, foto ou PDF;\n` +
+            `• enviar notas fiscais, boletos e comprovantes;\n` +
+            `• consultar saldo, entradas, custos e insights;\n` +
+            `• acompanhar margem por procedimento e impacto das taxas de maquininha.\n\n` +
+            `Por enquanto, vamos deixar seus lançamentos bem organizados no WhatsApp. ` +
+            `Quando a próxima etapa da plataforma estiver pronta, eu te aviso por aqui.`
         );
     },
 

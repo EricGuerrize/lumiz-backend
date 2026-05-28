@@ -171,14 +171,17 @@ Esse é o tipo de leitura que a Lumiz vai montar automaticamente para cada lanç
 ## 5. Encerramento
 
 ```text
-Perfeito. A Lumiz já está pronta para operar como CFO da clínica no WhatsApp ✅
+Perfeito. Seu primeiro raio-x financeiro está pronto ✅
 
-A partir de agora, pode me mandar:
-• receitas e despesas em texto, áudio, foto ou PDF;
-• notas fiscais e comprovantes;
-• perguntas como _"quanto entrou este mês?"_ ou _"qual custo mais pesou?"_.
+A partir de agora, a Lumiz pode acompanhar a rotina financeira da clínica direto por aqui.
 
-Seu teste fica ativo por 14 dias. Por enquanto vamos focar em deixar os lançamentos bem redondos aqui na conversa.
+Nos próximos 30 dias, você pode testar a experiência completa:
+• lançar receitas e despesas por texto, áudio, foto ou PDF;
+• enviar notas fiscais, boletos e comprovantes;
+• consultar saldo, entradas, custos e insights;
+• acompanhar margem por procedimento e impacto das taxas de maquininha.
+
+Por enquanto, vamos deixar seus lançamentos bem organizados no WhatsApp. Quando a próxima etapa da plataforma estiver pronta, eu te aviso por aqui.
 ```
 
 Se `ONBOARDING_DASHBOARD_TEASER_VIDEO_URL` estiver configurado, o bot também envia um vídeo teaser do dashboard com a legenda:
