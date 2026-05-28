@@ -139,8 +139,6 @@ Quer ver isso pra todos os seus procedimentos?
 
 ## 5. Encerramento
 
-### Para Dona ou Gestora
-
 ```text
 Pronto, já tenho o primeiro retrato financeiro da sua clínica no WhatsApp ✅
 
@@ -155,20 +153,10 @@ Um spoiler do que está vindo: o dashboard da Lumiz vai reunir seus lançamentos
 Por enquanto, seguimos deixando tudo redondo por aqui no WhatsApp.
 ```
 
-### Para Equipe
-
-```text
-Legal! Que tal a gente mostrar isso pra dona da clínica? 🤝
-
-Posso montar um resuminho financeiro pra você encaminhar pra ela. Quer?
-```
-
-Se `ONBOARDING_DASHBOARD_TEASER_VIDEO_URL` estiver configurado, o vídeo teaser também é enviado ao final.
-
 ## Resumo da Máquina de Estados
 
 ```text
-ACT1_ROLE
+ACT1_START
   -> ACT2_SALE
   -> ACT2_PAYMENT, se faltar forma de pagamento
   -> ACT2_SALE_CONFIRM
@@ -182,6 +170,7 @@ ACT1_ROLE
 
 - O fluxo V2 não envia link do dashboard no final.
 - O fluxo V2 pode enviar um vídeo teaser do dashboard futuro se `ONBOARDING_DASHBOARD_TEASER_VIDEO_URL` estiver configurado.
+- O fluxo V2 não pergunta cargo. Ele trata quem está no WhatsApp como operador autorizado da clínica.
 - O usuário pode corrigir venda ou custo respondendo `não, foi...`.
 - O custo aceita texto, foto ou PDF.
 - A venda exige forma de pagamento antes de ser salva.

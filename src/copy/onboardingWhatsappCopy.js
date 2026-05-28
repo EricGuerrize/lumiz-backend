@@ -736,7 +736,7 @@ module.exports = {
 
     // ============================================================
     // REDESIGN 5 ATOS (Fase 15)
-    // Novos usuários: ACT1_ROLE → ACT2_SALE → ACT2_SALE_CONFIRM
+    // Novos usuários: ACT1_START → ACT2_SALE → ACT2_SALE_CONFIRM
     //                → ACT3_COST → ACT3_COST_CONFIRM → ACT4_AHA → ACT5_CTA
     // ============================================================
 

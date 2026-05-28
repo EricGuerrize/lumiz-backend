@@ -133,7 +133,7 @@ describe('Onboarding v2 — fluxo feliz completo', () => {
     expect(res).not.toContain('dona da clínica');
     expect(res).not.toContain('política de privacidade');
     const state = onboardingFlowService.onboardingStates.get(PHONE);
-    expect(state.step).toBe('ACT1_ROLE');
+    expect(state.step).toBe('ACT1_START');
   });
 
   test('ACT1 → ACT2: aceite simples avança para pedido de venda', async () => {
@@ -142,21 +142,23 @@ describe('Onboarding v2 — fluxo feliz completo', () => {
     expect(res).toBeTruthy();
     const state = onboardingFlowService.onboardingStates.get(PHONE);
     expect(state.step).toBe('ACT2_SALE');
-    expect(state.data.role).toBe('owner');
+    expect(state.data.role).toBe('operator');
+    expect(state.data.inferred_role).toBeUndefined();
   });
 
-  test('ACT1 → ACT2: ainda aceita resposta de equipe', async () => {
+  test('ACT1 → ACT2: ainda aceita cargo espontâneo sem mudar persona do fluxo', async () => {
     await onboardingFlowService.startIntroFlow(PHONE);
     const res = await send('sou da equipe');
     expect(res).toBeTruthy();
     const state = onboardingFlowService.onboardingStates.get(PHONE);
     expect(state.step).toBe('ACT2_SALE');
-    expect(state.data.role).toBe('team');
+    expect(state.data.role).toBe('operator');
+    expect(state.data.inferred_role).toBe('team');
   });
 
   test('ACT2 → ACT2_CONFIRM: extrai venda em texto livre', async () => {
     await onboardingFlowService.startIntroFlow(PHONE);
-    await send('dona');
+    await send('sim');
     const res = await send('Botox R$ 900 pix');
     expect(res).toBeTruthy();
     const state = onboardingFlowService.onboardingStates.get(PHONE);
@@ -166,7 +168,7 @@ describe('Onboarding v2 — fluxo feliz completo', () => {
 
   test('ACT2 → ACT2_PAYMENT: pede forma de pagamento quando a venda vem incompleta', async () => {
     await onboardingFlowService.startIntroFlow(PHONE);
-    await send('dona');
+    await send('sim');
     await send('Botox R$ 900');
     let state = onboardingFlowService.onboardingStates.get(PHONE);
     expect(state.step).toBe('ACT2_PAYMENT');
@@ -183,7 +185,7 @@ describe('Onboarding v2 — fluxo feliz completo', () => {
 
   test('ACT2_CONFIRM → ACT3: confirma venda e avança para custo', async () => {
     await onboardingFlowService.startIntroFlow(PHONE);
-    await send('dona');
+    await send('sim');
     await send('Botox 900 pix');
     const res = await send('sim');
     expect(res).toBeTruthy();
@@ -196,7 +198,7 @@ describe('Onboarding v2 — fluxo feliz completo', () => {
 
   test('ACT3 → ACT3_CONFIRM: extrai custo em texto livre', async () => {
     await onboardingFlowService.startIntroFlow(PHONE);
-    await send('dona');
+    await send('sim');
     await send('Botox 900 pix');
     await send('sim');
     const res = await send('Insumos R$ 200');
@@ -208,7 +210,7 @@ describe('Onboarding v2 — fluxo feliz completo', () => {
 
   test('ACT3 → ACT3_CONFIRM: processa nota fiscal enviada por imagem', async () => {
     await onboardingFlowService.startIntroFlow(PHONE);
-    await send('dona');
+    await send('sim');
     await send('Botox 900 pix');
     await send('sim');
     const res = await sendMedia('', 'https://example.com/nota.jpg');
@@ -224,7 +226,7 @@ describe('Onboarding v2 — fluxo feliz completo', () => {
   test('ACT3_CONFIRM → ACT4: confirma custo, exibe insight', async () => {
     await onboardingFlowService.startIntroFlow(PHONE);
     onboardingFlowService.onboardingStates.get(PHONE).data.userId = 'test_user_001';
-    await send('dona');
+    await send('sim');
     await send('Botox 900 pix');
     await send('sim');
     await send('Insumos 200');
@@ -238,7 +240,7 @@ describe('Onboarding v2 — fluxo feliz completo', () => {
   test('ACT4 → encerramento: qualquer resposta encerra o onboarding', async () => {
     process.env.ONBOARDING_DASHBOARD_TEASER_VIDEO_URL = 'https://cdn.example.com/dashboard-teaser.mp4';
     await onboardingFlowService.startIntroFlow(PHONE);
-    await send('dona');
+    await send('sim');
     await send('Botox 900 pix');
     await send('sim');
     await send('Insumos 200');
@@ -261,7 +263,7 @@ describe('Onboarding v2 — fluxo feliz completo', () => {
 describe('Onboarding v2 — correções mid-flow', () => {
   test('ACT2_CONFIRM: "não" volta para ACT2_SALE', async () => {
     await onboardingFlowService.startIntroFlow(PHONE);
-    await send('dona');
+    await send('sim');
     await send('Botox 900 pix');
     const res = await send('não');
     const state = onboardingFlowService.onboardingStates.get(PHONE);
@@ -271,7 +273,7 @@ describe('Onboarding v2 — correções mid-flow', () => {
 
   test('ACT2_CONFIRM: "não, foi ..." corrige venda sem voltar o fluxo', async () => {
     await onboardingFlowService.startIntroFlow(PHONE);
-    await send('dona');
+    await send('sim');
     await send('Botox 900 pix');
     const res = await send('não, foi R$ 1200 no crédito');
     const state = onboardingFlowService.onboardingStates.get(PHONE);
@@ -284,7 +286,7 @@ describe('Onboarding v2 — correções mid-flow', () => {
 
   test('ACT3_CONFIRM: "não" volta para ACT3_COST', async () => {
     await onboardingFlowService.startIntroFlow(PHONE);
-    await send('dona');
+    await send('sim');
     await send('Botox 900 pix');
     await send('sim');
     await send('Insumos 200');
@@ -296,7 +298,7 @@ describe('Onboarding v2 — correções mid-flow', () => {
 
   test('ACT3_CONFIRM: "não, foi ..." corrige custo sem voltar o fluxo', async () => {
     await onboardingFlowService.startIntroFlow(PHONE);
-    await send('dona');
+    await send('sim');
     await send('Botox 900 pix');
     await send('sim');
     await send('Insumos 200');
@@ -314,7 +316,7 @@ describe('Onboarding v2 — correções mid-flow', () => {
 describe('Onboarding v2 — inputs inválidos', () => {
   test('ACT2: sem valor monetário pede nova tentativa', async () => {
     await onboardingFlowService.startIntroFlow(PHONE);
-    await send('dona');
+    await send('sim');
     const res = await send('fiz um procedimento hoje');
     const state = onboardingFlowService.onboardingStates.get(PHONE);
     expect(state.step).toBe('ACT2_SALE');
@@ -323,7 +325,7 @@ describe('Onboarding v2 — inputs inválidos', () => {
 
   test('ACT3: sem valor monetário pede nova tentativa', async () => {
     await onboardingFlowService.startIntroFlow(PHONE);
-    await send('dona');
+    await send('sim');
     await send('Botox 900 pix');
     await send('sim');
     const res = await send('comprei uns insumos');
@@ -341,7 +343,7 @@ describe('Onboarding v2 — fallback ACT5_CTA', () => {
     onboardingFlowService.onboardingStates.set(PHONE, {
       step: 'ACT5_CTA',
       startTime: Date.now(),
-      data: { role: 'owner', telefone: PHONE }
+      data: { role: 'operator', telefone: PHONE }
     });
 
     const res = await send('oi');

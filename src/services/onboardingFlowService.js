@@ -1434,9 +1434,9 @@ class OnboardingStateHandlers {
     // ============================================================
 
     /**
-     * Ato 1 — interpreta livremente se é dona ou equipe.
+     * Ato 1 — coleta apenas o aceite para iniciar o teste rápido.
      */
-    async handleAct1Role(onboarding, messageTrimmed, normalizedPhone, respond) {
+    async handleAct1Start(onboarding, messageTrimmed, normalizedPhone, respond) {
         const v = normalizeText(messageTrimmed);
         const isDona = /dona|sócia|socia|proprietária|proprietaria|gestora|eu mesma|sou eu|dono/.test(v);
         const isEquipe = /secretar|recepcionist|adm|financeiro|sócio|funcionaria|funcionário|team|equipe/.test(v);
@@ -1446,7 +1446,10 @@ class OnboardingStateHandlers {
             return await respond(onboardingCopy.act1RoleUnrecognized());
         }
 
-        onboarding.data.role = isEquipe ? 'team' : 'owner';
+        onboarding.data.role = 'operator';
+        if (isDona || isEquipe) {
+            onboarding.data.inferred_role = isEquipe ? 'team' : 'owner';
+        }
         // Registra consentimento por continuidade no fluxo iniciado pelo WhatsApp.
         const consentService = require('./consentService');
         consentService.recordConsent({ phone: normalizedPhone, req: onboarding?.req }).catch(() => {});
@@ -1461,7 +1464,6 @@ class OnboardingStateHandlers {
         }
 
         try {
-            const role = onboarding.data.role || 'owner';
             const result = await userController.createUserFromOnboarding({
                 telefone: normalizedPhone,
                 nome_completo: onboarding.data.nome || 'Cliente Lumiz',
@@ -1483,7 +1485,7 @@ class OnboardingStateHandlers {
                     clinicId: userId,
                     telefone: normalizedPhone,
                     nome: onboarding.data.nome,
-                    funcao: role === 'team' ? 'adm' : 'dona',
+                    funcao: 'adm',
                     createdBy: userId,
                     isPrimary: true
                 });
@@ -1862,11 +1864,7 @@ class OnboardingStateHandlers {
      * Ato 4 — resposta do usuário ao AHA insight (qualquer coisa avança).
      */
     async handleAct4Aha(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear) {
-        const isOwner = onboarding.data.role === 'owner';
-        const ctaMsg = isOwner
-            ? onboardingCopy.act5CtaOwner(null)
-            : onboardingCopy.act5CtaTeam();
-        return await respondAndClear(ctaMsg);
+        return await respondAndClear(onboardingCopy.act5CtaOwner(null));
     }
 }
 
@@ -1997,7 +1995,7 @@ class OnboardingFlowService {
 
         // Fase 15: novo fluxo 5 Atos ativado via ONBOARDING_V2=true (env)
         const useNewFlow = process.env.ONBOARDING_V2 === 'true';
-        const initialStep = useNewFlow ? 'ACT1_ROLE' : 'START';
+        const initialStep = useNewFlow ? 'ACT1_START' : 'START';
 
         this.onboardingStates.set(normalizedPhone, {
             step: initialStep,
@@ -2117,6 +2115,7 @@ class OnboardingFlowService {
             case 'MDR_SETUP_UPLOAD':
                 return onboardingCopy.mdrSetupUpload();
             // 5 Atos — novo fluxo (Fase 15)
+            case 'ACT1_START':
             case 'ACT1_ROLE':
                 return onboardingCopy.act1Welcome();
             case 'ACT2_SALE':
@@ -2431,8 +2430,9 @@ class OnboardingFlowService {
                 case 'MDR_SETUP_COMPLETE':
                     return await handlers.handleMdrSetupComplete(respond, respondAndClear);
                 // 5 Atos — novo fluxo (Fase 15)
+                case 'ACT1_START':
                 case 'ACT1_ROLE':
-                    return await handlers.handleAct1Role(onboarding, messageTrimmed, normalizedPhone, respond);
+                    return await handlers.handleAct1Start(onboarding, messageTrimmed, normalizedPhone, respond);
                 case 'ACT2_SALE':
                     return await handlers.handleAct2Sale(onboarding, messageTrimmed, respond);
                 case 'ACT2_PAYMENT':
@@ -2447,11 +2447,7 @@ class OnboardingFlowService {
                     return await handlers.handleAct4Aha(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear);
                 // Fallback de segurança: estado persistiu com ACT5_CTA antes do clear
                 case 'ACT5_CTA': {
-                    const isOwner = onboarding.data?.role === 'owner';
-                    const ctaMsg = isOwner
-                        ? onboardingCopy.act5CtaOwner(null)
-                        : onboardingCopy.act5CtaTeam();
-                    return await respondAndClear(ctaMsg);
+                    return await respondAndClear(onboardingCopy.act5CtaOwner(null));
                 }
                 default:
                     return await respond(onboardingCopy.lostState());
