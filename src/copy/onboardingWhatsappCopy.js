@@ -740,17 +740,17 @@ module.exports = {
     //                → ACT3_COST → ACT3_COST_CONFIRM → ACT4_AHA → ACT5_CTA
     // ============================================================
 
-    /** Ato 1 — Boas-vindas + papel (com LGPD inline) */
+    /** Ato 1 — Boas-vindas + permissão para começar */
     act1Welcome() {
         return (
             `Oi! Sou a Lumiz, sua CFO no WhatsApp 💜\n\n` +
-            `Você é a *dona da clínica* ou alguém da equipe?`  +
-            `\n\n_(Ao continuar, você concorda com nossa política de privacidade: https://lumiz.app/privacidade)_`
+            `Quero te mostrar, em 2 minutos, onde uma venda da sua clínica ganha ou perde dinheiro.\n\n` +
+            `Posso começar?`
         );
     },
 
     act1RoleUnrecognized() {
-        return `Não entendi muito bem 😅 Você é a *dona / sócia* da clínica ou faz parte do time (secretária, recepcionista, adm)?`;
+        return `Me responde só com *sim* pra começar o teste rápido aqui no WhatsApp.`;
     },
 
     /** Ato 2 — Primeira venda */

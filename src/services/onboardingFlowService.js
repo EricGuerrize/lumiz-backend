@@ -1440,13 +1440,14 @@ class OnboardingStateHandlers {
         const v = normalizeText(messageTrimmed);
         const isDona = /dona|sócia|socia|proprietária|proprietaria|gestora|eu mesma|sou eu|dono/.test(v);
         const isEquipe = /secretar|recepcionist|adm|financeiro|sócio|funcionaria|funcionário|team|equipe/.test(v);
+        const wantsToStart = isYes(messageTrimmed) || /começar|comecar|bora|vamos|pode|ok|quero|iniciar/.test(v);
 
-        if (!isDona && !isEquipe) {
+        if (!isDona && !isEquipe && !wantsToStart) {
             return await respond(onboardingCopy.act1RoleUnrecognized());
         }
 
-        onboarding.data.role = isDona ? 'owner' : 'team';
-        // Registra consentimento inline (rodapé do act1Welcome já tem o link)
+        onboarding.data.role = isEquipe ? 'team' : 'owner';
+        // Registra consentimento por continuidade no fluxo iniciado pelo WhatsApp.
         const consentService = require('./consentService');
         consentService.recordConsent({ phone: normalizedPhone, req: onboarding?.req }).catch(() => {});
 

@@ -7,15 +7,15 @@ Este documento mostra o fluxo atual do onboarding V2 como o usuário vê no What
 ```text
 Oi! Sou a Lumiz, sua CFO no WhatsApp 💜
 
-Você é a *dona da clínica* ou alguém da equipe?
+Quero te mostrar, em 2 minutos, onde uma venda da sua clínica ganha ou perde dinheiro.
 
-_(Ao continuar, você concorda com nossa política de privacidade: https://lumiz.app/privacidade)_
+Posso começar?
 ```
 
-Se o bot não entender se a pessoa é dona/gestora ou equipe:
+Se o bot não entender o aceite:
 
 ```text
-Não entendi muito bem 😅 Você é a *dona / sócia* da clínica ou faz parte do time (secretária, recepcionista, adm)?
+Me responde só com *sim* pra começar o teste rápido aqui no WhatsApp.
 ```
 
 ## 2. Primeira Venda

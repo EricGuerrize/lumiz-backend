@@ -129,17 +129,29 @@ describe('Onboarding v2 — fluxo feliz completo', () => {
   test('ACT1: boas-vindas ao iniciar', async () => {
     const res = await onboardingFlowService.startIntroFlow(PHONE);
     expect(res).toBeTruthy();
+    expect(res).toContain('Posso começar?');
+    expect(res).not.toContain('dona da clínica');
+    expect(res).not.toContain('política de privacidade');
     const state = onboardingFlowService.onboardingStates.get(PHONE);
     expect(state.step).toBe('ACT1_ROLE');
   });
 
-  test('ACT1 → ACT2: escolha "dona" avança para pedido de venda', async () => {
+  test('ACT1 → ACT2: aceite simples avança para pedido de venda', async () => {
     await onboardingFlowService.startIntroFlow(PHONE);
-    const res = await send('dona');
+    const res = await send('sim');
     expect(res).toBeTruthy();
     const state = onboardingFlowService.onboardingStates.get(PHONE);
     expect(state.step).toBe('ACT2_SALE');
     expect(state.data.role).toBe('owner');
+  });
+
+  test('ACT1 → ACT2: ainda aceita resposta de equipe', async () => {
+    await onboardingFlowService.startIntroFlow(PHONE);
+    const res = await send('sou da equipe');
+    expect(res).toBeTruthy();
+    const state = onboardingFlowService.onboardingStates.get(PHONE);
+    expect(state.step).toBe('ACT2_SALE');
+    expect(state.data.role).toBe('team');
   });
 
   test('ACT2 → ACT2_CONFIRM: extrai venda em texto livre', async () => {
