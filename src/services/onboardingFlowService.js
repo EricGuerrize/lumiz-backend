@@ -34,6 +34,7 @@ const {
     extractCostPaymentDetails,
     extractPrimaryMonetaryValue
 } = require('./onboardingUtils');
+const { extractInstallments } = require('../utils/moneyParser');
 
 // Fire-and-forget analytics helper — falhas de analytics nunca podem quebrar o onboarding
 const safeTrack = async (event, payload) => {
@@ -1504,30 +1505,112 @@ class OnboardingStateHandlers {
         }
     }
 
+    _extractActPayment(text) {
+        const vNorm = normalizeText(text || '');
+        const parcelas = extractInstallments(vNorm);
+
+        if (vNorm.includes('dinheiro') || vNorm.includes('especie') || vNorm.includes('espécie')) {
+            return { pagamento: 'dinheiro', parcelas: null };
+        }
+        if (vNorm.includes('debito') || vNorm.includes('débito')) {
+            return { pagamento: 'debito', parcelas: null };
+        }
+        if (parcelas > 1 || vNorm.includes('parcel') || vNorm.includes('credito') || vNorm.includes('crédito') || vNorm.includes('cartao') || vNorm.includes('cartão')) {
+            return {
+                pagamento: parcelas > 1 ? 'parcelado' : 'credito',
+                parcelas: parcelas > 1 ? parcelas : null
+            };
+        }
+        if (vNorm.includes('pix')) {
+            return { pagamento: 'pix', parcelas: null };
+        }
+
+        return { pagamento: null, parcelas: null };
+    }
+
+    _extractActSale(text, fallback = {}) {
+        const valor = /\d/.test(text || '') ? extractPrimaryMonetaryValue(text) : null;
+        const procedimentoMatch = (text || '').match(/^([a-záàãâäéèêëíìîïóòõôöúùûüçñ\s]+?)(?:\s+r\$|\s+\d)/i);
+        const procedureCandidate = procedimentoMatch ? procedimentoMatch[1].trim() : null;
+        const procedimento = procedureCandidate
+            ? procedureCandidate.replace(/^(nao|não|foi|era|seria|corrigindo)\s+/i, '').trim()
+            : fallback.procedimento || 'Procedimento';
+        const { pagamento, parcelas } = this._extractActPayment(text);
+
+        return {
+            procedimento: procedimento || fallback.procedimento || 'Procedimento',
+            valor: valor || fallback.valor || null,
+            pagamento: pagamento || fallback.pagamento || null,
+            parcelas: parcelas || fallback.parcelas || null,
+            original_text: text
+        };
+    }
+
+    _extractActCost(text, fallback = {}) {
+        const valor = /\d/.test(text || '') ? extractPrimaryMonetaryValue(text) : null;
+        const descricaoMatch = (text || '').match(/^([a-záàãâäéèêëíìîïóòõôöúùûüçñ\s\-]+?)(?:\s+r\$|\s+\d)/i);
+        const descriptionCandidate = descricaoMatch ? descricaoMatch[1].trim() : null;
+        const descricao = descriptionCandidate
+            ? descriptionCandidate.replace(/^(nao|não|foi|era|seria|corrigindo)\s+/i, '').trim()
+            : fallback.descricao || 'Custo';
+
+        return {
+            descricao: descricao || fallback.descricao || 'Custo',
+            valor: valor || fallback.valor || null
+        };
+    }
+
+    _toAtendimentoPayment(pagamento) {
+        if (pagamento === 'pix') return 'pix';
+        if (pagamento === 'dinheiro') return 'dinheiro';
+        if (pagamento === 'debito') return 'debito';
+        if (pagamento === 'parcelado') return 'parcelado';
+        return 'credito_avista';
+    }
+
+    _isCorrectionDenial(text) {
+        const vNorm = normalizeText(text || '');
+        return isNo(text) || /^(nao|não|n)\b/.test(vNorm);
+    }
+
     /**
      * Ato 2 — extrai venda do texto livre e pede confirmação.
      */
     async handleAct2Sale(onboarding, messageTrimmed, respond) {
-        const valor = /\d/.test(messageTrimmed) ? extractPrimaryMonetaryValue(messageTrimmed) : null;
+        const sale = this._extractActSale(messageTrimmed);
+        const { procedimento, valor, pagamento } = sale;
         if (!valor || valor <= 0) {
             return await respond(`Não consegui identificar o valor 🤔 Tenta assim: _"botox R$ 1.200 no pix"_`);
         }
 
-        // Extrai procedimento (primeira palavra significativa antes do valor)
-        const procedimentoMatch = messageTrimmed.match(/^([a-záàãâäéèêëíìîïóòõôöúùûüçñ\s]+?)(?:\s+r\$|\s+\d)/i);
-        const procedimento = procedimentoMatch ? procedimentoMatch[1].trim() : 'Procedimento';
-
-        // Extrai forma de pagamento
-        const vNorm = normalizeText(messageTrimmed);
-        let pagamento = 'PIX';
-        if (vNorm.includes('dinheiro') || vNorm.includes('especie')) pagamento = 'dinheiro';
-        else if (vNorm.includes('debito')) pagamento = 'debito';
-        else if (vNorm.includes('credito') || vNorm.includes('cartao') || vNorm.includes('parcel')) pagamento = 'credito';
-        else if (vNorm.includes('pix')) pagamento = 'pix';
-
-        onboarding.data.act2_pending = { procedimento, valor, pagamento };
+        onboarding.data.act2_pending = sale;
         onboarding.data.act2_original_text = messageTrimmed;
+        if (!pagamento) {
+            onboarding.step = 'ACT2_PAYMENT';
+            return await respond(onboardingCopy.act2PaymentPrompt());
+        }
+
         onboarding.step = 'ACT2_SALE_CONFIRM';
+        return await respond(onboardingCopy.act2SaleConfirm(procedimento, valor, pagamento));
+    }
+
+    /**
+     * Ato 2 — coleta forma de pagamento quando a venda veio incompleta.
+     */
+    async handleAct2Payment(onboarding, messageTrimmed, respond) {
+        const payment = this._extractActPayment(messageTrimmed);
+        if (!payment.pagamento) {
+            return await respond(onboardingCopy.act2PaymentPrompt());
+        }
+
+        onboarding.data.act2_pending = {
+            ...(onboarding.data.act2_pending || {}),
+            ...payment,
+            original_text: `${onboarding.data.act2_original_text || ''} ${messageTrimmed}`.trim()
+        };
+        onboarding.data.act2_original_text = onboarding.data.act2_pending.original_text;
+        onboarding.step = 'ACT2_SALE_CONFIRM';
+        const { procedimento, valor, pagamento } = onboarding.data.act2_pending;
         return await respond(onboardingCopy.act2SaleConfirm(procedimento, valor, pagamento));
     }
 
@@ -1535,13 +1618,34 @@ class OnboardingStateHandlers {
      * Ato 2 — confirmação da venda extraída.
      */
     async handleAct2SaleConfirm(onboarding, messageTrimmed, normalizedPhone, respond) {
-        if (isNo(messageTrimmed) || messageTrimmed === '2') {
+        if (this._isCorrectionDenial(messageTrimmed) || messageTrimmed === '2') {
+            const paymentCorrection = this._extractActPayment(messageTrimmed);
+            const hasInlineCorrection = /\d/.test(messageTrimmed) || Boolean(paymentCorrection.pagamento);
+            if (hasInlineCorrection) {
+                const correctedSale = this._extractActSale(messageTrimmed, onboarding.data.act2_pending || {});
+                onboarding.data.act2_pending = correctedSale;
+                onboarding.data.act2_original_text = correctedSale.original_text || messageTrimmed;
+                if (!correctedSale.pagamento) {
+                    onboarding.step = 'ACT2_PAYMENT';
+                    return await respond(onboardingCopy.act2PaymentPrompt());
+                }
+                onboarding.step = 'ACT2_SALE_CONFIRM';
+                return await respond(onboardingCopy.act2SaleConfirm(
+                    correctedSale.procedimento,
+                    correctedSale.valor,
+                    correctedSale.pagamento
+                ));
+            }
             onboarding.step = 'ACT2_SALE';
             return await respond(onboardingCopy.act2SaleAdjust());
         }
 
         if (isYes(messageTrimmed) || messageTrimmed === '1') {
-            const { procedimento, valor, pagamento } = onboarding.data.act2_pending || {};
+            const { procedimento, valor, pagamento, parcelas } = onboarding.data.act2_pending || {};
+            if (!pagamento) {
+                onboarding.step = 'ACT2_PAYMENT';
+                return await respond(onboardingCopy.act2PaymentPrompt());
+            }
 
             // Salva a venda
             try {
@@ -1555,10 +1659,11 @@ class OnboardingStateHandlers {
                         categoria: procedimento,
                         descricao: procedimento,
                         data: getLocalIsoDate(),
-                        forma_pagamento: pagamento === 'pix' ? 'pix' : pagamento === 'dinheiro' ? 'dinheiro' : pagamento === 'debito' ? 'debito' : 'credito_avista'
+                        forma_pagamento: this._toAtendimentoPayment(pagamento),
+                        parcelas
                     });
                 }
-                onboarding.data.act2_saved = { procedimento, valor, pagamento };
+                onboarding.data.act2_saved = { procedimento, valor, pagamento, parcelas };
                 await trialAccountService.saveRevenue({
                     phone: normalizedPhone,
                     clinicId: userId,
@@ -1569,6 +1674,7 @@ class OnboardingStateHandlers {
                         procedimento,
                         valor_total: valor,
                         forma_pagamento: pagamento,
+                        parcelas,
                         data: getLocalIsoDate(),
                         original_text: onboarding.data.act2_original_text || procedimento
                     }
@@ -1594,15 +1700,13 @@ class OnboardingStateHandlers {
      * Ato 3 — extrai custo do texto livre e pede confirmação.
      */
     async handleAct3Cost(onboarding, messageTrimmed, respond) {
-        const valor = /\d/.test(messageTrimmed) ? extractPrimaryMonetaryValue(messageTrimmed) : null;
+        const cost = this._extractActCost(messageTrimmed);
+        const { descricao, valor } = cost;
         if (!valor || valor <= 0) {
             return await respond(`Não consegui identificar o valor 🤔 Tenta assim: _"Insumos R$ 800"_`);
         }
 
-        const descricaoMatch = messageTrimmed.match(/^([a-záàãâäéèêëíìîïóòõôöúùûüçñ\s\-]+?)(?:\s+r\$|\s+\d)/i);
-        const descricao = descricaoMatch ? descricaoMatch[1].trim() : 'Custo';
-
-        onboarding.data.act3_pending = { descricao, valor };
+        onboarding.data.act3_pending = cost;
         onboarding.step = 'ACT3_COST_CONFIRM';
         return await respond(onboardingCopy.act3CostConfirm(descricao, valor));
     }
@@ -1611,7 +1715,16 @@ class OnboardingStateHandlers {
      * Ato 3 — confirmação do custo extraído.
      */
     async handleAct3CostConfirm(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear) {
-        if (isNo(messageTrimmed) || messageTrimmed === '2') {
+        if (this._isCorrectionDenial(messageTrimmed) || messageTrimmed === '2') {
+            if (/\d/.test(messageTrimmed)) {
+                const correctedCost = this._extractActCost(messageTrimmed, onboarding.data.act3_pending || {});
+                onboarding.data.act3_pending = correctedCost;
+                onboarding.step = 'ACT3_COST_CONFIRM';
+                return await respond(onboardingCopy.act3CostConfirm(
+                    correctedCost.descricao,
+                    correctedCost.valor
+                ));
+            }
             onboarding.step = 'ACT3_COST';
             return await respond(onboardingCopy.act3CostAdjust());
         }
@@ -1955,6 +2068,8 @@ class OnboardingFlowService {
                 return onboardingCopy.act1Welcome();
             case 'ACT2_SALE':
                 return onboardingCopy.act2SalePrompt();
+            case 'ACT2_PAYMENT':
+                return onboardingCopy.act2PaymentPrompt();
             case 'ACT2_SALE_CONFIRM':
                 return onboardingCopy.act2SaleConfirm(
                     onboarding.data?.act2_pending?.procedimento,
@@ -2251,6 +2366,8 @@ class OnboardingFlowService {
                     return await handlers.handleAct1Role(onboarding, messageTrimmed, normalizedPhone, respond);
                 case 'ACT2_SALE':
                     return await handlers.handleAct2Sale(onboarding, messageTrimmed, respond);
+                case 'ACT2_PAYMENT':
+                    return await handlers.handleAct2Payment(onboarding, messageTrimmed, respond);
                 case 'ACT2_SALE_CONFIRM':
                     return await handlers.handleAct2SaleConfirm(onboarding, messageTrimmed, normalizedPhone, respond);
                 case 'ACT3_COST':

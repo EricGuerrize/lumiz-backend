@@ -772,6 +772,10 @@ module.exports = {
         );
     },
 
+    act2PaymentPrompt() {
+        return `Foi no PIX, dinheiro, débito ou crédito? Se foi parcelado, pode mandar tipo _"3x no cartão"_.`;
+    },
+
     act2SaleAdjust() {
         return `Ok! Me manda o valor e a forma de pagamento corrigidos:`;
     },
