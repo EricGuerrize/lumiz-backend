@@ -1453,6 +1453,57 @@ class OnboardingStateHandlers {
         return await respond(onboardingCopy.act2SalePrompt(), true);
     }
 
+    async _ensureActProfile(onboarding, normalizedPhone) {
+        if (onboarding.data.userId) {
+            return onboarding.data.userId;
+        }
+
+        try {
+            const role = onboarding.data.role || 'owner';
+            const result = await userController.createUserFromOnboarding({
+                telefone: normalizedPhone,
+                nome_completo: onboarding.data.nome || 'Cliente Lumiz',
+                nome_clinica: onboarding.data.clinica || 'Clínica em teste'
+            });
+
+            const userId = result?.user?.id;
+            if (!userId) {
+                throw new Error('USER_ID_MISSING');
+            }
+
+            onboarding.data.userId = userId;
+            onboarding.data.nome = onboarding.data.nome || result.user.nome_completo || 'Cliente Lumiz';
+            onboarding.data.clinica = onboarding.data.clinica || result.user.nome_clinica || 'Clínica em teste';
+
+            try {
+                const clinicMemberService = require('./clinicMemberService');
+                await clinicMemberService.addMember({
+                    clinicId: userId,
+                    telefone: normalizedPhone,
+                    nome: onboarding.data.nome,
+                    funcao: role === 'team' ? 'adm' : 'dona',
+                    createdBy: userId,
+                    isPrimary: true
+                });
+                await cacheService.delete(`phone:profile:${normalizedPhone}`);
+            } catch (memberError) {
+                console.error('[ONBOARDING_V2] Erro ao criar clinic_member primário:', memberError?.message || memberError);
+            }
+
+            return userId;
+        } catch (error) {
+            console.error('[ONBOARDING_V2] Erro ao criar profile:', error?.message || error);
+            const existingUser = await userController.findUserByPhone(normalizedPhone);
+            if (existingUser?.id) {
+                onboarding.data.userId = existingUser.id;
+                onboarding.data.nome = onboarding.data.nome || existingUser.nome_completo || 'Cliente Lumiz';
+                onboarding.data.clinica = onboarding.data.clinica || existingUser.nome_clinica || 'Clínica em teste';
+                return existingUser.id;
+            }
+            return null;
+        }
+    }
+
     /**
      * Ato 2 — extrai venda do texto livre e pede confirmação.
      */
@@ -1475,6 +1526,7 @@ class OnboardingStateHandlers {
         else if (vNorm.includes('pix')) pagamento = 'pix';
 
         onboarding.data.act2_pending = { procedimento, valor, pagamento };
+        onboarding.data.act2_original_text = messageTrimmed;
         onboarding.step = 'ACT2_SALE_CONFIRM';
         return await respond(onboardingCopy.act2SaleConfirm(procedimento, valor, pagamento));
     }
@@ -1493,7 +1545,10 @@ class OnboardingStateHandlers {
 
             // Salva a venda
             try {
-                const userId = onboarding.data.userId;
+                const userId = await this._ensureActProfile(onboarding, normalizedPhone);
+                if (!userId) {
+                    return await respond(onboardingCopy.userCreationError());
+                }
                 if (userId) {
                     await transactionController.createAtendimento(userId, {
                         valor,
@@ -1504,6 +1559,22 @@ class OnboardingStateHandlers {
                     });
                 }
                 onboarding.data.act2_saved = { procedimento, valor, pagamento };
+                await trialAccountService.saveRevenue({
+                    phone: normalizedPhone,
+                    clinicId: userId,
+                    ownerName: onboarding.data.nome,
+                    clinicName: onboarding.data.clinica,
+                    role: onboarding.data.role,
+                    sale: {
+                        procedimento,
+                        valor_total: valor,
+                        forma_pagamento: pagamento,
+                        data: getLocalIsoDate(),
+                        original_text: onboarding.data.act2_original_text || procedimento
+                    }
+                }).catch((error) => {
+                    console.error('[TRIAL_ACCOUNT] Erro ao salvar venda do onboarding v2:', error?.message || error);
+                });
             } catch (err) {
                 console.warn('[ACT2] Falha ao salvar venda:', err?.message);
             }
@@ -1549,7 +1620,10 @@ class OnboardingStateHandlers {
             const { descricao, valor } = onboarding.data.act3_pending || {};
 
             try {
-                const userId = onboarding.data.userId;
+                const userId = await this._ensureActProfile(onboarding, normalizedPhone);
+                if (!userId) {
+                    return await respond(onboardingCopy.userCreationError());
+                }
                 if (userId) {
                     await transactionController.createContaPagar(userId, {
                         valor,
@@ -1559,6 +1633,22 @@ class OnboardingStateHandlers {
                     });
                 }
                 onboarding.data.act3_saved = { descricao, valor };
+                await trialAccountService.saveCost({
+                    phone: normalizedPhone,
+                    clinicId: userId,
+                    ownerName: onboarding.data.nome,
+                    clinicName: onboarding.data.clinica,
+                    role: onboarding.data.role,
+                    cost: {
+                        descricao,
+                        valor,
+                        categoria: 'outro',
+                        tipo: 'variavel',
+                        data: getLocalIsoDate()
+                    }
+                }).catch((error) => {
+                    console.error('[TRIAL_ACCOUNT] Erro ao salvar custo do onboarding v2:', error?.message || error);
+                });
             } catch (err) {
                 console.warn('[ACT3] Falha ao salvar custo:', err?.message);
             }

@@ -24,8 +24,28 @@ jest.mock('../../src/services/onboardingService', () => ({
   getState: jest.fn().mockResolvedValue(null)
 }));
 jest.mock('../../src/services/trialAccountService', () => ({
+  trialAccountService: {
+    saveRevenue: jest.fn().mockResolvedValue(true),
+    saveCost: jest.fn().mockResolvedValue(true),
+    saveReferralSummary: jest.fn().mockResolvedValue(true),
+  },
   saveReferralSummary: jest.fn().mockResolvedValue(true),
-  createTrialAccount: jest.fn().mockResolvedValue({ id: 'trial_user_001' })
+  createTrialAccount: jest.fn().mockResolvedValue({ id: 'trial_user_001' }),
+  buildForwardSummary: jest.fn().mockReturnValue('Resumo do teste'),
+  computeGhostSummary: jest.fn().mockReturnValue({ entradas: 0, custosFixos: 0, custosVariaveis: 0, saldoParcial: 0 })
+}));
+jest.mock('../../src/controllers/userController', () => ({
+  createUserFromOnboarding: jest.fn().mockResolvedValue({
+    user: {
+      id: 'created_user_001',
+      nome_completo: 'Cliente Lumiz',
+      nome_clinica: 'Clínica em teste'
+    }
+  }),
+  findUserByPhone: jest.fn().mockResolvedValue(null)
+}));
+jest.mock('../../src/services/clinicMemberService', () => ({
+  addMember: jest.fn().mockResolvedValue({ success: true })
 }));
 jest.mock('../../src/controllers/transactionController', () => ({
   createAtendimento: jest.fn().mockResolvedValue({ id: 'atend_001' }),
@@ -44,6 +64,7 @@ jest.mock('../../src/db/supabase', () => ({
 }));
 
 const transactionController = require('../../src/controllers/transactionController');
+const userController = require('../../src/controllers/userController');
 const onboardingFlowService = require('../../src/services/onboardingFlowService');
 
 const PHONE_RAW = '5511988880002';
@@ -99,13 +120,14 @@ describe('Onboarding v2 — fluxo feliz completo', () => {
 
   test('ACT2_CONFIRM → ACT3: confirma venda e avança para custo', async () => {
     await onboardingFlowService.startIntroFlow(PHONE);
-    onboardingFlowService.onboardingStates.get(PHONE).data.userId = 'test_user_001';
     await send('dona');
     await send('Botox 900 pix');
     const res = await send('sim');
     expect(res).toBeTruthy();
     const state = onboardingFlowService.onboardingStates.get(PHONE);
     expect(state.step).toBe('ACT3_COST');
+    expect(state.data.userId).toBe('created_user_001');
+    expect(userController.createUserFromOnboarding).toHaveBeenCalledTimes(1);
     expect(transactionController.createAtendimento).toHaveBeenCalledTimes(1);
   });
 
