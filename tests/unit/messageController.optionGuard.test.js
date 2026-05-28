@@ -7,6 +7,8 @@ describe('MessageController - guard de opções órfãs', () => {
   let detectIntentMock;
   let handleTransactionRequestMock;
   let runtimeGetAllActiveMock;
+  let featureFlagIsEnabledMock;
+  let agentRouterDecideMock;
 
   const mockGenericHandler = () => jest.fn().mockImplementation(() => ({}));
 
@@ -16,6 +18,8 @@ describe('MessageController - guard de opções órfãs', () => {
     detectIntentMock = jest.fn();
     handleTransactionRequestMock = jest.fn().mockResolvedValue('ok');
     runtimeGetAllActiveMock = jest.fn().mockResolvedValue([]);
+    featureFlagIsEnabledMock = jest.fn().mockResolvedValue(false);
+    agentRouterDecideMock = jest.fn().mockResolvedValue({ route: 'deterministic', reason: 'test' });
 
     jest.doMock('../../src/services/geminiService', () => ({ processMessage: jest.fn() }));
     jest.doMock('../../src/services/evolutionService', () => ({}));
@@ -63,13 +67,13 @@ describe('MessageController - guard de opções órfãs', () => {
     }));
 
     jest.doMock('../../src/services/featureFlagService', () => ({
-      isEnabled: jest.fn().mockResolvedValue(false),
+      isEnabled: featureFlagIsEnabledMock,
       listForUser: jest.fn().mockResolvedValue({})
     }));
 
     jest.doMock('../../src/services/agentic', () => ({
       agentRouterService: {
-        decide: jest.fn().mockResolvedValue({ route: 'deterministic', reason: 'test' })
+        decide: agentRouterDecideMock
       },
       toolRegistry: {
         execute: jest.fn().mockResolvedValue({ success: true, result: {} })
@@ -134,7 +138,7 @@ describe('MessageController - guard de opções órfãs', () => {
       handleDocumentPrompt: jest.fn(),
       handleGreeting: jest.fn().mockReturnValue('oi'),
       handleHelp: jest.fn(),
-      handleAmbiguousMessage: jest.fn()
+      handleAmbiguousMessage: jest.fn().mockResolvedValue('ambigua deterministica')
     })));
 
     jest.doMock('../../src/controllers/messages/installmentHandler', () => jest.fn().mockImplementation(() => ({
@@ -229,5 +233,20 @@ describe('MessageController - guard de opções órfãs', () => {
 
     expect(response).toBe('link de pagamento pronto');
     expect(detectIntentMock).not.toHaveBeenCalled();
+  });
+
+  test('mensagem ambígua não passa pelo agentic mesmo com flag ligada', async () => {
+    featureFlagIsEnabledMock.mockResolvedValue(true);
+    detectIntentMock.mockResolvedValue({
+      intencao: 'mensagem_ambigua',
+      dados: {},
+      confidence: 0,
+      source: 'fallback'
+    });
+
+    const response = await controller.handleIncomingMessage('5511999999999', 'teste');
+
+    expect(response).toBe('ambigua deterministica');
+    expect(agentRouterDecideMock).not.toHaveBeenCalled();
   });
 });

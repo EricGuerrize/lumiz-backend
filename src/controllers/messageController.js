@@ -681,7 +681,13 @@ class MessageController {
       // Rota agentic (LLM + tools) — flags `agentic_router_enabled` (ou shadow) + `agentic_tools_enabled`
       let response = null;
       let messageHandlingSource = 'deterministic';
-      if (user?.id && typeof message === 'string' && message.trim().length > 0) {
+      const canUseAgenticRouter =
+        user?.id &&
+        typeof message === 'string' &&
+        message.trim().length > 0 &&
+        !['mensagem_ambigua', 'erro'].includes(intent?.intencao);
+
+      if (canUseAgenticRouter) {
         const toolsOn = await featureFlagService.isEnabled('agentic_tools_enabled', user.id);
         if (toolsOn) {
           const intentForRouter = this._normalizeIntentForRouter(intent);
