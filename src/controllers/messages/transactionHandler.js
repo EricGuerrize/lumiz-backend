@@ -71,6 +71,14 @@ class TransactionHandler {
       confidence_score: intentConfidence
     };
 
+    if (normalizedData.tipo === 'entrada') {
+      normalizedData.categoria = this.sanitizeSaleCategory(
+        originalText,
+        normalizedData.categoria,
+        normalizedData.nome_cliente
+      );
+    }
+
     normalizedData.nome_cliente = this.sanitizeClientName(normalizedData.nome_cliente, normalizedData.categoria);
 
     // Verifica classificação de fornecedor para custos antes de usar a do LLM
@@ -255,7 +263,18 @@ class TransactionHandler {
         }).join('\n');
         return `${emoji} *Vendas vinculadas registradas!*\n\nValor total: ${formatarMoeda(valor)}\n${splitLines}\n\nTudo foi salvo como partes da mesma venda ✅`;
       }
-      return `${emoji} *${tipoTexto} registrada!*\n\n${formatarMoeda(valor)} - ${categoria || descricao}\n\nQuer ver seu saldo? Digite "saldo"`;
+      if (tipo === 'entrada') {
+        const paymentText = this.buildRegisteredPaymentText(forma_pagamento, parcelas);
+        const clientText = nome_cliente ? `\nCliente: ${nome_cliente}` : '';
+        return (
+          `${emoji} *${tipoTexto} registrada!* ✅\n\n` +
+          `${categoria || descricao || 'Procedimento'} — ${formatarMoeda(valor)}${paymentText}${clientText}\n\n` +
+          `Isso já entrou no financeiro deste mês.\n` +
+          `Quer ver o impacto no saldo? Digite "saldo".`
+        );
+      }
+
+      return `${emoji} *${tipoTexto} registrado!* ✅\n\n${formatarMoeda(valor)} - ${categoria || descricao}\n\nQuer ver seu saldo? Digite "saldo"`;
     }
 
     // Cancelamento
@@ -349,8 +368,77 @@ class TransactionHandler {
     return recoverValueWithInstallmentsContext(originalText, currentValue, parcelas);
   }
 
+  sanitizeSaleCategory(originalText, category, clientName = null) {
+    const normalizedCategory = this.normalizeText(category);
+    const paymentLikeCategory =
+      !normalizedCategory ||
+      normalizedCategory === 'procedimento' ||
+      /\b(credito|cartao|cartao em|credito em|debito|pix|dinheiro|parcelado|avista|a vista|pagamento)\b/.test(normalizedCategory);
+
+    if (!paymentLikeCategory) {
+      return category;
+    }
+
+    const inferred = this.inferSaleCategoryFromText(originalText, clientName);
+    return inferred || category || 'Procedimento';
+  }
+
+  inferSaleCategoryFromText(originalText, clientName = null) {
+    const raw = String(originalText || '').trim();
+    if (!raw) return null;
+
+    const lower = this.normalizeText(raw);
+    const procedureTerms = [
+      'limpeza de pele',
+      'bioestimulador',
+      'preenchimento',
+      'harmonizacao',
+      'harmonização',
+      'botox',
+      'toxina',
+      'tox',
+      'peeling',
+      'laser',
+      'fios'
+    ];
+
+    const found = procedureTerms.find((term) => lower.includes(this.normalizeText(term)));
+    if (found) {
+      return found.charAt(0).toUpperCase() + found.slice(1);
+    }
+
+    const beforeValue = raw
+      .split(/\b(?:r\$)?\s*\d/i)[0]
+      .replace(/\b(cliente|paciente|fez|pagou|comprou|realizou|atendeu|vendeu|vendi|fiz|procedimento|receita|venda)\b/gi, ' ')
+      .trim();
+
+    if (!beforeValue) return null;
+
+    const clientNorm = this.normalizeText(clientName);
+    const words = beforeValue
+      .split(/\s+/)
+      .filter(Boolean)
+      .filter((word) => {
+        const norm = this.normalizeText(word);
+        return norm && norm !== clientNorm && !/\b(no|na|em|de|do|da|para|com)\b/.test(norm);
+      });
+
+    if (!words.length) return null;
+    const candidate = words.slice(-2).join(' ').trim();
+    return candidate ? candidate.charAt(0).toUpperCase() + candidate.slice(1) : null;
+  }
+
   sanitizeClientName(nomeCliente, categoria) {
     return sanitizeClientName(nomeCliente, categoria);
+  }
+
+  buildRegisteredPaymentText(formaPagamento, parcelas) {
+    if (formaPagamento === 'parcelado' && parcelas) {
+      return ` no crédito em ${parcelas}x`;
+    }
+    const label = this.getPaymentMethodText(formaPagamento);
+    if (!label || label === 'Não informado') return '';
+    return ` no ${label.toLowerCase()}`;
   }
 
   resolvePaymentRequirements(dados, originalText) {

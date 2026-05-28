@@ -21,18 +21,19 @@ class QueryHandler {
       return `Ainda não tem nenhuma movimentação registrada 📋\n\nMe conta sua primeira venda!\nTipo: _"Botox R$ 2800 da cliente Maria"_`;
     }
 
-    let response = `Olha só como tá seu financeiro! 📊\n\n`;
-    response += `*Vendas:* ${formatarMoeda(balance.entradas)}\n`;
-    response += `*Custos:* ${formatarMoeda(balance.saidas)}\n`;
-    response += `*Lucro:* ${formatarMoeda(lucro)} _(${margemPercentual}% de margem)_\n\n`;
+    let response = `Seu financeiro até agora 📊\n\n`;
+    response += `*Faturamento registrado:* ${formatarMoeda(balance.entradas)}\n`;
+    response += `*Custos registrados:* ${formatarMoeda(balance.saidas)}\n`;
+    response += `*Resultado estimado:* ${formatarMoeda(lucro)} _(${margemPercentual}% de margem)_\n\n`;
 
     if (lucro > 0) {
-      response += `Tá no positivo! 🎉\n`;
+      response += `Resultado positivo até aqui.\n`;
     } else if (lucro < 0) {
-      response += `Opa, tá no vermelho... 😬\n`;
+      response += `Atenção: os custos já passaram o faturamento registrado.\n`;
     }
 
-    response += `\nQuer ver o relatório completo do mês? Manda _"relatório"_`;
+    response += `\nObservação: vendas parceladas aparecem como faturamento vendido; o caixa recebido pode cair em meses diferentes.\n\n`;
+    response += `Quer ver o relatório completo do mês? Manda _"relatório"_`;
 
     return response;
   }
@@ -124,10 +125,10 @@ class QueryHandler {
       return `Ainda não tem movimentações em ${mesNome}.\n\nBora começar? Me manda sua primeira venda! (ex: "Botox R$ 2800")`;
     }
 
-    let response = `*RELATÓRIO - ${mesNome}*\n\n`;
-    response += `Faturamento: ${formatarMoeda(report.entradas)}\n`;
-    response += `Custos: ${formatarMoeda(report.saidas)}\n`;
-    response += `Lucro líquido: ${formatarMoeda(lucro)} (${margemPercentual}%)\n\n`;
+    let response = `*RELATÓRIO FINANCEIRO - ${mesNome}*\n\n`;
+    response += `Faturamento registrado: ${formatarMoeda(report.entradas)}\n`;
+    response += `Custos registrados: ${formatarMoeda(report.saidas)}\n`;
+    response += `Resultado estimado: ${formatarMoeda(lucro)} (${margemPercentual}%)\n\n`;
     response += `Total: ${report.totalTransacoes} movimentações\n`;
 
     if (Object.keys(report.porCategoria).length > 0) {
@@ -137,9 +138,13 @@ class QueryHandler {
         .slice(0, 5)
         .forEach(([cat, data]) => {
           const tipo = data.tipo === 'entrada' ? 'Receita' : 'Custo';
-          response += `${tipo} - ${cat}: ${formatarMoeda(data.total)}\n`;
+          response += `${tipo} - ${this.cleanCategoryLabel(cat)}: ${formatarMoeda(data.total)}\n`;
         });
     }
+
+    response += `\n*Leitura CFO:*\n`;
+    response += `• Vendas parceladas entram como faturamento vendido; o recebimento em caixa pode acontecer em meses diferentes.\n`;
+    response += `• Se ainda faltam custos fixos ou insumos, a margem real pode mudar.\n`;
 
     response += `\nPara PDF completo: "me manda pdf", "relatório em pdf" ou "gerar pdf do mês".`;
 
@@ -150,6 +155,20 @@ class QueryHandler {
     }
 
     return response;
+  }
+
+  cleanCategoryLabel(category) {
+    const label = String(category || '').trim();
+    const normalized = label
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
+
+    if (/\b(credito em|cartao em|parcelado|forma de pagamento|pagamento)\b/.test(normalized)) {
+      return 'Procedimento não identificado';
+    }
+
+    return label || 'Sem categoria';
   }
 
   /**
@@ -361,5 +380,4 @@ class QueryHandler {
 }
 
 module.exports = QueryHandler;
-
 

@@ -96,4 +96,20 @@ describe('TransactionHandler.buildConfirmationMessage com confidence baixo', () 
     const message = handler.buildConfirmationMessage(dados);
     expect(message).not.toContain('confere');
   });
+
+  it('corrige categoria de venda quando LLM confunde pagamento com procedimento', () => {
+    const category = handler.sanitizeSaleCategory(
+      'rromulo botox 5000 em 5x no credito',
+      'Credito Em',
+      'rromulo'
+    );
+
+    expect(category).toBe('Botox');
+  });
+
+  it('monta mensagem pós-registro de venda com pagamento e cliente', () => {
+    const text = handler.buildRegisteredPaymentText('parcelado', 5);
+
+    expect(text).toBe(' no crédito em 5x');
+  });
 });
