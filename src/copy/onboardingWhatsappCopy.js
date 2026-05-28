@@ -795,6 +795,13 @@ module.exports = {
         return `Ok! Me manda o valor e a forma de pagamento corrigidos:`;
     },
 
+    act2SaleAmbiguous() {
+        return (
+            `Quase lá. Pra eu não registrar errado, me manda a venda com *procedimento + valor + forma de pagamento*.\n\n` +
+            `Exemplo: _"botox R$ 2.500 no crédito em 2x"_`
+        );
+    },
+
     /** Ato 3 — Primeiro custo */
     act3CostPrompt() {
         return (
@@ -821,6 +828,13 @@ module.exports = {
 
     act3CostAdjust() {
         return `Ok! Me manda o custo correto:`;
+    },
+
+    act3CostUnknown() {
+        return (
+            `Sem problema. Para esse primeiro raio-x, pode ser uma estimativa aproximada.\n\n` +
+            `Exemplo: _"toxina uns R$ 800"_ ou _"não lembro, usa R$ 500"_.`
+        );
     },
 
     /** Ato 4 — AHA insight */
@@ -871,6 +885,14 @@ module.exports = {
             `• acompanhar margem por procedimento e impacto das taxas de maquininha.\n\n` +
             `Por enquanto, vamos deixar seus lançamentos bem organizados no WhatsApp. ` +
             `Quando a próxima etapa da plataforma estiver pronta, eu te aviso por aqui.`
+        );
+    },
+
+    act5CtaDeclined() {
+        return (
+            `Sem problema. Já deixei esse primeiro raio-x financeiro salvo ✅\n\n` +
+            `A partir daqui, você pode continuar usando a Lumiz direto por aqui: mande receitas, custos, notas, boletos ou dúvidas financeiras da clínica.\n\n` +
+            `Nos próximos 30 dias, vou te ajudar a organizar os lançamentos e enxergar margem, custos e taxas com mais clareza.`
         );
     },
 

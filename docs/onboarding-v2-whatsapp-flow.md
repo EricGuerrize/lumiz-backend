@@ -69,7 +69,9 @@ Se não souber, manda _"não sei"_ que eu uso uma estimativa conservadora.
 ### Quando Não Entende Valor
 
 ```text
-Não consegui identificar o valor 🤔 Tenta assim: _"botox R$ 1.200 no pix"_
+Quase lá. Pra eu não registrar errado, me manda a venda com *procedimento + valor + forma de pagamento*.
+
+Exemplo: _"botox R$ 2.500 no crédito em 2x"_
 ```
 
 ### Correção Sem Detalhes
@@ -82,7 +84,7 @@ Ok! Me manda o valor e a forma de pagamento corrigidos:
 
 ### Correção Com Detalhes
 
-Se o usuário responde `não, foi R$ 1200 no crédito`, o bot corrige e confirma de novo:
+Se o usuário responde `não, foi R$ 1200 no crédito` ou apenas `foi R$ 1200 no crédito`, o bot corrige e confirma de novo:
 
 ```text
 Receita-base do diagnóstico:
@@ -134,6 +136,14 @@ Não consegui ler o valor da nota com segurança 🤔 Pode mandar de novo com um
 Não consegui identificar o valor 🤔 Tenta assim: _"Insumos R$ 800"_
 ```
 
+### Quando o Usuário Não Sabe o Custo
+
+```text
+Sem problema. Para esse primeiro raio-x, pode ser uma estimativa aproximada.
+
+Exemplo: _"toxina uns R$ 800"_ ou _"não lembro, usa R$ 500"_.
+```
+
 ### Correção Sem Detalhes
 
 Se o usuário responde apenas `não`:
@@ -144,7 +154,7 @@ Ok! Me manda o custo correto:
 
 ### Correção Com Detalhes
 
-Se o usuário responde `não, foi R$ 350 toxina`, o bot corrige e confirma de novo:
+Se o usuário responde `não, foi R$ 350 toxina` ou apenas `foi R$ 350 toxina`, o bot corrige e confirma de novo:
 
 ```text
 Custo identificado:
@@ -170,6 +180,8 @@ Esse é o tipo de leitura que a Lumiz vai montar automaticamente para cada lanç
 
 ## 5. Encerramento
 
+Se o usuário responde positivamente ou segue em frente:
+
 ```text
 Perfeito. Seu primeiro raio-x financeiro está pronto ✅
 
@@ -182,6 +194,16 @@ Nos próximos 30 dias, você pode testar a experiência completa:
 • acompanhar margem por procedimento e impacto das taxas de maquininha.
 
 Por enquanto, vamos deixar seus lançamentos bem organizados no WhatsApp. Quando a próxima etapa da plataforma estiver pronta, eu te aviso por aqui.
+```
+
+Se o usuário responde `não` no insight:
+
+```text
+Sem problema. Já deixei esse primeiro raio-x financeiro salvo ✅
+
+A partir daqui, você pode continuar usando a Lumiz direto por aqui: mande receitas, custos, notas, boletos ou dúvidas financeiras da clínica.
+
+Nos próximos 30 dias, vou te ajudar a organizar os lançamentos e enxergar margem, custos e taxas com mais clareza.
 ```
 
 Se `ONBOARDING_DASHBOARD_TEASER_VIDEO_URL` estiver configurado, o bot também envia um vídeo teaser do dashboard com a legenda:
@@ -211,8 +233,9 @@ ACT1_START
 - O fluxo V2 não envia link do dashboard no final.
 - O fluxo V2 pode enviar um vídeo teaser do dashboard futuro se `ONBOARDING_DASHBOARD_TEASER_VIDEO_URL` estiver configurado.
 - O fluxo V2 não pergunta cargo. Ele trata quem está no WhatsApp como operador autorizado da clínica.
-- O usuário pode corrigir venda ou custo respondendo `não, foi...`.
+- O usuário pode corrigir venda ou custo respondendo `não, foi...` ou apenas enviando a correção direta, como `foi R$ 1200 no crédito`.
 - O custo aceita texto, foto ou PDF.
+- Se o usuário não sabe o custo, o fluxo pede uma estimativa aproximada em vez de travar.
 - Vendas em cartão perguntam taxa da maquininha; se o usuário não souber, o bot usa estimativa conservadora.
 - A venda exige forma de pagamento antes de ser salva.
 - Após o onboarding, o usuário pode continuar usando o bot pelo WhatsApp.

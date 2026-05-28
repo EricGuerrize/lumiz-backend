@@ -303,6 +303,19 @@ describe('Onboarding v2 — correções mid-flow', () => {
     expect(transactionController.createAtendimento).not.toHaveBeenCalled();
   });
 
+  test('ACT2_CONFIRM: correção natural sem "não" atualiza venda', async () => {
+    await onboardingFlowService.startIntroFlow(PHONE);
+    await send('sim');
+    await send('Botox 900 pix');
+    const res = await send('foi R$ 1200 no crédito');
+    const state = onboardingFlowService.onboardingStates.get(PHONE);
+    expect(res).toBeTruthy();
+    expect(state.step).toBe('ACT2_SALE_CONFIRM');
+    expect(state.data.act2_pending?.valor).toBe(1200);
+    expect(state.data.act2_pending?.pagamento).toBe('credito');
+    expect(transactionController.createAtendimento).not.toHaveBeenCalled();
+  });
+
   test('ACT3_CONFIRM: "não" volta para ACT3_COST', async () => {
     await onboardingFlowService.startIntroFlow(PHONE);
     await send('sim');
@@ -322,6 +335,20 @@ describe('Onboarding v2 — correções mid-flow', () => {
     await send('sim');
     await send('Insumos 200');
     const res = await send('não, foi R$ 350 toxina');
+    const state = onboardingFlowService.onboardingStates.get(PHONE);
+    expect(res).toBeTruthy();
+    expect(state.step).toBe('ACT3_COST_CONFIRM');
+    expect(state.data.act3_pending?.valor).toBe(350);
+    expect(transactionController.createContaPagar).not.toHaveBeenCalled();
+  });
+
+  test('ACT3_CONFIRM: correção natural sem "não" atualiza custo', async () => {
+    await onboardingFlowService.startIntroFlow(PHONE);
+    await send('sim');
+    await send('Botox 900 pix');
+    await send('sim');
+    await send('Insumos 200');
+    const res = await send('foi R$ 350 de toxina');
     const state = onboardingFlowService.onboardingStates.get(PHONE);
     expect(res).toBeTruthy();
     expect(state.step).toBe('ACT3_COST_CONFIRM');
@@ -357,6 +384,19 @@ describe('Onboarding v2 — inputs inválidos', () => {
 // ─── Fallback ACT5_CTA ───────────────────────────────────────────────────────
 
 describe('Onboarding v2 — fallback ACT5_CTA', () => {
+  test('ACT4: "não" encerra com mensagem consultiva sem CTA comercial', async () => {
+    await onboardingFlowService.startIntroFlow(PHONE);
+    await send('sim');
+    await send('Botox 900 pix');
+    await send('sim');
+    await send('Insumos 200');
+    await send('sim');
+    const res = await send('não');
+    expect(res).toContain('Sem problema');
+    expect(res).toContain('30 dias');
+    expect(onboardingFlowService.onboardingStates.has(PHONE)).toBe(false);
+  });
+
   test('estado orfão ACT5_CTA encerra o onboarding sem lostState', async () => {
     // Simula estado persistido com step=ACT5_CTA (crash antes do clear)
     onboardingFlowService.onboardingStates.set(PHONE, {

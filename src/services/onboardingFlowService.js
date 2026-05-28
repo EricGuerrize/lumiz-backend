@@ -1563,6 +1563,26 @@ class OnboardingStateHandlers {
         };
     }
 
+    _classifyActAnswer(text) {
+        const raw = String(text || '').trim();
+        const vNorm = normalizeText(raw);
+        const payment = this._extractActPayment(raw);
+        const hasNumber = /\d/.test(raw);
+        const hasAmount = hasNumber && Boolean(extractPrimaryMonetaryValue(raw));
+        const hasPayment = Boolean(payment.pagamento);
+        const yes = isYes(raw) || raw === '1';
+        const no = isNo(raw) || raw === '2' || /^(nao|não|n)\b/.test(vNorm);
+        const unknown = /nao sei|não sei|nao lembro|não lembro|sem ideia|nao tenho|não tenho/.test(vNorm);
+        const correctionCue = /corrig|na verdade|era|foi|seria|troca|muda|ajusta/.test(vNorm);
+
+        if (yes) return { type: 'confirmation', payment };
+        if (no && (hasAmount || hasPayment || correctionCue)) return { type: 'correction', payment };
+        if (no) return { type: 'denial', payment };
+        if (unknown) return { type: 'unknown', payment };
+        if (hasAmount || hasPayment || correctionCue) return { type: 'correction', payment };
+        return { type: 'ambiguous', payment };
+    }
+
     _extractActCostFromDocument(result, fileName = null) {
         if (!result || result.tipo_documento === 'erro' || result.tipo_documento === 'erro_validacao') {
             return null;
@@ -1681,7 +1701,7 @@ class OnboardingStateHandlers {
         const sale = this._extractActSale(messageTrimmed);
         const { procedimento, valor, pagamento } = sale;
         if (!valor || valor <= 0) {
-            return await respond(`Não consegui identificar o valor 🤔 Tenta assim: _"botox R$ 1.200 no pix"_`);
+            return await respond(onboardingCopy.act2SaleAmbiguous());
         }
 
         onboarding.data.act2_pending = sale;
@@ -1699,6 +1719,7 @@ class OnboardingStateHandlers {
      * Ato 2 — coleta forma de pagamento quando a venda veio incompleta.
      */
     async handleAct2Payment(onboarding, messageTrimmed, respond) {
+        const sale = this._extractActSale(messageTrimmed, onboarding.data.act2_pending || {});
         const payment = this._extractActPayment(messageTrimmed);
         if (!payment.pagamento) {
             return await respond(onboardingCopy.act2PaymentPrompt());
@@ -1706,6 +1727,8 @@ class OnboardingStateHandlers {
 
         onboarding.data.act2_pending = {
             ...(onboarding.data.act2_pending || {}),
+            procedimento: sale.procedimento,
+            valor: sale.valor,
             ...payment,
             original_text: `${onboarding.data.act2_original_text || ''} ${messageTrimmed}`.trim()
         };
@@ -1719,13 +1742,17 @@ class OnboardingStateHandlers {
      * Ato 2 — confirmação da venda extraída.
      */
     async handleAct2SaleConfirm(onboarding, messageTrimmed, normalizedPhone, respond) {
-        if (this._isCorrectionDenial(messageTrimmed) || messageTrimmed === '2') {
-            const paymentCorrection = this._extractActPayment(messageTrimmed);
-            const hasInlineCorrection = /\d/.test(messageTrimmed) || Boolean(paymentCorrection.pagamento);
-            if (hasInlineCorrection) {
+        const answer = this._classifyActAnswer(messageTrimmed);
+
+        if (answer.type === 'correction' || answer.type === 'denial') {
+            if (answer.type === 'correction') {
                 const correctedSale = this._extractActSale(messageTrimmed, onboarding.data.act2_pending || {});
                 onboarding.data.act2_pending = correctedSale;
                 onboarding.data.act2_original_text = correctedSale.original_text || messageTrimmed;
+                if (!correctedSale.valor) {
+                    onboarding.step = 'ACT2_SALE';
+                    return await respond(onboardingCopy.act2SaleAmbiguous());
+                }
                 if (!correctedSale.pagamento) {
                     onboarding.step = 'ACT2_PAYMENT';
                     return await respond(onboardingCopy.act2PaymentPrompt());
@@ -1741,7 +1768,7 @@ class OnboardingStateHandlers {
             return await respond(onboardingCopy.act2SaleAdjust());
         }
 
-        if (isYes(messageTrimmed) || messageTrimmed === '1') {
+        if (answer.type === 'confirmation') {
             const { pagamento } = onboarding.data.act2_pending || {};
             if (!pagamento) {
                 onboarding.step = 'ACT2_PAYMENT';
@@ -1767,11 +1794,7 @@ class OnboardingStateHandlers {
             return await respond(onboardingCopy.act3CostPrompt(), true);
         }
 
-        return await respond(onboardingCopy.act2SaleConfirm(
-            onboarding.data.act2_pending?.procedimento,
-            onboarding.data.act2_pending?.valor,
-            onboarding.data.act2_pending?.pagamento
-        ));
+        return await respond(`Pra eu seguir sem erro, me responde *sim* se estiver certo ou me manda a correção em uma frase.`);
     }
 
     /**
@@ -1847,6 +1870,10 @@ class OnboardingStateHandlers {
                 return await respond(onboardingCopy.act3CostDocumentError());
             }
 
+            if (this._classifyActAnswer(messageTrimmed).type === 'unknown') {
+                return await respond(onboardingCopy.act3CostUnknown());
+            }
+
             return await respond(`Não consegui identificar o valor 🤔 Tenta assim: _"Insumos R$ 800"_`);
         }
 
@@ -1859,8 +1886,10 @@ class OnboardingStateHandlers {
      * Ato 3 — confirmação do custo extraído.
      */
     async handleAct3CostConfirm(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear) {
-        if (this._isCorrectionDenial(messageTrimmed) || messageTrimmed === '2') {
-            if (/\d/.test(messageTrimmed)) {
+        const answer = this._classifyActAnswer(messageTrimmed);
+
+        if (answer.type === 'correction' || answer.type === 'denial') {
+            if (answer.type === 'correction') {
                 const correctedCost = this._extractActCost(messageTrimmed, onboarding.data.act3_pending || {});
                 onboarding.data.act3_pending = correctedCost;
                 onboarding.step = 'ACT3_COST_CONFIRM';
@@ -1873,7 +1902,7 @@ class OnboardingStateHandlers {
             return await respond(onboardingCopy.act3CostAdjust());
         }
 
-        if (isYes(messageTrimmed) || messageTrimmed === '1') {
+        if (answer.type === 'confirmation') {
             const { descricao, valor } = onboarding.data.act3_pending || {};
 
             try {
@@ -1961,6 +1990,10 @@ class OnboardingStateHandlers {
      * Ato 4 — resposta do usuário ao AHA insight (qualquer coisa avança).
      */
     async handleAct4Aha(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear) {
+        if (isNo(messageTrimmed)) {
+            return await respondAndClear(onboardingCopy.act5CtaDeclined());
+        }
+
         return await respondAndClear(onboardingCopy.act5CtaOwner(null));
     }
 }
