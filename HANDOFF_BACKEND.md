@@ -73,6 +73,11 @@ As fases 9 e 10 são majoritariamente frontend. No backend, o foco é garantir c
 
 - Opcional: `RESEND_API_KEY`
   - sem chave: fluxo degrada graceful com `skipped: missing_api_key`.
+- Redis/filas:
+  - `REDIS_CACHE_ENABLED=true` habilita cache Redis.
+  - `REDIS_QUEUE_ENABLED=true` habilita producers BullMQ.
+  - `QUEUE_WORKER_ENABLED=false` no serviço HTTP evita consumir filas no webhook.
+  - `QUEUE_WORKER_ENABLED=true` no serviço worker consome `mdr-ocr`, `document-processing` e `pdf-generation` via `npm run worker`.
 
 ### Agente WhatsApp (`agentic_*`)
 

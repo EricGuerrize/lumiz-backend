@@ -5,6 +5,7 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
+    "worker": "node src/worker.js",
     "dev": "nodemon src/server.js",
     "test": "NODE_ENV=test node tests/apiSmoke.test.js",
     "test:unit": "jest tests/unit --coverage",

@@ -14,6 +14,7 @@ class PdfQueueService {
         this._lastErrorLogAt = 0;
         this.maxReconnectAttempts = Number(process.env.REDIS_MAX_RECONNECT_ATTEMPTS || 5);
         this.redisQueueFeatureEnabled = this.readFlag('REDIS_QUEUE_ENABLED', !!process.env.REDIS_URL);
+        this.workerEnabled = this.readFlag('QUEUE_WORKER_ENABLED', true);
 
         if (!this.redisQueueFeatureEnabled) {
             console.warn('[PDF_QUEUE] ⚠️ REDIS_QUEUE_ENABLED=false. Fila de PDF desabilitada (modo degradado).');
@@ -39,7 +40,7 @@ class PdfQueueService {
                 });
 
                 this.connection.on('ready', () => {
-                    if (this.queue && this.worker) {
+                    if (this.queue && (this.worker || !this.workerEnabled)) {
                         this.queueEnabled = true;
                     }
                     console.log('[PDF_QUEUE] ✅ Redis pronto');
@@ -56,29 +57,33 @@ class PdfQueueService {
                 console.log('[PDF_QUEUE] Criando Queue pdf-generation...');
                 this.queue = new Queue('pdf-generation', { connection: this.connection });
 
-                console.log('[PDF_QUEUE] Criando Worker pdf-generation...');
-                this.worker = new Worker('pdf-generation', this.processJob.bind(this), {
-                    connection: this.connection,
-                    concurrency: 2 // Processa até 2 PDFs simultaneamente
-                });
-
                 this.queue.on('error', (err) => {
                     this.logRedisError(`[PDF_QUEUE] ❌ Queue error: ${err.message}`);
                     this.queueEnabled = false;
                 });
 
-                this.worker.on('error', (err) => {
-                    this.logRedisError(`[PDF_QUEUE] ❌ Worker error: ${err.message}`);
-                    this.queueEnabled = false;
-                });
+                if (this.workerEnabled) {
+                    console.log('[PDF_QUEUE] Criando Worker pdf-generation...');
+                    this.worker = new Worker('pdf-generation', this.processJob.bind(this), {
+                        connection: this.connection,
+                        concurrency: 2 // Processa até 2 PDFs simultaneamente
+                    });
 
-                this.worker.on('completed', (job) => {
-                    console.log(`[PDF_QUEUE] Job ${job.id} completado com sucesso`);
-                });
+                    this.worker.on('error', (err) => {
+                        this.logRedisError(`[PDF_QUEUE] ❌ Worker error: ${err.message}`);
+                        this.queueEnabled = false;
+                    });
 
-                this.worker.on('failed', (job, err) => {
-                    console.error(`[PDF_QUEUE] Job ${job?.id} falhou:`, err.message);
-                });
+                    this.worker.on('completed', (job) => {
+                        console.log(`[PDF_QUEUE] Job ${job.id} completado com sucesso`);
+                    });
+
+                    this.worker.on('failed', (job, err) => {
+                        console.error(`[PDF_QUEUE] Job ${job?.id} falhou:`, err.message);
+                    });
+                } else {
+                    console.log('[PDF_QUEUE] Worker desabilitado neste processo; somente producer ativo.');
+                }
 
                 this.queueEnabled = true;
                 console.log('[PDF_QUEUE] ✅ BullMQ iniciado com sucesso!');

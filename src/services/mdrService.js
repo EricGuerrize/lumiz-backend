@@ -16,6 +16,7 @@ class MdrService {
     this._lastErrorLogAt = 0;
     this.maxReconnectAttempts = Number(process.env.REDIS_MAX_RECONNECT_ATTEMPTS || 5);
     this.redisQueueFeatureEnabled = this.readFlag('REDIS_QUEUE_ENABLED', !!process.env.REDIS_URL);
+    this.workerEnabled = this.readFlag('QUEUE_WORKER_ENABLED', true);
 
     console.log('[MDR_QUEUE] REDIS_URL:', process.env.REDIS_URL ? 'configurada' : 'não configurada');
 
@@ -43,7 +44,7 @@ class MdrService {
         });
 
         this.connection.on('ready', () => {
-          if (this.queue && this.worker) {
+          if (this.queue && (this.worker || !this.workerEnabled)) {
             this.queueEnabled = true;
           }
           console.log('[MDR_QUEUE] ✅ Redis pronto');
@@ -59,29 +60,35 @@ class MdrService {
 
         console.log('[MDR_QUEUE] Redis conectado, criando Queue...');
         this.queue = new Queue('mdr-ocr', { connection: this.connection });
-        console.log('[MDR_QUEUE] Queue criada, criando Worker...');
-        this.worker = new Worker('mdr-ocr', this.processQueueJob.bind(this), {
-          connection: this.connection
-        });
-        console.log('[MDR_QUEUE] Worker criado, adicionando event listeners...');
+        console.log('[MDR_QUEUE] Queue criada');
 
         this.queue.on('error', (err) => {
           this.logRedisError(`[MDR_QUEUE] ❌ Queue error: ${err.message}`);
           this.queueEnabled = false;
         });
 
-        this.worker.on('error', (err) => {
-          this.logRedisError(`[MDR_QUEUE] ❌ Worker error: ${err.message}`);
-          this.queueEnabled = false;
-        });
-        
-        this.worker.on('completed', (job) => {
-          console.log(`[MDR_QUEUE] Job ${job.id} completado`);
-        });
-        
-        this.worker.on('failed', (job, err) => {
-          console.error(`[MDR_QUEUE] Job ${job?.id} falhou:`, err.message);
-        });
+        if (this.workerEnabled) {
+          console.log('[MDR_QUEUE] Criando Worker mdr-ocr...');
+          this.worker = new Worker('mdr-ocr', this.processQueueJob.bind(this), {
+            connection: this.connection
+          });
+          console.log('[MDR_QUEUE] Worker criado, adicionando event listeners...');
+
+          this.worker.on('error', (err) => {
+            this.logRedisError(`[MDR_QUEUE] ❌ Worker error: ${err.message}`);
+            this.queueEnabled = false;
+          });
+
+          this.worker.on('completed', (job) => {
+            console.log(`[MDR_QUEUE] Job ${job.id} completado`);
+          });
+
+          this.worker.on('failed', (job, err) => {
+            console.error(`[MDR_QUEUE] Job ${job?.id} falhou:`, err.message);
+          });
+        } else {
+          console.log('[MDR_QUEUE] Worker desabilitado neste processo; somente producer ativo.');
+        }
         
         this.queueEnabled = true;
         console.log('[MDR_QUEUE] ✅ BullMQ iniciado com sucesso!');

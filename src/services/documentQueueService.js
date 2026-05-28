@@ -19,6 +19,7 @@ class DocumentQueueService {
     this._lastErrorLogAt = 0;
     this.maxReconnectAttempts = Number(process.env.REDIS_MAX_RECONNECT_ATTEMPTS || 5);
     this.redisQueueFeatureEnabled = this.readFlag('REDIS_QUEUE_ENABLED', !!process.env.REDIS_URL);
+    this.workerEnabled = this.readFlag('QUEUE_WORKER_ENABLED', true);
     
     // Callbacks para quando o processamento terminar (usado em onboarding)
     this.completionCallbacks = new Map();
@@ -46,7 +47,7 @@ class DocumentQueueService {
         });
 
         this.connection.on('ready', () => {
-          if (this.queue && this.worker) {
+          if (this.queue && (this.worker || !this.workerEnabled)) {
             this.queueEnabled = true;
           }
           console.log('[DOC_QUEUE] ✅ Redis pronto');
@@ -63,31 +64,35 @@ class DocumentQueueService {
         console.log('[DOC_QUEUE] Criando Queue document-processing...');
         this.queue = new Queue('document-processing', { connection: this.connection });
 
-        console.log('[DOC_QUEUE] Criando Worker document-processing...');
-        this.worker = new Worker('document-processing', this.processJob.bind(this), {
-          connection: this.connection,
-          concurrency: 3 // Processa até 3 documentos simultaneamente
-        });
-
         this.queue.on('error', (err) => {
           this.logRedisError(`[DOC_QUEUE] ❌ Queue error: ${err.message}`);
           this.queueEnabled = false;
         });
 
-        this.worker.on('error', (err) => {
-          this.logRedisError(`[DOC_QUEUE] ❌ Worker error: ${err.message}`);
-          this.queueEnabled = false;
-        });
+        if (this.workerEnabled) {
+          console.log('[DOC_QUEUE] Criando Worker document-processing...');
+          this.worker = new Worker('document-processing', this.processJob.bind(this), {
+            connection: this.connection,
+            concurrency: 3 // Processa até 3 documentos simultaneamente
+          });
 
-        this.worker.on('completed', (job, result) => {
-          console.log(`[DOC_QUEUE] Job ${job.id} completado com sucesso`);
-          this.handleJobCompletion(job, result);
-        });
+          this.worker.on('error', (err) => {
+            this.logRedisError(`[DOC_QUEUE] ❌ Worker error: ${err.message}`);
+            this.queueEnabled = false;
+          });
 
-        this.worker.on('failed', (job, err) => {
-          console.error(`[DOC_QUEUE] Job ${job?.id} falhou:`, err.message);
-          this.handleJobFailure(job, err);
-        });
+          this.worker.on('completed', (job, result) => {
+            console.log(`[DOC_QUEUE] Job ${job.id} completado com sucesso`);
+            this.handleJobCompletion(job, result);
+          });
+
+          this.worker.on('failed', (job, err) => {
+            console.error(`[DOC_QUEUE] Job ${job?.id} falhou:`, err.message);
+            this.handleJobFailure(job, err);
+          });
+        } else {
+          console.log('[DOC_QUEUE] Worker desabilitado neste processo; somente producer ativo.');
+        }
 
         this.queueEnabled = true;
         console.log('[DOC_QUEUE] ✅ BullMQ iniciado com sucesso!');
