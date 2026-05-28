@@ -5,6 +5,7 @@ const betaFeedbackService = require('../services/betaFeedbackService');
 const { authenticateFlexible } = require('../middleware/authMiddleware');
 const evolutionService = require('../services/evolutionService');
 const whatsappLatencyService = require('../services/whatsappLatencyService');
+const messageReliabilityService = require('../services/messageReliabilityService');
 
 // Verifica se o usuário autenticado é admin via RPC SECURITY DEFINER (bypassa RLS)
 async function requireAdmin(req, res, next) {
@@ -38,6 +39,7 @@ router.get('/diagnostics/evolution', async (req, res) => {
     hasApiKey,
     connectionState: null,
     latency: whatsappLatencyService.snapshot(),
+    reliability: messageReliabilityService.snapshot(),
     error: null
   };
 

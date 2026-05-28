@@ -8,6 +8,8 @@ const registrationTokenService = require('../services/registrationTokenService')
 const userRateLimit = require('../middleware/userRateLimit');
 const audioTranscriptionService = require('../services/audioTranscriptionService');
 const whatsappLatencyService = require('../services/whatsappLatencyService');
+const outboundMessageService = require('../services/outboundMessageService');
+const messageReliabilityService = require('../services/messageReliabilityService');
 const { extractPhoneFromWebhookBody } = require('../utils/phone');
 
 // Deduplicação de mensagens: previne double-send quando a Evolution API dispara o webhook
@@ -17,6 +19,7 @@ const _processedMsgIds = new Set();
 const _processedMsgTimes = new Map(); // key -> timestamp (para TTL)
 const MSG_DEDUP_TTL = 5 * 60 * 1000; // 5 minutos
 const PRESENCE_ENABLED = process.env.WHATSAPP_PRESENCE_ENABLED !== 'false';
+const WEBHOOK_FALLBACK_MESSAGE = 'Recebi sua mensagem, mas não consegui concluir a leitura agora 😅\n\nMe manda de novo em alguns instantes ou escreve de um jeito mais direto, tipo: "botox 500 no pix".';
 
 const _dedupCleanupInterval = setInterval(() => {
   const now = Date.now();
@@ -197,7 +200,11 @@ const webhookHandler = async (req, res) => {
           let finalError = null;
           let response = '';
           try {
-            if (PRESENCE_ENABLED && evolutionService.validatePhoneNumber(phone)) {
+            if (
+              PRESENCE_ENABLED &&
+              typeof evolutionService.sendPresenceUpdate === 'function' &&
+              evolutionService.validatePhoneNumber(phone)
+            ) {
               evolutionService
                 .sendPresenceUpdate(phone, audioMessage ? 'recording' : 'composing')
                 .catch(() => {});
@@ -310,25 +317,80 @@ const webhookHandler = async (req, res) => {
                 response = await messageController.handleIncomingMessage(phone, messageText);
               } catch (msgError) {
                 console.error(`[WEBHOOK] [MSG] Erro ao processar mensagem:`, msgError.message);
-                response = 'Erro ao processar mensagem 😢';
+                messageReliabilityService.recordFailure({
+                  kind: 'inbound_processing_failed',
+                  phase: 'process',
+                  phone,
+                  messageId: key.id,
+                  messageType,
+                  reason: msgError.message
+                });
+                response = WEBHOOK_FALLBACK_MESSAGE;
               }
+            }
+
+            if (!response || typeof response !== 'string' || response.trim().length === 0) {
+              response = WEBHOOK_FALLBACK_MESSAGE;
+              finalStatus = 'fallback';
+              messageReliabilityService.recordFailure({
+                kind: 'empty_bot_response',
+                phase: 'process',
+                phone,
+                messageId: key.id,
+                messageType,
+                reason: 'empty_response'
+              });
             }
 
             // Envia a resposta final
             if (response && typeof response === 'string' && response.trim().length > 0) {
               processingFinishedAt = Date.now();
               sendStartedAt = Date.now();
-              await evolutionService.sendMessage(phone, response);
+              const sendResult = await outboundMessageService.sendText(phone, response, {
+                messageId: key.id,
+                messageType,
+                source: 'webhook_response'
+              });
               sendFinishedAt = Date.now();
+              if (sendResult?.status === 'queued') {
+                finalStatus = 'queued';
+              }
             }
 
           } catch (bgError) {
             finalStatus = 'error';
             finalError = bgError.message;
             console.error('[WEBHOOK] [BG] ❌ Erro no processamento em segundo plano:', bgError.message);
+            messageReliabilityService.recordFailure({
+              kind: 'background_processing_failed',
+              phase: 'background',
+              phone,
+              messageId: key.id,
+              messageType,
+              reason: bgError.message
+            });
             if (evolutionService.validatePhoneNumber(phone)) {
               sendStartedAt = sendStartedAt || Date.now();
-              await evolutionService.sendMessage(phone, 'Ops, tive um probleminha 😅\n\nTente novamente em alguns instantes.');
+              try {
+                const fallbackResult = await outboundMessageService.sendText(phone, WEBHOOK_FALLBACK_MESSAGE, {
+                  messageId: `${key.id || Date.now()}-fallback`,
+                  messageType,
+                  source: 'webhook_background_fallback'
+                });
+                if (fallbackResult?.status === 'queued') {
+                  finalStatus = 'queued';
+                }
+              } catch (fallbackError) {
+                finalError = `${bgError.message}; fallback_send_failed=${fallbackError.message}`;
+                messageReliabilityService.recordFailure({
+                  kind: 'fallback_send_failed',
+                  phase: 'send',
+                  phone,
+                  messageId: key.id,
+                  messageType,
+                  reason: fallbackError.message
+                });
+              }
               sendFinishedAt = Date.now();
             }
           } finally {

@@ -78,6 +78,8 @@ As fases 9 e 10 são majoritariamente frontend. No backend, o foco é garantir c
   - `REDIS_QUEUE_ENABLED=true` habilita producers BullMQ.
   - `QUEUE_WORKER_ENABLED=false` no serviço HTTP evita consumir filas no webhook.
   - `QUEUE_WORKER_ENABLED=true` no serviço worker consome `mdr-ocr`, `document-processing` e `pdf-generation` via `npm run worker`.
+  - `WHATSAPP_OUTBOUND_QUEUE_ENABLED=true` habilita reenvio de respostas WhatsApp quando a Evolution falha temporariamente.
+  - `WHATSAPP_OUTBOUND_WORKER_ENABLED=true` consome a fila `whatsapp-outbound` no próprio serviço HTTP.
 
 ### Agente WhatsApp (`agentic_*`)
 
