@@ -11,6 +11,8 @@ class QueryHandler {
    */
   async handleBalance(user) {
     const balance = await transactionController.getBalance(user.id);
+    const now = new Date();
+    const cash = await this.safeMonthlyCashSummary(user.id, now.getFullYear(), now.getMonth() + 1);
 
     const lucro = balance.entradas - balance.saidas;
     const margemPercentual = balance.entradas > 0
@@ -23,7 +25,13 @@ class QueryHandler {
 
     let response = `Seu financeiro até agora 📊\n\n`;
     response += `*Faturamento registrado:* ${formatarMoeda(balance.entradas)}\n`;
+    if (cash) {
+      response += `*Caixa previsto no mês:* ${formatarMoeda(cash.entradasPrevistas)}\n`;
+    }
     response += `*Custos registrados:* ${formatarMoeda(balance.saidas)}\n`;
+    if (cash) {
+      response += `*Saídas previstas no mês:* ${formatarMoeda(cash.saidasPrevistas)}\n`;
+    }
     response += `*Resultado estimado:* ${formatarMoeda(lucro)} _(${margemPercentual}% de margem)_\n\n`;
 
     if (lucro > 0) {
@@ -32,7 +40,12 @@ class QueryHandler {
       response += `Atenção: os custos já passaram o faturamento registrado.\n`;
     }
 
-    response += `\nObservação: vendas parceladas aparecem como faturamento vendido; o caixa recebido pode cair em meses diferentes.\n\n`;
+    if (cash && cash.parcelasPrevistas > 0) {
+      response += `\nNo caixa deste mês entram ${cash.parcelasPrevistas} parcela(s) prevista(s). `;
+      response += `Venda parcelada não é a mesma coisa que dinheiro recebido no mês.\n\n`;
+    } else {
+      response += `\nObservação: vendas parceladas aparecem como faturamento vendido; o caixa recebido pode cair em meses diferentes.\n\n`;
+    }
     response += `Quer ver o relatório completo do mês? Manda _"relatório"_`;
 
     return response;
@@ -109,7 +122,10 @@ class QueryHandler {
       else if (periodo.includes('dezembro')) { month = 12; }
     }
 
-    const report = await transactionController.getMonthlyReport(user.id, year, month);
+    const [report, cash] = await Promise.all([
+      transactionController.getMonthlyReport(user.id, year, month),
+      this.safeMonthlyCashSummary(user.id, year, month)
+    ]);
 
     const lucro = report.entradas - report.saidas;
     const margemPercentual = report.entradas > 0
@@ -127,7 +143,14 @@ class QueryHandler {
 
     let response = `*RELATÓRIO FINANCEIRO - ${mesNome}*\n\n`;
     response += `Faturamento registrado: ${formatarMoeda(report.entradas)}\n`;
+    if (cash) {
+      response += `Caixa previsto no mês: ${formatarMoeda(cash.entradasPrevistas)}\n`;
+    }
     response += `Custos registrados: ${formatarMoeda(report.saidas)}\n`;
+    if (cash) {
+      response += `Saídas previstas no mês: ${formatarMoeda(cash.saidasPrevistas)}\n`;
+      response += `Saldo de caixa previsto: ${formatarMoeda(cash.saldoPrevisto)}\n`;
+    }
     response += `Resultado estimado: ${formatarMoeda(lucro)} (${margemPercentual}%)\n\n`;
     response += `Total: ${report.totalTransacoes} movimentações\n`;
 
@@ -143,7 +166,11 @@ class QueryHandler {
     }
 
     response += `\n*Leitura CFO:*\n`;
-    response += `• Vendas parceladas entram como faturamento vendido; o recebimento em caixa pode acontecer em meses diferentes.\n`;
+    if (cash && cash.parcelasPrevistas > 0) {
+      response += `• Há ${cash.parcelasPrevistas} parcela(s) prevista(s) no caixa deste mês; compare caixa com faturamento antes de decidir retirada ou compra grande.\n`;
+    } else {
+      response += `• Vendas parceladas entram como faturamento vendido; o recebimento em caixa pode acontecer em meses diferentes.\n`;
+    }
     response += `• Se ainda faltam custos fixos ou insumos, a margem real pode mudar.\n`;
 
     response += `\nPara PDF completo: "me manda pdf", "relatório em pdf" ou "gerar pdf do mês".`;
@@ -169,6 +196,16 @@ class QueryHandler {
     }
 
     return label || 'Sem categoria';
+  }
+
+  async safeMonthlyCashSummary(userId, year, month) {
+    if (typeof transactionController.getMonthlyCashSummary !== 'function') return null;
+    try {
+      return await transactionController.getMonthlyCashSummary(userId, year, month);
+    } catch (error) {
+      console.warn('[QUERY] Falha ao calcular resumo de caixa mensal:', error.message);
+      return null;
+    }
   }
 
   /**
@@ -380,4 +417,3 @@ class QueryHandler {
 }
 
 module.exports = QueryHandler;
-

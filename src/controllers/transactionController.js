@@ -450,6 +450,65 @@ class TransactionController {
     }
   }
 
+  async getMonthlyCashSummary(userId, year, month) {
+    try {
+      const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+      const lastDay = new Date(year, month, 0).getDate();
+      const endDate = `${year}-${String(month).padStart(2, '0')}-${lastDay}`;
+
+      const [parcelasResult, atendimentosResult, contasResult] = await Promise.all([
+        supabase
+          .from('parcelas')
+          .select('id, valor, valor_liquido, data_vencimento, atendimentos!inner(user_id)')
+          .eq('atendimentos.user_id', userId)
+          .gte('data_vencimento', startDate)
+          .lte('data_vencimento', endDate),
+        supabase
+          .from('atendimentos')
+          .select('id, valor_liquido, valor_total, forma_pagamento, recebimento_previsto, data')
+          .eq('user_id', userId)
+          .in('forma_pagamento', ['pix', 'dinheiro', 'debito', 'credito_avista'])
+          .gte('recebimento_previsto', startDate)
+          .lte('recebimento_previsto', endDate),
+        supabase
+          .from('contas_pagar')
+          .select('id, valor, data_vencimento')
+          .eq('user_id', userId)
+          .gte('data_vencimento', startDate)
+          .lte('data_vencimento', endDate)
+      ]);
+
+      if (parcelasResult.error) throw parcelasResult.error;
+      if (atendimentosResult.error) throw atendimentosResult.error;
+      if (contasResult.error) throw contasResult.error;
+
+      const recebidoParcelas = (parcelasResult.data || []).reduce((sum, item) => {
+        return sum + parseFloat(item.valor_liquido || item.valor || 0);
+      }, 0);
+
+      const recebidoAvista = (atendimentosResult.data || []).reduce((sum, item) => {
+        return sum + parseFloat(item.valor_liquido || item.valor_total || 0);
+      }, 0);
+
+      const saidasPrevistas = (contasResult.data || []).reduce((sum, item) => {
+        return sum + parseFloat(item.valor || 0);
+      }, 0);
+
+      const entradasPrevistas = recebidoParcelas + recebidoAvista;
+
+      return {
+        entradasPrevistas,
+        saidasPrevistas,
+        saldoPrevisto: entradasPrevistas - saidasPrevistas,
+        parcelasPrevistas: (parcelasResult.data || []).length,
+        vendasAvistaPrevistas: (atendimentosResult.data || []).length
+      };
+    } catch (error) {
+      console.error('Erro ao calcular resumo de caixa mensal:', error);
+      throw error;
+    }
+  }
+
   async searchTransactions(userId, filters) {
     try {
       const { startDate, endDate, tipo, categoria, minValue, maxValue, limit = 50, offset = 0 } = filters;

@@ -112,4 +112,63 @@ describe('TransactionHandler.buildConfirmationMessage com confidence baixo', () 
 
     expect(text).toBe(' no crédito em 5x');
   });
+
+  it('confirmação oferece corrigir como terceira opção', () => {
+    const message = handler.buildConfirmationMessage({
+      tipo: 'entrada',
+      valor: 5000,
+      categoria: 'Botox',
+      data: '2026-05-28',
+      forma_pagamento: 'parcelado',
+      parcelas: 5
+    });
+
+    expect(message).toContain('3️⃣ *Corrigir*');
+  });
+
+  it('aplica correção textual antes de salvar', () => {
+    const result = handler.applyCorrectionToDados({
+      tipo: 'entrada',
+      valor: 5000,
+      categoria: 'Botox',
+      data: '2026-05-28',
+      forma_pagamento: 'parcelado',
+      parcelas: 5,
+      nome_cliente: 'Romulo'
+    }, 'valor era 4500 no pix');
+
+    expect(result.changed).toBe(true);
+    expect(result.dados.valor).toBe(4500);
+    expect(result.dados.forma_pagamento).toBe('pix');
+    expect(result.dados.parcelas).toBeNull();
+  });
+
+  it('não confunde correção de parcelas com correção de valor', () => {
+    const result = handler.applyCorrectionToDados({
+      tipo: 'entrada',
+      valor: 5000,
+      categoria: 'Botox',
+      data: '2026-05-28',
+      forma_pagamento: 'parcelado',
+      parcelas: 5
+    }, 'era 4x');
+
+    expect(result.changed).toBe(true);
+    expect(result.dados.valor).toBe(5000);
+    expect(result.dados.parcelas).toBe(4);
+  });
+
+
+  it('mostra taxa e líquido quando atendimento retorna MDR aplicado', () => {
+    const text = handler.buildRegisteredPricingText({
+      valor_bruto: 5000,
+      valor_liquido: 4825,
+      mdr_percent_applied: 3.5,
+      recebimento_previsto: '2026-06-28'
+    });
+
+    expect(text).toContain('Taxa estimada');
+    expect(text).toContain('Líquido previsto');
+    expect(text).toContain('3.50%');
+  });
 });

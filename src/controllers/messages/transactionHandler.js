@@ -169,6 +169,7 @@ class TransactionHandler {
       const { tipo, valor, categoria, descricao, data, forma_pagamento, parcelas, bandeira_cartao, nome_cliente, payment_split } = pending.dados;
 
       // Cria o atendimento (entrada) ou conta a pagar (saída)
+      let createdResult = null;
       if (tipo === 'entrada') {
         if (Array.isArray(payment_split) && payment_split.length > 1) {
           const splitGroupId = crypto.randomUUID();
@@ -190,7 +191,7 @@ class TransactionHandler {
             });
           }
         } else {
-          await transactionController.createAtendimento(user.id, {
+          createdResult = await transactionController.createAtendimento(user.id, {
             valor: Math.abs(valor),
             categoria,
             descricao: descricao || categoria,
@@ -266,15 +267,29 @@ class TransactionHandler {
       if (tipo === 'entrada') {
         const paymentText = this.buildRegisteredPaymentText(forma_pagamento, parcelas);
         const clientText = nome_cliente ? `\nCliente: ${nome_cliente}` : '';
+        const pricingText = this.buildRegisteredPricingText(createdResult);
         return (
           `${emoji} *${tipoTexto} registrada!* ✅\n\n` +
           `${categoria || descricao || 'Procedimento'} — ${formatarMoeda(valor)}${paymentText}${clientText}\n\n` +
+          `${pricingText}` +
           `Isso já entrou no financeiro deste mês.\n` +
           `Quer ver o impacto no saldo? Digite "saldo".`
         );
       }
 
       return `${emoji} *${tipoTexto} registrado!* ✅\n\n${formatarMoeda(valor)} - ${categoria || descricao}\n\nQuer ver seu saldo? Digite "saldo"`;
+    }
+
+    if (
+      messageLower === '3' ||
+      messageLower === 'corrigir' ||
+      messageLower.includes('corrigir') ||
+      messageLower.includes('alterar') ||
+      messageLower.includes('editar')
+    ) {
+      pending.stage = 'awaiting_correction';
+      await this.setPendingTransaction(phone, pending);
+      return 'Me manda só o que precisa corrigir.\n\nExemplos:\n"valor era 4500"\n"foi no pix"\n"cliente Romulo"\n"procedimento preenchimento"';
     }
 
     // Cancelamento
@@ -284,7 +299,6 @@ class TransactionHandler {
       messageLower === 'nao' ||
       messageLower === 'n' ||
       messageLower === 'cancelar' ||
-      messageLower === 'corrigir' ||
       messageLower === '❌ cancelar' ||
       messageLower.includes('cancelar')
     ) {
@@ -300,7 +314,15 @@ class TransactionHandler {
     }
 
     // Resposta inválida
-    return 'Não entendi... responde *1* pra confirmar ou *2* pra cancelar 😊';
+    const correction = this.applyCorrectionToDados(pending.dados, message);
+    if (correction.changed) {
+      pending.dados = correction.dados;
+      pending.stage = 'confirm';
+      await this.setPendingTransaction(phone, pending);
+      return this.buildConfirmationMessage(pending.dados);
+    }
+
+    return 'Não entendi... responde *1* pra confirmar, *2* pra cancelar ou *3* pra corrigir 😊';
   }
 
   buildConfirmationMessage(dados) {
@@ -360,8 +382,61 @@ class TransactionHandler {
     }
 
     text += `📅 ${dataFormatada}\n\n`;
-    text += `Responde:\n1️⃣ *Confirmar*\n2️⃣ *Cancelar*`;
+    text += `Responde:\n1️⃣ *Confirmar*\n2️⃣ *Cancelar*\n3️⃣ *Corrigir*`;
     return text;
+  }
+
+  applyCorrectionToDados(dados, message) {
+    const next = { ...(dados || {}) };
+    const raw = String(message || '').trim();
+    const normalized = this.normalizeText(raw);
+    let changed = false;
+
+    const looksLikeInstallmentOnly = /^\D*\d{1,2}\s*x\D*$/.test(normalized);
+    const value = looksLikeInstallmentOnly ? null : this.recoverTransactionValue(raw, null, next.parcelas);
+    if (value && value > 0 && /\b(valor|era|foi|deu|total|r\$|\d)/.test(normalized)) {
+      next.valor = value;
+      changed = true;
+    }
+
+    const installments = this.parseInstallments(normalized);
+    if (installments && installments > 1) {
+      next.forma_pagamento = 'parcelado';
+      next.parcelas = installments;
+      changed = true;
+    }
+
+    const method = this.parsePaymentMethodChoice(normalized) || this.parseCardTypeChoice(normalized);
+    if (method && !installments) {
+      next.forma_pagamento = method;
+      next.parcelas = method === 'parcelado' ? next.parcelas : null;
+      changed = true;
+    }
+
+    const clientMatch = raw.match(/\b(?:cliente|paciente|nome)\s+(?:e|é|eh|era|foi|:)?\s*([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s]{1,40})/i);
+    if (clientMatch?.[1]) {
+      next.nome_cliente = clientMatch[1].trim();
+      changed = true;
+    }
+
+    const categoryMatch = raw.match(/\b(?:procedimento|categoria|servico|serviço)\s+(?:e|é|eh|era|foi|:)?\s*([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s]{1,50})/i);
+    if (categoryMatch?.[1]) {
+      next.categoria = categoryMatch[1].trim();
+      changed = true;
+    } else if (next.tipo === 'entrada') {
+      const inferred = this.inferSaleCategoryFromText(raw, next.nome_cliente);
+      if (inferred && !/\b(valor|cliente|paciente|pix|credito|debito|cartao|dinheiro|parcelado)\b/.test(normalized)) {
+        next.categoria = inferred;
+        changed = true;
+      }
+    }
+
+    if (next.tipo === 'entrada') {
+      next.categoria = this.sanitizeSaleCategory(raw, next.categoria, next.nome_cliente);
+      next.nome_cliente = this.sanitizeClientName(next.nome_cliente, next.categoria);
+    }
+
+    return { changed, dados: next };
   }
 
   recoverTransactionValue(originalText, currentValue, parcelas) {
@@ -439,6 +514,27 @@ class TransactionHandler {
     const label = this.getPaymentMethodText(formaPagamento);
     if (!label || label === 'Não informado') return '';
     return ` no ${label.toLowerCase()}`;
+  }
+
+  buildRegisteredPricingText(atendimento) {
+    if (!atendimento || atendimento.valor_bruto === undefined || atendimento.valor_liquido === undefined) {
+      return '';
+    }
+
+    const bruto = Number(atendimento.valor_bruto);
+    const liquido = Number(atendimento.valor_liquido);
+    const taxa = bruto - liquido;
+    if (!Number.isFinite(bruto) || !Number.isFinite(liquido) || taxa <= 0.009) {
+      return '';
+    }
+
+    const pct = Number(atendimento.mdr_percent_applied || 0);
+    const pctText = pct > 0 ? ` (${pct.toFixed(2)}%)` : '';
+    const recebimento = atendimento.recebimento_previsto
+      ? `\nRecebimento previsto: ${new Date(atendimento.recebimento_previsto).toLocaleDateString('pt-BR')}`
+      : '';
+
+    return `Taxa estimada: ${formatarMoeda(taxa)}${pctText}\nLíquido previsto: ${formatarMoeda(liquido)}${recebimento}\n\n`;
   }
 
   resolvePaymentRequirements(dados, originalText) {
@@ -564,6 +660,17 @@ class TransactionHandler {
 
   async handlePendingPaymentStep(phone, pending, messageLower) {
     const current = pending.dados || {};
+
+    if (pending.stage === 'awaiting_correction') {
+      const correction = this.applyCorrectionToDados(current, messageLower);
+      if (!correction.changed) {
+        return 'Não consegui aplicar essa correção. Tenta assim: "valor era 4500", "foi no pix" ou "cliente Romulo".';
+      }
+      pending.dados = correction.dados;
+      pending.stage = 'confirm';
+      await this.setPendingTransaction(phone, pending);
+      return this.buildConfirmationMessage(pending.dados);
+    }
 
     if (pending.stage === 'awaiting_mixed_total') {
       const valueMatch = this.recoverTransactionValue(messageLower, null, null);
@@ -696,6 +803,10 @@ class TransactionHandler {
       /\bparcelad/.test(n);
     if (!creditish) return null;
     return installments;
+  }
+
+  parseInstallments(text) {
+    return this.normalizeInstallments(text);
   }
 
   parsePaymentMethodChoice(text) {
