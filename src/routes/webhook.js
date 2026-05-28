@@ -7,6 +7,7 @@ const userController = require('../controllers/userController');
 const registrationTokenService = require('../services/registrationTokenService');
 const userRateLimit = require('../middleware/userRateLimit');
 const audioTranscriptionService = require('../services/audioTranscriptionService');
+const whatsappLatencyService = require('../services/whatsappLatencyService');
 const { extractPhoneFromWebhookBody } = require('../utils/phone');
 
 // Deduplicação de mensagens: previne double-send quando a Evolution API dispara o webhook
@@ -15,6 +16,7 @@ const { extractPhoneFromWebhookBody } = require('../utils/phone');
 const _processedMsgIds = new Set();
 const _processedMsgTimes = new Map(); // key -> timestamp (para TTL)
 const MSG_DEDUP_TTL = 5 * 60 * 1000; // 5 minutos
+const PRESENCE_ENABLED = process.env.WHATSAPP_PRESENCE_ENABLED !== 'false';
 
 const _dedupCleanupInterval = setInterval(() => {
   const now = Date.now();
@@ -104,6 +106,7 @@ function normalizeEvolutionWebhookBody(rawBody) {
 }
 
 const webhookHandler = async (req, res) => {
+  const receivedAt = Date.now();
   try {
     // Validação de entrada
     if (!req.body || typeof req.body !== 'object') {
@@ -176,16 +179,29 @@ const webhookHandler = async (req, res) => {
       const imageMessage = message.imageMessage;
       const documentMessage = message.documentMessage;
       const audioMessage = message.audioMessage || message.pttMessage || null;
+      const messageType = imageMessage ? 'image' : documentMessage ? 'document' : audioMessage ? 'audio' : 'text';
 
       if (phone) {
         // Responde 200 OK imediatamente para a Evolution API
         // Isso previne timeouts, reenvios e o erro "Aguardando mensagem" no WhatsApp
         res.status(200).json({ status: 'received' });
+        const acknowledgedAt = Date.now();
 
         // Processa em segundo plano para não segurar a conexão
         (async () => {
+          const processingStartedAt = Date.now();
+          let processingFinishedAt = null;
+          let sendStartedAt = null;
+          let sendFinishedAt = null;
+          let finalStatus = 'ok';
+          let finalError = null;
+          let response = '';
           try {
-            let response = '';
+            if (PRESENCE_ENABLED && evolutionService.validatePhoneNumber(phone)) {
+              evolutionService
+                .sendPresenceUpdate(phone, audioMessage ? 'recording' : 'composing')
+                .catch(() => {});
+            }
 
             if (imageMessage) {
               // Mensagem com imagem
@@ -300,14 +316,37 @@ const webhookHandler = async (req, res) => {
 
             // Envia a resposta final
             if (response && typeof response === 'string' && response.trim().length > 0) {
+              processingFinishedAt = Date.now();
+              sendStartedAt = Date.now();
               await evolutionService.sendMessage(phone, response);
+              sendFinishedAt = Date.now();
             }
 
           } catch (bgError) {
+            finalStatus = 'error';
+            finalError = bgError.message;
             console.error('[WEBHOOK] [BG] ❌ Erro no processamento em segundo plano:', bgError.message);
             if (evolutionService.validatePhoneNumber(phone)) {
+              sendStartedAt = sendStartedAt || Date.now();
               await evolutionService.sendMessage(phone, 'Ops, tive um probleminha 😅\n\nTente novamente em alguns instantes.');
+              sendFinishedAt = Date.now();
             }
+          } finally {
+            const finishedAt = Date.now();
+            processingFinishedAt = processingFinishedAt || sendStartedAt || finishedAt;
+            whatsappLatencyService.record({
+              messageId: key.id,
+              phone,
+              event,
+              messageType,
+              webhookAckMs: acknowledgedAt - receivedAt,
+              processingMs: processingFinishedAt - processingStartedAt,
+              sendMs: sendStartedAt && sendFinishedAt ? sendFinishedAt - sendStartedAt : 0,
+              totalMs: finishedAt - receivedAt,
+              responseChars: typeof response === 'string' ? response.length : 0,
+              status: finalStatus,
+              error: finalError
+            });
           }
         })();
 
