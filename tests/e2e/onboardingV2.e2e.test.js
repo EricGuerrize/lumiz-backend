@@ -15,7 +15,10 @@ process.env.ONBOARDING_V2 = 'true';
 
 // Mocks de infraestrutura
 jest.mock('../../src/services/analyticsService', () => ({ track: jest.fn().mockResolvedValue(true) }));
-jest.mock('../../src/services/evolutionService', () => ({ sendMessage: jest.fn().mockResolvedValue(true) }));
+jest.mock('../../src/services/evolutionService', () => ({
+  sendMessage: jest.fn().mockResolvedValue(true),
+  sendVideo: jest.fn().mockResolvedValue(true)
+}));
 jest.mock('../../src/services/onboardingService', () => ({
   getWhatsappState: jest.fn().mockResolvedValue(null),
   upsertWhatsappState: jest.fn().mockResolvedValue(true),
@@ -90,6 +93,7 @@ jest.mock('../../src/db/supabase', () => ({
 const transactionController = require('../../src/controllers/transactionController');
 const userController = require('../../src/controllers/userController');
 const documentService = require('../../src/services/documentService');
+const evolutionService = require('../../src/services/evolutionService');
 const onboardingFlowService = require('../../src/services/onboardingFlowService');
 
 const PHONE_RAW = '5511988880002';
@@ -115,6 +119,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  delete process.env.ONBOARDING_DASHBOARD_TEASER_VIDEO_URL;
   clearState();
 });
 
@@ -219,6 +224,7 @@ describe('Onboarding v2 — fluxo feliz completo', () => {
   });
 
   test('ACT4 → encerramento: qualquer resposta encerra o onboarding', async () => {
+    process.env.ONBOARDING_DASHBOARD_TEASER_VIDEO_URL = 'https://cdn.example.com/dashboard-teaser.mp4';
     await onboardingFlowService.startIntroFlow(PHONE);
     await send('dona');
     await send('Botox 900 pix');
@@ -230,6 +236,11 @@ describe('Onboarding v2 — fluxo feliz completo', () => {
     expect(res).not.toMatch(/dashboard|https?:\/\//i);
     expect(res).toContain('WhatsApp');
     expect(onboardingFlowService.onboardingStates.has(PHONE)).toBe(false);
+    expect(evolutionService.sendVideo).toHaveBeenCalledWith(
+      PHONE,
+      'https://cdn.example.com/dashboard-teaser.mp4',
+      expect.stringContaining('dashboard da Lumiz')
+    );
   });
 });
 

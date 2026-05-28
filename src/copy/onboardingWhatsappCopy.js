@@ -845,5 +845,12 @@ module.exports = {
             `Legal! Que tal a gente mostrar isso pra dona da clínica? 🤝\n\n` +
             `Posso montar um resuminho financeiro pra você encaminhar pra ela. Quer?`
         );
+    },
+
+    dashboardTeaserVideoCaption() {
+        return (
+            `Um spoiler do que está vindo: o dashboard da Lumiz vai reunir seus lançamentos e insights em uma visão mais visual.\n\n` +
+            `Por enquanto, seguimos deixando tudo redondo por aqui no WhatsApp.`
+        );
     }
 };

@@ -2291,6 +2291,23 @@ class OnboardingFlowService {
                     const subscriptionCopy = require('../copy/subscriptionCopy');
                     await subscriptionService.startTrial(clinicId);
                     await evolutionSvc.sendMessage(normalizedPhone, subscriptionCopy.trialStarted()).catch(() => {});
+                    const dashboardTeaserVideoUrl = String(process.env.ONBOARDING_DASHBOARD_TEASER_VIDEO_URL || '').trim();
+                    if (dashboardTeaserVideoUrl && typeof evolutionSvc.sendVideo === 'function') {
+                        const sendTeaserVideo = () => evolutionSvc.sendVideo(
+                            normalizedPhone,
+                            dashboardTeaserVideoUrl,
+                            onboardingCopy.dashboardTeaserVideoCaption()
+                        ).catch((error) => {
+                            console.error('[ONBOARDING] Falha ao enviar vídeo teaser do dashboard:', error?.message || error);
+                        });
+
+                        if (process.env.NODE_ENV === 'test') {
+                            await sendTeaserVideo();
+                        } else {
+                            const timer = setTimeout(sendTeaserVideo, 2500);
+                            if (typeof timer.unref === 'function') timer.unref();
+                        }
+                    }
                 } catch (e) {
                     console.error('[SUBSCRIPTION] Falha ao iniciar trial:', e?.message);
                 }

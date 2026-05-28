@@ -210,6 +210,7 @@ As fases 9 e 10 são majoritariamente frontend. No backend, o foco é garantir c
 - `WHISPER_MODEL`, `WHISPER_LANGUAGE` — opcionais; defaults `whisper-1` / `pt`.
 - `CAPTURE_LOW_CONFIDENCE_THRESHOLD` — default `0.8`.
 - `FOUNDER_CALL_URL` — opcional; se definido, o CTA de pós-onboarding para "falar com o Eric" devolve esse link diretamente no WhatsApp.
+- `ONBOARDING_DASHBOARD_TEASER_VIDEO_URL` — opcional; URL pública de MP4 enviada ao final do onboarding como teaser do dashboard futuro. Se ausente, nada é enviado.
 - `ALTER_ENABLED` — boolean, ativa rotas Alter (alternativa: registro em `feature_flags`).
 - `ALTER_CLIENT_ID`, `ALTER_CLIENT_SECRET` — credenciais OAuth2 da API Alter; quando ambos definidos, factory usa `realAlterAdapter`.
 - `ALTER_WEBHOOK_SECRET` — secret HMAC para validar eventos webhook Alter; fornecido pela Alter em canal privado.
