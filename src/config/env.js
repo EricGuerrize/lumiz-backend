@@ -47,6 +47,10 @@ class EnvValidator {
     this.validateOptional('ALTER_CLIENT_SECRET',  'Client Secret OAuth2 da Alter (ativa realAlterAdapter quando definido junto com ALTER_CLIENT_ID)');
     this.validateOptional('ALTER_WEBHOOK_SECRET', 'Secret HMAC para webhooks Alter (fornecido pela Alter em canal privado; sem ele o webhook fica 503 em produção)');
     this.validateOptional('WA_WEBHOOK_VERIFY_TOKEN', 'Token de verificação do webhook Meta Cloud API (necessário ao migrar para API oficial do WhatsApp)');
+    this.validateOptional('WA_PHONE_NUMBER_ID', 'ID do número WhatsApp no painel Meta Cloud API');
+    this.validateOptional('WA_ACCESS_TOKEN', 'Token permanente da Meta Cloud API para envio/download de mídia');
+    this.validateOptional('WABA_ID', 'WhatsApp Business Account ID');
+    this.validateOptional('WA_GRAPH_API_VERSION', 'Versão do Graph API para Cloud API (ex: v23.0)');
 
     // Validações específicas
     this.validateUrl('SUPABASE_URL');
@@ -222,6 +226,13 @@ class EnvValidator {
       asaas: {
         webhookSecret: process.env.ASAAS_WEBHOOK_SECRET || null
       },
+      whatsappCloudApi: {
+        verifyToken: process.env.WA_WEBHOOK_VERIFY_TOKEN || null,
+        phoneNumberId: process.env.WA_PHONE_NUMBER_ID || null,
+        accessToken: process.env.WA_ACCESS_TOKEN || null,
+        wabaId: process.env.WABA_ID || null,
+        graphApiVersion: process.env.WA_GRAPH_API_VERSION || 'v23.0'
+      },
       nodeEnv: process.env.NODE_ENV || 'development',
       port: parseInt(process.env.PORT || '3000', 10)
     };
@@ -258,4 +269,3 @@ module.exports = {
   config: validator.getConfig(),
   validate: () => validator.validateOrThrow()
 };
-

@@ -10,6 +10,7 @@ const audioTranscriptionService = require('../services/audioTranscriptionService
 const whatsappLatencyService = require('../services/whatsappLatencyService');
 const outboundMessageService = require('../services/outboundMessageService');
 const messageReliabilityService = require('../services/messageReliabilityService');
+const metaWhatsappService = require('../services/metaWhatsappService');
 const { extractPhoneFromWebhookBody } = require('../utils/phone');
 
 // Deduplicação de mensagens: previne double-send quando a Evolution API dispara o webhook
@@ -214,7 +215,7 @@ const webhookHandler = async (req, res) => {
       }
 
       // Valida e sanitiza telefone (suporta payloads com remoteJid=@lid)
-      const phone = extractPhoneFromWebhookBody(normalized.body);
+      const phone = extractPhoneFromWebhookBody(normalized.body) || extractPhoneFromWebhookBody({ data });
       if (!phone) {
         const isLid = String(key.remoteJid).endsWith('@lid');
         if (isLid) {
@@ -287,10 +288,19 @@ const webhookHandler = async (req, res) => {
                   console.error(`[WEBHOOK] [IMG] ❌ Erro ao processar base64:`, imgError.message);
                   response = 'Erro ao processar imagem 😢\n\nTente enviar novamente ou registre manualmente.';
                 }
+              } else if (imageMessage.meta_media_id) {
+                try {
+                  const media = await metaWhatsappService.downloadMedia(imageMessage.meta_media_id);
+                  const mimeType = imageMessage.mimetype || media.contentType || 'image/jpeg';
+                  response = await messageController.handleImageMessageWithBuffer(phone, media.data, mimeType, caption, messageKey);
+                } catch (metaImgError) {
+                  console.error(`[WEBHOOK] [IMG] ❌ Erro ao baixar mídia Meta:`, metaImgError.message);
+                  response = 'Não consegui acessar a imagem 😢\n\nTente enviar novamente ou registre manualmente.';
+                }
               } else {
                 const mediaUrl = imageMessage.url || imageMessage.directPath;
                 if (!mediaUrl) {
-                  response = 'Não consegui acessar a imagem 😢\n\nA Evolution API não forneceu a mídia.';
+                  response = 'Não consegui acessar a imagem 😢\n\nA API não forneceu a mídia.';
                 } else {
                   try {
                     response = await messageController.handleImageMessage(phone, mediaUrl, caption, messageKey);
@@ -318,6 +328,15 @@ const webhookHandler = async (req, res) => {
                   console.error(`[WEBHOOK] [DOC] ❌ Erro ao processar base64:`, docError.message);
                   response = 'Erro ao processar documento 😢';
                 }
+              } else if (documentMessage.meta_media_id) {
+                try {
+                  const media = await metaWhatsappService.downloadMedia(documentMessage.meta_media_id);
+                  const mimeType = documentMessage.mimetype || media.contentType || 'application/pdf';
+                  response = await messageController.handleDocumentMessageWithBuffer(phone, media.data, mimeType, fileName, messageKey);
+                } catch (metaDocError) {
+                  console.error(`[WEBHOOK] [DOC] ❌ Erro ao baixar mídia Meta:`, metaDocError.message);
+                  response = 'Não consegui acessar o documento 😢\n\nTente enviar novamente ou registre manualmente.';
+                }
               } else {
                 const mediaUrl = documentMessage.url || documentMessage.directPath;
                 try {
@@ -334,14 +353,24 @@ const webhookHandler = async (req, res) => {
                   response = 'Ainda não consigo entender áudios por aqui 😅\n\nPode me mandar a mesma informação por texto?';
                 } else {
                   let base64Data = audioMessage.media || audioMessage.base64 || audioMessage.mediaBase64 || audioMessage.data;
-                  if (!base64Data) {
+                  let audioBuffer = null;
+                  let mimeType = audioMessage.mimetype || audioMessage.mimeType || 'audio/ogg';
+
+                  if (!base64Data && audioMessage.meta_media_id) {
+                    const media = await metaWhatsappService.downloadMedia(audioMessage.meta_media_id);
+                    audioBuffer = media.data;
+                    mimeType = audioMessage.mimetype || audioMessage.mimeType || media.contentType || 'audio/ogg';
+                  }
+
+                  if (!base64Data && !audioBuffer) {
                     response = 'Não consegui acessar o áudio 😢\n\nTente enviar novamente ou me mande por texto.';
                   } else {
-                    if (typeof base64Data === 'string' && base64Data.includes(',')) {
+                    if (!audioBuffer && typeof base64Data === 'string' && base64Data.includes(',')) {
                       base64Data = base64Data.split(',')[1];
                     }
-                    const audioBuffer = Buffer.from(base64Data, 'base64');
-                    const mimeType = audioMessage.mimetype || audioMessage.mimeType || 'audio/ogg';
+                    if (!audioBuffer) {
+                      audioBuffer = Buffer.from(base64Data, 'base64');
+                    }
 
                     if (!audioTranscriptionService.isSupportedMimeType(mimeType)) {
                       console.warn('[WEBHOOK] [AUDIO] MIME não suportado, tentando como audio/ogg:', mimeType);

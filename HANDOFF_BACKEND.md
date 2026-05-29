@@ -80,6 +80,10 @@ As fases 9 e 10 são majoritariamente frontend. No backend, o foco é garantir c
   - `QUEUE_WORKER_ENABLED=true` no serviço worker consome `mdr-ocr`, `document-processing` e `pdf-generation` via `npm run worker`.
   - `WHATSAPP_OUTBOUND_QUEUE_ENABLED=true` habilita reenvio de respostas WhatsApp quando a Evolution falha temporariamente.
   - `WHATSAPP_OUTBOUND_WORKER_ENABLED=true` consome a fila `whatsapp-outbound` no próprio serviço HTTP.
+- WhatsApp Meta Cloud API:
+  - `WA_WEBHOOK_VERIFY_TOKEN` valida o handshake GET `/api/webhook` da Meta.
+  - `WA_ACCESS_TOKEN` permite baixar imagens, documentos e áudios recebidos via webhook nativo da Meta.
+  - `WA_PHONE_NUMBER_ID`, `WABA_ID` e `WA_GRAPH_API_VERSION` documentam a conta oficial usada na migração.
 
 ### Agente WhatsApp (`agentic_*`)
 
