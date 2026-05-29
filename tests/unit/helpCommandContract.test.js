@@ -73,6 +73,15 @@ describe('helpCommandContract', () => {
         intencao: 'buscar_transacao',
         dados: { termo: '2800' }
       });
+      expect(getHelpShortcutIntent('apagar ultimo lancamento', 'apagar último lançamento')).toMatchObject({
+        intencao: 'desfazer'
+      });
+      expect(getHelpShortcutIntent('isso foi teste', 'isso foi teste')).toMatchObject({
+        intencao: 'desfazer'
+      });
+      expect(getHelpShortcutIntent('corrigir ultimo lancamento', 'corrigir último lançamento')).toMatchObject({
+        intencao: 'editar_transacao'
+      });
     });
 
     it('retorna null para texto fora dos atalhos', () => {

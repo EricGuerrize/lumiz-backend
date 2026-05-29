@@ -7,8 +7,13 @@ describe('MessageController - guard de opções órfãs', () => {
   let detectIntentMock;
   let handleTransactionRequestMock;
   let runtimeGetAllActiveMock;
+  let runtimeGetMock;
+  let runtimeUpsertMock;
+  let runtimeClearMock;
   let featureFlagIsEnabledMock;
   let agentRouterDecideMock;
+  let userMock;
+  let supabaseFromMock;
 
   const mockGenericHandler = () => jest.fn().mockImplementation(() => ({}));
 
@@ -18,18 +23,24 @@ describe('MessageController - guard de opções órfãs', () => {
     detectIntentMock = jest.fn();
     handleTransactionRequestMock = jest.fn().mockResolvedValue('ok');
     runtimeGetAllActiveMock = jest.fn().mockResolvedValue([]);
+    runtimeGetMock = jest.fn().mockResolvedValue(null);
+    runtimeUpsertMock = jest.fn().mockResolvedValue(true);
+    runtimeClearMock = jest.fn().mockResolvedValue(true);
     featureFlagIsEnabledMock = jest.fn().mockResolvedValue(false);
     agentRouterDecideMock = jest.fn().mockResolvedValue({ route: 'deterministic', reason: 'test' });
+    userMock = { id: 'user-1', nome_clinica: 'Clinica Teste' };
 
     jest.doMock('../../src/services/geminiService', () => ({ processMessage: jest.fn() }));
     jest.doMock('../../src/services/evolutionService', () => ({}));
     jest.doMock('../../src/services/cacheService', () => ({
       set: jest.fn().mockResolvedValue(true),
-      delete: jest.fn().mockResolvedValue(true)
+      delete: jest.fn().mockResolvedValue(true),
+      invalidateUser: jest.fn().mockResolvedValue(true),
+      invalidatePhone: jest.fn().mockResolvedValue(true)
     }));
 
     jest.doMock('../../src/controllers/userController', () => ({
-      findUserByPhone: jest.fn().mockResolvedValue({ id: 'user-1', nome_clinica: 'Clinica Teste' })
+      findUserByPhone: jest.fn().mockImplementation(async () => userMock)
     }));
 
     jest.doMock('../../src/services/clinicMemberService', () => ({
@@ -61,9 +72,9 @@ describe('MessageController - guard de opções órfãs', () => {
 
     jest.doMock('../../src/services/conversationRuntimeStateService', () => ({
       getAllActive: runtimeGetAllActiveMock,
-      get: jest.fn().mockResolvedValue(null),
-      upsert: jest.fn().mockResolvedValue(true),
-      clear: jest.fn().mockResolvedValue(true)
+      get: runtimeGetMock,
+      upsert: runtimeUpsertMock,
+      clear: runtimeClearMock
     }));
 
     jest.doMock('../../src/services/featureFlagService', () => ({
@@ -80,12 +91,14 @@ describe('MessageController - guard de opções órfãs', () => {
       }
     }));
 
-    jest.doMock('../../src/db/supabase', () => ({
-      from: jest.fn(() => ({
+    supabaseFromMock = jest.fn(() => ({
         select: jest.fn().mockReturnThis(),
+        update: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
         single: jest.fn().mockResolvedValue({ data: null })
-      }))
+      }));
+    jest.doMock('../../src/db/supabase', () => ({
+      from: supabaseFromMock
     }));
 
     jest.doMock('../../src/utils/phone', () => ({ normalizePhone: (phone) => phone }));
@@ -248,5 +261,72 @@ describe('MessageController - guard de opções órfãs', () => {
 
     expect(response).toBe('ambigua deterministica');
     expect(agentRouterDecideMock).not.toHaveBeenCalled();
+  });
+
+  test('primeiro lançamento real pede confirmação antes de criar transação', async () => {
+    userMock = {
+      id: 'user-1',
+      nome_clinica: 'Clinica Teste',
+      whatsapp_real_mode_confirmed_at: null
+    };
+    detectIntentMock.mockResolvedValue({
+      intencao: 'registrar_entrada',
+      dados: {
+        tipo: 'entrada',
+        valor: 1200,
+        categoria: 'Botox',
+        data: '2026-05-29'
+      },
+      confidence: 0.95,
+      source: 'heuristic'
+    });
+
+    const response = await controller.handleIncomingMessage('5511999999999', 'Botox 1200 pix');
+
+    expect(response).toContain('Antes de salvar lançamentos reais');
+    expect(runtimeUpsertMock).toHaveBeenCalledWith(
+      '5511999999999',
+      'real_mode_confirm',
+      expect.objectContaining({
+        intent: expect.objectContaining({ intencao: 'registrar_entrada' }),
+        message: 'Botox 1200 pix'
+      }),
+      expect.any(Number)
+    );
+    expect(handleTransactionRequestMock).not.toHaveBeenCalled();
+  });
+
+  test('confirmação do modo real reprocessa o lançamento pendente', async () => {
+    userMock = {
+      id: 'user-1',
+      nome_clinica: 'Clinica Teste',
+      whatsapp_real_mode_confirmed_at: null
+    };
+    runtimeGetMock.mockImplementation(async (_phone, flow) => {
+      if (flow === 'real_mode_confirm') {
+        return {
+          payload: {
+            message: 'Botox 1200 pix',
+            intent: {
+              intencao: 'registrar_entrada',
+              dados: {
+                tipo: 'entrada',
+                valor: 1200,
+                categoria: 'Botox',
+                data: '2026-05-29'
+              }
+            }
+          }
+        };
+      }
+      return null;
+    });
+
+    const response = await controller.handleIncomingMessage('5511999999999', 'sim');
+
+    expect(response).toContain('Modo real ativado');
+    expect(response).toContain('ok');
+    expect(runtimeClearMock).toHaveBeenCalledWith('5511999999999', 'real_mode_confirm');
+    expect(handleTransactionRequestMock).toHaveBeenCalledTimes(1);
   });
 });

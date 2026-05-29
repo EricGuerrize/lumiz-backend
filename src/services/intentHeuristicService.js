@@ -128,10 +128,12 @@ class IntentHeuristicService {
       ],
       desfazer: [
         'cancelar', 'desfazer', 'apagar última', 'apagar ultima', 'errei',
-        'deletar última', 'deletar ultima', 'voltar', 'anular'
+        'deletar última', 'deletar ultima', 'apagar último lançamento',
+        'apagar ultimo lancamento', 'isso foi teste', 'voltar', 'anular'
       ],
       editar_transacao: [
         'editar última', 'editar ultima', 'corrigir última', 'corrigir ultima',
+        'corrigir último lançamento', 'corrigir ultimo lancamento',
         'mudar última', 'mudar ultima', 'alterar última', 'alterar ultima'
       ],
       exportar_dados: [

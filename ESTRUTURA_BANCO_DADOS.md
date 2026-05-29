@@ -680,3 +680,15 @@ parcelas (1) ──→ (0..1) alter_recebiveis
 
 **Princípio:** Separação clara entre entradas (`atendimentos`) e saídas (`contas_pagar`) para facilitar cálculos financeiros e relatórios.
 
+
+---
+
+### `profiles.whatsapp_real_mode_confirmed_at`
+
+**Migration:** `supabase/migrations/20260529183500_add_whatsapp_real_mode_to_profiles.sql`
+
+**Descrição:** timestamp nullable que registra quando o usuário confirmou explicitamente que mensagens pós-onboarding podem virar lançamentos financeiros reais no WhatsApp.
+
+**Uso:** `realModeService` + `messageController`. Se a coluna existir e estiver vazia, o primeiro lançamento real é retido em `conversation_runtime_states.flow = 'real_mode_confirm'` até confirmação do usuário.
+
+**Fallback operacional:** enquanto a migration não estiver aplicada, a confirmação também é persistida em `conversation_runtime_states.flow = 'real_mode_confirmed'` com TTL longo.

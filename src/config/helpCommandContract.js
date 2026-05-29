@@ -46,10 +46,24 @@ function getHelpShortcutIntent(msgSimples, messageTrimmed) {
   if (msgSimples === 'meta') {
     return { intencao: 'consultar_meta', dados: {}, confidence: 0.95, source: 'help_shortcut' };
   }
-  if (msgSimples === 'desfazer') {
+  if (
+    msgSimples === 'desfazer' ||
+    msgSimples === 'apagar ultimo' ||
+    msgSimples === 'apagar ultimo lancamento' ||
+    msgSimples === 'apagar ultima' ||
+    msgSimples === 'apagar ultima transacao' ||
+    msgSimples === 'isso foi teste'
+  ) {
     return { intencao: 'desfazer', dados: {}, confidence: 0.95, source: 'help_shortcut' };
   }
-  if (msgSimples === 'editar') {
+  if (
+    msgSimples === 'editar' ||
+    msgSimples === 'corrigir ultimo' ||
+    msgSimples === 'corrigir ultimo lancamento' ||
+    msgSimples === 'corrigir ultima' ||
+    msgSimples === 'editar ultima' ||
+    msgSimples === 'alterar ultima'
+  ) {
     return { intencao: 'editar_transacao', dados: {}, confidence: 0.95, source: 'help_shortcut' };
   }
   if (msgSimples === 'pdf') {

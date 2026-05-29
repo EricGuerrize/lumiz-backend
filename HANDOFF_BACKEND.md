@@ -1249,3 +1249,13 @@ Tools marcadas com `requiresConfirmation` (ex.: `register_sale`, `register_cost`
 | C — Perfil da clínica | `src/services/agentic/clinicProfileService.js`, tabela `clinic_profiles` |
 | D — Tools | `src/services/agentic/registerDefaultTools.js`, `toolRegistry.js` |
 | E — Mensagens | `src/copy/*WhatsappCopy.js` (onboarding, MDR, etc.); sem strings soltas em controllers |
+
+## 2026-05-29 — Segurança pós-onboarding: modo real e desfazer/corrigir
+
+- Adicionado gate de confirmação explícita de modo real via `realModeService`.
+- Quando `profiles.whatsapp_real_mode_confirmed_at` existe e está vazio, o primeiro intent `registrar_entrada`/`registrar_saida` não grava transação: o bot pede confirmação e persiste o lançamento pendente em `conversation_runtime_states` com `flow = 'real_mode_confirm'`.
+- Resposta `sim` atualiza `profiles.whatsapp_real_mode_confirmed_at`, invalida cache do usuário/telefone e reprocessa o lançamento original.
+- Resposta `não` cancela sem gravar.
+- Comandos reforçados: `apagar último lançamento`, `isso foi teste` → `desfazer`; `corrigir último lançamento` → abre edição da última transação.
+- `EditHandler.handleUndoLastTransaction` agora usa `transactionController.deleteTransaction` para remover relações de atendimento/parcelas em vez de deletar tabela direta.
+- Se a migration ainda não estiver aplicada, o serviço faz fallback persistente em `conversation_runtime_states` com `flow = 'real_mode_confirmed'` e TTL longo, evitando bloquear a feature por divergência de histórico do Supabase CLI.

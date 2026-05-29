@@ -35,6 +35,7 @@ const mdrChatFlowService = require('../services/mdrChatFlowService');
 const betaFeedbackService = require('../services/betaFeedbackService');
 const conversationalNpsService = require('../services/conversationalNpsService');
 const featureFlagService = require('../services/featureFlagService');
+const realModeService = require('../services/realModeService');
 const { agentRouterService, toolRegistry } = require('../services/agentic');
 const { getHelpShortcutIntent } = require('../config/helpCommandContract');
 
@@ -212,6 +213,42 @@ class MessageController {
       console.warn('[MESSAGE] agentic_confirm execute:', e?.message);
       return 'Deu um erro ao confirmar. Pode tentar de novo?';
     }
+  }
+
+  /**
+   * Resolve a confirmação explícita de modo real antes de gravar lançamentos.
+   * @param {string} phone
+   * @param {string} message
+   * @param {object} user
+   * @returns {Promise<string|null>}
+   */
+  async _tryResolveRealModeConfirmation(phone, message, user) {
+    const pending = await realModeService.getPending(phone);
+    if (!pending?.intent || !pending?.message) return null;
+
+    const decision = realModeService.parseConfirmation(message);
+    if (!decision) {
+      return 'Responde *sim* para ativar o modo real e salvar esse lançamento, ou *não* para cancelar.';
+    }
+
+    await realModeService.clearPending(phone);
+    if (decision === 'no') {
+      return 'Combinado. Não salvei esse lançamento.\n\nQuando quiser registrar algo real, é só mandar de novo.';
+    }
+
+    try {
+      await realModeService.confirm(user, phone);
+    } catch (error) {
+      console.error('[REAL_MODE] Falha ao confirmar modo real:', error?.message || error);
+      return 'Não consegui ativar o modo real agora. Tenta novamente em alguns segundos.';
+    }
+
+    const response = await this.routeIntent(pending.intent, user, phone, pending.message);
+    return (
+      `Modo real ativado ✅\n\n` +
+      `Agora vou registrar o lançamento que você tinha enviado:\n\n` +
+      response
+    );
   }
 
   async rehydrateRuntimeStates(phone) {
@@ -423,6 +460,20 @@ class MessageController {
       }
 
       await this.rehydrateRuntimeStates(normalizedPhone);
+
+      if (user?.id) {
+        const realModeReply = await this._tryResolveRealModeConfirmation(normalizedPhone, message, user);
+        if (typeof realModeReply === 'string') {
+          conversationHistoryService.saveConversation(
+            user.id,
+            message,
+            realModeReply,
+            'real_mode_confirm',
+            {}
+          ).catch(() => {});
+          return realModeReply;
+        }
+      }
 
       // Verifica estados pendentes
       if (this.pendingTransactions.has(normalizedPhone)) {
@@ -796,7 +847,16 @@ class MessageController {
 
       // Roteia para handlers baseado no intent
       if (!response) {
-        response = await this.routeIntent(intent, user, normalizedPhone, message);
+        if (
+          user?.id &&
+          await realModeService.needsConfirmation(user, normalizedPhone) &&
+          ['registrar_entrada', 'registrar_saida'].includes(intent?.intencao)
+        ) {
+          await realModeService.setPending(normalizedPhone, { intent, message });
+          response = realModeService.buildPrompt();
+        } else {
+          response = await this.routeIntent(intent, user, normalizedPhone, message);
+        }
       }
 
       // Captura falhas de entendimento como feedback passivo

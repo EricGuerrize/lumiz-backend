@@ -37,7 +37,35 @@ class EditHandler {
     const { id, campo, novo_valor } = intent.dados;
 
     if (!id) {
-      return 'Qual transação você quer editar? Me diga o ID ou descreva a transação.';
+      const recentes = await transactionController.getRecentTransactions(user.id, 1);
+      if (!recentes.length) {
+        return 'Não encontrei lançamentos para corrigir.';
+      }
+
+      const ultima = recentes[0];
+      await this.setPendingEdit(phone, {
+        user,
+        transacao: {
+          id: ultima.id,
+          valor_total: ultima.type === 'entrada' ? ultima.amount : null,
+          valor: ultima.type === 'saida' ? ultima.amount : null,
+          data: ultima.date,
+          descricao: ultima.description,
+          categoria: ultima.categories?.name || ultima.category
+        },
+        tipo: ultima.type === 'entrada' ? 'atendimento' : 'conta',
+        timestamp: Date.now()
+      });
+
+      return (
+        `Vamos corrigir o último lançamento:\n\n` +
+        `${ultima.type === 'entrada' ? 'Venda' : 'Custo'} — ${formatarMoeda(parseFloat(ultima.amount || 0))}\n` +
+        `${ultima.categories?.name || ultima.category || ultima.description || 'Sem categoria'}\n\n` +
+        `Me manda o ajuste, por exemplo:\n` +
+        `"valor R$ 3000"\n` +
+        `"data 15/12"\n` +
+        `"descrição Botox cliente Maria"`
+      );
     }
 
     // Busca a transação
@@ -193,17 +221,8 @@ class EditHandler {
       }
 
       const ultima = atendimentos[0];
-      const table = ultima.type === 'entrada' ? 'atendimentos' : 'contas_pagar';
-
-      const { error } = await supabase
-        .from(table)
-        .delete()
-        .eq('id', ultima.id)
-        .eq('user_id', user.id);
-
-      if (error) {
-        throw error;
-      }
+      const deleted = await transactionController.deleteTransaction(user.id, ultima.id);
+      if (!deleted) throw new Error('Última transação não encontrada para remoção');
 
       return `✅ *Última transação removida!*\n\n${ultima.type === 'entrada' ? 'Venda' : 'Custo'} de ${formatarMoeda(parseFloat(ultima.amount))} foi removida.`;
     } catch (error) {
@@ -214,4 +233,3 @@ class EditHandler {
 }
 
 module.exports = EditHandler;
-
