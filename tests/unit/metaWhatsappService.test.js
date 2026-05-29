@@ -4,7 +4,7 @@ jest.mock('axios', () => {
   const post = jest.fn();
   const get = jest.fn();
   return {
-    create: jest.fn(() => ({ get })),
+    create: jest.fn(() => ({ get, post })),
     get: jest.fn(),
     post,
     __clientGet: get
@@ -65,5 +65,34 @@ describe('metaWhatsappService', () => {
     const service = new MetaWhatsappService({ accessToken: '' });
 
     await expect(service.downloadMedia('media-123')).rejects.toThrow('WA_ACCESS_TOKEN');
+  });
+
+  it('envia vídeo por link usando payload da Cloud API', async () => {
+    const service = new MetaWhatsappService({
+      accessToken: 'token-meta',
+      graphApiVersion: 'v23.0',
+      phoneNumberId: 'phone-123'
+    });
+
+    axios.post.mockResolvedValueOnce({
+      data: { messages: [{ id: 'wamid.video' }] }
+    });
+
+    const result = await service.sendVideo(
+      '556592997732',
+      'https://cdn.example.com/teaser.mp4',
+      'Veja o dashboard'
+    );
+
+    expect(axios.post).toHaveBeenCalledWith('/phone-123/messages', {
+      messaging_product: 'whatsapp',
+      to: '556592997732',
+      type: 'video',
+      video: {
+        link: 'https://cdn.example.com/teaser.mp4',
+        caption: 'Veja o dashboard'
+      }
+    });
+    expect(result.messages[0].id).toBe('wamid.video');
   });
 });

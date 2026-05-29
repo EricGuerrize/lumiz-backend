@@ -2481,22 +2481,40 @@ class OnboardingFlowService {
                     });
 
                     const subscriptionService = require('./subscriptionService');
+                    const metaWhatsappSvc = require('./metaWhatsappService');
                     const evolutionSvc = require('./evolutionService');
                     await subscriptionService.startTrial(clinicId);
                     const dashboardTeaserVideoUrl = String(process.env.ONBOARDING_DASHBOARD_TEASER_VIDEO_URL || '').trim();
-                    if (dashboardTeaserVideoUrl && typeof evolutionSvc.sendVideo === 'function') {
-                        const sendTeaserVideo = () => evolutionSvc.sendVideo(
-                            normalizedPhone,
-                            dashboardTeaserVideoUrl,
-                            onboardingCopy.dashboardTeaserVideoCaption()
-                        ).catch((error) => {
+                    if (dashboardTeaserVideoUrl) {
+                        const sendTeaserVideo = async () => {
+                            const caption = onboardingCopy.dashboardTeaserVideoCaption();
+                            if (typeof metaWhatsappSvc.isOutboundConfigured === 'function' &&
+                                metaWhatsappSvc.isOutboundConfigured() &&
+                                typeof metaWhatsappSvc.sendVideo === 'function') {
+                                try {
+                                    await metaWhatsappSvc.sendVideo(normalizedPhone, dashboardTeaserVideoUrl, caption);
+                                    return;
+                                } catch (error) {
+                                    console.error('[ONBOARDING] Falha ao enviar vídeo teaser via Meta:', error?.message || error);
+                                }
+                            }
+
+                            if (typeof evolutionSvc.sendVideo === 'function') {
+                                await evolutionSvc.sendVideo(normalizedPhone, dashboardTeaserVideoUrl, caption);
+                                return;
+                            }
+
+                            throw new Error('Nenhum provider configurado para envio de vídeo');
+                        };
+
+                        const sendTeaserVideoSafely = () => sendTeaserVideo().catch((error) => {
                             console.error('[ONBOARDING] Falha ao enviar vídeo teaser do dashboard:', error?.message || error);
                         });
 
                         if (process.env.NODE_ENV === 'test') {
-                            await sendTeaserVideo();
+                            await sendTeaserVideoSafely();
                         } else {
-                            const timer = setTimeout(sendTeaserVideo, 2500);
+                            const timer = setTimeout(sendTeaserVideoSafely, 2500);
                             if (typeof timer.unref === 'function') timer.unref();
                         }
                     }

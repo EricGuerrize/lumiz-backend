@@ -152,7 +152,8 @@ module.exports = {
         return (
             `Perfeito, ${nome}. ✅\n\n` +
             `Agora vou te mostrar em 3 etapas como funcionamos\n` +
-            `Me manda uma venda real, do jeito que você lembraria. Pode ser simples.\n\n` +
+            `Me manda uma venda de teste, do jeito que você lembraria. Pode ser simples.\n` +
+            `Ela será usada só para demonstração do onboarding e não vira lançamento real.\n\n` +
             `Exemplos:\n` +
             `• "Botox R$ 8.000 no pix hoje"\n` +
             `• "Júlia fez full face, pagou R$ 15.600. Sendo 3.000 pix + 6x cartão"`
@@ -744,7 +745,8 @@ module.exports = {
     act1Welcome() {
         return (
             `Oi! Sou a Lumiz, sua CFO no WhatsApp 💜\n\n` +
-            `Vou montar um mini raio-x financeiro usando uma venda real da clínica: receita, custo, taxa de cartão e margem.\n\n` +
+            `Vou montar um mini raio-x financeiro de teste usando um exemplo realista da clínica: receita, custo, taxa de cartão e margem.\n\n` +
+            `Esse primeiro raio-x é só diagnóstico do onboarding e não vira lançamento financeiro real.\n\n` +
             `Sem planilha e sem cadastro longo. Posso começar?`
         );
     },
@@ -756,7 +758,8 @@ module.exports = {
     /** Ato 2 — Primeira venda */
     act2SalePrompt() {
         return (
-            `Perfeito. Primeiro, me manda uma *venda real* desta semana 💰\n\n` +
+            `Perfeito. Primeiro, me manda uma *venda de teste* desta semana 💰\n\n` +
+            `Ela vai servir só para o raio-x inicial e não será salva como lançamento real.\n\n` +
             `Pode escrever natural, do jeito que falaria no balcão:\n` +
             `_"botox R$ 2.500 no crédito em 2x"_`
         );
@@ -767,7 +770,7 @@ module.exports = {
             ? `R$ ${valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
             : String(valor || '?');
         return (
-            `Receita-base do diagnóstico:\n` +
+            `Receita-base de teste do diagnóstico:\n` +
             `*${procedimento || 'Procedimento'}* — ${valorFmt}` +
             (pagamento ? ` no ${pagamento}` : '') +
             `.\n\n` +
@@ -813,8 +816,8 @@ module.exports = {
     /** Ato 3 — Primeiro custo */
     act3CostPrompt() {
         return (
-            `Agora vamos cruzar essa venda com um custo real 💸\n\n` +
-            `Pode mandar a *nota fiscal* em foto/PDF ou digitar o principal custo ligado ao procedimento:\n` +
+            `Agora vamos cruzar essa venda de teste com um custo de teste 💸\n\n` +
+            `Pode mandar uma *nota fiscal* em foto/PDF ou digitar o principal custo ligado ao procedimento. Também é só para o diagnóstico inicial:\n` +
             `_"toxina R$ 800"_ ou _"luvas R$ 500"_`
         );
     },
@@ -824,7 +827,7 @@ module.exports = {
             ? `R$ ${valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
             : String(valor || '?');
         return (
-            `Custo identificado:\n` +
+            `Custo de teste identificado:\n` +
             `*${descricao || 'Custo'}* — ${valorFmt}.\n\n` +
             `Confirma? Se não for isso, me manda a correção.`
         );
@@ -861,7 +864,7 @@ module.exports = {
         const liquidoPixFmt = liquidoPix != null ? `R$ ${Number(liquidoPix).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : null;
         const liquidoCreditoFmt = liquidoCredito != null ? `R$ ${Number(liquidoCredito).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : null;
         const resumoLine = receitaFmt && custoFmt
-            ? `\n• Receita analisada: *${receitaFmt}*\n• Custo informado: *${custoFmt}*`
+            ? `\n• Receita de teste analisada: *${receitaFmt}*\n• Custo de teste informado: *${custoFmt}*`
             : '';
         const insumoLine = insumoPercent != null
             ? `\n• Peso do custo: *${insumoPercent}% da receita* — ${insumoPercent >= insumoMin && insumoPercent <= insumoMax ? 'dentro da faixa saudável' : 'fora da faixa recomendada'} (${insumoMin}-${insumoMax}% como referência inicial).`
@@ -885,7 +888,8 @@ module.exports = {
             pixLine +
             creditoLine +
             margemLine +
-            `\n\nEsse é o tipo de leitura que a Lumiz vai montar automaticamente para cada lançamento. Quer continuar por aqui no WhatsApp?`
+            `\n\nEsse raio-x é apenas um teste do onboarding e não entra como receita ou despesa real.\n\n` +
+            `Esse é o tipo de leitura que a Lumiz vai montar automaticamente para cada lançamento real depois do onboarding. Quer continuar por aqui no WhatsApp?`
         );
     },
 
@@ -907,8 +911,8 @@ module.exports = {
         const snapshot = receitaFmt
             ? (
                 `Hoje eu já organizei:\n` +
-                `• venda: *${summary.procedimento || 'Procedimento'}* — *${receitaFmt}*${pagamentoLine}\n` +
-                (custoFmt ? `• custo informado: *${summary.custoDescricao || 'Custo'}* — *${custoFmt}*` : '') +
+                `• venda de teste: *${summary.procedimento || 'Procedimento'}* — *${receitaFmt}*${pagamentoLine}\n` +
+                (custoFmt ? `• custo de teste informado: *${summary.custoDescricao || 'Custo'}* — *${custoFmt}*` : '') +
                 taxaLine +
                 (margemFmt ? `\n• margem estimada: *${margemFmt}*${summary.margemPercent != null ? ` (${summary.margemPercent}%)` : ''}` : '') +
                 `\n\n`
@@ -918,6 +922,7 @@ module.exports = {
         return (
             `Perfeito. Seu primeiro raio-x financeiro está pronto ✅\n\n` +
             snapshot +
+            `Importante: esses valores foram usados só como teste do onboarding. Eles não foram lançados como receita ou despesa real da clínica.\n\n` +
             `A partir de agora, a Lumiz pode acompanhar a rotina financeira da clínica direto por aqui.\n\n` +
             `Nos próximos 30 dias, você pode testar a experiência completa:\n` +
             `• lançar receitas e despesas por texto, áudio, foto ou PDF;\n` +
@@ -925,7 +930,7 @@ module.exports = {
             `• consultar saldo, entradas, custos e insights;\n` +
             `• acompanhar margem por procedimento e impacto das taxas de maquininha.\n\n` +
             `Por enquanto, vamos deixar seus lançamentos bem organizados no WhatsApp. ` +
-            `Quando a próxima etapa da plataforma estiver pronta, eu te aviso por aqui.`
+            `Daqui pra frente, tudo que você mandar como rotina financeira pode ser tratado como lançamento real. Quando a próxima etapa da plataforma estiver pronta, eu te aviso por aqui.`
         );
     },
 
@@ -942,8 +947,9 @@ module.exports = {
             : '';
 
         return (
-            `Sem problema. Já deixei esse primeiro raio-x financeiro salvo ✅\n\n` +
+            `Sem problema. Já deixei esse primeiro raio-x financeiro de teste salvo ✅\n\n` +
             resumoLine +
+            `Esses valores não entraram como receita ou despesa real da clínica.\n\n` +
             `A partir daqui, você pode continuar usando a Lumiz direto por aqui: mande receitas, custos, notas, boletos ou dúvidas financeiras da clínica.\n\n` +
             `Nos próximos 30 dias, vou te ajudar a organizar os lançamentos e enxergar margem, custos e taxas com mais clareza.`
         );

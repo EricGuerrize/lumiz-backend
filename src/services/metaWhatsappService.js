@@ -83,6 +83,52 @@ class MetaWhatsappService {
   }
 
   /**
+   * Envia vídeo por link público pela Cloud API oficial da Meta.
+   * @param {string} phone
+   * @param {string} videoUrl
+   * @param {string} [caption]
+   * @returns {Promise<Object>}
+   */
+  async sendVideo(phone, videoUrl, caption = '') {
+    if (!phone) {
+      throw new Error('Telefone ausente para envio de vídeo via Meta');
+    }
+
+    if (!videoUrl || !String(videoUrl).trim()) {
+      throw new Error('URL do vídeo ausente para envio via Meta');
+    }
+
+    if (!this.isOutboundConfigured()) {
+      throw new Error('WA_ACCESS_TOKEN ou WA_PHONE_NUMBER_ID não configurados para envio de vídeo via Meta');
+    }
+
+    const payload = {
+      messaging_product: 'whatsapp',
+      to: phone,
+      type: 'video',
+      video: {
+        link: String(videoUrl).trim()
+      }
+    };
+
+    if (caption && String(caption).trim()) {
+      payload.video.caption = String(caption);
+    }
+
+    const response = await retryWithBackoff(
+      () => withTimeout(
+        this.client.post(`/${this.phoneNumberId}/messages`, payload),
+        META_TIMEOUT_MS,
+        'Timeout ao enviar vídeo via Meta'
+      ),
+      2,
+      1000
+    );
+
+    return response.data;
+  }
+
+  /**
    * Baixa mídia da Cloud API a partir do media_id recebido no webhook.
    * Fluxo Meta: GET /{media-id} -> URL temporária -> GET URL com Bearer token.
    * @param {string} mediaId

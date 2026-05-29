@@ -218,7 +218,7 @@ describe('Onboarding v2 — fluxo feliz completo', () => {
     expect(transactionController.createAtendimento).not.toHaveBeenCalled();
 
     const next = await send('3,2%');
-    expect(next).toContain('custo real');
+    expect(next).toContain('custo de teste');
     state = onboardingFlowService.onboardingStates.get(PHONE);
     expect(state.step).toBe('ACT3_COST');
     expect(state.data.act2_mdr_rate).toBe(3.2);
@@ -264,7 +264,7 @@ describe('Onboarding v2 — fluxo feliz completo', () => {
 
     res = await send('800');
     state = onboardingFlowService.onboardingStates.get(PHONE);
-    expect(res).toContain('Custo identificado');
+    expect(res).toContain('Custo de teste identificado');
     expect(state.step).toBe('ACT3_COST_CONFIRM');
     expect(state.data.act3_pending?.descricao).toBe('toxina');
     expect(state.data.act3_pending?.valor).toBe(800);
