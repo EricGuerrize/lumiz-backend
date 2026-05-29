@@ -248,6 +248,14 @@ describe('MessageController - guard de opções órfãs', () => {
     expect(detectIntentMock).not.toHaveBeenCalled();
   });
 
+  test('PDF isolado orienta anexar arquivo ou pedir relatorio explicitamente', async () => {
+    const response = await controller.handleIncomingMessage('5511999999999', 'PDF');
+
+    expect(response).toContain('anexe o PDF/foto');
+    expect(response).toContain('gerar pdf');
+    expect(detectIntentMock).not.toHaveBeenCalled();
+  });
+
   test('mensagem ambígua não passa pelo agentic mesmo com flag ligada', async () => {
     featureFlagIsEnabledMock.mockResolvedValue(true);
     detectIntentMock.mockResolvedValue({

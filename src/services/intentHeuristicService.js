@@ -138,7 +138,7 @@ class IntentHeuristicService {
       ],
       exportar_dados: [
         'exportar', 'baixar relatório', 'baixar relatorio', 'me manda pdf', 'mandar pdf',
-        'excel', 'planilha', 'download', 'gerar relatório', 'gerar relatorio', 'gerar pdf', 'pdf'
+        'excel', 'planilha', 'download', 'gerar relatório', 'gerar relatorio', 'gerar pdf'
       ],
       adicionar_numero: [
         'cadastrar número', 'cadastrar numero', 'adicionar número', 'adicionar numero',

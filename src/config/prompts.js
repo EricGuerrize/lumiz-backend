@@ -441,7 +441,7 @@ ${REGRAS_OURO}
 
 REGRA CRÍTICA (export vs anexo):
 - Pedido de *relatório mensal*, *exportar*, *gerar/baixar PDF ou planilha da Lumiz*, *manda o PDF* = **exportar_dados** ou **relatorio_mensal** (com dados.formato "pdf"/"excel" quando explícito).
-- **enviar_documento** = usuário vai *anexar* comprovante/nota/boleto **escaneado** para a Lumiz ler — **não** use para pedido de relatório gerado pelo sistema. A palavra "pdf" **sozinha** ou junto de "relatório/mensal/exportar" conta como exportação, não como envio de documento.
+- **enviar_documento** = usuário vai *anexar* comprovante/nota/boleto **escaneado** para a Lumiz ler — **não** use para pedido de relatório gerado pelo sistema. A palavra "pdf" **sozinha** é ambígua e deve pedir esclarecimento; só trate como exportação quando vier com "relatório/mensal/exportar/gerar/manda".
 
 REGRA PRINCIPAL DE CLASSIFICAÇÃO DE INTENÇÃO:
 - Palavras que indicam VENDA (registrar_entrada):

@@ -66,9 +66,6 @@ function getHelpShortcutIntent(msgSimples, messageTrimmed) {
   ) {
     return { intencao: 'editar_transacao', dados: {}, confidence: 0.95, source: 'help_shortcut' };
   }
-  if (msgSimples === 'pdf') {
-    return { intencao: 'exportar_dados', dados: { formato: 'pdf' }, confidence: 0.95, source: 'help_shortcut' };
-  }
   if (msgSimples === 'excel') {
     return { intencao: 'exportar_dados', dados: { formato: 'excel' }, confidence: 0.95, source: 'help_shortcut' };
   }

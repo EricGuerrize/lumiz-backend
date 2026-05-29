@@ -53,10 +53,7 @@ describe('helpCommandContract', () => {
       expect(getHelpShortcutIntent('relatorio', 'Relatório')).toMatchObject({ intencao: 'relatorio_mensal' });
       expect(getHelpShortcutIntent('stats hoje', 'stats hoje')).toMatchObject({ intencao: 'stats_hoje' });
       expect(getHelpShortcutIntent('meta', 'meta')).toMatchObject({ intencao: 'consultar_meta' });
-      expect(getHelpShortcutIntent('pdf', 'Pdf')).toMatchObject({
-        intencao: 'exportar_dados',
-        dados: { formato: 'pdf' }
-      });
+      expect(getHelpShortcutIntent('pdf', 'Pdf')).toBeNull();
       expect(getHelpShortcutIntent('gerar pdf', 'gerar pdf')).toMatchObject({
         intencao: 'exportar_dados',
         dados: { formato: 'pdf' }

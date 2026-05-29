@@ -66,4 +66,12 @@ describe('IntentHeuristicService', () => {
     );
     expect(knowledgeService.searchSimilarity).not.toHaveBeenCalled();
   });
+
+  test('detectIntent nao trata PDF isolado como exportacao', async () => {
+    knowledgeService.searchSimilarity.mockResolvedValue([]);
+
+    const result = await intentHeuristicService.detectIntent('PDF', null);
+
+    expect(result).toBeNull();
+  });
 });

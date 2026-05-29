@@ -583,6 +583,9 @@ class MessageController {
       if (['dashboard', 'link', 'painel'].includes(msgSimples)) {
         return this.helpHandler.handleDashboard();
       }
+      if (['pdf', 'arquivo', 'documento'].includes(msgSimples)) {
+        return 'Se você quer que eu leia um documento, anexe o PDF/foto aqui no WhatsApp.\n\nSe você quer baixar o relatório mensal da Lumiz, escreva: "gerar pdf" ou "relatório em pdf".';
+      }
       if (user && (
         msgSimples === 'assinar' ||
         msgSimples === 'assinatura' ||
