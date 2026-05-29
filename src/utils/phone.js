@@ -3,6 +3,32 @@
  * Garante formato consistente (E.164) em todo o sistema
  */
 
+function canonicalizeBrazilDigits(rawDigits) {
+    const digits = String(rawDigits || '').replace(/\D/g, '');
+    if (!digits) return '';
+
+    if (digits.startsWith('55')) {
+        if (digits.length === 12) {
+            const ddd = digits.substring(2, 4);
+            const local = digits.substring(4);
+            if (/^[6-9]/.test(local)) {
+                return `55${ddd}9${local}`;
+            }
+        }
+        return digits;
+    }
+
+    if (digits.length === 10) {
+        const ddd = digits.substring(0, 2);
+        const local = digits.substring(2);
+        if (/^[6-9]/.test(local)) {
+            return `${ddd}9${local}`;
+        }
+    }
+
+    return digits;
+}
+
 /**
  * Normaliza telefone para formato E.164 (ex: +5511999999999)
  * @param {string} phone - Telefone em qualquer formato
@@ -12,7 +38,7 @@ function normalizePhone(phone) {
     if (!phone) return null;
 
     // Remove tudo exceto dígitos
-    const digits = String(phone).replace(/\D/g, '');
+    const digits = canonicalizeBrazilDigits(String(phone).replace(/\D/g, ''));
 
     if (digits.length < 10) return null;
 
@@ -93,7 +119,8 @@ function getLocalNumber(phone) {
 function getPhoneVariants(phone) {
     if (!phone) return [];
 
-    const digits = String(phone).replace(/\D/g, '');
+    const rawDigits = String(phone).replace(/\D/g, '');
+    const digits = canonicalizeBrazilDigits(rawDigits);
     const variants = new Set();
 
     // Adiciona o número original
@@ -101,6 +128,7 @@ function getPhoneVariants(phone) {
 
     // Adiciona versão com apenas dígitos
     if (digits) variants.add(digits);
+    if (rawDigits && rawDigits !== digits) variants.add(rawDigits);
 
     // Se tem código do país (55)
     if (digits.startsWith('55') && digits.length >= 12) {
@@ -135,7 +163,7 @@ function extractPhoneFromJid(jidOrPhone) {
     if (!jidOrPhone || typeof jidOrPhone !== 'string') return null;
 
     const localPart = jidOrPhone.split('@')[0];
-    const digits = localPart.replace(/\D/g, '');
+    const digits = canonicalizeBrazilDigits(localPart.replace(/\D/g, ''));
     if (!digits) return null;
 
     if (digits.startsWith('55') && (digits.length === 12 || digits.length === 13)) {

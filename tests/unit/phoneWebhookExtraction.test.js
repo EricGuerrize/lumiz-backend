@@ -14,7 +14,7 @@ describe('extractPhoneFromWebhookBody', () => {
       }
     };
 
-    expect(extractPhoneFromWebhookBody(body)).toBe('556592556938');
+    expect(extractPhoneFromWebhookBody(body)).toBe('5565992556938');
   });
 
   test('cai para remoteJid quando ele já contém número', () => {
