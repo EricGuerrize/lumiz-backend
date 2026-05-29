@@ -105,7 +105,66 @@ function normalizeEvolutionWebhookBody(rawBody) {
     return { ok: true, reason: 'messages_array', event: 'messages.upsert', data: firstMessage, body: rawBody };
   }
 
+  // Formato 5: Meta Cloud API — { object: “whatsapp_business_account”, entry: [...] }
+  if (rawBody.object === 'whatsapp_business_account') {
+    return normalizeMetaWebhookBody(rawBody);
+  }
+
   return { ok: false, reason: 'unrecognized_shape', event: null, data: null, body: rawBody };
+}
+
+// Normaliza o formato nativo da Meta Cloud API para o formato interno usado pelo webhookHandler.
+// Usado quando a Meta envia o webhook diretamente (sem passar pela Evolution API como intermediário).
+function normalizeMetaWebhookBody(rawBody) {
+  const change = rawBody?.entry?.[0]?.changes?.find(c => c.field === 'messages');
+  if (!change) {
+    // Pode ser update de status (delivered, read) — ignorar silenciosamente
+    return { ok: false, reason: 'meta_no_messages_field', event: null, data: null, body: rawBody };
+  }
+
+  const value = change.value;
+  const msg = value?.messages?.[0];
+  if (!msg) {
+    return { ok: false, reason: 'meta_no_message', event: null, data: null, body: rawBody };
+  }
+
+  const from = msg.from;
+  const type = msg.type;
+
+  const data = {
+    key: {
+      id: msg.id,
+      remoteJid: `${from}@s.whatsapp.net`,
+      fromMe: false,
+    },
+    message: {}
+  };
+
+  if (type === 'text') {
+    data.message.conversation = msg.text?.body || '';
+  } else if (type === 'image') {
+    data.message.imageMessage = {
+      caption: msg.image?.caption || '',
+      mimetype: msg.image?.mime_type || 'image/jpeg',
+      meta_media_id: msg.image?.id,
+    };
+  } else if (type === 'document') {
+    data.message.documentMessage = {
+      fileName: msg.document?.filename || 'documento',
+      mimetype: msg.document?.mime_type || 'application/pdf',
+      meta_media_id: msg.document?.id,
+    };
+  } else if (type === 'audio') {
+    data.message.audioMessage = {
+      mimetype: msg.audio?.mime_type || 'audio/ogg',
+      voice: msg.audio?.voice || false,
+      meta_media_id: msg.audio?.id,
+    };
+  } else {
+    return { ok: false, reason: `meta_unsupported_type:${type}`, event: null, data: null, body: rawBody };
+  }
+
+  return { ok: true, reason: 'meta_cloud_api', event: 'messages.upsert', data, body: rawBody };
 }
 
 const webhookHandler = async (req, res) => {
@@ -425,6 +484,30 @@ const webhookHandler = async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 };
+
+// Verificação de webhook da Meta Cloud API (GET /api/webhook)
+// A Meta envia este GET ao cadastrar o webhook no painel de desenvolvedores.
+// Deve responder com hub.challenge para confirmar ownership da URL.
+router.get('/webhook', (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+
+  const verifyToken = process.env.WA_WEBHOOK_VERIFY_TOKEN;
+
+  if (!verifyToken) {
+    console.warn('[WEBHOOK] ⚠️ WA_WEBHOOK_VERIFY_TOKEN não configurado — verificação Meta desativada');
+    return res.status(403).send('Verification token not configured');
+  }
+
+  if (mode === 'subscribe' && token === verifyToken) {
+    console.log('[WEBHOOK] ✅ Meta webhook verification OK');
+    return res.status(200).send(challenge);
+  }
+
+  console.warn('[WEBHOOK] ❌ Meta webhook verification falhou. token recebido:', token);
+  return res.status(403).send('Forbidden');
+});
 
 // Rota padrão: /api/webhook (quando Webhook by Events está desativado)
 // Aplica rate limit por IP e por telefone (proteção dupla)

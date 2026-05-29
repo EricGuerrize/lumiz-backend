@@ -46,6 +46,7 @@ class EnvValidator {
     this.validateOptional('ALTER_CLIENT_ID',     'Client ID OAuth2 da Alter (obrigatório quando ALTER_CLIENT_SECRET definido)');
     this.validateOptional('ALTER_CLIENT_SECRET',  'Client Secret OAuth2 da Alter (ativa realAlterAdapter quando definido junto com ALTER_CLIENT_ID)');
     this.validateOptional('ALTER_WEBHOOK_SECRET', 'Secret HMAC para webhooks Alter (fornecido pela Alter em canal privado; sem ele o webhook fica 503 em produção)');
+    this.validateOptional('WA_WEBHOOK_VERIFY_TOKEN', 'Token de verificação do webhook Meta Cloud API (necessário ao migrar para API oficial do WhatsApp)');
 
     // Validações específicas
     this.validateUrl('SUPABASE_URL');
