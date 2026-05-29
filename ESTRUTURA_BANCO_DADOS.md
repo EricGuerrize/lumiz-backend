@@ -692,3 +692,31 @@ parcelas (1) ──→ (0..1) alter_recebiveis
 **Uso:** `realModeService` + `messageController`. Se a coluna existir e estiver vazia, o primeiro lançamento real é retido em `conversation_runtime_states.flow = 'real_mode_confirm'` até confirmação do usuário.
 
 **Fallback operacional:** enquanto a migration não estiver aplicada, a confirmação também é persistida em `conversation_runtime_states.flow = 'real_mode_confirmed'` com TTL longo.
+
+---
+
+## Hardening financeiro — rastreabilidade de lançamentos
+
+**Migration:** `supabase/migrations/20260529195500_financial_traceability_hardening.sql`
+
+### `atendimentos`
+Novas colunas operacionais:
+- `origem` — origem do lançamento (`manual`, `whatsapp_text`, `dashboard`, `import`, `nf_ocr`, `document_ocr`, `agentic`).
+- `is_test` — indica lançamento de teste/simulação. Default `false` para preservar dados existentes como reais.
+- `source_phone` — telefone que originou o lançamento via WhatsApp.
+- `source_message_id` — ID externo da mensagem/evento quando o provider expõe.
+- `raw_message` — mensagem original usada para criar o lançamento.
+- `metadata` — metadados de captura, como `confidence_score`, split e origem de intent.
+
+### `contas_pagar`
+Novas colunas operacionais:
+- `is_test`, `source_phone`, `source_message_id`, `raw_message`, `metadata` com o mesmo contrato de rastreabilidade.
+- `origem` já existia em `contas_pagar` desde a Onda 2.A e passa a receber `whatsapp_text` para custos criados no WhatsApp.
+
+### Índices adicionados
+- `atendimentos(user_id, data DESC)` e `atendimentos(user_id, created_at DESC)`.
+- `atendimentos(user_id, recebimento_previsto)` parcial.
+- `contas_pagar(user_id, data DESC)` e `contas_pagar(user_id, created_at DESC)`.
+- `contas_pagar(user_id, data_vencimento)` parcial.
+- Índices parciais para `source_message_id` em receitas e despesas.
+- `conversation_runtime_states(flow, expires_at)` para limpeza e consultas operacionais.

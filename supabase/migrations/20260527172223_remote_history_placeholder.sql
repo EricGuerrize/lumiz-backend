@@ -1,0 +1,3 @@
+-- Placeholder local para reconciliar histórico de migrations do Supabase remoto.
+-- A versão 20260527172223 já consta como aplicada no banco remoto, mas o arquivo
+-- correspondente não estava no repositório local. Não executar DDL aqui.

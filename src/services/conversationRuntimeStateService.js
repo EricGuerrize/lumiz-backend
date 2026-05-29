@@ -154,6 +154,47 @@ class ConversationRuntimeStateService {
       return false;
     }
   }
+
+  /**
+   * Remove estados de conversa expirados em lote, preservando estados ativos.
+   * @param {number} [limit=1000] - Quantidade máxima de registros por execução.
+   * @returns {Promise<{deleted: number, error: string|null}>}
+   */
+  async cleanupExpired(limit = 1000) {
+    const safeLimit = Math.max(1, Math.min(Number(limit) || 1000, 5000));
+    const nowIso = new Date().toISOString();
+
+    try {
+      const { data: expiredRows, error: selectError } = await supabase
+        .from('conversation_runtime_states')
+        .select('id')
+        .lte('expires_at', nowIso)
+        .limit(safeLimit);
+
+      if (selectError) {
+        console.warn('[RUNTIME_STATE] Falha ao buscar estados expirados:', selectError.message);
+        return { deleted: 0, error: selectError.message };
+      }
+
+      const ids = (expiredRows || []).map((row) => row.id).filter(Boolean);
+      if (!ids.length) return { deleted: 0, error: null };
+
+      const { error: deleteError } = await supabase
+        .from('conversation_runtime_states')
+        .delete()
+        .in('id', ids);
+
+      if (deleteError) {
+        console.warn('[RUNTIME_STATE] Falha ao limpar estados expirados:', deleteError.message);
+        return { deleted: 0, error: deleteError.message };
+      }
+
+      return { deleted: ids.length, error: null };
+    } catch (error) {
+      console.warn('[RUNTIME_STATE] Exceção ao limpar estados expirados:', error.message);
+      return { deleted: 0, error: error.message };
+    }
+  }
 }
 
 module.exports = new ConversationRuntimeStateService();

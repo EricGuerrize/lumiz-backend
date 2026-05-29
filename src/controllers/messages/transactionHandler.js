@@ -167,6 +167,17 @@ class TransactionHandler {
       } catch (e) { console.warn('[ANALYTICS] Falha ao registrar confirmação de transação:', e.message); }
 
       const { tipo, valor, categoria, descricao, data, forma_pagamento, parcelas, bandeira_cartao, nome_cliente, payment_split } = pending.dados;
+      const traceability = {
+        origem: 'whatsapp_text',
+        source_phone: phone,
+        source_message_id: pending.providerMessageId || pending.messageId || null,
+        raw_message: pending.originalText || null,
+        is_test: false,
+        metadata: {
+          confidence_score: pending.dados?.confidence_score ?? null,
+          intent_source: pending.dados?.intent_source || null
+        }
+      };
 
       // Cria o atendimento (entrada) ou conta a pagar (saída)
       let createdResult = null;
@@ -187,7 +198,18 @@ class TransactionHandler {
               nome_cliente,
               split_group_id: splitGroupId,
               split_part: index + 1,
-              split_total_parts: payment_split.length
+              split_total_parts: payment_split.length,
+              metadata: {
+                ...traceability.metadata,
+                split_group_id: splitGroupId,
+                split_part: index + 1,
+                split_total_parts: payment_split.length
+              },
+              origem: traceability.origem,
+              source_phone: traceability.source_phone,
+              source_message_id: traceability.source_message_id,
+              raw_message: traceability.raw_message,
+              is_test: traceability.is_test
             });
           }
         } else {
@@ -199,7 +221,8 @@ class TransactionHandler {
             forma_pagamento,
             parcelas,
             bandeira_cartao,
-            nome_cliente
+            nome_cliente,
+            ...traceability
           });
         }
       } else {
@@ -211,7 +234,8 @@ class TransactionHandler {
           // Parcelas e datas de vencimento extraídas pelo LLM de classificação de intenção.
           // Ex: "30/60/90/120" → parcelas=4, datas_vencimento=[...4 datas...]
           parcelas: pending.dados.parcelas || null,
-          condicoes_pagamento: pending.dados.datas_vencimento || null
+          condicoes_pagamento: pending.dados.datas_vencimento || null,
+          ...traceability
         });
       }
 

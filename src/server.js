@@ -49,6 +49,7 @@ const insightService = require('./services/insightService');
 const goalReminderService = require('./services/goalReminderService');
 const emergencyModeService = require('./services/emergencyModeService');
 const estoqueService = require('./services/estoqueService');
+const conversationRuntimeStateService = require('./services/conversationRuntimeStateService');
 const { deliverPreviousMonthSummaries } = require('./services/monthlyReportDeliveryService');
 const margemAlertaService = require('./services/margemAlertaService');
 
@@ -67,6 +68,8 @@ cron.schedule('0 0 * * *', async () => {
     if (error) throw error;
     console.log(`[CRON] Limpeza concluída. ${count || 0} tokens removidos.`);
 
+    const runtimeCleanup = await conversationRuntimeStateService.cleanupExpired();
+    console.log(`[CRON] Runtime states expirados removidos: ${runtimeCleanup.deleted || 0}`);
   } catch (error) {
     console.error('[CRON] Erro ao limpar tokens:', error);
     if (process.env.SENTRY_DSN) Sentry.captureException(error);
@@ -422,6 +425,28 @@ app.get('/api/cron/reminders', async (req, res) => {
   }
 });
 
+app.get('/api/cron/runtime-cleanup', async (req, res) => {
+  try {
+    const cronSecret = req.headers['x-cron-secret'];
+    if (process.env.CRON_SECRET && cronSecret !== process.env.CRON_SECRET) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const limit = req.query.limit ? Number(req.query.limit) : 1000;
+    const result = await conversationRuntimeStateService.cleanupExpired(limit);
+
+    res.json({
+      status: result.error ? 'partial' : 'success',
+      timestamp: new Date().toISOString(),
+      runtime_states_deleted: result.deleted,
+      error: result.error
+    });
+  } catch (error) {
+    console.error('[CRON] runtime-cleanup:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+});
+
 // Onda 3.C — Cron semanal de insight Alter (sexta 18h via Railway cron).
 app.get('/api/cron/alter-insights', async (req, res) => {
   try {
@@ -491,7 +516,8 @@ app.get('/', (req, res) => {
       cron: {
         reminders: '/api/cron/reminders',
         monthlyReport: '/api/cron/monthly-report',
-        alterInsights: '/api/cron/alter-insights'
+        alterInsights: '/api/cron/alter-insights',
+        runtimeCleanup: '/api/cron/runtime-cleanup'
       },
       config: {
         features: '/api/config/features'

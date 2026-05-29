@@ -1259,3 +1259,13 @@ Tools marcadas com `requiresConfirmation` (ex.: `register_sale`, `register_cost`
 - Comandos reforçados: `apagar último lançamento`, `isso foi teste` → `desfazer`; `corrigir último lançamento` → abre edição da última transação.
 - `EditHandler.handleUndoLastTransaction` agora usa `transactionController.deleteTransaction` para remover relações de atendimento/parcelas em vez de deletar tabela direta.
 - Se a migration ainda não estiver aplicada, o serviço faz fallback persistente em `conversation_runtime_states` com `flow = 'real_mode_confirmed'` e TTL longo, evitando bloquear a feature por divergência de histórico do Supabase CLI.
+
+## 2026-05-29 — Hardening seguro do banco financeiro
+
+- Reconciliado drift de migration remoto com placeholder local `20260527172223_remote_history_placeholder.sql`; essa versão já constava aplicada no Supabase remoto, mas não existia no repositório.
+- Migration `20260529195500_financial_traceability_hardening.sql` adiciona rastreabilidade financeira incremental:
+  - `atendimentos`: `origem`, `is_test`, `source_phone`, `source_message_id`, `raw_message`, `metadata`.
+  - `contas_pagar`: `is_test`, `source_phone`, `source_message_id`, `raw_message`, `metadata`.
+- Lançamentos confirmados via WhatsApp passam a salvar `origem='whatsapp_text'`, telefone, texto original, `is_test=false` e metadados de confiança quando disponíveis.
+- `transactionController` mantém fallback para schema antigo: se o Supabase acusar coluna ausente nos campos novos, reexecuta o insert sem rastreabilidade para não derrubar produção durante deploy/migration.
+- Novo cleanup operacional: `conversationRuntimeStateService.cleanupExpired(limit)` e endpoint protegido `GET /api/cron/runtime-cleanup` removem estados expirados sem tocar estados ativos.

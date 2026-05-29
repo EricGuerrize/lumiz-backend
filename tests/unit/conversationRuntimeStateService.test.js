@@ -36,6 +36,14 @@ describe('ConversationRuntimeStateService', () => {
             state.filters.push({ type: 'lte', col, value });
             return builder;
           }),
+          limit: jest.fn((value) => {
+            state.limit = value;
+            return builder;
+          }),
+          in: jest.fn((col, value) => {
+            state.filters.push({ type: 'in', col, value });
+            return builder;
+          }),
           maybeSingle: jest.fn(async () => {
             if (typeof ctx.maybeSingleFactory === 'function') {
               return ctx.maybeSingleFactory(state);
@@ -162,5 +170,24 @@ describe('ConversationRuntimeStateService', () => {
   test('clear e clearAll retornam true quando delete funciona', async () => {
     await expect(service.clear('5511999999999', 'tx_confirm')).resolves.toBe(true);
     await expect(service.clearAll('5511999999999')).resolves.toBe(true);
+  });
+
+  test('cleanupExpired remove apenas ids expirados encontrados', async () => {
+    context.selectFactory = (state) => {
+      expect(state.table).toBe('conversation_runtime_states');
+      expect(state.filters.some((filter) => filter.type === 'lte' && filter.col === 'expires_at')).toBe(true);
+      expect(state.limit).toBe(2);
+      return {
+        data: [{ id: 'expired-1' }, { id: 'expired-2' }],
+        error: null
+      };
+    };
+    context.deleteFactory = (state) => {
+      const inFilter = state.filters.find((filter) => filter.type === 'in' && filter.col === 'id');
+      expect(inFilter.value).toEqual(['expired-1', 'expired-2']);
+      return { error: null };
+    };
+
+    await expect(service.cleanupExpired(2)).resolves.toEqual({ deleted: 2, error: null });
   });
 });

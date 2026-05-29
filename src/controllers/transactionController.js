@@ -8,16 +8,60 @@ const { sanitizeClientName } = require('../utils/procedureKeywords');
 class TransactionController {
   async createTransaction(userId, transactionData) {
     try {
-      const { tipo, valor, categoria, descricao, data, forma_pagamento, parcelas, bandeira_cartao, condicoes_pagamento } = transactionData;
+      const {
+        tipo,
+        valor,
+        categoria,
+        descricao,
+        data,
+        forma_pagamento,
+        parcelas,
+        bandeira_cartao,
+        condicoes_pagamento,
+        source_phone,
+        source_message_id,
+        raw_message,
+        is_test,
+        metadata,
+        origem
+      } = transactionData;
       console.log('Criando transação para usuário:', userId);
 
       if (tipo === 'entrada') {
         // RECEITA = Criar atendimento
-        return await this.createAtendimento(userId, { valor, categoria, descricao, data, forma_pagamento, parcelas, bandeira_cartao });
+        return await this.createAtendimento(userId, {
+          valor,
+          categoria,
+          descricao,
+          data,
+          forma_pagamento,
+          parcelas,
+          bandeira_cartao,
+          source_phone,
+          source_message_id,
+          raw_message,
+          is_test,
+          metadata,
+          origem
+        });
       } else {
         // CUSTO = Criar conta a pagar
         // condicoes_pagamento: array de datas exatas de vencimento, vindo do OCR (parcelas de boleto)
-        return await this.createContaPagar(userId, { valor, categoria, descricao, data, tipo, parcelas, condicoes_pagamento });
+        return await this.createContaPagar(userId, {
+          valor,
+          categoria,
+          descricao,
+          data,
+          tipo,
+          parcelas,
+          condicoes_pagamento,
+          source_phone,
+          source_message_id,
+          raw_message,
+          is_test,
+          metadata,
+          origem
+        });
       }
     } catch (error) {
       console.error('Erro ao criar transação:', error);
@@ -36,7 +80,13 @@ class TransactionController {
     nome_cliente,
     split_group_id = null,
     split_part = null,
-    split_total_parts = null
+    split_total_parts = null,
+    source_phone = null,
+    source_message_id = null,
+    raw_message = null,
+    is_test = null,
+    metadata = null,
+    origem = null
   }) {
     try {
       // Usa nome_cliente se fornecido, senão extrai da descrição
@@ -111,7 +161,15 @@ class TransactionController {
         mdr_rule_snapshot: pricing.mdrRuleSnapshot || {},
         split_group_id,
         split_part,
-        split_total_parts
+        split_total_parts,
+        ...this._buildTraceabilityPayload({
+          origem,
+          source_phone,
+          source_message_id,
+          raw_message,
+          is_test,
+          metadata
+        })
       };
 
       let atendimento = null;
@@ -216,7 +274,22 @@ class TransactionController {
     }
   }
 
-  async createContaPagar(userId, { valor, categoria, descricao, data, tipo, parcelas, condicoes_pagamento, observacoes = null }) {
+  async createContaPagar(userId, {
+    valor,
+    categoria,
+    descricao,
+    data,
+    tipo,
+    parcelas,
+    condicoes_pagamento,
+    observacoes = null,
+    source_phone = null,
+    source_message_id = null,
+    raw_message = null,
+    is_test = null,
+    metadata = null,
+    origem = null
+  }) {
     try {
       // === GERAÇÃO DE PARCELAS (CUSTOS) ===
       // Contexto: clínicas de estética frequentemente pagam insumos em boleto parcelado
@@ -246,24 +319,34 @@ class TransactionController {
 
           const descricaoParcela = `${descricao || categoria || 'Despesa'} (${i + 1}/${parcelas})`;
 
-          const { data: conta, error } = await supabase
-            .from('contas_pagar')
-            .insert([{
-              user_id: userId,
-              descricao: descricaoParcela,
-              valor: valorParcela,
-              data: dataVencStr,
-              tipo: tipo || 'variavel',
-              categoria: categoria || 'Outros',
-              // Todas as parcelas são PENDENTES — são pagamentos futuros (boleto/cartão a prazo)
-              status_pagamento: 'pendente',
-              observacoes: [
-                `Parcela ${i + 1} de ${parcelas}`,
-                observacoes
-              ].filter(Boolean).join(' | ')
-            }])
-            .select()
-            .single();
+          const contaPayload = {
+            user_id: userId,
+            descricao: descricaoParcela,
+            valor: valorParcela,
+            data: dataVencStr,
+            tipo: tipo || 'variavel',
+            categoria: categoria || 'Outros',
+            // Todas as parcelas são PENDENTES — são pagamentos futuros (boleto/cartão a prazo)
+            status_pagamento: 'pendente',
+            observacoes: [
+              `Parcela ${i + 1} de ${parcelas}`,
+              observacoes
+            ].filter(Boolean).join(' | '),
+            ...this._buildTraceabilityPayload({
+              origem,
+              source_phone,
+              source_message_id,
+              raw_message,
+              is_test,
+              metadata: {
+                ...(metadata || {}),
+                parcela_numero: i + 1,
+                parcela_total: parcelas
+              }
+            })
+          };
+
+          const { data: conta, error } = await this._insertContaPagarWithFallback(contaPayload);
 
           if (error) {
             console.error('[FINANCEIRO] Erro ao criar parcela de custo — fazendo rollback:', error);
@@ -284,20 +367,26 @@ class TransactionController {
       }
 
       // Custo à vista (padrão)
-      const { data: conta, error } = await supabase
-        .from('contas_pagar')
-        .insert([{
-          user_id: userId,
-          descricao: descricao || categoria || 'Despesa',
-          valor: valor,
-          data: data || new Date().toISOString().split('T')[0],
-          tipo: tipo || 'variavel',
-          categoria: categoria || 'Outros',
-          status_pagamento: 'pago',
-          observacoes
-        }])
-        .select()
-        .single();
+      const contaPayload = {
+        user_id: userId,
+        descricao: descricao || categoria || 'Despesa',
+        valor: valor,
+        data: data || new Date().toISOString().split('T')[0],
+        tipo: tipo || 'variavel',
+        categoria: categoria || 'Outros',
+        status_pagamento: 'pago',
+        observacoes,
+        ...this._buildTraceabilityPayload({
+          origem,
+          source_phone,
+          source_message_id,
+          raw_message,
+          is_test,
+          metadata
+        })
+      };
+
+      const { data: conta, error } = await this._insertContaPagarWithFallback(contaPayload);
 
       if (error) throw error;
       console.log('Conta a pagar criada:', conta.id);
@@ -901,6 +990,55 @@ class TransactionController {
     if (normalized.includes('elo')) return 'elo';
     if (normalized.includes('amex') || normalized.includes('american')) return 'amex';
     return normalized;
+  }
+
+  _buildTraceabilityPayload({
+    origem = null,
+    source_phone = null,
+    source_message_id = null,
+    raw_message = null,
+    is_test = null,
+    metadata = null
+  } = {}) {
+    const payload = {};
+    if (origem) payload.origem = origem;
+    if (source_phone) payload.source_phone = source_phone;
+    if (source_message_id) payload.source_message_id = source_message_id;
+    if (raw_message) payload.raw_message = raw_message;
+    if (typeof is_test === 'boolean') payload.is_test = is_test;
+    if (metadata && typeof metadata === 'object') payload.metadata = metadata;
+    return payload;
+  }
+
+  _stripTraceabilityFields(payload = {}) {
+    const {
+      origem,
+      source_phone,
+      source_message_id,
+      raw_message,
+      is_test,
+      metadata,
+      ...legacyPayload
+    } = payload;
+    return legacyPayload;
+  }
+
+  async _insertContaPagarWithFallback(payload) {
+    let { data, error } = await supabase
+      .from('contas_pagar')
+      .insert([payload])
+      .select()
+      .single();
+
+    if (error && this._isMissingColumnError(error)) {
+      ({ data, error } = await supabase
+        .from('contas_pagar')
+        .insert([this._stripTraceabilityFields(payload)])
+        .select()
+        .single());
+    }
+
+    return { data, error };
   }
 
   _isMissingColumnError(error) {
