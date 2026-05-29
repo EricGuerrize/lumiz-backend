@@ -16,9 +16,11 @@ describe('outboundMessageService', () => {
 
   it('envia texto pela Evolution quando API responde', async () => {
     const evolution = { sendMessage: jest.fn().mockResolvedValue({ success: true }) };
+    const meta = { isOutboundConfigured: jest.fn().mockReturnValue(false) };
     const reliability = { recordFailure: jest.fn() };
     const service = new OutboundMessageService({
       evolution,
+      meta,
       reliability,
       queueEnabled: false
     });
@@ -30,12 +32,59 @@ describe('outboundMessageService', () => {
     expect(reliability.recordFailure).not.toHaveBeenCalled();
   });
 
-  it('registra falha e relança quando não há fila de reenvio', async () => {
-    const error = new Error('Evolution down');
-    const evolution = { sendMessage: jest.fn().mockRejectedValue(error) };
+  it('prioriza Meta Cloud API quando outbound oficial está configurado', async () => {
+    const evolution = { sendMessage: jest.fn().mockResolvedValue({ success: true }) };
+    const meta = {
+      isOutboundConfigured: jest.fn().mockReturnValue(true),
+      sendText: jest.fn().mockResolvedValue({ messages: [{ id: 'wamid-1' }] })
+    };
     const reliability = { recordFailure: jest.fn() };
     const service = new OutboundMessageService({
       evolution,
+      meta,
+      reliability,
+      queueEnabled: false
+    });
+
+    const result = await service.sendText('5565999991234', 'oi', { messageId: 'msg-meta-1' });
+
+    expect(result.status).toBe('sent');
+    expect(result.provider).toBe('meta');
+    expect(meta.sendText).toHaveBeenCalledWith('5565999991234', 'oi');
+    expect(evolution.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('cai para Evolution quando a Meta falha temporariamente', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    const evolution = { sendMessage: jest.fn().mockResolvedValue({ success: true }) };
+    const meta = {
+      isOutboundConfigured: jest.fn().mockReturnValue(true),
+      sendText: jest.fn().mockRejectedValue(new Error('meta timeout'))
+    };
+    const reliability = { recordFailure: jest.fn() };
+    const service = new OutboundMessageService({
+      evolution,
+      meta,
+      reliability,
+      queueEnabled: false
+    });
+
+    const result = await service.sendText('5565999991234', 'oi', { messageId: 'msg-meta-2' });
+
+    expect(result.status).toBe('sent');
+    expect(result.provider).toBe('evolution');
+    expect(meta.sendText).toHaveBeenCalledWith('5565999991234', 'oi');
+    expect(evolution.sendMessage).toHaveBeenCalledWith('5565999991234', 'oi');
+  });
+
+  it('registra falha e relança quando não há fila de reenvio', async () => {
+    const error = new Error('Evolution down');
+    const evolution = { sendMessage: jest.fn().mockRejectedValue(error) };
+    const meta = { isOutboundConfigured: jest.fn().mockReturnValue(false) };
+    const reliability = { recordFailure: jest.fn() };
+    const service = new OutboundMessageService({
+      evolution,
+      meta,
       reliability,
       queueEnabled: false
     });
@@ -57,9 +106,11 @@ describe('outboundMessageService', () => {
 
   it('retorna queued quando consegue enfileirar após falha no envio', async () => {
     const evolution = { sendMessage: jest.fn().mockRejectedValue(new Error('timeout')) };
+    const meta = { isOutboundConfigured: jest.fn().mockReturnValue(false) };
     const reliability = { recordFailure: jest.fn() };
     const service = new OutboundMessageService({
       evolution,
+      meta,
       reliability,
       queueEnabled: false
     });

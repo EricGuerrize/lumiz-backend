@@ -11,10 +11,12 @@ const META_TIMEOUT_MS = Number(process.env.WA_META_TIMEOUT_MS || 30000);
 class MetaWhatsappService {
   constructor({
     accessToken = process.env.WA_ACCESS_TOKEN,
-    graphApiVersion = process.env.WA_GRAPH_API_VERSION || 'v23.0'
+    graphApiVersion = process.env.WA_GRAPH_API_VERSION || 'v23.0',
+    phoneNumberId = process.env.WA_PHONE_NUMBER_ID
   } = {}) {
     this.accessToken = accessToken;
     this.graphApiVersion = graphApiVersion;
+    this.phoneNumberId = phoneNumberId;
     this.baseUrl = `https://graph.facebook.com/${graphApiVersion}`;
 
     this.client = axios.create({
@@ -29,6 +31,55 @@ class MetaWhatsappService {
    */
   isConfigured() {
     return Boolean(this.accessToken);
+  }
+
+  /**
+   * Indica se o serviço pode enviar mensagens via Cloud API.
+   * @returns {boolean}
+   */
+  isOutboundConfigured() {
+    return Boolean(this.accessToken && this.phoneNumberId);
+  }
+
+  /**
+   * Envia texto simples pela Cloud API oficial da Meta.
+   * @param {string} phone
+   * @param {string} message
+   * @returns {Promise<Object>}
+   */
+  async sendText(phone, message) {
+    if (!phone) {
+      throw new Error('Telefone ausente para envio via Meta');
+    }
+
+    if (!message || !String(message).trim()) {
+      throw new Error('Mensagem vazia para envio via Meta');
+    }
+
+    if (!this.isOutboundConfigured()) {
+      throw new Error('WA_ACCESS_TOKEN ou WA_PHONE_NUMBER_ID não configurados para envio via Meta');
+    }
+
+    const payload = {
+      messaging_product: 'whatsapp',
+      to: phone,
+      type: 'text',
+      text: {
+        body: String(message)
+      }
+    };
+
+    const response = await retryWithBackoff(
+      () => withTimeout(
+        this.client.post(`/${this.phoneNumberId}/messages`, payload),
+        META_TIMEOUT_MS,
+        'Timeout ao enviar mensagem via Meta'
+      ),
+      2,
+      1000
+    );
+
+    return response.data;
   }
 
   /**

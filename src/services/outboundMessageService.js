@@ -7,6 +7,7 @@
 const { Queue, Worker } = require('bullmq');
 const IORedis = require('ioredis');
 const evolutionService = require('./evolutionService');
+const metaWhatsappService = require('./metaWhatsappService');
 const messageReliabilityService = require('./messageReliabilityService');
 
 const OUTBOUND_QUEUE_NAME = 'whatsapp-outbound';
@@ -14,12 +15,14 @@ const OUTBOUND_QUEUE_NAME = 'whatsapp-outbound';
 class OutboundMessageService {
   constructor({
     evolution = evolutionService,
+    meta = metaWhatsappService,
     reliability = messageReliabilityService,
     redisUrl = process.env.REDIS_URL,
     queueEnabled = readFlag('WHATSAPP_OUTBOUND_QUEUE_ENABLED', !!process.env.REDIS_URL),
     workerEnabled = readFlag('WHATSAPP_OUTBOUND_WORKER_ENABLED', true)
   } = {}) {
     this.evolution = evolution;
+    this.meta = meta;
     this.reliability = reliability;
     this.redisUrl = redisUrl;
     this.queueEnabled = false;
@@ -112,8 +115,8 @@ class OutboundMessageService {
    */
   async sendText(phone, message, metadata = {}) {
     try {
-      const result = await this.evolution.sendMessage(phone, message);
-      return { status: 'sent', result };
+      const result = await this._sendTextViaPreferredProvider(phone, message);
+      return { status: 'sent', result, provider: result?.provider || null };
     } catch (error) {
       const queued = await this.enqueueText(phone, message, metadata, error);
       this.reliability.recordFailure({
@@ -179,8 +182,26 @@ class OutboundMessageService {
     if (job.name !== 'send_text') return { ignored: true };
 
     const { phone, message } = job.data;
-    await this.evolution.sendMessage(phone, message);
+    await this._sendTextViaPreferredProvider(phone, message);
     return { sent: true };
+  }
+
+  async _sendTextViaPreferredProvider(phone, message) {
+    const metaAvailable = typeof this.meta?.isOutboundConfigured === 'function'
+      ? this.meta.isOutboundConfigured()
+      : false;
+
+    if (metaAvailable && typeof this.meta?.sendText === 'function') {
+      try {
+        const result = await this.meta.sendText(phone, message);
+        return { provider: 'meta', response: result };
+      } catch (metaError) {
+        console.error(`[WA_OUTBOUND] Meta falhou, tentando Evolution fallback: ${metaError.message}`);
+      }
+    }
+
+    const result = await this.evolution.sendMessage(phone, message);
+    return { provider: 'evolution', response: result };
   }
 
   _logRedisError(message) {
