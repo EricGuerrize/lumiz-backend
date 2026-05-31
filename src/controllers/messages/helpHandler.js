@@ -49,7 +49,7 @@ class HelpHandler {
    * Mensagem de saudação
    */
   handleGreeting() {
-    return `Oi! Tudo bem? Sou a *Lumiz* 💜\n\nTo aqui pra te ajudar a organizar as finanças da sua clínica de um jeito simples!\n\nPode me mandar:\n• Uma venda que você fez hoje\n• Um custo que precisa registrar\n• Ou me perguntar como está o caixa\n\nÉ só escrever naturalmente, tipo:\n_"Fiz um botox hoje, R$ 2800"_\n_"Comprei insumos por R$ 1500"_\n_"Como tá meu saldo?"_\n\nMe manda uma transação quando quiser! 💜`;
+    return `Oi! Me manda o que aconteceu na clínica hoje:\n\n• venda: _"botox R$ 1.200 no pix"_\n• custo: _"toxina R$ 600"_\n• conta: _"aluguel R$ 2.000 vence dia 10"_\n• consulta: _"quanto entrou hoje?"_\n\nTambém aceito foto ou PDF de nota, boleto e comprovante.`;
   }
 
   /**
@@ -117,5 +117,4 @@ class HelpHandler {
 }
 
 module.exports = HelpHandler;
-
 
