@@ -7,6 +7,12 @@ node_modules/
 dist/
 coverage/
 lumiz-financeiro/
+.codex/
+
+# Artefatos locais gerados por agentes/ferramentas
+ai/generated-pets/
+docs/image.png
+docs/public-schema.sql
 
 # Arquivos de documentação (não versionar)
 *.md
