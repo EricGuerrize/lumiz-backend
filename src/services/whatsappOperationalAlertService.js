@@ -8,7 +8,9 @@
 const supabase = require('../db/supabase');
 const outboundMessageService = require('./outboundMessageService');
 const nfValidadeService = require('./nfValidadeService');
+const inadimplenciaService = require('./inadimplenciaService');
 const QueryHandler = require('../controllers/messages/queryHandler');
+const inadimplenciaCopy = require('../copy/inadimplenciaWhatsappCopy');
 const { alreadySent, markSent } = require('./reminderSentHelper');
 
 function readFlag(name, defaultValue = false) {
@@ -106,6 +108,46 @@ class WhatsappOperationalAlertService {
     return sent;
   }
 
+  /**
+   * @returns {Promise<Array<{user_id: string, phone: string, type: string, total_em_atraso: number}>>}
+   */
+  async sendInadimplenciaAlerts() {
+    if (!readFlag('WHATSAPP_INADIMPLENCIA_ALERTS_ENABLED', false)) {
+      return [];
+    }
+
+    const profiles = await this._getOptInProfiles();
+    const sent = [];
+    const type = this._inadimplenciaReminderType(new Date());
+
+    for (const profile of profiles) {
+      try {
+        if (await alreadySent(profile.id, type)) continue;
+
+        const overview = await inadimplenciaService.getOverview(profile.id);
+        const message = inadimplenciaCopy.alert(overview);
+        if (!message) continue;
+
+        await outboundMessageService.sendText(profile.telefone, message, {
+          messageType: 'inadimplencia_alert',
+          source: 'cron'
+        });
+
+        await markSent(profile.id, profile.id, type);
+        sent.push({
+          user_id: profile.id,
+          phone: profile.telefone,
+          type: 'inadimplencia_alert',
+          total_em_atraso: overview.totalEmAtraso || 0
+        });
+      } catch (error) {
+        console.error(`[OP_ALERTS] Falha inadimplência ${profile.id}:`, error.message);
+      }
+    }
+
+    return sent;
+  }
+
   async _getOptInProfiles() {
     const { data, error } = await supabase
       .from('profiles')
@@ -128,6 +170,11 @@ class WhatsappOperationalAlertService {
     const [y, m, d] = String(value || '').split('-');
     if (!y || !m || !d) return value || '—';
     return `${d}/${m}`;
+  }
+
+  _inadimplenciaReminderType(date) {
+    const day = date.toISOString().split('T')[0];
+    return `inadimplencia_${day}`;
   }
 }
 

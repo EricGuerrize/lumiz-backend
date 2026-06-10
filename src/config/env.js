@@ -53,6 +53,10 @@ class EnvValidator {
     // Evolution API: legado, mantida apenas como fallback opcional durante a transição
     this.validateOptional('EVOLUTION_API_URL', 'URL da Evolution API (legado, opcional)');
     this.validateOptional('EVOLUTION_WEBHOOK_SECRET', 'Segredo compartilhado para validar POSTs da Evolution no webhook (legado)');
+    this.validateOptional(
+      'WHATSAPP_INADIMPLENCIA_ALERTS_ENABLED',
+      'Habilita alerta diário opt-in de inadimplência por WhatsApp'
+    );
 
     // Validações específicas
     this.validateUrl('SUPABASE_URL');

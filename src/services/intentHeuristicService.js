@@ -195,6 +195,20 @@ class IntentHeuristicService {
         'parcelas pendentes', 'parcelas a receber', 'recebiveis', 'recebíveis',
         'recebiveis de cartao', 'recebíveis de cartão'
       ],
+      consultar_inadimplencia: [
+        'inadimplencia',
+        'inadimplência',
+        'clientes em atraso',
+        'cliente em atraso',
+        'recebiveis vencidos',
+        'recebíveis vencidos',
+        'parcelas vencidas',
+        'parcelas atrasadas',
+        'quem esta devendo',
+        'quem está devendo',
+        'cobranca pendente',
+        'cobrança pendente'
+      ],
       consultar_validade: [
         'validade', 'validades', 'vencimento de lote', 'lote vencendo',
         'produto vencendo', 'produtos vencendo', 'itens vencendo',
@@ -470,6 +484,17 @@ class IntentHeuristicService {
       return out;
     }
 
+    if (/\b(inadimplencia|inadimplência|clientes? em atraso|recebiveis vencidos|recebíveis vencidos|parcelas vencidas|parcelas atrasadas|quem esta devendo|quem está devendo|cobranca pendente|cobrança pendente)\b/i.test(original)) {
+      const out = {
+        intencao: 'consultar_inadimplencia',
+        dados: {},
+        confidence: 0.95,
+        source: 'heuristic'
+      };
+      await cacheService.set(cacheKey, out, CACHE_TTL_SECONDS);
+      return out;
+    }
+
     if (/\b(gap de caixa|risco de caixa|caixa futuro|projecao de caixa|projeção de caixa|caixa projetado|vou ficar negativo|vai faltar caixa|falta dinheiro)\b/i.test(original)) {
       const out = {
         intencao: 'consultar_gap_caixa',
@@ -671,7 +696,7 @@ class IntentHeuristicService {
     } else if (detectedIntent === 'consultar_estoque') {
       dados = { data: dataHoje, produto: this._extractProdutoFromStockText(original) };
       confidence = 0.9;
-    } else if (detectedIntent === 'consultar_gap_caixa' || detectedIntent === 'briefing_diario') {
+    } else if (detectedIntent === 'consultar_gap_caixa' || detectedIntent === 'briefing_diario' || detectedIntent === 'consultar_inadimplencia') {
       dados = { data: dataHoje };
       confidence = 0.9;
     } else if (detectedIntent === 'consultar_validade') {

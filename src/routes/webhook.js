@@ -14,6 +14,7 @@ const messageReliabilityService = require('../services/messageReliabilityService
 const metaWhatsappService = require('../services/metaWhatsappService');
 const { extractPhoneFromWebhookBody } = require('../utils/phone');
 const documentCopy = require('../copy/documentWhatsappCopy');
+const audioCopy = require('../copy/audioWhatsappCopy');
 
 // Deduplicação de mensagens: previne double-send quando a Evolution API dispara o webhook
 // nas duas rotas (/webhook e /webhook/messages-upsert) para a mesma mensagem, ou reenvia
@@ -534,7 +535,7 @@ const webhookHandler = async (req, res) => {
               // Mensagem de áudio: transcreve com Whisper e injeta no fluxo de texto
               try {
                 if (!audioTranscriptionService.isEnabled()) {
-                  response = 'Ainda não consigo entender áudios por aqui 😅\n\nPode me mandar a mesma informação por texto?';
+                  response = audioCopy.audioUnavailable();
                 } else {
                   let base64Data = audioMessage.media || audioMessage.base64 || audioMessage.mediaBase64 || audioMessage.data;
                   let audioBuffer = null;
@@ -549,7 +550,7 @@ const webhookHandler = async (req, res) => {
                   }
 
                   if (!base64Data && !audioBuffer) {
-                    response = 'Não consegui acessar o áudio 😢\n\nTente enviar novamente ou me mande por texto.';
+                    response = audioCopy.audioDownloadFailed();
                   } else {
                     if (!audioBuffer && typeof base64Data === 'string' && base64Data.includes(',')) {
                       base64Data = base64Data.split(',')[1];
@@ -568,13 +569,10 @@ const webhookHandler = async (req, res) => {
                     console.log(`[WEBHOOK] [AUDIO] Transcrição em ${durationMs}ms (${transcribedText.length} chars)`);
 
                     if (!transcribedText || transcribedText.trim().length === 0) {
-                      response = 'Não consegui entender o áudio 🤔\n\nTente falar de novo ou me mande por texto.';
+                      response = audioCopy.audioEmptyTranscription();
                     } else {
                       const innerResponse = await messageController.handleIncomingMessage(phone, transcribedText, { timings: steps });
-                      const transcricaoResumo = transcribedText.length > 240
-                        ? `${transcribedText.slice(0, 240).trim()}…`
-                        : transcribedText.trim();
-                      const header = `🎤 _Entendi assim:_ "${transcricaoResumo}"`;
+                      const header = audioCopy.transcriptionHeader(transcribedText);
                       if (innerResponse && typeof innerResponse === 'string' && innerResponse.trim().length > 0) {
                         response = `${header}\n\n${innerResponse}`;
                       } else {
@@ -585,7 +583,7 @@ const webhookHandler = async (req, res) => {
                 }
               } catch (audioError) {
                 console.error(`[WEBHOOK] [AUDIO] Erro ao processar áudio:`, audioError.message);
-                response = 'Erro ao processar áudio 😢\n\nTente novamente ou me mande por texto.';
+                response = audioCopy.audioProcessingFailed();
               }
             } else if (messageText) {
               // Mensagem de texto normal

@@ -24,6 +24,7 @@ class HelpHandler {
       `"histórico" - Últimas movimentações\n` +
       `"contas a pagar" - Calendário de vencimentos\n` +
       `"parcelas a receber" - Recebíveis pendentes\n` +
+      `"inadimplência" - Recebíveis vencidos\n` +
       `"gap de caixa" - Projeção de caixa dos próximos 30 dias\n` +
       `"briefing" - Prioridades financeiras do dia\n` +
       `"relatório" - Relatório mensal\n` +
