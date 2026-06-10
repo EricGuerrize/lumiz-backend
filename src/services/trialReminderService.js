@@ -1,5 +1,5 @@
 const subscriptionService = require('./subscriptionService');
-const evolutionService = require('./evolutionService');
+const outboundMessageService = require('./outboundMessageService');
 const userRepository = require('../repositories/userRepository');
 const subscriptionCopy = require('../copy/subscriptionCopy');
 
@@ -25,7 +25,7 @@ async function checkAndSendReminders() {
       const profile = await userRepository.findById(sub.clinic_id);
       if (!profile?.telefone) continue;
 
-      await evolutionService.sendMessage(profile.telefone, subscriptionCopy.trialReminder(daysLeft));
+      await outboundMessageService.sendText(profile.telefone, subscriptionCopy.trialReminder(daysLeft));
       await subscriptionService.markReminderSent(sub.clinic_id, 7);
       sent.push({ clinic_id: sub.clinic_id, type: 'reminder_7d', daysLeft });
     } catch (e) {
@@ -44,7 +44,7 @@ async function checkAndSendReminders() {
       const profile = await userRepository.findById(sub.clinic_id);
       if (!profile?.telefone) continue;
 
-      await evolutionService.sendMessage(profile.telefone, subscriptionCopy.trialReminder(daysLeft));
+      await outboundMessageService.sendText(profile.telefone, subscriptionCopy.trialReminder(daysLeft));
       await subscriptionService.markReminderSent(sub.clinic_id, 2);
       sent.push({ clinic_id: sub.clinic_id, type: 'reminder_2d', daysLeft });
     } catch (e) {

@@ -1,5 +1,5 @@
 const supabase = require('../db/supabase');
-const evolutionService = require('./evolutionService');
+const outboundMessageService = require('./outboundMessageService');
 
 const HOURS = {
   phase1Stalled: 12,
@@ -62,7 +62,7 @@ class NudgeService {
         await this.recordAttempt(existing, state.phone, nudge.type, nudge.metadata);
 
         try {
-          await evolutionService.sendMessage(state.phone, nudge.message);
+          await outboundMessageService.sendText(state.phone, nudge.message);
           await this.markSent(state.phone, nudge.type);
           results.push({
             phone: state.phone,

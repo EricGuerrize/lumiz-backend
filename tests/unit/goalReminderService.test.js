@@ -1,5 +1,5 @@
 let supabase;
-let evolutionService;
+let outboundMessageService;
 let transactionController;
 let reminderSentHelper;
 let goalReminderService;
@@ -21,11 +21,11 @@ function setupSupabaseMock(profiles) {
 beforeEach(() => {
   jest.resetModules();
   jest.mock('../../src/db/supabase');
-  jest.mock('../../src/services/evolutionService');
+  jest.mock('../../src/services/outboundMessageService');
   jest.mock('../../src/controllers/transactionController');
   jest.mock('../../src/services/reminderSentHelper');
   supabase = require('../../src/db/supabase');
-  evolutionService = require('../../src/services/evolutionService');
+  outboundMessageService = require('../../src/services/outboundMessageService');
   transactionController = require('../../src/controllers/transactionController');
   reminderSentHelper = require('../../src/services/reminderSentHelper');
   goalReminderService = require('../../src/services/goalReminderService');
@@ -57,7 +57,7 @@ describe('weekly dedup', () => {
 
     const result = await goalReminderService.checkAndSendGoalReminders();
     expect(result).toHaveLength(0);
-    expect(evolutionService.sendMessage).not.toHaveBeenCalled();
+    expect(outboundMessageService.sendText).not.toHaveBeenCalled();
     daySpy.mockRestore();
   });
 });
@@ -68,12 +68,12 @@ describe('normal send', () => {
     setupSupabaseMock([mockProfile]);
     reminderSentHelper.alreadySent.mockResolvedValue(false);
     transactionController.getMonthlyReport = jest.fn().mockResolvedValue({ entradas: 5000, saidas: 2000 });
-    evolutionService.sendMessage = jest.fn().mockResolvedValue();
+    outboundMessageService.sendText = jest.fn().mockResolvedValue({ status: 'sent' });
     reminderSentHelper.markSent.mockResolvedValue();
 
     const result = await goalReminderService.checkAndSendGoalReminders();
     expect(result).toHaveLength(1);
-    expect(evolutionService.sendMessage).toHaveBeenCalledWith(mockProfile.telefone, expect.any(String));
+    expect(outboundMessageService.sendText).toHaveBeenCalledWith(mockProfile.telefone, expect.any(String));
     expect(reminderSentHelper.markSent).toHaveBeenCalled();
     daySpy.mockRestore();
   });
@@ -83,7 +83,7 @@ describe('normal send', () => {
     setupSupabaseMock([mockProfile]); // meta = 10000
     reminderSentHelper.alreadySent.mockResolvedValue(false);
     transactionController.getMonthlyReport = jest.fn().mockResolvedValue({ entradas: 5000, saidas: 0 });
-    evolutionService.sendMessage = jest.fn().mockResolvedValue();
+    outboundMessageService.sendText = jest.fn().mockResolvedValue({ status: 'sent' });
     reminderSentHelper.markSent.mockResolvedValue();
 
     const result = await goalReminderService.checkAndSendGoalReminders();

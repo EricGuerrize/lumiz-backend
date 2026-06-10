@@ -20,7 +20,7 @@ const clientePerfilService = require('../services/clientePerfilService');
 const margemAlertaService = require('../services/margemAlertaService');
 const emailReportService = require('../services/emailReportService');
 const excelService = require('../services/excelService');
-const evolutionService = require('../services/evolutionService');
+const outboundMessageService = require('../services/outboundMessageService');
 const excelImportWhatsappCopy = require('../copy/excelImportWhatsappCopy');
 const supplierDocumentService = require('../services/supplierDocumentService');
 const contasReceberService = require('../services/contasReceberService');
@@ -1119,8 +1119,8 @@ router.post('/import/excel/confirm', dashboardExportLimiter, async (req, res) =>
     }).catch(() => {});
 
     if (req.user.telefone) {
-      evolutionService
-        .sendMessage(req.user.telefone, excelImportWhatsappCopy.importConfirmed(result.summary))
+      outboundMessageService
+        .sendText(req.user.telefone, excelImportWhatsappCopy.importConfirmed(result.summary))
         .catch((notifyError) => console.warn('[EXCEL_IMPORT] Falha ao notificar WhatsApp:', notifyError.message));
     }
     return res.json(result);

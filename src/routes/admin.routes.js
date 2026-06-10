@@ -99,32 +99,24 @@ router.use(authenticateToken);
 router.use(requireAdmin);
 
 // GET /api/admin/diagnostics/evolution
-// Diagnóstico rápido de conectividade/config (não expõe secrets)
+// Diagnóstico rápido de conectividade/config do WhatsApp (não expõe secrets).
+// Provider principal: Meta Cloud API. Evolution aparece apenas se configurada (legado).
 router.get('/diagnostics/evolution', async (req, res) => {
-  const baseUrl = process.env.EVOLUTION_API_URL || null;
-  const instanceName = process.env.EVOLUTION_INSTANCE_NAME || null;
-  const hasApiKey = !!process.env.EVOLUTION_API_KEY;
+  const metaWhatsappService = require('../services/metaWhatsappService');
+  const metaConfigured = metaWhatsappService.isOutboundConfigured();
 
   const diagnostics = {
-    configured: !!baseUrl && !!instanceName && hasApiKey,
-    baseUrl,
-    instanceName,
-    hasApiKey,
-    connectionState: null,
+    provider: 'meta',
+    configured: metaConfigured,
+    hasAccessToken: !!process.env.WA_ACCESS_TOKEN,
+    hasPhoneNumberId: !!process.env.WA_PHONE_NUMBER_ID,
+    hasAppSecret: !!process.env.META_APP_SECRET,
+    connectionState: { state: metaConfigured ? 'configured' : 'not_configured' },
+    legacyEvolutionConfigured: evolutionService.isConfigured(),
     latency: whatsappLatencyService.snapshot(),
     reliability: messageReliabilityService.snapshot(),
     error: null
   };
-
-  try {
-    const status = await evolutionService.getInstanceStatus();
-    // Evolution API v2 retorna { instance: { state: 'open' } }
-    // Normaliza para { state } para o frontend não precisar conhecer a estrutura interna
-    const state = status?.instance?.state || status?.state || null;
-    diagnostics.connectionState = { state };
-  } catch (err) {
-    diagnostics.error = err?.response?.data || err?.message || 'unknown error';
-  }
 
   res.json(diagnostics);
 });

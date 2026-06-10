@@ -2517,7 +2517,12 @@ class OnboardingFlowService {
                                 }
                             }
 
-                            if (typeof evolutionSvc.sendVideo === 'function') {
+                            // Fallback legado: só tenta Evolution se estiver configurada
+                            // (mocks de teste sem isConfigured continuam elegíveis)
+                            const evolutionAvailable = typeof evolutionSvc.isConfigured === 'function'
+                                ? evolutionSvc.isConfigured()
+                                : true;
+                            if (evolutionAvailable && typeof evolutionSvc.sendVideo === 'function') {
                                 await evolutionSvc.sendVideo(normalizedPhone, dashboardTeaserVideoUrl, caption);
                                 return;
                             }
@@ -2544,7 +2549,7 @@ class OnboardingFlowService {
             return finalText;
         };
 
-        // Envia as N-1 primeiras mensagens via Evolution e usa respondAndClear na última.
+        // Envia as N-1 primeiras mensagens via outboundMessageService e usa respondAndClear na última.
         // Permite quebrar a finalização do onboarding em mensagens menores e legíveis no WhatsApp.
         const respondAndClearMulti = async (messages) => {
             const list = (messages || []).filter((m) => typeof m === 'string' && m.trim().length > 0);
@@ -2555,13 +2560,13 @@ class OnboardingFlowService {
                 return await respondAndClear(list[0]);
             }
 
-            const evolutionSvc = require('./evolutionService');
+            const outboundSvc = require('./outboundMessageService');
             const delay = process.env.NODE_ENV === 'test'
                 ? () => Promise.resolve()
                 : (ms) => new Promise((r) => setTimeout(r, ms));
             for (let i = 0; i < list.length - 1; i++) {
                 try {
-                    await evolutionSvc.sendMessage(normalizedPhone, list[i]);
+                    await outboundSvc.sendText(normalizedPhone, list[i]);
                     await delay(1200);
                 } catch (e) {
                     console.error('[ONBOARDING] Falha ao enviar mensagem intermediária:', e?.message || e);

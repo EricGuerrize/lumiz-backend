@@ -1,6 +1,6 @@
 const supabase = require('../db/supabase');
 const cacheService = require('./cacheService');
-const evolutionService = require('./evolutionService');
+const outboundMessageService = require('./outboundMessageService');
 const { formatarMoeda } = require('../utils/currency');
 
 class NotificationService {
@@ -118,7 +118,7 @@ class NotificationService {
       deltaPercent
     });
 
-    await evolutionService.sendMessage(managerPhone, message);
+    await outboundMessageService.sendText(managerPhone, message);
     await cacheService.set(alertKey, { sentAt: new Date().toISOString() }, this.ALERT_TTL_SECONDS);
 
     return { sent: true, managerPhone };

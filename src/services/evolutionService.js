@@ -11,8 +11,8 @@ class EvolutionService {
     this.apiKey = process.env.EVOLUTION_API_KEY;
     this.instanceName = process.env.EVOLUTION_INSTANCE_NAME;
 
-    if (!this.baseUrl || !this.apiKey || !this.instanceName) {
-      console.error('[EVOLUTION] Configuração incompleta. Verifique o arquivo .env');
+    if (!this.isConfigured()) {
+      console.warn('[EVOLUTION] Não configurada (legado) — envios usam exclusivamente a Meta Cloud API.');
     }
 
     this.axiosInstance = axios.create({
@@ -22,6 +22,14 @@ class EvolutionService {
         'Content-Type': 'application/json'
       }
     });
+  }
+
+  /**
+   * Indica se a Evolution API (legado) está configurada via env.
+   * @returns {boolean}
+   */
+  isConfigured() {
+    return Boolean(this.baseUrl && this.apiKey && this.instanceName);
   }
 
   async downloadMedia(messageKey, mediaType = 'image') {

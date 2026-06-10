@@ -7,7 +7,7 @@
 const { Queue, Worker } = require('bullmq');
 const IORedis = require('ioredis');
 const documentService = require('./documentService');
-const evolutionService = require('./evolutionService');
+const outboundMessageService = require('./outboundMessageService');
 const transactionController = require('../controllers/transactionController');
 
 class DocumentQueueService {
@@ -211,7 +211,7 @@ class DocumentQueueService {
       // Na última tentativa, notifica o usuário
       if (phone && job.attemptsMade >= (job.opts?.attempts || 3) - 1) {
         try {
-          await evolutionService.sendMessage(
+          await outboundMessageService.sendText(
             phone,
             '❌ Não consegui processar seu documento. Por favor, tente novamente ou digite as informações manualmente.'
           );
@@ -263,7 +263,7 @@ class DocumentQueueService {
     // Notifica o usuário com o resultado
     if (phone) {
       const summary = documentService.formatDocumentSummary(result);
-      await evolutionService.sendMessage(phone, summary);
+      await outboundMessageService.sendText(phone, summary);
     }
 
     return result;

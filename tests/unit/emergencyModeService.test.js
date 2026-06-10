@@ -1,14 +1,14 @@
 let cashflowService;
-let evolutionService;
+let outboundMessageService;
 let emergencyModeService;
 
 beforeEach(() => {
   jest.resetModules();
   jest.mock('../../src/db/supabase');
   jest.mock('../../src/services/cashflowService');
-  jest.mock('../../src/services/evolutionService');
+  jest.mock('../../src/services/outboundMessageService');
   cashflowService = require('../../src/services/cashflowService');
-  evolutionService = require('../../src/services/evolutionService');
+  outboundMessageService = require('../../src/services/outboundMessageService');
   emergencyModeService = require('../../src/services/emergencyModeService');
 });
 

@@ -1,6 +1,6 @@
 const supabase = require('../db/supabase');
 const transactionController = require('../controllers/transactionController');
-const evolutionService = require('./evolutionService');
+const outboundMessageService = require('./outboundMessageService');
 const copy = require('../copy/monthlyReportWhatsappCopy');
 const emailReportService = require('./emailReportService');
 
@@ -33,7 +33,7 @@ async function deliverPreviousMonthSummaries() {
     try {
       const report = await transactionController.getMonthlyReport(p.id, year, month);
       const msg = copy.resumoMensalAnterior({ year, month }, report);
-      await evolutionService.sendMessage(p.telefone, msg);
+      await outboundMessageService.sendText(p.telefone, msg);
       const emailStatus = await emailReportService.sendMonthlyReportEmail(
         p.id,
         `${year}-${String(month).padStart(2, '0')}`

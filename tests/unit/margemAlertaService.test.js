@@ -1,6 +1,6 @@
 let margemAlertaService;
 let supabase;
-let evolutionService;
+let outboundMessageService;
 let reminderSentHelper;
 
 function chainResolve(final) {
@@ -18,10 +18,10 @@ beforeEach(() => {
   jest.setSystemTime(new Date('2026-05-12T12:00:00.000Z'));
   jest.resetModules();
   jest.mock('../../src/db/supabase');
-  jest.mock('../../src/services/evolutionService');
+  jest.mock('../../src/services/outboundMessageService');
   jest.mock('../../src/services/reminderSentHelper');
   supabase = require('../../src/db/supabase');
-  evolutionService = require('../../src/services/evolutionService');
+  outboundMessageService = require('../../src/services/outboundMessageService');
   reminderSentHelper = require('../../src/services/reminderSentHelper');
   margemAlertaService = require('../../src/services/margemAlertaService');
 });
@@ -88,11 +88,11 @@ describe('margemAlertaService.checkAndAlertMargemCaindo', () => {
 
     reminderSentHelper.alreadySent.mockResolvedValue(false);
     reminderSentHelper.markSent.mockResolvedValue(true);
-    evolutionService.sendMessage = jest.fn().mockResolvedValue(true);
+    outboundMessageService.sendText = jest.fn().mockResolvedValue({ status: 'sent' });
 
     const sent = await margemAlertaService.checkAndAlertMargemCaindo();
     expect(sent).toHaveLength(1);
-    expect(evolutionService.sendMessage).toHaveBeenCalledTimes(1);
+    expect(outboundMessageService.sendText).toHaveBeenCalledTimes(1);
     expect(reminderSentHelper.markSent).toHaveBeenCalled();
   });
 });

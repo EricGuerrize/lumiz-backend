@@ -1,7 +1,7 @@
 const supabase = require('../db/supabase');
 const cashflowService = require('./cashflowService');
 const transactionController = require('../controllers/transactionController');
-const evolutionService = require('./evolutionService');
+const outboundMessageService = require('./outboundMessageService');
 const copy = require('../copy/emergencyWhatsappCopy');
 const analyticsService = require('./analyticsService');
 
@@ -49,7 +49,7 @@ class EmergencyModeService {
         const status = await this.getStatus(profile.id);
         if (status.alert) {
           const message = copy.alertaCaixaNegativo(status.saldoMinimo, status.dataRisco);
-          await evolutionService.sendMessage(profile.telefone, message);
+          await outboundMessageService.sendText(profile.telefone, message);
           try {
             await supabase.from('emergency_alert_history').insert({
               user_id: profile.id,

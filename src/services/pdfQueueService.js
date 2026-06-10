@@ -2,7 +2,7 @@
 const { Queue, Worker } = require('bullmq');
 const IORedis = require('ioredis');
 const pdfService = require('./pdfService');
-const evolutionService = require('./evolutionService');
+const outboundMessageService = require('./outboundMessageService');
 const excelService = require('./excelService');
 
 class PdfQueueService {
@@ -154,7 +154,7 @@ class PdfQueueService {
 
         try {
             // Notifica início (opcional, pode ser muito spam)
-            // await evolutionService.sendMessage(phone, '⏳ Iniciando geração do arquivo...');
+            // await outboundMessageService.sendText(phone, '⏳ Iniciando geração do arquivo...');
 
             if (type === 'monthly_report_pdf') {
                 await this.generateAndSendMonthlyPDF(userId, phone, params);
@@ -175,7 +175,7 @@ class PdfQueueService {
             // Notifica usuário sobre o erro na última tentativa
             if (job.attemptsMade >= job.opts.attempts - 1) {
                 try {
-                    await evolutionService.sendMessage(
+                    await outboundMessageService.sendText(
                         phone,
                         '❌ Ocorreu um erro ao gerar seu relatório. Por favor, tente novamente em alguns instantes.'
                     );
@@ -219,21 +219,20 @@ class PdfQueueService {
 
         console.log(`[PDF_QUEUE] Gerando PDF para ${month}/${year}...`);
 
-        await evolutionService.sendMessage(
+        await outboundMessageService.sendText(
             phone,
             '📄 Gerando seu relatório em PDF...\n\nIsso pode levar alguns segundos! ⏳'
         );
 
         const pdfBuffer = await pdfService.generateMonthlyReportPDF(userId, year, month);
-        const base64Pdf = pdfBuffer.toString('base64');
-
+        
         const mesNome = new Date(year, month - 1, 1).toLocaleDateString('pt-BR', { month: 'long' });
         const fileName = `Relatorio_${mesNome}_${year}.pdf`;
 
         console.log(`[PDF_QUEUE] Enviando PDF (${pdfBuffer.length} bytes)...`);
-        await evolutionService.sendDocument(phone, base64Pdf, fileName, 'application/pdf');
+        await outboundMessageService.sendDocument(phone, pdfBuffer, fileName, 'application/pdf');
 
-        await evolutionService.sendMessage(
+        await outboundMessageService.sendText(
             phone,
             '✅ *Relatório exportado com sucesso!*\n\nSeu PDF está pronto acima 📊'
         );
@@ -253,7 +252,7 @@ class PdfQueueService {
 
         console.log(`[PDF_QUEUE] Gerando ${formato.toUpperCase()} para ${month}/${year}...`);
 
-        await evolutionService.sendMessage(
+        await outboundMessageService.sendText(
             phone,
             `📊 Gerando sua planilha ${formato.toUpperCase()}...\n\nIsso pode levar alguns segundos! ⏳`
         );
@@ -274,12 +273,11 @@ class PdfQueueService {
             mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
         }
 
-        const base64File = fileBuffer.toString('base64');
-
+        
         console.log(`[PDF_QUEUE] Enviando arquivo (${fileBuffer.length} bytes)...`);
-        await evolutionService.sendDocument(phone, base64File, fileName, mimeType);
+        await outboundMessageService.sendDocument(phone, fileBuffer, fileName, mimeType);
 
-        await evolutionService.sendMessage(
+        await outboundMessageService.sendText(
             phone,
             `✅ *Planilha exportada com sucesso!*\n\nSeu arquivo ${formato.toUpperCase()} está pronto acima 📊`
         );

@@ -376,11 +376,9 @@ const webhookHandler = async (req, res) => {
             ));
           };
           try {
-            if (
-              PRESENCE_ENABLED &&
-              typeof evolutionService.sendPresenceUpdate === 'function' &&
-              evolutionService.validatePhoneNumber(phone)
-            ) {
+            // Presence update (digitando/gravando) era recurso da Evolution API.
+            // A Meta Cloud API não expõe esse recurso da mesma forma; flag mantida para futuro.
+            if (PRESENCE_ENABLED && evolutionService.isConfigured()) {
               evolutionService
                 .sendPresenceUpdate(phone, audioMessage ? 'recording' : 'composing')
                 .catch(() => {});

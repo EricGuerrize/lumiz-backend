@@ -1,6 +1,6 @@
 const supabase = require('../db/supabase');
 const transactionController = require('../controllers/transactionController');
-const evolutionService = require('./evolutionService');
+const outboundMessageService = require('./outboundMessageService');
 const copy = require('../copy/estoqueWhatsappCopy');
 const { alreadySent, markSent } = require('./reminderSentHelper');
 
@@ -526,7 +526,7 @@ class EstoqueService {
           message = copy.alertaEstoqueBaixo(pendentes);
         }
 
-        await evolutionService.sendMessage(profile.telefone, message);
+        await outboundMessageService.sendText(profile.telefone, message);
 
         for (const a of pendentes) {
           await markSent(profile.id, a.id, tipoDia);
@@ -569,7 +569,7 @@ class EstoqueService {
         if (!pendentes.length) continue;
 
         const message = copy.alertaEstoqueExcesso(pendentes);
-        await evolutionService.sendMessage(profile.telefone, message);
+        await outboundMessageService.sendText(profile.telefone, message);
         for (const a of pendentes) {
           await markSent(profile.id, a.id, tipoDia);
           sent.push({ user_id: profile.id, procedimento_id: a.id });

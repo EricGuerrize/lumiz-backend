@@ -16,9 +16,8 @@ describe('EnvValidator — ASAAS_WEBHOOK_SECRET opcional na startup', () => {
       NODE_ENV: 'production',
       SUPABASE_URL: 'https://lumiz.supabase.co',
       SUPABASE_SERVICE_ROLE_KEY: 'prod-service-role-key-real',
-      EVOLUTION_API_URL: 'https://evolution.example.com',
-      EVOLUTION_API_KEY: 'prod-evolution-key-real',
-      EVOLUTION_INSTANCE_NAME: 'lumiz-prod',
+      WA_PHONE_NUMBER_ID: '123456789012345',
+      WA_ACCESS_TOKEN: 'prod-meta-access-token-real',
       ...overrides,
     };
     if (overrides.ASAAS_WEBHOOK_SECRET === undefined) {

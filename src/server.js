@@ -358,19 +358,19 @@ app.get('/health', async (req, res) => {
     health.checks.redis = { status: 'error', latency: null, error: error.message };
   }
 
-  // Verifica Evolution API (crítico)
+  // Verifica WhatsApp Meta Cloud API (crítico) — checa apenas configuração,
+  // sem chamada HTTP, para não consumir rate limit do Graph API a cada health check.
   try {
-    const evolutionStart = Date.now();
-    const evolutionService = require('./services/evolutionService');
-    await Promise.race([
-      evolutionService.getInstanceStatus(),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
-    ]);
-    const evolutionLatency = Date.now() - evolutionStart;
-    health.checks.evolution = { status: 'ok', latency: evolutionLatency };
+    const metaWhatsappService = require('./services/metaWhatsappService');
+    if (metaWhatsappService.isOutboundConfigured()) {
+      health.checks.whatsapp = { status: 'ok', provider: 'meta' };
+    } else {
+      health.checks.whatsapp = { status: 'not_configured', provider: 'meta' };
+      criticalFailures++;
+      health.status = 'degraded';
+    }
   } catch (error) {
-    const evolutionLatency = error.message === 'timeout' ? 5000 : null;
-    health.checks.evolution = { status: 'error', latency: evolutionLatency, error: error.message };
+    health.checks.whatsapp = { status: 'error', error: error.message };
     criticalFailures++;
     health.status = 'degraded';
   }

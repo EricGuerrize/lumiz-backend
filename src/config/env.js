@@ -19,9 +19,9 @@ class EnvValidator {
     // Variáveis obrigatórias
     this.validateRequired('SUPABASE_URL', 'URL do Supabase');
     this.validateRequired('SUPABASE_SERVICE_ROLE_KEY', 'Service Role Key do Supabase');
-    this.validateRequired('EVOLUTION_API_URL', 'URL da Evolution API');
-    this.validateRequired('EVOLUTION_API_KEY', 'API Key da Evolution API');
-    this.validateRequired('EVOLUTION_INSTANCE_NAME', 'Nome da instância Evolution API');
+    // Meta Cloud API é o provedor oficial de WhatsApp (Evolution foi descontinuada)
+    this.validateRequired('WA_PHONE_NUMBER_ID', 'ID do número WhatsApp no painel Meta Cloud API');
+    this.validateRequired('WA_ACCESS_TOKEN', 'Token permanente da Meta Cloud API para envio/download de mídia');
 
     // Variáveis opcionais mas recomendadas
     this.validateOptional('GEMINI_API_KEY', 'API Key do Google Gemini (opcional)');
@@ -46,13 +46,13 @@ class EnvValidator {
     this.validateOptional('ALTER_CLIENT_ID',     'Client ID OAuth2 da Alter (obrigatório quando ALTER_CLIENT_SECRET definido)');
     this.validateOptional('ALTER_CLIENT_SECRET',  'Client Secret OAuth2 da Alter (ativa realAlterAdapter quando definido junto com ALTER_CLIENT_ID)');
     this.validateOptional('ALTER_WEBHOOK_SECRET', 'Secret HMAC para webhooks Alter (fornecido pela Alter em canal privado; sem ele o webhook fica 503 em produção)');
-    this.validateOptional('WA_WEBHOOK_VERIFY_TOKEN', 'Token de verificação do webhook Meta Cloud API (necessário ao migrar para API oficial do WhatsApp)');
-    this.validateOptional('WA_PHONE_NUMBER_ID', 'ID do número WhatsApp no painel Meta Cloud API');
-    this.validateOptional('WA_ACCESS_TOKEN', 'Token permanente da Meta Cloud API para envio/download de mídia');
+    this.validateOptional('WA_WEBHOOK_VERIFY_TOKEN', 'Token de verificação do webhook Meta Cloud API (necessário para o handshake GET do webhook)');
     this.validateOptional('WABA_ID', 'WhatsApp Business Account ID');
     this.validateOptional('WA_GRAPH_API_VERSION', 'Versão do Graph API para Cloud API (ex: v23.0)');
-    this.validateOptional('META_APP_SECRET', 'App Secret da Meta para validar X-Hub-Signature-256 em webhooks');
-    this.validateOptional('EVOLUTION_WEBHOOK_SECRET', 'Segredo compartilhado para validar POSTs da Evolution no webhook');
+    this.validateOptional('META_APP_SECRET', 'App Secret da Meta para validar X-Hub-Signature-256 em webhooks (FORTEMENTE recomendado em produção — sem ele o webhook aceita POSTs não assinados)');
+    // Evolution API: legado, mantida apenas como fallback opcional durante a transição
+    this.validateOptional('EVOLUTION_API_URL', 'URL da Evolution API (legado, opcional)');
+    this.validateOptional('EVOLUTION_WEBHOOK_SECRET', 'Segredo compartilhado para validar POSTs da Evolution no webhook (legado)');
 
     // Validações específicas
     this.validateUrl('SUPABASE_URL');
@@ -152,7 +152,13 @@ class EnvValidator {
     if (process.env.NODE_ENV !== 'production') return;
 
     this.validateNotPlaceholder('SUPABASE_SERVICE_ROLE_KEY', 'Service Role Key do Supabase');
-    this.validateNotPlaceholder('EVOLUTION_API_KEY', 'API Key da Evolution API');
+    this.validateNotPlaceholder('WA_ACCESS_TOKEN', 'Token da Meta Cloud API');
+    if (process.env.EVOLUTION_API_KEY) {
+      this.validateNotPlaceholder('EVOLUTION_API_KEY', 'API Key da Evolution API');
+    }
+    if (!process.env.META_APP_SECRET) {
+      this.warnings.push('⚠️  META_APP_SECRET não configurado em produção — o webhook do WhatsApp aceitará POSTs sem validação de assinatura. Configure no painel da Meta (App Settings → Basic → App Secret).');
+    }
     this.validateNotPlaceholder('GEMINI_API_KEY', 'API Key do Gemini');
     this.validateNotPlaceholder('OPENAI_API_KEY', 'API Key da OpenAI');
     this.validateNotPlaceholder('CRON_SECRET', 'Segredo de cron');

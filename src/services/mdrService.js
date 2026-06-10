@@ -3,7 +3,7 @@ const IORedis = require('ioredis');
 
 const supabase = require('../db/supabase');
 const mdrOcrService = require('./mdrOcrService');
-const evolutionService = require('./evolutionService');
+const outboundMessageService = require('./outboundMessageService');
 const onboardingService = require('./onboardingService');
 const cacheService = require('./cacheService');
 
@@ -435,7 +435,7 @@ class MdrService {
     const provider = extraction.provider ? extraction.provider.toUpperCase() : 'sua maquininha';
     const message = `Prontinho! Extraí as taxas da ${provider}. ✅\n\nResponde \"revisar taxas\" ou me manda um \"sim\" pra confirmar e já deixar tudo automático.`;
     try {
-      await evolutionService.sendMessage(phone, message);
+      await outboundMessageService.sendText(phone, message);
     } catch (error) {
       console.error('[MDR_QUEUE] Falha ao notificar sucesso OCR:', error.message);
     }
@@ -445,7 +445,7 @@ class MdrService {
     if (!phone) return;
     const message = 'Não consegui ler o print da maquininha 😕\n\nTenta enviar outra imagem mais nítida ou digita os valores manualmente que eu te ajudo.';
     try {
-      await evolutionService.sendMessage(phone, message);
+      await outboundMessageService.sendText(phone, message);
     } catch (error) {
       console.error('[MDR_QUEUE] Falha ao notificar erro OCR:', error.message);
     }

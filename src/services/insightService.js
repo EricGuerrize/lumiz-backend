@@ -2,7 +2,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const supabase = require('../db/supabase');
 const transactionController = require('../controllers/transactionController');
-const evolutionService = require('./evolutionService');
+const outboundMessageService = require('./outboundMessageService');
 const { formatarMoeda } = require('../utils/currency');
 
 class InsightService {
@@ -185,7 +185,7 @@ Escreva insights em tom positivo, prático, sempre sugerindo próximos passos.
     message += `\nQuer mais detalhes? Manda "insights" novamente.`;
 
     try {
-      await evolutionService.sendMessage(user.telefone, message.trim());
+      await outboundMessageService.sendText(user.telefone, message.trim());
     } catch (error) {
       console.error('[INSIGHTS] Falha ao enviar WhatsApp:', error.message);
     }

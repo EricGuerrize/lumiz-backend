@@ -2,7 +2,7 @@ const supabase = require('../../db/supabase');
 const featureFlagService = require('../featureFlagService');
 const alterRecebiveisService = require('./alterRecebiveisService');
 const antecipacaoService = require('./antecipacaoService');
-const evolutionService = require('../evolutionService');
+const outboundMessageService = require('../outboundMessageService');
 const alterCopy = require('../../copy/alterWhatsappCopy');
 
 /**
@@ -11,7 +11,7 @@ const alterCopy = require('../../copy/alterWhatsappCopy');
  * Para cada usuário com flag `alter_enabled` ligada e WhatsApp cadastrado:
  *   1) Calcula posição de recebíveis (livre / comprometido / antecipado).
  *   2) Chama recomendar(userId) para sugerir antecipação.
- *   3) Envia mensagem WhatsApp via evolutionService.
+ *   3) Envia mensagem WhatsApp via outboundMessageService (Meta Cloud API).
  *
  * Idempotente: só envia 1x por semana por usuário (registra em
  * `feature_flags.meta` ou cai num INSERT-only no futuro).
@@ -70,7 +70,7 @@ class AlterInsightCronService {
         });
 
         if (user.telefone) {
-          await evolutionService.sendMessage(user.telefone, mensagem);
+          await outboundMessageService.sendText(user.telefone, mensagem);
         }
         await this._markSentThisWeek(user.id);
         sent.push({ user_id: user.id, telefone: user.telefone || null });

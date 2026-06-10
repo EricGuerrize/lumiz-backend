@@ -1,5 +1,5 @@
 const supabase = require('../db/supabase');
-const evolutionService = require('./evolutionService');
+const outboundMessageService = require('./outboundMessageService');
 const transactionController = require('../controllers/transactionController');
 const copy = require('../copy/goalWhatsappCopy');
 const { alreadySent, markSent } = require('./reminderSentHelper');
@@ -51,7 +51,7 @@ class GoalReminderService {
         const vazias = 10 - barras;
 
         const message = copy.progressoSemanal(faturamento, meta, progresso, faltam, barras, vazias);
-        await evolutionService.sendMessage(profile.telefone, message);
+        await outboundMessageService.sendText(profile.telefone, message);
         await markSent(profile.id, profile.id, semanaKey);
         sent.push({ user_id: profile.id, progresso: progresso.toFixed(1) });
         console.log(`[META] Enviado para ${profile.telefone}: ${progresso.toFixed(1)}%`);

@@ -251,17 +251,32 @@ class OutboundMessageService {
     return { sent: true };
   }
 
+  /**
+   * Evolution (legado) só participa do fallback quando configurada via env.
+   * Mocks de teste sem isConfigured continuam elegíveis.
+   * @returns {boolean}
+   */
+  _evolutionAvailable() {
+    if (!this.evolution) return false;
+    if (typeof this.evolution.isConfigured === 'function') {
+      return this.evolution.isConfigured();
+    }
+    return true;
+  }
+
   async _sendTextViaPreferredProvider(phone, message, metadata = {}) {
     const metaAvailable = typeof this.meta?.isOutboundConfigured === 'function'
       ? this.meta.isOutboundConfigured()
       : false;
 
+    let metaFailure = null;
     if (metaAvailable && typeof this.meta?.sendText === 'function') {
       try {
         const result = await this.meta.sendText(phone, message);
         return { provider: 'meta', response: result };
       } catch (metaError) {
-        console.error(`[WA_OUTBOUND] Meta falhou, tentando Evolution fallback: ${metaError.message}`);
+        metaFailure = metaError;
+        console.error(`[WA_OUTBOUND] Meta falhou: ${metaError.message}`);
         this.reliability.recordFailure({
           kind: 'outbound_provider_failed',
           phase: 'send',
@@ -274,6 +289,10 @@ class OutboundMessageService {
       }
     }
 
+    if (!this._evolutionAvailable()) {
+      throw metaFailure || new Error('Nenhum provedor WhatsApp configurado (WA_ACCESS_TOKEN/WA_PHONE_NUMBER_ID ausentes)');
+    }
+
     const result = await this.evolution.sendMessage(phone, message);
     return { provider: 'evolution', response: result };
   }
@@ -283,12 +302,14 @@ class OutboundMessageService {
       ? this.meta.isOutboundConfigured()
       : false;
 
+    let metaFailure = null;
     if (metaAvailable && typeof this.meta?.sendDocumentBuffer === 'function') {
       try {
         const result = await this.meta.sendDocumentBuffer(phone, buffer, fileName, mimeType);
         return { provider: 'meta', response: result };
       } catch (metaError) {
-        console.error(`[WA_OUTBOUND] Meta documento falhou, tentando Evolution fallback: ${metaError.message}`);
+        metaFailure = metaError;
+        console.error(`[WA_OUTBOUND] Meta documento falhou: ${metaError.message}`);
         this.reliability.recordFailure({
           kind: 'outbound_provider_failed',
           phase: 'send',
@@ -299,6 +320,10 @@ class OutboundMessageService {
           queued: false
         });
       }
+    }
+
+    if (!this._evolutionAvailable()) {
+      throw metaFailure || new Error('Nenhum provedor WhatsApp configurado (WA_ACCESS_TOKEN/WA_PHONE_NUMBER_ID ausentes)');
     }
 
     const base64 = Buffer.isBuffer(buffer) ? buffer.toString('base64') : String(buffer || '');

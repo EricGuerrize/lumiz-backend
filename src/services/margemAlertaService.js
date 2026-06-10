@@ -1,5 +1,5 @@
 const supabase = require('../db/supabase');
-const evolutionService = require('./evolutionService');
+const outboundMessageService = require('./outboundMessageService');
 const copy = require('../copy/margemWhatsappCopy');
 const { alreadySent, markSent } = require('./reminderSentHelper');
 
@@ -154,7 +154,7 @@ class MargemAlertaService {
           margem_anterior: dados.mes_anterior.margem_pct,
           causa: dados.diagnostico.causa_provavel,
         });
-        await evolutionService.sendMessage(profile.telefone, msg);
+        await outboundMessageService.sendText(profile.telefone, msg);
         await markSent(profile.id, profile.id, tipo);
         sent.push({ user_id: profile.id, delta_margem_pct: dados.delta_margem_pct });
       } catch (err) {

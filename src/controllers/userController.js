@@ -873,14 +873,14 @@ class UserController {
 
       // Envia mensagem de confirmação via WhatsApp
       try {
-        const evolutionService = require('../services/evolutionService');
+        const outboundMessageService = require('../services/outboundMessageService');
         const confirmationMessage = `*CADASTRO CONCLUÍDO COM SUCESSO!*\n\n` +
           `Seu email foi vinculado ao seu WhatsApp!\n\n` +
           `Agora você tem acesso completo:\n` +
           `🌐 https://lumiz-financeiro.vercel.app\n\n` +
           `*Pronto pra começar!* 🚀`;
 
-        await evolutionService.sendMessage(phone, confirmationMessage);
+        await outboundMessageService.sendText(phone, confirmationMessage);
       } catch (whatsappError) {
         console.error('[LINK_EMAIL] Erro ao enviar mensagem WhatsApp (não crítico):', whatsappError);
       }

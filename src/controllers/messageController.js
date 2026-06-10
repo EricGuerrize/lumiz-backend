@@ -1,7 +1,6 @@
 
 
 const geminiService = require('../services/geminiService');
-const evolutionService = require('../services/evolutionService');
 const userController = require('./userController');
 const onboardingFlowService = require('../services/onboardingFlowService');
 const transactionController = require('./transactionController');
@@ -353,9 +352,9 @@ class MessageController {
         if (blocked) {
           const paymentService = require('../services/paymentService');
           const subscriptionCopy = require('../copy/subscriptionCopy');
-          const evolutionService = require('../services/evolutionService');
+          const outboundMessageService = require('../services/outboundMessageService');
           const paymentUrl = await paymentService.generatePaymentLink(existingMember.clinic_id);
-          await evolutionService.sendMessage(normalizedPhone, subscriptionCopy.subscriptionExpired(paymentUrl));
+          await outboundMessageService.sendText(normalizedPhone, subscriptionCopy.subscriptionExpired(paymentUrl));
           return;
         }
       }

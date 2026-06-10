@@ -1,5 +1,5 @@
 const supabase = require('../db/supabase');
-const evolutionService = require('./evolutionService');
+const outboundMessageService = require('./outboundMessageService');
 const copy = require('../copy/reminderWhatsappCopy');
 const { alreadySent, markSent } = require('./reminderSentHelper');
 
@@ -85,7 +85,7 @@ class ReminderService {
         }
 
         try {
-          await evolutionService.sendMessage(telefone, message);
+          await outboundMessageService.sendText(telefone, message);
           await markSent(p.atendimentos.user_id, p.id, janela.tipo);
           remindersSent.push({ tipo: janela.tipo, parcela_id: p.id, cliente: clienteNome, valor });
           console.log(`[LEMBRETE] ${janela.tipo} → ${telefone}`);
@@ -131,7 +131,7 @@ class ReminderService {
         }
 
         try {
-          await evolutionService.sendMessage(telefone, message);
+          await outboundMessageService.sendText(telefone, message);
           await markSent(conta.user_id, conta.id, janela.tipo);
           remindersSent.push({ tipo: janela.tipo, conta_id: conta.id, descricao, valor });
           console.log(`[LEMBRETE] ${janela.tipo} → ${telefone}`);

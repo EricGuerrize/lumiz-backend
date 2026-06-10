@@ -77,11 +77,12 @@ class DocumentService {
       // 2. Fallback: URL direta (pode expirar rápido)
 
       // Se temos messageKey, tentamos baixar via API primeiro
-      if (messageKey) {
+      // (apenas quando a Evolution legado está configurada — no fluxo Meta a mídia
+      // já chega como buffer ou é baixada via meta_media_id no webhook)
+      const evolutionService = require('./evolutionService');
+      if (messageKey && evolutionService.isConfigured()) {
         try {
           console.log('[DOC] Tentando baixar mídia via Evolution API (messageKey prioritário)...');
-          // Lazy load para evitar dependência circular se houver
-          const evolutionService = require('./evolutionService');
           const mediaResponse = await evolutionService.downloadMedia(messageKey, 'image');
 
           if (mediaResponse && mediaResponse.data) {

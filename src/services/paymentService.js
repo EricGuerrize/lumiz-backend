@@ -133,11 +133,11 @@ async function handleWebhook(payload) {
   console.log(`[PAYMENT] Plano ativado para clinic_id=${sub.clinic_id} (payment=${paymentId})`);
 
   try {
-    const evolutionService = require('./evolutionService');
+    const outboundMessageService = require('./outboundMessageService');
     const subscriptionCopy = require('../copy/subscriptionCopy');
     const profile = await userRepository.findById(sub.clinic_id);
     if (profile?.telefone) {
-      await evolutionService.sendMessage(profile.telefone, subscriptionCopy.planActivated());
+      await outboundMessageService.sendText(profile.telefone, subscriptionCopy.planActivated());
     }
   } catch (e) {
     console.error('[PAYMENT] Falha ao enviar mensagem de confirmação:', e?.message);
