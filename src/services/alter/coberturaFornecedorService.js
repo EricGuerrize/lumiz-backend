@@ -74,11 +74,11 @@ class CoberturaFornecedorService {
     const { data: contas, error: cpError } = await supabase
       .from('contas_pagar')
       .select(`
-        id, valor, data_vencimento, status, fornecedor_id,
+        id, valor, data_vencimento, status_pagamento, fornecedor_id,
         fornecedores (id, nome, cnpj)
       `)
       .eq('user_id', userId)
-      .eq('status', 'pendente')
+      .eq('status_pagamento', 'pendente')
       .gte('data_vencimento', todayStr)
       .lte('data_vencimento', limiteStr)
       .order('data_vencimento', { ascending: true });

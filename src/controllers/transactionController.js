@@ -283,6 +283,7 @@ class TransactionController {
     parcelas,
     condicoes_pagamento,
     observacoes = null,
+    status_pagamento = null,
     source_phone = null,
     source_message_id = null,
     raw_message = null,
@@ -324,10 +325,11 @@ class TransactionController {
             descricao: descricaoParcela,
             valor: valorParcela,
             data: dataVencStr,
+            data_vencimento: dataVencStr,
             tipo: tipo || 'variavel',
             categoria: categoria || 'Outros',
             // Todas as parcelas são PENDENTES — são pagamentos futuros (boleto/cartão a prazo)
-            status_pagamento: 'pendente',
+            status_pagamento: status_pagamento || 'pendente',
             observacoes: [
               `Parcela ${i + 1} de ${parcelas}`,
               observacoes
@@ -372,9 +374,10 @@ class TransactionController {
         descricao: descricao || categoria || 'Despesa',
         valor: valor,
         data: data || new Date().toISOString().split('T')[0],
+        data_vencimento: data || new Date().toISOString().split('T')[0],
         tipo: tipo || 'variavel',
         categoria: categoria || 'Outros',
-        status_pagamento: 'pago',
+        status_pagamento: status_pagamento || 'pago',
         observacoes,
         ...this._buildTraceabilityPayload({
           origem,
@@ -408,24 +411,68 @@ class TransactionController {
   // ... (código omitido para a próxima chamada) ...
 
   async getBalance(userId) {
+    return this.getAvailableBalance(userId);
+  }
+
+  async getAvailableBalance(userId) {
     try {
-      // Usa a view otimizada para calcular saldo
-      const { data: balance, error } = await supabase
-        .from('view_finance_balance')
-        .select('*')
-        .eq('user_id', userId)
-        .single();
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('initial_balance')
+        .eq('id', userId)
+        .maybeSingle();
 
-      if (error && error.code !== 'PGRST116') throw error;
+      if (profileError) throw profileError;
 
-      if (!balance) {
-        return { saldo: 0, entradas: 0, saidas: 0 };
-      }
+      const initialBalance = parseFloat(profile?.initial_balance || 0) || 0;
+
+      const [paidSales, paidInstallments, paidBills] = await Promise.all([
+        supabase
+          .from('atendimentos')
+          .select('id, valor_liquido, valor_total, forma_pagamento, is_test')
+          .eq('user_id', userId)
+          .eq('status_pagamento', 'pago')
+          .or('is_test.is.null,is_test.eq.false')
+          .not('forma_pagamento', 'eq', 'parcelado'),
+        supabase
+          .from('parcelas')
+          .select('id, valor_liquido, valor, atendimentos!inner(user_id, is_test)')
+          .eq('paga', true)
+          .eq('atendimentos.user_id', userId)
+          .or('is_test.is.null,is_test.eq.false', { foreignTable: 'atendimentos' }),
+        supabase
+          .from('contas_pagar')
+          .select('id, valor, is_test')
+          .eq('user_id', userId)
+          .eq('status_pagamento', 'pago')
+          .or('is_test.is.null,is_test.eq.false')
+      ]);
+
+      if (paidSales.error) throw paidSales.error;
+      if (paidInstallments.error) throw paidInstallments.error;
+      if (paidBills.error) throw paidBills.error;
+
+      const entradasAvista = (paidSales.data || []).reduce((sum, item) => {
+        return sum + parseFloat(item.valor_liquido ?? item.valor_total ?? 0);
+      }, 0);
+
+      const entradasParcelas = (paidInstallments.data || []).reduce((sum, item) => {
+        return sum + parseFloat(item.valor_liquido ?? item.valor ?? 0);
+      }, 0);
+
+      const saidasPagas = (paidBills.data || []).reduce((sum, item) => {
+        return sum + parseFloat(item.valor || 0);
+      }, 0);
+
+      const entradas = entradasAvista + entradasParcelas;
+      const saidas = saidasPagas;
 
       return {
-        saldo: parseFloat(balance.saldo),
-        entradas: parseFloat(balance.total_receitas),
-        saidas: parseFloat(balance.total_despesas)
+        saldo: initialBalance + entradas - saidas,
+        entradas,
+        saidas,
+        initial_balance: initialBalance,
+        basis: 'cash_available'
       };
     } catch (error) {
       console.error('Erro ao calcular saldo:', error);

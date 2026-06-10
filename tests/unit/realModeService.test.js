@@ -32,6 +32,7 @@ const realModeService = require('../../src/services/realModeService');
 describe('realModeService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    delete process.env.REQUIRE_WHATSAPP_REAL_MODE_CONFIRMATION;
     mockUpdate.mockReturnValue({ eq: mockEq });
     mockEq.mockResolvedValue({ error: null });
     mockRuntimeGet.mockResolvedValue(null);
@@ -40,7 +41,16 @@ describe('realModeService', () => {
     mockInvalidatePhone.mockResolvedValue(true);
   });
 
-  it('pede confirmação quando coluna existe e timestamp está vazio', async () => {
+  it('não pede confirmação extra por padrão depois do onboarding', async () => {
+    await expect(realModeService.needsConfirmation({
+      id: 'u1',
+      whatsapp_real_mode_confirmed_at: null
+    }, '5511999999999')).resolves.toBe(false);
+  });
+
+  it('mantém compatibilidade com confirmação explícita quando flag legado está ativa', async () => {
+    process.env.REQUIRE_WHATSAPP_REAL_MODE_CONFIRMATION = 'true';
+
     await expect(realModeService.needsConfirmation({
       id: 'u1',
       whatsapp_real_mode_confirmed_at: null

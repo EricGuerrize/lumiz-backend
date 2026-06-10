@@ -6,9 +6,9 @@
  *
  * Garantias:
  *   1. Sem auth → 401.
- *   2. Auth válido + is_user_admin RPC=true → 200 com is_admin: true.
- *   3. Auth válido + is_user_admin RPC=false → 200 com is_admin: false.
- *   4. RPC falha → 200 com is_admin: false (degradação segura — nunca eleva).
+ *   2. Auth válido + user_roles=admin → 200 com is_admin: true.
+ *   3. Auth válido sem role admin → 200 com is_admin: false.
+ *   4. Busca de role falha → 200 com is_admin: false (degradação segura — nunca eleva).
  *   5. Profile do usuário devolve nome_completo/nome_clinica → 200 com name/clinic_name.
  *   6. Profile não existe → 200 com name=null/clinic_name=null.
  *   7. Falha ao buscar profile → 200 com name/clinic_name nulos (nunca quebra).
@@ -19,37 +19,34 @@ const supertest = require('supertest');
 
 describe('GET /api/user/whoami', () => {
   const ORIGINAL_ENV = { ...process.env };
-  let rpcMock;
   let fromMock;
-  let maybeSingleMock;
 
   function mountApp({
-    rpcResult = { data: false, error: null },
+    roleResult = { data: null, error: null },
     profileResult = { data: null, error: null },
     profileThrows = false,
+    roleThrows = false,
     authUser = null,
   } = {}) {
     jest.resetModules();
 
-    rpcMock = jest.fn().mockImplementation(async () => {
-      if (rpcResult instanceof Error) throw rpcResult;
-      return rpcResult;
+    const roleMaybeSingleMock = jest.fn().mockImplementation(async () => {
+      if (roleThrows) throw new Error('role lookup down');
+      return roleResult;
     });
-
-    maybeSingleMock = jest.fn().mockImplementation(async () => {
+    const profileMaybeSingleMock = jest.fn().mockImplementation(async () => {
       if (profileThrows) throw new Error('supabase down');
       return profileResult;
     });
-    fromMock = jest.fn(() => ({
+    fromMock = jest.fn((table) => ({
       select: jest.fn(() => ({
         eq: jest.fn(() => ({
-          maybeSingle: maybeSingleMock,
+          maybeSingle: table === 'user_roles' ? roleMaybeSingleMock : profileMaybeSingleMock,
         })),
       })),
     }));
 
     jest.doMock('../../src/db/supabase', () => ({
-      rpc: rpcMock,
       from: fromMock,
     }));
 
@@ -98,12 +95,12 @@ describe('GET /api/user/whoami', () => {
     const app = mountApp();
     const res = await supertest(app).get('/api/user/whoami');
     expect(res.status).toBe(401);
-    expect(rpcMock).not.toHaveBeenCalled();
+    expect(fromMock).not.toHaveBeenCalled();
   });
 
-  it('auth + RPC retorna true → 200 com is_admin: true e name/clinic_name', async () => {
+  it('auth + user_roles admin → 200 com is_admin: true e name/clinic_name', async () => {
     const app = mountApp({
-      rpcResult: { data: true, error: null },
+      roleResult: { data: { role: 'admin' }, error: null },
       profileResult: {
         data: { nome_completo: 'Eric Guerrize', nome_clinica: 'Lumiz Clínica' },
         error: null,
@@ -123,12 +120,12 @@ describe('GET /api/user/whoami', () => {
       clinic_name: 'Lumiz Clínica',
       is_admin: true,
     });
-    expect(rpcMock).toHaveBeenCalledWith('is_user_admin', { p_user_id: 'user-admin' });
+    expect(fromMock).toHaveBeenCalledWith('user_roles');
   });
 
-  it('auth + RPC retorna false → 200 com is_admin: false', async () => {
+  it('auth sem role admin → 200 com is_admin: false', async () => {
     const app = mountApp({
-      rpcResult: { data: false, error: null },
+      roleResult: { data: null, error: null },
       profileResult: {
         data: { nome_completo: 'Nathalia B.', nome_clinica: 'NB Clinic' },
         error: null,
@@ -147,9 +144,9 @@ describe('GET /api/user/whoami', () => {
     expect(res.body.clinic_name).toBe('NB Clinic');
   });
 
-  it('RPC retorna error → 200 com is_admin: false (degradação segura)', async () => {
+  it('busca de role retorna error → 200 com is_admin: false (degradação segura)', async () => {
     const app = mountApp({
-      rpcResult: { data: null, error: { message: 'rpc unavailable' } },
+      roleResult: { data: null, error: { message: 'role unavailable' } },
     });
 
     const res = await supertest(app)
@@ -160,8 +157,8 @@ describe('GET /api/user/whoami', () => {
     expect(res.body.is_admin).toBe(false);
   });
 
-  it('RPC throw → 200 com is_admin: false (nunca eleva)', async () => {
-    const app = mountApp({ rpcResult: new Error('exploded') });
+  it('busca de role throw → 200 com is_admin: false (nunca eleva)', async () => {
+    const app = mountApp({ roleThrows: true });
 
     const res = await supertest(app)
       .get('/api/user/whoami')
@@ -173,7 +170,6 @@ describe('GET /api/user/whoami', () => {
 
   it('email pode ser null', async () => {
     const app = mountApp({
-      rpcResult: { data: false, error: null },
       authUser: { id: 'user-x' },
     });
 
@@ -187,7 +183,6 @@ describe('GET /api/user/whoami', () => {
 
   it('profile não encontrado → name/clinic_name nulos sem 500', async () => {
     const app = mountApp({
-      rpcResult: { data: false, error: null },
       profileResult: { data: null, error: null },
     });
 
@@ -202,7 +197,6 @@ describe('GET /api/user/whoami', () => {
 
   it('falha ao buscar profile → name/clinic_name nulos (nunca quebra)', async () => {
     const app = mountApp({
-      rpcResult: { data: false, error: null },
       profileThrows: true,
     });
 
@@ -217,7 +211,6 @@ describe('GET /api/user/whoami', () => {
 
   it('profile com campos vazios/null → name/clinic_name viram null', async () => {
     const app = mountApp({
-      rpcResult: { data: false, error: null },
       profileResult: { data: { nome_completo: '', nome_clinica: null }, error: null },
     });
 

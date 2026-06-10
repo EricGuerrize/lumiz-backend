@@ -65,9 +65,11 @@ As fases 9 e 10 são majoritariamente frontend. No backend, o foco é garantir c
 
 - Cron diário 8h (`src/server.js`) agora também executa:
   - `margemAlertaService.checkAndAlertMargemCaindo()`
+  - `whatsappOperationalAlertService.sendValidityAlerts()` e `sendDailyBriefings()`; ambos só disparam se as envs específicas estiverem habilitadas e se o usuário tiver `profiles.alertas_whatsapp_ativos = true`.
   - `emergencyModeService`, `estoqueService`, `goalReminderService`, `insightService` e `alterInsightCronService` agora só enviam WhatsApp se `profiles.alertas_whatsapp_ativos = true`.
 - Cron mensal mantém WhatsApp e, no mesmo fluxo, chama e-mail:
   - `monthlyReportDeliveryService` -> `emailReportService.sendMonthlyReportEmail()`
+- Endpoint manual/protegido: `GET /api/cron/operational-alerts` roda briefing diário e alertas de validade sob demanda com header `x-cron-secret`.
 
 ## Variáveis de ambiente
 
@@ -80,10 +82,61 @@ As fases 9 e 10 são majoritariamente frontend. No backend, o foco é garantir c
   - `QUEUE_WORKER_ENABLED=true` no serviço worker consome `mdr-ocr`, `document-processing` e `pdf-generation` via `npm run worker`.
   - `WHATSAPP_OUTBOUND_QUEUE_ENABLED=true` habilita reenvio de respostas WhatsApp quando a Evolution falha temporariamente.
   - `WHATSAPP_OUTBOUND_WORKER_ENABLED=true` consome a fila `whatsapp-outbound` no próprio serviço HTTP.
+  - `WHATSAPP_DAILY_BRIEFING_ENABLED=false` controla o briefing financeiro diário proativo via WhatsApp. Mantém opt-in obrigatório em `profiles.alertas_whatsapp_ativos`.
+  - `WHATSAPP_VALIDITY_ALERTS_ENABLED=false` controla alertas proativos de validade de estoque/NF. Mantém opt-in obrigatório em `profiles.alertas_whatsapp_ativos`.
+  - `WHATSAPP_ASYNC_MEDIA_PROCESSING=false` envia um aviso imediato ao receber PDF/foto antes do OCR terminar; o resumo final continua sendo enviado depois, com confirmação obrigatória.
+  - `WHATSAPP_PROCESSING_WARN_MS`, `WHATSAPP_SEND_WARN_MS`, `WHATSAPP_TOTAL_WARN_MS` ajustam os limiares dos logs `[WA_LATENCY]`.
 - WhatsApp Meta Cloud API:
   - `WA_WEBHOOK_VERIFY_TOKEN` valida o handshake GET `/api/webhook` da Meta.
   - `WA_ACCESS_TOKEN` permite baixar imagens, documentos e áudios recebidos via webhook nativo da Meta.
   - `WA_PHONE_NUMBER_ID`, `WABA_ID` e `WA_GRAPH_API_VERSION` documentam a conta oficial usada na migração.
+  - `META_APP_SECRET` é opcional; quando configurado, `POST /api/webhook` valida `X-Hub-Signature-256` em payloads nativos da Meta e rejeita assinatura ausente/inválida.
+  - `EVOLUTION_WEBHOOK_SECRET` é opcional; quando configurado, payloads não-Meta precisam enviar o segredo em `x-webhook-secret`, `x-evolution-webhook-secret` ou `Authorization: Bearer`.
+
+## Hardening WhatsApp — PDF, webhook e auth
+
+- PDF/documentos recebidos por buffer da Meta Cloud API agora usam o mesmo `DocumentHandler` das imagens:
+  - OCR cria confirmação pendente persistida em `conversation_runtime_states`;
+  - receita/despesa só é registrada após confirmação explícita;
+  - lançamentos confirmados carregam `origem`, `source_phone`, `source_message_id`, `raw_message`, `is_test=false` e `metadata` com mime/file/confiança quando disponível.
+- Confirmações de documentos aceitam correção natural antes de registrar:
+  - exemplos: `corrigir valor para 900`, `categoria taxas`, `vencimento 10/06`, `beneficiário Evopharma`;
+  - o pending é atualizado e o bot pede nova confirmação;
+  - para `supplier_doc`, o snapshot em `supplier_documents.parsed_json` também é atualizado de forma não crítica.
+- Semântica de cancelamento:
+  - `cancelar`/`não` em confirmação pendente descarta o documento/leitura;
+  - nada é registrado em `atendimentos` ou `contas_pagar`;
+  - quando já existe `supplier_document` pendente, ele recebe `status='cancelled'` para auditoria.
+- Falhas relevantes de documento/webhook registram `messageReliabilityService` com `kind` específico:
+  - `media_download_failed`;
+  - `document_ocr_failed`;
+  - `document_no_transactions`;
+  - `pending_confirmation_expired`;
+  - `webhook_signature_failed`.
+- Falhas de provider outbound também são registradas antes do fallback:
+  - `outbound_provider_failed` com `reason=meta_text_failed:*` ou `meta_document_failed:*`;
+
+## Observabilidade de latência WhatsApp
+
+- `whatsappLatencyService` registra uma janela em memória com até 100 eventos recentes, consumida pelo painel admin/monitor.
+- O webhook responde `200` imediatamente e processa a mensagem em segundo plano; o log `[WA_LATENCY]` separa:
+  - `ack_ms`: tempo até devolver 200 para Meta/Evolution;
+  - `processing_ms`: tempo gasto no bot até montar a resposta;
+  - `send_ms`: tempo para enviar a resposta;
+  - `total_ms`: ciclo completo recebido -> resposta enviada.
+- Quando uma etapa interna passa de 500ms, o log inclui `slow_steps`, por exemplo:
+  - `media_download_ms`;
+  - `media_process_ms`;
+  - `audio_transcription_ms`;
+  - `member_lookup_ms`;
+  - `gemini_intent_ms`;
+  - `route_ms`.
+- Para PDF/foto, `WHATSAPP_ASYNC_MEDIA_PROCESSING=true` reduz a sensação de travamento: o usuário recebe um aviso curto de que o arquivo foi recebido, e depois recebe o resumo para confirmar/corrigir/cancelar.
+  - o fallback para Evolution continua não bloqueante quando configurado.
+- Rotas sensíveis de dashboard/admin agora exigem JWT Supabase:
+  - `src/routes/dashboard.routes.js` usa `authenticateToken`;
+  - `src/routes/admin.routes.js` usa `authenticateToken` + `requireAdmin`;
+  - fallback por telefone via `authenticateFlexible` permanece apenas em rotas legacy/WhatsApp onde ainda é intencional.
 
 ### Agente WhatsApp (`agentic_*`)
 
@@ -145,7 +198,8 @@ As fases 9 e 10 são majoritariamente frontend. No backend, o foco é garantir c
 | GET | `/api/dashboard/contas-a-receber` | aging buckets + mix forma de pagamento |
 
 ### WhatsApp
-- Ao detectar NF/Boleto/Comprovante: `documentHandler` salva `supplier_document` em estado `pending`, manda copy em `src/copy/supplierDocWhatsappCopy.js` e aguarda confirmação 1/2/3. Confirmação cria `contas_pagar` (parcelas) e aplica estoque via `supplierDocumentService.applyEstoqueEntradaFromItens`.
+- Ao detectar NF/Boleto/Comprovante: `documentHandler` salva `supplier_document` em estado `pending`, manda copy em `src/copy/supplierDocWhatsappCopy.js` e aguarda confirmação 1/2/3. Confirmação cria `contas_pagar` (parcelas). O estoque não é alterado automaticamente; itens detectados ficam como contexto para etapa manual/futura.
+- Antes da confirmação, `corrigir ...` atualiza valor, vencimento, categoria ou fornecedor e reenvia o resumo para nova aprovação.
 
 ## Onda 3 — Alter pré-pronta com adapter mockado
 
@@ -1151,7 +1205,16 @@ Se o RPC Postgres `is_user_admin` falhar (ou degradar por erro técnico), a resp
 
 ### Status do frontend (mesma data)
 
-Design system aplicado ao dashboard; **5 páginas admin** atrás do `whoami`: `/admin`, `/admin/usuarios`, `/admin/assinaturas`, `/admin/feedback`, `/admin/diagnostico`. Qualidade build: `npx tsc --noEmit` (exit 0) e `npm run build` (sucesso).
+Design system aplicado ao dashboard; páginas admin atrás do `whoami`: `/admin`, `/admin/usuarios`, `/admin/assinaturas`, `/admin/feedback`, `/admin/diagnostico`, `/admin/whatsapp`. Qualidade build: `npx tsc --noEmit` (exit 0) e `npm run build` (sucesso).
+
+### Monitor WhatsApp admin (02/06/2026)
+
+- **Método/rota:** `GET /api/admin/whatsapp-monitor?days=7&limit=80`
+- **Auth:** Bearer JWT + `requireAdmin` via RPC `is_user_admin`.
+- **Objetivo:** monitorar conversas recentes, funil básico de onboarding, estados runtime ativos, onboardings incompletos, latência e falhas recentes do bot.
+- **Privacidade:** telefone sai mascarado (`...1234`); mensagens aparecem apenas no painel admin autenticado.
+- **Degradação:** se uma fonte opcional falhar (`analytics_events`, `conversation_runtime_states`, etc.), a resposta inclui `meta.warnings` e mantém o restante do painel utilizável.
+- **Frontend:** rota `/admin/whatsapp`, menu `Administração > Monitor WhatsApp`.
 
 ### Sidebar + navegação (✅ follow-up produto — 09/05/2026)
 
@@ -1266,6 +1329,43 @@ Tools marcadas com `requiresConfirmation` (ex.: `register_sale`, `register_cost`
 - Migration `20260529195500_financial_traceability_hardening.sql` adiciona rastreabilidade financeira incremental:
   - `atendimentos`: `origem`, `is_test`, `source_phone`, `source_message_id`, `raw_message`, `metadata`.
   - `contas_pagar`: `is_test`, `source_phone`, `source_message_id`, `raw_message`, `metadata`.
+- Migration `20260601165000_filter_test_financial_views.sql` separa auditoria e operação:
+  - `view_financial_ledger_all` mantém lançamentos reais e de teste;
+  - `view_financial_ledger`, `view_finance_balance` e `view_monthly_report` excluem `is_test=true`.
 - Lançamentos confirmados via WhatsApp passam a salvar `origem='whatsapp_text'`, telefone, texto original, `is_test=false` e metadados de confiança quando disponíveis.
 - `transactionController` mantém fallback para schema antigo: se o Supabase acusar coluna ausente nos campos novos, reexecuta o insert sem rastreabilidade para não derrubar produção durante deploy/migration.
 - Novo cleanup operacional: `conversationRuntimeStateService.cleanupExpired(limit)` e endpoint protegido `GET /api/cron/runtime-cleanup` removem estados expirados sem tocar estados ativos.
+
+## 2026-06-10 — Inventário real WhatsApp-first
+
+- Adicionado modelo incremental de inventário real via migration `20260609160000_real_inventory_tables.sql`:
+  - `estoque_produtos` para cadastro físico por clínica;
+  - `estoque_lotes` para validade/lote/saldo;
+  - `estoque_movimentos_reais` para ledger de entrada/saída/ajuste/inventário;
+  - `procedimento_consumos` como estrutura reservada para futura atualização pós-procedimento.
+- Novo serviço `src/services/estoqueProdutoService.js`:
+  - parse de lista de inventário inicial enviada no WhatsApp;
+  - cadastro/upsert de produtos;
+  - entrada com lote/validade/custo;
+  - baixa FIFO por validade/criação;
+  - consulta geral e por item.
+- `src/controllers/messages/estoqueHandler.js` agora usa `conversation_runtime_states.flow='inventory_setup'` para fluxo persistente:
+  - `configurar estoque` abre instruções;
+  - usuário envia uma lista com um item por linha;
+  - bot confirma com `1 Confirmar`, `2 Cancelar`, `3 Corrigir`;
+  - confirmação grava produtos/lotes/movimentos com origem `inventario`.
+- Comandos de estoque tentam inventário real primeiro e mantêm fallback para `estoqueService` legado enquanto clínicas antigas não migrarem.
+- Documentos de fornecedor (`supplierDocumentService`) extraem itens, lote e validade quando visíveis, mas não dão entrada automática no estoque no fluxo público atual.
+- Vendas confirmadas não baixam estoque automaticamente. A decisão de produto é tratar estoque pós-procedimento em uma etapa explícita futura, com confirmação do usuário e escolha/escrita dos insumos usados.
+- `npm run test:regression` agora inclui `tests/unit/estoqueProdutoService.test.js` e `tests/unit/estoqueHandler.inventorySetup.test.js`.
+- Validação local: syntax check dos arquivos alterados, testes focados de inventário e regressão completa passaram.
+
+### Pendências operacionais
+
+- Deploy Railway após validação local.
+- Testar manualmente no WhatsApp:
+  - `configurar estoque`;
+  - lista com produtos/lotes;
+  - `1` para confirmar;
+  - `estoque`, `saldo botox`, `entrada estoque ...`, `baixar estoque ...`.
+- Próxima fase de produto: desenhar atualização de estoque pós-procedimento com botões (`Sim`/`Não`) e seleção manual dos insumos usados.

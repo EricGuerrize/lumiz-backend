@@ -1,5 +1,7 @@
 const transactionController = require('../transactionController');
 const cashflowService = require('../../services/cashflowService');
+const estoqueService = require('../../services/estoqueService');
+const nfValidadeService = require('../../services/nfValidadeService');
 const { formatarMoeda } = require('../../utils/currency');
 
 /**
@@ -403,6 +405,118 @@ class QueryHandler {
       console.error('Erro ao consultar contas a pagar:', error);
       return 'Erro ao buscar contas. Tente novamente.';
     }
+  }
+
+  async handleCashflowGap(user) {
+    try {
+      const projection = await cashflowService.getCashflowProjection(user.id, 30);
+      const summary = projection.summary || {};
+      const saldoAtual = projection.saldoAtual || 0;
+      const saldoFinal = summary.saldoFinal ?? saldoAtual;
+      const primeiroRisco = summary.primeiroDiaCaixaNegativo;
+
+      let response = `📉 *Projeção de caixa — 30 dias*\n\n`;
+      response += `Caixa disponível hoje: ${formatarMoeda(saldoAtual)}\n`;
+      response += `Entradas previstas: ${formatarMoeda(summary.totalEntradas || 0)}\n`;
+      response += `Saídas previstas: ${formatarMoeda(summary.totalSaidas || 0)}\n`;
+      response += `Saldo projetado: ${formatarMoeda(saldoFinal)}\n\n`;
+
+      if (summary.temProjecaoCaixaNegativo) {
+        response += `⚠️ Risco de caixa negativo em ${this.formatDateShort(primeiroRisco)}.\n`;
+        response += `Revise contas próximas ou recebíveis antes de assumir novas compras.`;
+      } else {
+        response += `Sem risco de caixa negativo nos próximos 30 dias com os dados atuais.`;
+      }
+
+      return response;
+    } catch (error) {
+      console.error('Erro ao consultar gap de caixa:', error);
+      return 'Não consegui calcular a projeção de caixa agora. Tente novamente em alguns instantes.';
+    }
+  }
+
+  async handleDailyBriefing(user) {
+    try {
+      const [balance, contas, estoque, validades] = await Promise.all([
+        transactionController.getBalance(user.id),
+        cashflowService.getContasPagarPriority(user.id, { daysAhead: 7, limit: 5 }),
+        estoqueService.getAlertasBaixoEstoque(user.id).catch(() => ({ alertas: [] })),
+        nfValidadeService.listarProximos(user.id, 30).catch(() => ({ itens: [] })),
+      ]);
+
+      const contasItems = contas.items || [];
+      const estoqueAlertas = estoque.alertas || [];
+      const validadeItens = (validades.itens || []).slice(0, 3);
+
+      let response = `☀️ *Briefing financeiro de hoje*\n\n`;
+      response += `Caixa disponível: ${formatarMoeda(balance.saldo || 0)}\n`;
+      response += `Contas nos próximos 7 dias: ${formatarMoeda(contas.valorTotal || 0)}\n`;
+
+      if (contasItems.length) {
+        response += `\n*Prioridades:*\n`;
+        contasItems.slice(0, 3).forEach((c) => {
+          response += `• ${c.descricao || c.categoria} — ${formatarMoeda(c.valor)} · ${this.formatDateShort(c.data_vencimento)}\n`;
+        });
+      }
+
+      if (estoqueAlertas.length) {
+        response += `\n*Estoque em atenção:*\n`;
+        estoqueAlertas.slice(0, 3).forEach((item) => {
+          response += `• ${item.nome}: ${item.estoqueAtual} ${item.unidade || 'ml'}\n`;
+        });
+      }
+
+      if (validadeItens.length) {
+        response += `\n*Validades próximas:*\n`;
+        validadeItens.forEach((item) => {
+          response += `• ${item.descricao} · ${this.formatDateShort(item.data_validade)}\n`;
+        });
+      }
+
+      response += `\nPara detalhar: "contas a pagar", "estoque" ou "gap de caixa".`;
+      return response;
+    } catch (error) {
+      console.error('Erro ao montar briefing:', error);
+      return 'Não consegui montar o briefing agora. Tente novamente em alguns instantes.';
+    }
+  }
+
+  async handleValidades(user, dados = {}) {
+    try {
+      const days = Number(dados?.dias || dados?.days || 90);
+      const { itens } = await nfValidadeService.listarProximos(user.id, days);
+      const proximos = itens || [];
+
+      if (!proximos.length) {
+        return `Não encontrei itens com validade nos próximos ${Math.min(Math.max(days || 90, 1), 365)} dias.`;
+      }
+
+      let response = `🧾 *Validades próximas*\n\n`;
+      proximos.slice(0, 10).forEach((item) => {
+        const status = item.vencido
+          ? `vencido há ${Math.abs(item.vence_em_dias)}d`
+          : item.vence_em_dias === 0
+            ? 'vence hoje'
+            : `vence em ${item.vence_em_dias}d`;
+        response += `• ${item.descricao} — ${this.formatDateShort(item.data_validade)} · ${status}\n`;
+      });
+
+      if (proximos.length > 10) {
+        response += `\n... e mais ${proximos.length - 10} item(ns).`;
+      }
+
+      return response.trim();
+    } catch (error) {
+      console.error('Erro ao consultar validades:', error);
+      return 'Não consegui consultar as validades agora. Tente novamente em alguns instantes.';
+    }
+  }
+
+  formatDateShort(d) {
+    if (!d) return '—';
+    const [y, m, day] = String(d).split('-');
+    if (!y || !m || !day) return String(d);
+    return `${day}/${m}`;
   }
 
   parseMonthName(monthName) {

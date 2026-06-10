@@ -10,6 +10,63 @@ const { PROCEDURE_KEYWORDS, sanitizeClientName } = require('../utils/procedureKe
 // Constantes
 const CACHE_TTL_SECONDS = 300; // 5 minutos
 const MIN_CONFIDENCE = 0.7; // Confiança mínima para usar heurística ao invés de Gemini
+const MONTHS_PT = {
+  janeiro: 1,
+  fevereiro: 2,
+  marco: 3,
+  março: 3,
+  abril: 4,
+  maio: 5,
+  junho: 6,
+  julho: 7,
+  agosto: 8,
+  setembro: 9,
+  outubro: 10,
+  novembro: 11,
+  dezembro: 12
+};
+
+function normalizeTextForMonth(text) {
+  return String(text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+function extractMonthYearFromText(text, now = new Date()) {
+  const normalized = normalizeTextForMonth(text);
+  let month = null;
+
+  const numericMonthPatterns = [
+    /\b(?:mes|mes\s+numero|mes\s+n(?:umero)?|m)\s*(?:de\s*)?(1[0-2]|0?[1-9])\b/i,
+    /\b(?:relatorio|resumo|faturamento|pdf)\s+(?:do\s+)?(?:mes\s+)?(1[0-2]|0?[1-9])\b/i,
+    /\b(0?[1-9]|1[0-2])\s*\/\s*(20\d{2})\b/i
+  ];
+
+  for (const pattern of numericMonthPatterns) {
+    const match = normalized.match(pattern);
+    if (match) {
+      const value = Number(match[1]);
+      if (value >= 1 && value <= 12) {
+        month = value;
+        break;
+      }
+    }
+  }
+
+  for (const [name, value] of Object.entries(MONTHS_PT)) {
+    if (month) break;
+    const nameNormalized = normalizeTextForMonth(name);
+    if (new RegExp(`\\b${nameNormalized}\\b`, 'i').test(normalized)) {
+      month = value;
+      break;
+    }
+  }
+
+  const yearMatch = normalized.match(/\b(20\d{2})\b/);
+  const year = yearMatch ? Number(yearMatch[1]) : now.getFullYear();
+  return month ? { mes: month, ano: year } : null;
+}
 
 /**
  * Serviço de heurística para detectar intents comuns sem chamar Gemini
@@ -19,6 +76,17 @@ class IntentHeuristicService {
   constructor() {
     // Palavras-chave para intents
     this.keywords = {
+      configurar_estoque: [
+        'configurar estoque',
+        'cadastrar estoque',
+        'montar estoque',
+        'inventario inicial',
+        'inventário inicial',
+        'configurar inventario',
+        'configurar inventário',
+        'cadastrar inventario',
+        'cadastrar inventário',
+      ],
       estoque_entrada: [
         'entrada no estoque',
         'entrada de estoque',
@@ -30,6 +98,16 @@ class IntentHeuristicService {
         'repor estoque',
         'recebimento estoque',
       ],
+      estoque_saida: [
+        'baixa estoque',
+        'baixar estoque',
+        'dar baixa',
+        'saida estoque',
+        'saída estoque',
+        'usei estoque',
+        'consumi estoque',
+        'tirar do estoque',
+      ],
       consultar_estoque: [
         'meu estoque',
         'como está o estoque',
@@ -37,6 +115,10 @@ class IntentHeuristicService {
         'inventário',
         'inventario',
         'resumo estoque',
+        'saldo estoque',
+        'saldo produto',
+        'quanto tem de',
+        'quanto tenho de',
         'falta no estoque',
         'situação do estoque',
         'situacao do estoque',
@@ -45,6 +127,25 @@ class IntentHeuristicService {
         'saldo', 'resumo', 'lucro', 'quanto tenho', 'quanto sobrou', 'sobra',
         'disponível', 'disponivel', 'caixa', 'dinheiro disponível',
         'balanço', 'balanco', 'resultado', 'fechamento', 'como estou', 'como tá', 'como ta'
+      ],
+      consultar_gap_caixa: [
+        'gap de caixa',
+        'risco de caixa',
+        'caixa futuro',
+        'projecao de caixa',
+        'projeção de caixa',
+        'caixa projetado',
+        'vou ficar negativo',
+        'vai faltar caixa',
+        'falta dinheiro',
+      ],
+      briefing_diario: [
+        'briefing',
+        'resumo do dia',
+        'bom dia financeiro',
+        'agenda financeira de hoje',
+        'o que preciso ver hoje',
+        'prioridades de hoje',
       ],
       consultar_historico: [
         'histórico', 'historico', 'últimas', 'ultimas', 'movimentações',
@@ -91,7 +192,13 @@ class IntentHeuristicService {
       ],
       consultar_parcelas: [
         'parcelas', 'parcelado', 'cartão', 'cartao', 'receber', 'a receber',
-        'parcelas pendentes', 'parcelas a receber'
+        'parcelas pendentes', 'parcelas a receber', 'recebiveis', 'recebíveis',
+        'recebiveis de cartao', 'recebíveis de cartão'
+      ],
+      consultar_validade: [
+        'validade', 'validades', 'vencimento de lote', 'lote vencendo',
+        'produto vencendo', 'produtos vencendo', 'itens vencendo',
+        'itens com validade', 'validade estoque'
       ],
       marcar_parcela_paga: [
         'recebi parcela', 'paguei parcela', 'parcela paga', 'recebeu parcela',
@@ -333,6 +440,71 @@ class IntentHeuristicService {
       return cached;
     }
 
+    if (/^(configurar|cadastrar|montar)\s+(estoque|invent[aá]rio)\b/i.test(original) || /^invent[aá]rio inicial\b/i.test(original)) {
+      const out = {
+        intencao: 'configurar_estoque',
+        dados: { itens_texto: original },
+        confidence: 0.96,
+        source: 'heuristic'
+      };
+      await cacheService.set(cacheKey, out, CACHE_TTL_SECONDS);
+      return out;
+    }
+
+    // Comandos consultivos específicos precisam vencer palavras genéricas como "conta" e "pagar".
+    const accountsPayableShortcuts = [
+      'contas a pagar',
+      'contas pagar',
+      'vencimentos',
+      'calendario de vencimentos',
+      'boletos a pagar'
+    ];
+    if (accountsPayableShortcuts.some((kw) => normalized === kw || normalized.includes(kw))) {
+      const out = {
+        intencao: 'consultar_contas_pagar',
+        dados: {},
+        confidence: 0.95,
+        source: 'heuristic'
+      };
+      await cacheService.set(cacheKey, out, CACHE_TTL_SECONDS);
+      return out;
+    }
+
+    if (/\b(gap de caixa|risco de caixa|caixa futuro|projecao de caixa|projeção de caixa|caixa projetado|vou ficar negativo|vai faltar caixa|falta dinheiro)\b/i.test(original)) {
+      const out = {
+        intencao: 'consultar_gap_caixa',
+        dados: {},
+        confidence: 0.95,
+        source: 'heuristic'
+      };
+      await cacheService.set(cacheKey, out, CACHE_TTL_SECONDS);
+      return out;
+    }
+
+    if (/\b(briefing|resumo do dia|bom dia financeiro|agenda financeira de hoje|prioridades de hoje|o que preciso ver hoje)\b/i.test(original)) {
+      const out = {
+        intencao: 'briefing_diario',
+        dados: {},
+        confidence: 0.95,
+        source: 'heuristic'
+      };
+      await cacheService.set(cacheKey, out, CACHE_TTL_SECONDS);
+      return out;
+    }
+
+    const looksLikeProductBalance =
+      /^saldo\s+.+/i.test(normalized) &&
+      !/\b(caixa|dinheiro|financeiro|mes|mês|geral|total)\b/i.test(normalized);
+    if (looksLikeProductBalance) {
+      const out = {
+        intencao: 'consultar_estoque',
+        dados: { produto: this._extractProdutoFromStockText(original) },
+        confidence: 0.92,
+        source: 'heuristic'
+      };
+      await cacheService.set(cacheKey, out, CACHE_TTL_SECONDS);
+      return out;
+    }
 
     // Detecta "apenas_valor" primeiro (só número)
     // IMPORTANTE: não tratar tokens de opção (1/2/3/4) como valor isolado.
@@ -362,10 +534,25 @@ class IntentHeuristicService {
       /\brelatorio\s+em\s+pdf\b/i.test(normalized);
     if (exportRel.test(original) || mandaPdf) {
       const formato = /excel|planilha|xlsx|csv/i.test(original) ? 'excel' : 'pdf';
+      const monthYear = extractMonthYearFromText(original);
       const out = {
         intencao: 'exportar_dados',
-        dados: { formato },
+        dados: { formato, ...(monthYear || {}) },
         confidence: 0.93,
+        source: 'heuristic'
+      };
+      await cacheService.set(cacheKey, out, CACHE_TTL_SECONDS);
+      return out;
+    }
+
+    const isMonthlyReportWithMonth =
+      /\b(relat[oó]rio|relatorio|resumo|faturamento)\b/i.test(original) &&
+      extractMonthYearFromText(original);
+    if (isMonthlyReportWithMonth) {
+      const out = {
+        intencao: 'relatorio_mensal',
+        dados: extractMonthYearFromText(original),
+        confidence: 0.94,
         source: 'heuristic'
       };
       await cacheService.set(cacheKey, out, CACHE_TTL_SECONDS);
@@ -472,8 +659,27 @@ class IntentHeuristicService {
         return null;
       }
       confidence = 0.88;
+    } else if (detectedIntent === 'estoque_saida') {
+      const saleInfo = this.extractSaleInfo(original);
+      const q = this._extractStockQuantity(original);
+      const categoria = saleInfo.categoria || this._extractProdutoFromStockText(original);
+      dados = { categoria, produto: categoria, quantidade: q, data: dataHoje };
+      if (!categoria || !q || q <= 0) {
+        return null;
+      }
+      confidence = 0.88;
     } else if (detectedIntent === 'consultar_estoque') {
+      dados = { data: dataHoje, produto: this._extractProdutoFromStockText(original) };
+      confidence = 0.9;
+    } else if (detectedIntent === 'consultar_gap_caixa' || detectedIntent === 'briefing_diario') {
       dados = { data: dataHoje };
+      confidence = 0.9;
+    } else if (detectedIntent === 'consultar_validade') {
+      const daysMatch = original.match(/\b(\d{1,3})\s*(?:dias|dia|d)\b/i);
+      dados = {
+        data: dataHoje,
+        dias: daysMatch ? Math.min(Math.max(Number(daysMatch[1]) || 90, 1), 365) : 90
+      };
       confidence = 0.9;
     }
     // apenas_valor já foi tratado acima (detectado antes do loop)
@@ -497,6 +703,16 @@ class IntentHeuristicService {
   async clearCache() {
     // Não implementado - cache expira automaticamente
     // Se necessário, pode adicionar invalidação por padrão
+  }
+
+  _extractProdutoFromStockText(text) {
+    const raw = String(text || '').trim();
+    const cleaned = raw
+      .replace(/\b(?:meu|minha|estoque|inventario|inventário|resumo|saldo|produto|quanto|tenho|tem|de|do|da|baixar|baixa|dar|saida|saída|usei|consumi|tirar|no|na)\b/gi, ' ')
+      .replace(/\d+(?:[.,]\d+)?\s*(?:ml|un|unid|unidades|caixas?|frascos?)?\b/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return cleaned || null;
   }
 }
 

@@ -16,6 +16,7 @@ const supabase = require('../db/supabase');
 const { normalizePhone } = require('../utils/phone');
 const { formatarMoeda } = require('../utils/currency');
 const { extractPrimaryMonetaryValue } = require('../utils/moneyParser');
+const documentCopy = require('../copy/documentWhatsappCopy');
 
 // Handlers especializados
 const TransactionHandler = require('./messages/transactionHandler');
@@ -104,6 +105,7 @@ class MessageController {
       this.pendingDocumentTransactions.has(phone) ||
       this.pendingEdits.has(phone) ||
       this.awaitingData.has(phone) ||
+      await this.estoqueHandler.hasPendingInventorySetup(phone) ||
       this.memberHandler.isAddingMember(phone) ||
       this.memberHandler.isRemovingMember(phone) ||
       this.memberHandler.hasPendingTransfer(phone) ||
@@ -320,7 +322,15 @@ class MessageController {
   /**
    * Processa mensagem recebida
    */
-  async handleIncomingMessage(phone, message) {
+  async handleIncomingMessage(phone, message, options = {}) {
+    const timings = options.timings && typeof options.timings === 'object'
+      ? options.timings
+      : null;
+    const markTiming = (name, startedAt) => {
+      if (timings && startedAt) {
+        timings[name] = (timings[name] || 0) + (Date.now() - startedAt);
+      }
+    };
     try {
       const normalizedPhone = normalizePhone(phone) || phone;
       console.log(`[MESSAGE] recv phone=...${normalizedPhone.slice(-4)} len=${message?.length ?? 0}`);
@@ -329,13 +339,17 @@ class MessageController {
       // Isso tem prioridade sobre o estado de onboarding para evitar que membros
       // cadastrados fiquem presos em onboarding antigo
       const clinicMemberService = require('../services/clinicMemberService');
+      let stepStartedAt = Date.now();
       const existingMember = await clinicMemberService.findMemberByPhone(normalizedPhone);
+      markTiming('member_lookup_ms', stepStartedAt);
       console.log(`[MESSAGE] member_lookup phone=...${normalizedPhone.slice(-4)} found=${!!existingMember}`);
 
       // Verifica assinatura ativa antes de processar qualquer mensagem
       if (existingMember && existingMember.clinic_id) {
         const subscriptionService = require('../services/subscriptionService');
+        stepStartedAt = Date.now();
         const blocked = await subscriptionService.isBlocked(existingMember.clinic_id);
+        markTiming('subscription_check_ms', stepStartedAt);
         if (blocked) {
           const paymentService = require('../services/paymentService');
           const subscriptionCopy = require('../copy/subscriptionCopy');
@@ -349,8 +363,10 @@ class MessageController {
       // Se é membro de uma clínica, verifica se está em onboarding ATIVO
       // Só limpa estado de onboarding se estiver em steps FINAIS (já completou o fluxo principal)
       if (existingMember && existingMember.clinic_id) {
+        stepStartedAt = Date.now();
         const isOnboarding = await onboardingFlowService.ensureOnboardingState(normalizedPhone);
         const onboardingStep = onboardingFlowService.getOnboardingStep(normalizedPhone);
+        markTiming('onboarding_state_ms', stepStartedAt);
 
         // Steps finais onde o onboarding pode ser considerado "residual"
         // IMPORTANTE: MDR_SETUP_* faz parte do onboarding atual e deve ser processado pelo fluxo.
@@ -360,7 +376,9 @@ class MessageController {
         // Se está em onboarding ATIVO (não em step final), continua o onboarding
         if (isOnboarding && !isInFinalStep) {
           console.log(`[MESSAGE] Membro ...${normalizedPhone.slice(-4)} em onboarding ativo (step: ${onboardingStep}), continuando fluxo`);
+          stepStartedAt = Date.now();
           const result = await onboardingFlowService.processOnboarding(normalizedPhone, message);
+          markTiming('onboarding_process_ms', stepStartedAt);
           if (result === null) {
             // Onboarding foi finalizado, continua para processamento normal
           } else if (result) {
@@ -373,9 +391,13 @@ class MessageController {
         // Continua para processamento normal como membro da clínica
       } else {
         // Não é membro, verifica se está em processo de onboarding
+        stepStartedAt = Date.now();
         const isOnboarding = await onboardingFlowService.ensureOnboardingState(normalizedPhone);
+        markTiming('onboarding_state_ms', stepStartedAt);
         if (isOnboarding) {
+          stepStartedAt = Date.now();
           const result = await onboardingFlowService.processOnboarding(normalizedPhone, message);
+          markTiming('onboarding_process_ms', stepStartedAt);
 
           // Se o onboarding retornou null, significa que foi finalizado e a mensagem deve ser processada normalmente
           if (result === null) {
@@ -402,7 +424,9 @@ class MessageController {
         messageLower.includes('comecar com a lumiz');
 
       // Busca usuário pelo telefone
+      stepStartedAt = Date.now();
       let user = await userController.findUserByPhone(normalizedPhone);
+      markTiming('user_lookup_ms', stepStartedAt);
 
       // Se detectou mensagem de teste gratuito
       if (isTesteGratuitoMessage) {
@@ -418,15 +442,19 @@ class MessageController {
         // Busca adicional em clinic_members incluindo membros não confirmados
         // Isso garante que encontramos membros recém-cadastrados que ainda não confirmaram
         const clinicMemberService = require('../services/clinicMemberService');
+        stepStartedAt = Date.now();
         const member = await clinicMemberService.findMemberByPhone(normalizedPhone);
+        markTiming('member_lookup_fallback_ms', stepStartedAt);
 
         if (member && member.clinic_id) {
           // Encontrou membro! Busca o profile da clínica
+          stepStartedAt = Date.now();
           const { data: clinicProfile } = await supabase
             .from('profiles')
             .select('*')
             .eq('id', member.clinic_id)
             .single();
+          markTiming('clinic_profile_lookup_ms', stepStartedAt);
 
           if (clinicProfile) {
             // Adiciona informação do membro
@@ -459,10 +487,14 @@ class MessageController {
         return await this.handleSecondaryMemberConfirmation(user, normalizedPhone, message);
       }
 
+      stepStartedAt = Date.now();
       await this.rehydrateRuntimeStates(normalizedPhone);
+      markTiming('runtime_rehydrate_ms', stepStartedAt);
 
       if (user?.id) {
+        stepStartedAt = Date.now();
         const realModeReply = await this._tryResolveRealModeConfirmation(normalizedPhone, message, user);
+        markTiming('real_mode_check_ms', stepStartedAt);
         if (typeof realModeReply === 'string') {
           conversationHistoryService.saveConversation(
             user.id,
@@ -484,14 +516,22 @@ class MessageController {
         return await this.documentHandler.handleDocumentConfirmation(normalizedPhone, message, user);
       }
 
+      if (await this.estoqueHandler.hasPendingInventorySetup(normalizedPhone)) {
+        const result = await this.estoqueHandler.handlePendingInventorySetup(normalizedPhone, message, user);
+        if (result) return result;
+      }
+
       const normalizedMessage = (message || '').trim().toLowerCase();
       const looksLikeYesNoDocumentReply = [
         'sim', 's', 'confirmar', '1',
-        'não', 'nao', 'n', 'cancelar', '2'
-      ].includes(normalizedMessage);
+        'não', 'nao', 'n', 'cancelar', '2',
+        'corrigir', 'corrige', 'correcao', 'correção', 'editar'
+      ].includes(normalizedMessage) || normalizedMessage.startsWith('corrigir ');
 
       if (looksLikeYesNoDocumentReply) {
+        stepStartedAt = Date.now();
         const persistedPending = await this.documentHandler.getPersistedPendingConfirmation(normalizedPhone);
+        markTiming('document_pending_lookup_ms', stepStartedAt);
         if (persistedPending) {
           return await this.documentHandler.handleDocumentConfirmation(normalizedPhone, message, user);
         }
@@ -502,7 +542,7 @@ class MessageController {
       }
 
       if (this.isMediaProcessing(normalizedPhone)) {
-        return 'Recebi seu documento e ainda estou analisando. Já te respondo em instantes.';
+        return documentCopy.documentStillProcessing();
       }
 
       // Verifica se está no fluxo de adicionar membro
@@ -530,7 +570,9 @@ class MessageController {
       }
 
       if (user?.id) {
+        stepStartedAt = Date.now();
         const agenticConfirmReply = await this._tryResolveAgenticToolConfirmation(normalizedPhone, message, user);
+        markTiming('agentic_confirm_check_ms', stepStartedAt);
         if (typeof agenticConfirmReply === 'string') {
           conversationHistoryService.saveConversation(
             user.id,
@@ -544,11 +586,13 @@ class MessageController {
       }
 
       if (user && user.id) {
+        stepStartedAt = Date.now();
         const mdrResponse = await mdrChatFlowService.handleMessageIfNeeded({
           phone: normalizedPhone,
           user,
           message
         });
+        markTiming('mdr_flow_check_ms', stepStartedAt);
         if (mdrResponse) {
           return mdrResponse;
         }
@@ -577,14 +621,14 @@ class MessageController {
       if (saudacoes.includes(msgSimples)) {
         return this.helpHandler.handleGreeting();
       }
-      if (['ajuda', 'help', 'comandos'].includes(msgSimples)) {
+      if (['ajuda', 'help', 'comandos', '/ajuda'].includes(msgSimples)) {
         return this.helpHandler.handleHelp();
       }
       if (['dashboard', 'link', 'painel'].includes(msgSimples)) {
         return this.helpHandler.handleDashboard();
       }
       if (['pdf', 'arquivo', 'documento'].includes(msgSimples)) {
-        return 'Se você quer que eu leia um documento, anexe o PDF/foto aqui no WhatsApp.\n\nSe você quer baixar o relatório mensal da Lumiz, escreva: "gerar pdf" ou "relatório em pdf".';
+        return documentCopy.isolatedPdfPrompt();
       }
       if (user && (
         msgSimples === 'assinar' ||
@@ -622,7 +666,9 @@ class MessageController {
       if (user?.id) {
         const shortcutIntent = this.tryHelpCommandIntentFromShortcut(msgSimples, message.trim());
         if (shortcutIntent) {
+          stepStartedAt = Date.now();
           const shortcutReply = await this.routeIntent(shortcutIntent, user, normalizedPhone, message);
+          markTiming('route_ms', stepStartedAt);
           if (shortcutReply != null && user.id) {
             conversationHistoryService
               .saveConversation(user.id, message, shortcutReply, shortcutIntent.intencao, { dados: shortcutIntent.dados || {} })
@@ -633,7 +679,9 @@ class MessageController {
       }
 
       // Tenta heurística primeiro (economiza ~60% das chamadas Gemini)
+      stepStartedAt = Date.now();
       let intent = await intentHeuristicService.detectIntent(message, user?.id || null);
+      markTiming('heuristic_ms', stepStartedAt);
       let usedHeuristic = false;
 
       // Opção A: mensagens curtas (≤2 palavras) → confiar na heurística, não chamar Gemini
@@ -646,10 +694,12 @@ class MessageController {
         let recentHistory = [];
         let similarExamples = [];
         if (user && user.id) {
+          stepStartedAt = Date.now();
           const [historyResult, examplesResult] = await Promise.allSettled([
             conversationHistoryService.getRecentHistory(user.id, 5),
             conversationHistoryService.findSimilarExamples(message, user.id, 3)
           ]);
+          markTiming('rag_lookup_ms', stepStartedAt);
           if (historyResult.status === 'fulfilled') recentHistory = historyResult.value;
           else console.warn('[RAG] Falha ao buscar histórico:', historyResult.reason?.message);
           if (examplesResult.status === 'fulfilled') similarExamples = examplesResult.value;
@@ -658,6 +708,7 @@ class MessageController {
 
         // Opção B: timeout de 3s no Gemini — se demorar, cai no ambíguo
         const GEMINI_TIMEOUT_MS = 3000;
+        stepStartedAt = Date.now();
         const geminiIntent = await Promise.race([
           geminiService.processMessage(message, {
             recentMessages: recentHistory,
@@ -665,6 +716,7 @@ class MessageController {
           }),
           new Promise(resolve => setTimeout(() => resolve(null), GEMINI_TIMEOUT_MS))
         ]);
+        markTiming('gemini_intent_ms', stepStartedAt);
 
         // Se Gemini retornou, usa ele; senão, tenta usar heurística mesmo com baixa confiança
         if (geminiIntent && geminiIntent.intencao) {
@@ -844,6 +896,7 @@ class MessageController {
                 });
               }
             }
+            markTiming('agentic_ms', turnStartedAt);
           }
         }
       }
@@ -855,10 +908,14 @@ class MessageController {
           await realModeService.needsConfirmation(user, normalizedPhone) &&
           ['registrar_entrada', 'registrar_saida'].includes(intent?.intencao)
         ) {
+          stepStartedAt = Date.now();
           await realModeService.setPending(normalizedPhone, { intent, message });
+          markTiming('real_mode_pending_write_ms', stepStartedAt);
           response = realModeService.buildPrompt();
         } else {
+          stepStartedAt = Date.now();
           response = await this.routeIntent(intent, user, normalizedPhone, message);
+          markTiming('route_ms', stepStartedAt);
         }
       }
 
@@ -999,6 +1056,15 @@ class MessageController {
       case 'consultar_contas_pagar':
         return await this.queryHandler.handleContasPagar(user);
 
+      case 'consultar_gap_caixa':
+        return await this.queryHandler.handleCashflowGap(user);
+
+      case 'briefing_diario':
+        return await this.queryHandler.handleDailyBriefing(user);
+
+      case 'consultar_validade':
+        return await this.queryHandler.handleValidades(user, intent.dados);
+
       case 'consultar_parcelas':
         return await this.installmentHandler.handlePendingInstallments(user);
 
@@ -1021,11 +1087,17 @@ class MessageController {
       case 'insights':
         return await this.insightsHandler.handleInsights(user);
 
+      case 'configurar_estoque':
+        return await this.estoqueHandler.handleConfigurarEstoque(user, phone, message);
+
       case 'estoque_entrada':
         return await this.estoqueHandler.handleEntradaEstoque(user, intent, phone);
 
+      case 'estoque_saida':
+        return await this.estoqueHandler.handleSaidaEstoque(user, intent, phone);
+
       case 'consultar_estoque':
-        return await this.estoqueHandler.handleConsultarEstoque(user);
+        return await this.estoqueHandler.handleConsultarEstoque(user, intent);
 
       case 'adicionar_numero':
         return await this.memberHandler.handleAddMember(user, phone);
@@ -1424,7 +1496,7 @@ class MessageController {
         );
       }
 
-      return await this.documentHandler.handleImageMessageWithBuffer(phone, imageBuffer, mimeType, caption);
+      return await this.documentHandler.handleImageMessageWithBuffer(phone, imageBuffer, mimeType, caption, messageKey);
     } finally {
       this.stopMediaProcessing(normalizedPhone);
     }
@@ -1483,26 +1555,7 @@ class MessageController {
         );
       }
 
-      const documentService = require('../services/documentService');
-      const user = await userController.findUserByPhone(normalizedPhone);
-      if (!user) {
-        await onboardingFlowService.startNewOnboarding(normalizedPhone);
-        return null;
-      }
-
-      const result = await documentService.processDocumentFromBuffer(docBuffer, mimeType, fileName);
-      const response = documentService.formatDocumentSummary(result);
-
-      if (result.transacoes && result.transacoes.length > 0) {
-        this.pendingDocumentTransactions.set(normalizedPhone, {
-          user,
-          transacoes: result.transacoes,
-          timestamp: Date.now()
-        });
-        setTimeout(() => this.pendingDocumentTransactions.delete(normalizedPhone), 30 * 60 * 1000);
-      }
-
-      return response;
+      return await this.documentHandler.handleDocumentMessageWithBuffer(phone, docBuffer, mimeType, fileName, messageKey);
     } finally {
       this.stopMediaProcessing(normalizedPhone);
     }

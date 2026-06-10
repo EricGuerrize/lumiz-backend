@@ -50,6 +50,8 @@ describe('helpCommandContract', () => {
     it('mapeia frases literais da ajuda', () => {
       expect(getHelpShortcutIntent('saldo', 'saldo')).toMatchObject({ intencao: 'consultar_saldo' });
       expect(getHelpShortcutIntent('historico', 'histórico')).toMatchObject({ intencao: 'consultar_historico' });
+      expect(getHelpShortcutIntent('contas a pagar', 'contas a pagar')).toMatchObject({ intencao: 'consultar_contas_pagar' });
+      expect(getHelpShortcutIntent('calendario de vencimentos', 'calendário de vencimentos')).toMatchObject({ intencao: 'consultar_contas_pagar' });
       expect(getHelpShortcutIntent('relatorio', 'Relatório')).toMatchObject({ intencao: 'relatorio_mensal' });
       expect(getHelpShortcutIntent('stats hoje', 'stats hoje')).toMatchObject({ intencao: 'stats_hoje' });
       expect(getHelpShortcutIntent('meta', 'meta')).toMatchObject({ intencao: 'consultar_meta' });
@@ -92,6 +94,14 @@ describe('helpCommandContract', () => {
         intencao: 'exportar_dados',
         dados: { formato: 'pdf' }
       });
+    });
+
+    it('mapeia comandos slash configurados na Meta', () => {
+      expect(getHelpShortcutIntent('/saldo', '/saldo')).toMatchObject({ intencao: 'consultar_saldo' });
+      expect(getHelpShortcutIntent('/relatorio', '/relatorio')).toMatchObject({ intencao: 'relatorio_mensal' });
+      expect(getHelpShortcutIntent('/contas', '/contas')).toMatchObject({ intencao: 'consultar_contas_pagar' });
+      expect(getHelpShortcutIntent('/receber', '/receber')).toMatchObject({ intencao: 'consultar_parcelas' });
+      expect(getHelpShortcutIntent('/estoque', '/estoque')).toMatchObject({ intencao: 'consultar_estoque' });
     });
   });
 });

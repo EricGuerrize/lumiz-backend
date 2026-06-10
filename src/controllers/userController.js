@@ -12,13 +12,27 @@ class UserController {
     // onboardingData movido para onboardingFlowService
   }
 
+  _pickPreferredProfile(profiles = []) {
+    const activeProfiles = profiles.filter((profile) => profile && profile.is_active !== false);
+    const candidates = activeProfiles.length > 0 ? activeProfiles : profiles.filter(Boolean);
+
+    return candidates.sort((a, b) => {
+      const aHasEmail = Boolean(a.email);
+      const bHasEmail = Boolean(b.email);
+      if (aHasEmail !== bHasEmail) return aHasEmail ? -1 : 1;
+
+      const aCreated = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const bCreated = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return bCreated - aCreated;
+    })[0] || null;
+  }
 
   async findUserByPhone(phone) {
     try {
       const normalized = normalizePhone(phone) || phone;
 
       // Try cache first
-      const cacheKey = `phone:profile:${normalized}`;
+      const cacheKey = `phone:profile:v2:${normalized}`;
       const cached = await cacheService.get(cacheKey);
       if (cached) {
         return cached;
@@ -37,7 +51,7 @@ class UserController {
         query = query.eq('telefone', normalized);
       }
 
-      const { data: existingUser, error: fetchError } = await query.maybeSingle();
+      const { data: matchingUsers, error: fetchError } = await query;
 
       if (fetchError && fetchError.code !== 'PGRST116') {
         // PGRST116 = não encontrado, outros erros são problemas reais
@@ -45,7 +59,11 @@ class UserController {
       }
 
       // Se encontrou direto em profiles, retorna
+      const existingUser = this._pickPreferredProfile(matchingUsers || []);
       if (existingUser) {
+        if ((matchingUsers || []).length > 1) {
+          console.warn(`[USER] ${matchingUsers.length} profiles encontrados para telefone ...${normalized.slice(-4)}; usando profile ${existingUser.id}`);
+        }
         await cacheService.set(cacheKey, existingUser, 900);
         return existingUser;
       }

@@ -1,4 +1,5 @@
 const reminderService = require('../../services/reminderService');
+const contasReceberService = require('../../services/contasReceberService');
 const transactionController = require('../transactionController');
 const supabase = require('../../db/supabase');
 const { formatarMoeda } = require('../../utils/currency');
@@ -24,6 +25,24 @@ class InstallmentHandler {
       const totalReceber = installments.reduce((sum, i) => sum + i.valor_parcela, 0);
       response += `💵 Total pendente: *${formatarMoeda(totalReceber)}*\n`;
       response += `📋 ${installments.length} parcela${installments.length > 1 ? 's' : ''} restante${installments.length > 1 ? 's' : ''}\n\n`;
+
+      try {
+        const overview = await contasReceberService.getOverview(user.id, {});
+        if (overview.total_vencido > 0) {
+          response += `⚠️ Vencidas: *${formatarMoeda(overview.total_vencido)}*\n`;
+        }
+        response += `Próximos 30 dias: *${formatarMoeda(overview.total_a_receber_30_dias || 0)}*\n`;
+        if (overview.mix?.length) {
+          const mix = overview.mix
+            .slice(0, 3)
+            .map((m) => `${m.forma_pagamento}: ${formatarMoeda(m.valor)}`)
+            .join(' · ');
+          response += `Mix: ${mix}\n`;
+        }
+        response += `\n`;
+      } catch (overviewError) {
+        console.warn('[INSTALLMENTS] Falha ao carregar resumo de recebíveis:', overviewError.message);
+      }
 
       // Agrupa por mês
       const porMes = {};
@@ -115,5 +134,4 @@ class InstallmentHandler {
 }
 
 module.exports = InstallmentHandler;
-
 

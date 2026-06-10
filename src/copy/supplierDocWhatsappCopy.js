@@ -23,6 +23,15 @@ function formatDate(dateStr) {
   return String(dateStr);
 }
 
+function formatItemPreview(item) {
+  const descricao = item?.descricao || item?.nome || 'Item';
+  const quantidade = Number(item?.quantidade) || 1;
+  const unidade = item?.unidade ? ` ${item.unidade}` : '';
+  const valor = item?.valor_total || item?.valor_unitario;
+  const valorLabel = valor ? ` · ${formatarMoeda(valor)}` : '';
+  return `• ${descricao} — ${quantidade}${unidade}${valorLabel}`;
+}
+
 /**
  * Mensagem inicial pedindo confirmação após detectar NF/boleto.
  *
@@ -66,31 +75,34 @@ function confirmacaoSupplierDoc(parsed, options = {}) {
 
   if (Array.isArray(parsed?.itens) && parsed.itens.length > 0) {
     linhas.push('');
-    linhas.push(`📦 ${parsed.itens.length} item(ns) detectado(s) na nota — vou tentar atualizar o estoque após confirmar.`);
+    linhas.push(`📦 Itens detectados (${parsed.itens.length}):`);
+    linhas.push(parsed.itens.slice(0, 3).map(formatItemPreview).join('\n'));
+    if (parsed.itens.length > 3) {
+      linhas.push(`• …e mais ${parsed.itens.length - 3} item(ns)`);
+    }
+    linhas.push('A confirmação registra apenas o financeiro. O estoque será atualizado em uma etapa separada.');
   }
 
   linhas.push('');
-  linhas.push('Posso lançar como conta a pagar? (responde *sim* ou *não*)');
+  linhas.push('Posso lançar como conta a pagar?');
+  linhas.push('Responda: 1 Confirmar · 2 Cancelar · 3 Corrigir');
 
   return linhas.join('\n');
 }
 
 /**
- * Mensagem de sucesso após salvar contas + estoque.
+ * Mensagem de sucesso após salvar contas a pagar.
  */
-function supplierDocConfirmado({ contasCount, valorTotal, estoqueAplicados, estoquePendentes, fornecedorNome }) {
+function supplierDocConfirmado({ contasCount, valorTotal, itensDetectados, fornecedorNome }) {
   const linhas = [];
   linhas.push(`✅ *${contasCount > 1 ? `${contasCount} parcelas registradas` : 'Conta a pagar registrada'}!*`);
   linhas.push('');
   linhas.push(`🏢 ${fornecedorNome || 'Fornecedor'}`);
   linhas.push(`💰 ${formatarMoeda(valorTotal)}`);
 
-  if (estoqueAplicados > 0) {
+  if (itensDetectados > 0) {
     linhas.push('');
-    linhas.push(`📦 ${estoqueAplicados} item(ns) entraram no estoque automaticamente.`);
-  }
-  if (estoquePendentes > 0) {
-    linhas.push(`⚠️ ${estoquePendentes} item(ns) ficaram pendentes de match — confirme no painel.`);
+    linhas.push(`📦 ${itensDetectados} item(ns) detectado(s), mas o estoque não foi alterado automaticamente.`);
   }
   linhas.push('');
   linhas.push('Me diz "contas a pagar" pra ver o calendário de vencimentos.');
@@ -98,7 +110,7 @@ function supplierDocConfirmado({ contasCount, valorTotal, estoqueAplicados, esto
 }
 
 function supplierDocCancelado() {
-  return '❌ *Documento descartado.*\n\nSe quiser registrar manualmente, é só me mandar "Custo R$ X fornecedor Y".';
+  return '❌ *Documento descartado.* Nada foi registrado.\n\nSe quiser registrar manualmente, é só me mandar "Custo R$ X fornecedor Y".';
 }
 
 module.exports = {

@@ -309,6 +309,75 @@ class EstoqueService {
     };
   }
 
+  async registrarSaida(userId, payload) {
+    const procedimentoId = payload.procedimentoId || payload.procedimento_id;
+    const q = Number(payload.quantidade);
+    const observacoes = payload.observacoes ?? payload.observacao ?? null;
+
+    if (!procedimentoId || !Number.isFinite(q) || q <= 0) {
+      throw new Error('procedimento_id e quantidade válidos são obrigatórios');
+    }
+
+    const { data: proc, error: pe } = await supabase
+      .from('procedimentos')
+      .select('id, nome, estoque_ml, unidade, user_id')
+      .eq('id', procedimentoId)
+      .eq('user_id', userId)
+      .single();
+
+    if (pe || !proc) throw new Error('Procedimento não encontrado');
+
+    const estoqueAtual = parseFloat(proc.estoque_ml) || 0;
+    if (estoqueAtual < q) {
+      throw new Error(`Estoque insuficiente: saldo atual ${estoqueAtual} ${proc.unidade || 'ml'}`);
+    }
+
+    const dataMov = payload.data ? new Date(payload.data).toISOString() : new Date().toISOString();
+
+    const { error: me } = await supabase.from('movimentacoes_estoque').insert({
+      user_id: userId,
+      procedimento_id: procedimentoId,
+      tipo: 'saida',
+      quantidade: q,
+      atendimento_id: payload.atendimento_id || null,
+      data: dataMov,
+      observacoes,
+    });
+
+    if (me) throw me;
+
+    const novoEstoque = estoqueAtual - q;
+    const { data: updated, error: ue } = await supabase
+      .from('procedimentos')
+      .update({ estoque_ml: novoEstoque })
+      .eq('id', procedimentoId)
+      .eq('user_id', userId)
+      .select('estoque_ml, nome, unidade')
+      .single();
+
+    if (ue) throw ue;
+
+    return {
+      procedimentoId,
+      nome: updated.nome,
+      quantidade: q,
+      estoqueAtual: parseFloat(updated.estoque_ml),
+      unidade: updated.unidade || 'ml',
+    };
+  }
+
+  async getProdutoStatus(userId, nomeBusca) {
+    const proc = await this.findProcedimentoByNome(userId, nomeBusca);
+    if (!proc) return null;
+    const status = await this.getEstoqueStatus(userId);
+    return status.produtos.find((p) => p.id === proc.id) || {
+      id: proc.id,
+      nome: proc.nome,
+      estoqueAtual: parseFloat(proc.estoque_ml) || 0,
+      unidade: proc.unidade || 'ml'
+    };
+  }
+
   /**
    * Histórico de compras (entradas de estoque) agregado por fornecedor (PDF §4d).
    * @param {string} userId

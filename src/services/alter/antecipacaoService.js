@@ -116,9 +116,9 @@ class AntecipacaoService {
 
     const { data: contasPagar, error: cpError } = await supabase
       .from('contas_pagar')
-      .select('valor, data_vencimento, status')
+      .select('valor, data_vencimento, status_pagamento')
       .eq('user_id', userId)
-      .eq('status', 'pendente')
+      .eq('status_pagamento', 'pendente')
       .gte('data_vencimento', todayStr)
       .lte('data_vencimento', limiteStr);
     if (cpError) throw cpError;

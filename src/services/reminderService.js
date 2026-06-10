@@ -53,7 +53,7 @@ class ReminderService {
           atendimentos!inner (
             user_id, parcelas,
             clientes (nome),
-            profiles (telefone)
+            profiles (telefone, alertas_whatsapp_ativos)
           )
         `)
         .eq('paga', false)
@@ -63,7 +63,9 @@ class ReminderService {
 
       for (const p of parcelas || []) {
         const telefone = p.atendimentos?.profiles?.telefone;
+        const alertasAtivos = p.atendimentos?.profiles?.alertas_whatsapp_ativos === true;
         if (!telefone) continue;
+        if (!alertasAtivos) continue;
 
         const sent = await alreadySent(p.id, janela.tipo);
         if (sent) continue;
@@ -100,7 +102,7 @@ class ReminderService {
 
       const { data: contas, error } = await supabase
         .from('contas_pagar')
-        .select(`*, profiles (telefone)`)
+        .select(`*, profiles (telefone, alertas_whatsapp_ativos)`)
         .eq('status_pagamento', 'pendente')
         .eq('data_vencimento', targetDate);
 
@@ -108,7 +110,9 @@ class ReminderService {
 
       for (const conta of contas || []) {
         const telefone = conta.profiles?.telefone;
+        const alertasAtivos = conta.profiles?.alertas_whatsapp_ativos === true;
         if (!telefone) continue;
+        if (!alertasAtivos) continue;
 
         const sent = await alreadySent(conta.id, janela.tipo);
         if (sent) continue;

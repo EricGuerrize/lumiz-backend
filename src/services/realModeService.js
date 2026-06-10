@@ -1,7 +1,8 @@
 /**
- * Fase WhatsApp produção — controla a confirmação explícita de modo real.
- * Responsabilidade: impedir que o primeiro lançamento pós-onboarding seja salvo
- * sem o usuário aceitar que as próximas mensagens podem virar dados financeiros reais.
+ * Fase WhatsApp produção — compatibilidade com a antiga confirmação de modo real.
+ * Responsabilidade atual: manter suporte a estados pendentes antigos. O onboarding
+ * já explica a transição entre dados de teste e lançamentos reais, então o
+ * pós-onboarding não deve pedir um opt-in extra antes do primeiro lançamento.
  */
 const supabase = require('../db/supabase');
 const cacheService = require('./cacheService');
@@ -21,6 +22,13 @@ class RealModeService {
    */
   async needsConfirmation(user, phone = null) {
     if (!user?.id) return false;
+
+    // O opt-in de lançamentos reais faz parte do onboarding. Depois que o usuário
+    // chega ao MessageController, a única confirmação necessária é a da transação.
+    if (process.env.REQUIRE_WHATSAPP_REAL_MODE_CONFIRMATION !== 'true') {
+      return false;
+    }
+
     if (!Object.prototype.hasOwnProperty.call(user, 'whatsapp_real_mode_confirmed_at')) {
       if (process.env.NODE_ENV === 'test') return false;
       const confirmed = await conversationRuntimeStateService.get(phone, CONFIRMED_FLOW);

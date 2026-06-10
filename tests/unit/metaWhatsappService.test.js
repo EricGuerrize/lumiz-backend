@@ -95,4 +95,82 @@ describe('metaWhatsappService', () => {
     });
     expect(result.messages[0].id).toBe('wamid.video');
   });
+
+  it('envia documento por buffer com upload de mídia e envio pelo media id', async () => {
+    const service = new MetaWhatsappService({
+      accessToken: 'token-meta',
+      graphApiVersion: 'v23.0',
+      phoneNumberId: 'phone-123'
+    });
+
+    axios.post
+      .mockResolvedValueOnce({ data: { id: 'media-123' } })
+      .mockResolvedValueOnce({ data: { messages: [{ id: 'wamid.doc' }] } });
+
+    const result = await service.sendDocumentBuffer(
+      '556592997732',
+      Buffer.from('%PDF fake'),
+      'Relatorio_maio_2026.pdf',
+      'application/pdf'
+    );
+
+    expect(axios.post).toHaveBeenNthCalledWith(
+      1,
+      '/phone-123/media',
+      expect.any(FormData),
+      expect.objectContaining({ headers: expect.any(Object) })
+    );
+    expect(axios.post).toHaveBeenNthCalledWith(2, '/phone-123/messages', {
+      messaging_product: 'whatsapp',
+      to: '556592997732',
+      type: 'document',
+      document: {
+        id: 'media-123',
+        filename: 'Relatorio_maio_2026.pdf'
+      }
+    });
+    expect(result.messages[0].id).toBe('wamid.doc');
+  });
+
+  it('envia botões interativos usando payload da Cloud API', async () => {
+    const service = new MetaWhatsappService({
+      accessToken: 'token-meta',
+      graphApiVersion: 'v23.0',
+      phoneNumberId: 'phone-123'
+    });
+
+    axios.post.mockResolvedValueOnce({
+      data: { messages: [{ id: 'wamid.buttons' }] }
+    });
+
+    const result = await service.sendInteractiveButtons(
+      '556592997732',
+      'Confira o comprovante antes de registrar.',
+      [
+        { id: 'doc_confirm', title: 'Confirmar' },
+        { id: 'doc_correct', title: 'Corrigir' },
+        { id: 'doc_cancel', title: 'Cancelar' }
+      ]
+    );
+
+    expect(axios.post).toHaveBeenCalledWith('/phone-123/messages', {
+      messaging_product: 'whatsapp',
+      to: '556592997732',
+      type: 'interactive',
+      interactive: {
+        type: 'button',
+        body: {
+          text: 'Confira o comprovante antes de registrar.'
+        },
+        action: {
+          buttons: [
+            { type: 'reply', reply: { id: 'doc_confirm', title: 'Confirmar' } },
+            { type: 'reply', reply: { id: 'doc_correct', title: 'Corrigir' } },
+            { type: 'reply', reply: { id: 'doc_cancel', title: 'Cancelar' } }
+          ]
+        }
+      }
+    });
+    expect(result.messages[0].id).toBe('wamid.buttons');
+  });
 });

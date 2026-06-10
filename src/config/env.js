@@ -51,6 +51,8 @@ class EnvValidator {
     this.validateOptional('WA_ACCESS_TOKEN', 'Token permanente da Meta Cloud API para envio/download de mídia');
     this.validateOptional('WABA_ID', 'WhatsApp Business Account ID');
     this.validateOptional('WA_GRAPH_API_VERSION', 'Versão do Graph API para Cloud API (ex: v23.0)');
+    this.validateOptional('META_APP_SECRET', 'App Secret da Meta para validar X-Hub-Signature-256 em webhooks');
+    this.validateOptional('EVOLUTION_WEBHOOK_SECRET', 'Segredo compartilhado para validar POSTs da Evolution no webhook');
 
     // Validações específicas
     this.validateUrl('SUPABASE_URL');
@@ -160,6 +162,12 @@ class EnvValidator {
     if (process.env.ASAAS_WEBHOOK_SECRET) {
       this.validateNotPlaceholder('ASAAS_WEBHOOK_SECRET', 'Secret do webhook Asaas');
     }
+    if (process.env.META_APP_SECRET) {
+      this.validateNotPlaceholder('META_APP_SECRET', 'App Secret da Meta');
+    }
+    if (process.env.EVOLUTION_WEBHOOK_SECRET) {
+      this.validateNotPlaceholder('EVOLUTION_WEBHOOK_SECRET', 'Secret do webhook Evolution');
+    }
   }
 
   /**
@@ -231,7 +239,9 @@ class EnvValidator {
         phoneNumberId: process.env.WA_PHONE_NUMBER_ID || null,
         accessToken: process.env.WA_ACCESS_TOKEN || null,
         wabaId: process.env.WABA_ID || null,
-        graphApiVersion: process.env.WA_GRAPH_API_VERSION || 'v23.0'
+        graphApiVersion: process.env.WA_GRAPH_API_VERSION || 'v23.0',
+        appSecret: process.env.META_APP_SECRET || null,
+        evolutionWebhookSecret: process.env.EVOLUTION_WEBHOOK_SECRET || null
       },
       nodeEnv: process.env.NODE_ENV || 'development',
       port: parseInt(process.env.PORT || '3000', 10)

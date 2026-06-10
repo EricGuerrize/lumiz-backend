@@ -12,6 +12,21 @@ class ClinicMemberService {
     // chave: telefone do dono atual, valor: dados da transferência
     this.pendingTransfers = new Map();
   }
+
+  _pickPreferredProfile(profiles = []) {
+    const activeProfiles = profiles.filter((profile) => profile && profile.is_active !== false);
+    const candidates = activeProfiles.length > 0 ? activeProfiles : profiles.filter(Boolean);
+
+    return candidates.sort((a, b) => {
+      const aHasEmail = Boolean(a.email);
+      const bHasEmail = Boolean(b.email);
+      if (aHasEmail !== bHasEmail) return aHasEmail ? -1 : 1;
+
+      const aCreated = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const bCreated = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return bCreated - aCreated;
+    })[0] || null;
+  }
   /**
    * Busca um membro pelo telefone
    * @param {string} phone - Número de telefone
@@ -85,11 +100,14 @@ class ClinicMemberService {
       profileQuery = profileQuery.eq('telefone', normalizedPhone);
     }
     
-    const { data: profile, error } = await profileQuery.maybeSingle();
+    const { data: profiles, error } = await profileQuery;
     
-    if (error || !profile) {
+    if (error) {
       return null;
     }
+
+    const profile = this._pickPreferredProfile(profiles || []);
+    if (!profile) return null;
     
     // Retorna como se fosse o membro primário
     return {

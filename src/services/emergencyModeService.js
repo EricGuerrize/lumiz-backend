@@ -11,12 +11,10 @@ class EmergencyModeService {
 
     let saldoMinimo = projection.saldoAtual;
     let dataRisco = null;
-    let runningBalance = projection.saldoAtual;
-
     for (const day of projection.days) {
-      runningBalance += (day.entradas || 0) - (day.saidas || 0);
-      if (runningBalance < saldoMinimo) {
-        saldoMinimo = runningBalance;
+      const saldoDia = Number(day.saldoAcumulado ?? projection.saldoAtual);
+      if (saldoDia < saldoMinimo) {
+        saldoMinimo = saldoDia;
         dataRisco = day.data;
       }
     }

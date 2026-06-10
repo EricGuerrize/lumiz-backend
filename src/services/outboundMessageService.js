@@ -115,7 +115,7 @@ class OutboundMessageService {
    */
   async sendText(phone, message, metadata = {}) {
     try {
-      const result = await this._sendTextViaPreferredProvider(phone, message);
+      const result = await this._sendTextViaPreferredProvider(phone, message, metadata);
       return { status: 'sent', result, provider: result?.provider || null };
     } catch (error) {
       const queued = await this.enqueueText(phone, message, metadata, error);
@@ -135,6 +135,71 @@ class OutboundMessageService {
 
       throw error;
     }
+  }
+
+  /**
+   * Envia documento para WhatsApp pelo provedor preferencial.
+   * @param {string} phone
+   * @param {Buffer} buffer
+   * @param {string} fileName
+   * @param {string} mimeType
+   * @param {Object} metadata
+   * @returns {Promise<{status: 'sent'|'failed', provider?: string, error?: string}>}
+   */
+  async sendDocument(phone, buffer, fileName, mimeType = 'application/pdf', metadata = {}) {
+    try {
+      const result = await this._sendDocumentViaPreferredProvider(phone, buffer, fileName, mimeType, metadata);
+      return { status: 'sent', result, provider: result?.provider || null };
+    } catch (error) {
+      this.reliability.recordFailure({
+        kind: 'outbound_send_failed',
+        phase: 'send',
+        phone,
+        messageId: metadata.messageId,
+        messageType: metadata.messageType || 'document',
+        reason: error?.message || 'document_send_failed',
+        queued: false
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Envia botões interativos quando possível, com fallback para texto simples.
+   * @param {string} phone
+   * @param {string} body
+   * @param {Array<{id: string, title: string}>} buttons
+   * @param {string} fallbackText
+   * @param {Object} metadata
+   * @returns {Promise<{status: 'sent'|'queued'|'failed', provider?: string, error?: string}>}
+   */
+  async sendInteractiveButtons(phone, body, buttons = [], fallbackText = body, metadata = {}) {
+    const metaAvailable = typeof this.meta?.isOutboundConfigured === 'function'
+      ? this.meta.isOutboundConfigured()
+      : false;
+
+    if (metaAvailable && typeof this.meta?.sendInteractiveButtons === 'function') {
+      try {
+        const result = await this.meta.sendInteractiveButtons(phone, body, buttons);
+        return { status: 'sent', result, provider: 'meta' };
+      } catch (metaError) {
+        console.error(`[WA_OUTBOUND] Meta botões falhou, usando fallback texto: ${metaError.message}`);
+        this.reliability.recordFailure({
+          kind: 'outbound_interactive_failed',
+          phase: 'send',
+          phone,
+          messageId: metadata.messageId,
+          messageType: metadata.messageType || 'interactive',
+          reason: metaError?.message || 'interactive_send_failed',
+          queued: false
+        });
+      }
+    }
+
+    return this.sendText(phone, fallbackText || body, {
+      ...metadata,
+      messageType: metadata.messageType || 'interactive_fallback'
+    });
   }
 
   /**
@@ -182,11 +247,11 @@ class OutboundMessageService {
     if (job.name !== 'send_text') return { ignored: true };
 
     const { phone, message } = job.data;
-    await this._sendTextViaPreferredProvider(phone, message);
+    await this._sendTextViaPreferredProvider(phone, message, job.data || {});
     return { sent: true };
   }
 
-  async _sendTextViaPreferredProvider(phone, message) {
+  async _sendTextViaPreferredProvider(phone, message, metadata = {}) {
     const metaAvailable = typeof this.meta?.isOutboundConfigured === 'function'
       ? this.meta.isOutboundConfigured()
       : false;
@@ -197,10 +262,47 @@ class OutboundMessageService {
         return { provider: 'meta', response: result };
       } catch (metaError) {
         console.error(`[WA_OUTBOUND] Meta falhou, tentando Evolution fallback: ${metaError.message}`);
+        this.reliability.recordFailure({
+          kind: 'outbound_provider_failed',
+          phase: 'send',
+          phone,
+          messageId: metadata.messageId,
+          messageType: metadata.messageType || 'text',
+          reason: `meta_text_failed: ${metaError?.message || 'unknown'}`,
+          queued: false
+        });
       }
     }
 
     const result = await this.evolution.sendMessage(phone, message);
+    return { provider: 'evolution', response: result };
+  }
+
+  async _sendDocumentViaPreferredProvider(phone, buffer, fileName, mimeType, metadata = {}) {
+    const metaAvailable = typeof this.meta?.isOutboundConfigured === 'function'
+      ? this.meta.isOutboundConfigured()
+      : false;
+
+    if (metaAvailable && typeof this.meta?.sendDocumentBuffer === 'function') {
+      try {
+        const result = await this.meta.sendDocumentBuffer(phone, buffer, fileName, mimeType);
+        return { provider: 'meta', response: result };
+      } catch (metaError) {
+        console.error(`[WA_OUTBOUND] Meta documento falhou, tentando Evolution fallback: ${metaError.message}`);
+        this.reliability.recordFailure({
+          kind: 'outbound_provider_failed',
+          phase: 'send',
+          phone,
+          messageId: metadata.messageId,
+          messageType: metadata.messageType || 'document',
+          reason: `meta_document_failed: ${metaError?.message || 'unknown'}`,
+          queued: false
+        });
+      }
+    }
+
+    const base64 = Buffer.isBuffer(buffer) ? buffer.toString('base64') : String(buffer || '');
+    const result = await this.evolution.sendDocument(phone, base64, fileName, mimeType);
     return { provider: 'evolution', response: result };
   }
 

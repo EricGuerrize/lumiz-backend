@@ -1,3 +1,5 @@
+const documentCopy = require('../../copy/documentWhatsappCopy');
+
 /**
  * Handler para ajuda e comandos
  *
@@ -20,8 +22,19 @@ class HelpHandler {
       `📊 Consultas:\n` +
       `"saldo" - Ver saldo atual\n` +
       `"histórico" - Últimas movimentações\n` +
+      `"contas a pagar" - Calendário de vencimentos\n` +
+      `"parcelas a receber" - Recebíveis pendentes\n` +
+      `"gap de caixa" - Projeção de caixa dos próximos 30 dias\n` +
+      `"briefing" - Prioridades financeiras do dia\n` +
       `"relatório" - Relatório mensal\n` +
       `"stats hoje" - Estatísticas do dia\n\n` +
+      `📦 Estoque e validade:\n` +
+      `"configurar estoque" - Cadastrar inventário inicial\n` +
+      `"estoque" - Resumo do estoque\n` +
+      `"saldo botox" - Saldo de um item específico\n` +
+      `"entrada estoque botox 3 frascos" - Dar entrada manual\n` +
+      `"baixar estoque botox 10 unidades" - Dar baixa manual\n` +
+      `"validades" - Itens próximos do vencimento\n\n` +
       `🔍 Buscar:\n` +
       `"buscar botox" - Busca transações\n` +
       `"buscar 2800" - Busca por valor\n\n` +
@@ -56,7 +69,7 @@ class HelpHandler {
    * Mensagem para envio de documento
    */
   handleDocumentPrompt() {
-    return `Claro! Manda a foto do documento que eu analiso pra você 📸\n\nPode ser:\n• Boleto\n• Nota fiscal\n• Extrato bancário\n• Comprovante de pagamento\n\nEu vou ler e te mostrar as informações certinho!\n\nSe preferir, pode colar o código de barras do boleto também (aquele número grande) que eu reconheço 😉\n\n_Para baixar o relatório mensal em PDF (gerado pela Lumiz), diga por exemplo: "relatório em pdf" ou "me manda o pdf"._`;
+    return documentCopy.documentPrompt();
   }
 
   /**
@@ -117,4 +130,3 @@ class HelpHandler {
 }
 
 module.exports = HelpHandler;
-

@@ -83,6 +83,65 @@ class MetaWhatsappService {
   }
 
   /**
+   * Envia mensagem interativa com botões de resposta rápida pela Cloud API.
+   * @param {string} phone
+   * @param {string} body
+   * @param {Array<{id: string, title: string}>} buttons
+   * @returns {Promise<Object>}
+   */
+  async sendInteractiveButtons(phone, body, buttons = []) {
+    if (!phone) {
+      throw new Error('Telefone ausente para envio interativo via Meta');
+    }
+
+    if (!body || !String(body).trim()) {
+      throw new Error('Corpo vazio para envio interativo via Meta');
+    }
+
+    if (!this.isOutboundConfigured()) {
+      throw new Error('WA_ACCESS_TOKEN ou WA_PHONE_NUMBER_ID não configurados para envio interativo via Meta');
+    }
+
+    const safeButtons = Array.isArray(buttons) ? buttons.slice(0, 3) : [];
+    if (safeButtons.length === 0) {
+      throw new Error('Botões ausentes para envio interativo via Meta');
+    }
+
+    const payload = {
+      messaging_product: 'whatsapp',
+      to: phone,
+      type: 'interactive',
+      interactive: {
+        type: 'button',
+        body: {
+          text: String(body)
+        },
+        action: {
+          buttons: safeButtons.map((button) => ({
+            type: 'reply',
+            reply: {
+              id: String(button.id || '').slice(0, 256),
+              title: String(button.title || '').slice(0, 20)
+            }
+          }))
+        }
+      }
+    };
+
+    const response = await retryWithBackoff(
+      () => withTimeout(
+        this.client.post(`/${this.phoneNumberId}/messages`, payload),
+        META_TIMEOUT_MS,
+        'Timeout ao enviar botões via Meta'
+      ),
+      2,
+      1000
+    );
+
+    return response.data;
+  }
+
+  /**
    * Envia vídeo por link público pela Cloud API oficial da Meta.
    * @param {string} phone
    * @param {string} videoUrl
@@ -120,6 +179,114 @@ class MetaWhatsappService {
         this.client.post(`/${this.phoneNumberId}/messages`, payload),
         META_TIMEOUT_MS,
         'Timeout ao enviar vídeo via Meta'
+      ),
+      2,
+      1000
+    );
+
+    return response.data;
+  }
+
+  /**
+   * Envia documento por buffer pela Cloud API oficial da Meta.
+   * A Cloud API exige upload prévio da mídia e depois envio pelo media id.
+   * @param {string} phone
+   * @param {Buffer} buffer
+   * @param {string} fileName
+   * @param {string} mimeType
+   * @returns {Promise<Object>}
+   */
+  async sendDocumentBuffer(phone, buffer, fileName = 'documento.pdf', mimeType = 'application/pdf') {
+    if (!phone) {
+      throw new Error('Telefone ausente para envio de documento via Meta');
+    }
+
+    if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
+      throw new Error('Buffer ausente para envio de documento via Meta');
+    }
+
+    if (!this.isOutboundConfigured()) {
+      throw new Error('WA_ACCESS_TOKEN ou WA_PHONE_NUMBER_ID não configurados para envio de documento via Meta');
+    }
+
+    const mediaId = await this.uploadMedia(buffer, fileName, mimeType);
+    return this.sendDocumentByMediaId(phone, mediaId, fileName);
+  }
+
+  /**
+   * Faz upload de mídia para a Cloud API e retorna o media id.
+   * @param {Buffer} buffer
+   * @param {string} fileName
+   * @param {string} mimeType
+   * @returns {Promise<string>}
+   */
+  async uploadMedia(buffer, fileName = 'documento.pdf', mimeType = 'application/pdf') {
+    if (!this.isOutboundConfigured()) {
+      throw new Error('WA_ACCESS_TOKEN ou WA_PHONE_NUMBER_ID não configurados para upload de mídia via Meta');
+    }
+
+    const form = new FormData();
+    form.append('messaging_product', 'whatsapp');
+    form.append('type', mimeType);
+    form.append('file', new Blob([buffer], { type: mimeType }), fileName);
+
+    const response = await retryWithBackoff(
+      () => withTimeout(
+        this.client.post(`/${this.phoneNumberId}/media`, form, {
+          headers: {
+            ...form.getHeaders?.()
+          }
+        }),
+        META_TIMEOUT_MS,
+        'Timeout ao subir mídia via Meta'
+      ),
+      2,
+      1000
+    );
+
+    const mediaId = response.data?.id;
+    if (!mediaId) {
+      throw new Error('Meta não retornou media id no upload');
+    }
+
+    return mediaId;
+  }
+
+  /**
+   * Envia documento já carregado na Meta pelo media id.
+   * @param {string} phone
+   * @param {string} mediaId
+   * @param {string} fileName
+   * @returns {Promise<Object>}
+   */
+  async sendDocumentByMediaId(phone, mediaId, fileName = 'documento.pdf') {
+    if (!phone) {
+      throw new Error('Telefone ausente para envio de documento via Meta');
+    }
+
+    if (!mediaId) {
+      throw new Error('Media id ausente para envio de documento via Meta');
+    }
+
+    if (!this.isOutboundConfigured()) {
+      throw new Error('WA_ACCESS_TOKEN ou WA_PHONE_NUMBER_ID não configurados para envio de documento via Meta');
+    }
+
+    const payload = {
+      messaging_product: 'whatsapp',
+      to: phone,
+      type: 'document',
+      document: {
+        id: mediaId,
+        filename: fileName
+      }
+    };
+
+    const response = await retryWithBackoff(
+      () => withTimeout(
+        this.client.post(`/${this.phoneNumberId}/messages`, payload),
+        META_TIMEOUT_MS,
+        'Timeout ao enviar documento via Meta'
       ),
       2,
       1000

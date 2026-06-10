@@ -2,18 +2,91 @@ const express = require('express');
 const router = express.Router();
 const supabase = require('../db/supabase');
 const betaFeedbackService = require('../services/betaFeedbackService');
-const { authenticateFlexible } = require('../middleware/authMiddleware');
+const { authenticateToken } = require('../middleware/authMiddleware');
 const evolutionService = require('../services/evolutionService');
 const whatsappLatencyService = require('../services/whatsappLatencyService');
 const messageReliabilityService = require('../services/messageReliabilityService');
 
-// Verifica se o usuário autenticado é admin via RPC SECURITY DEFINER (bypassa RLS)
+const ONBOARDING_FUNNEL_EVENTS = [
+  { key: 'onboarding_started', label: 'Iniciou' },
+  { key: 'onboarding_consent_given', label: 'Consentiu' },
+  { key: 'onboarding_profile_completed', label: 'Perfil' },
+  { key: 'onboarding_first_sale', label: 'Venda teste' },
+  { key: 'onboarding_cost_recorded', label: 'Custo teste' },
+  { key: 'onboarding_summary_shown', label: 'Raio-x' },
+  { key: 'onboarding_completed', label: 'Concluiu' },
+];
+
+function clampInt(value, fallback, min, max) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(Math.max(Math.trunc(n), min), max);
+}
+
+function maskPhone(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (!digits) return null;
+  return `...${digits.slice(-4)}`;
+}
+
+function safeText(value, max = 900) {
+  if (value == null) return null;
+  const text = String(value);
+  return text.length > max ? `${text.slice(0, max)}...` : text;
+}
+
+function minutesSince(dateLike) {
+  if (!dateLike) return null;
+  const ms = Date.now() - new Date(dateLike).getTime();
+  if (!Number.isFinite(ms)) return null;
+  return Math.max(0, Math.round(ms / 60000));
+}
+
+function summarizePayload(payload) {
+  if (!payload || typeof payload !== 'object') return {};
+  const keys = Object.keys(payload).slice(0, 8);
+  return {
+    keys,
+    kind: payload.kind || payload.type || payload.messageType || payload.pendingType || null,
+    intent: payload.intent || payload.pendingIntent || null,
+    hasTransactions: Array.isArray(payload.transactions) ? payload.transactions.length : undefined,
+    supplierDocumentId: payload.supplier_document_id || payload.supplierDocumentId || null,
+  };
+}
+
+function countBy(rows, field) {
+  return (rows || []).reduce((acc, row) => {
+    const key = row?.[field] || 'unknown';
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+}
+
+async function safeQuery(label, run, warnings) {
+  try {
+    const { data, error, count } = await run();
+    if (error) {
+      warnings.push({ source: label, message: error.message, code: error.code || null });
+      return { data: [], count: count || 0 };
+    }
+    return { data: data || [], count: count || 0 };
+  } catch (err) {
+    warnings.push({ source: label, message: err.message || String(err), code: null });
+    return { data: [], count: 0 };
+  }
+}
+
+// Verifica se o usuário autenticado é admin via service-role.
+// Evita depender de EXECUTE em RPCs expostas ao cliente.
 async function requireAdmin(req, res, next) {
   try {
-    const { data: isAdmin, error } = await supabase
-      .rpc('is_user_admin', { p_user_id: req.user.id });
+    const { data: role, error } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', req.user.id)
+      .maybeSingle();
 
-    if (error || !isAdmin) {
+    if (error || role?.role !== 'admin') {
       return res.status(403).json({ error: 'Acesso restrito' });
     }
     next();
@@ -22,7 +95,7 @@ async function requireAdmin(req, res, next) {
   }
 }
 
-router.use(authenticateFlexible);
+router.use(authenticateToken);
 router.use(requireAdmin);
 
 // GET /api/admin/diagnostics/evolution
@@ -54,6 +127,157 @@ router.get('/diagnostics/evolution', async (req, res) => {
   }
 
   res.json(diagnostics);
+});
+
+// GET /api/admin/whatsapp-monitor?days=7&limit=80
+// Visão operacional do bot no WhatsApp: conversas recentes, estados ativos e falhas.
+router.get('/whatsapp-monitor', async (req, res) => {
+  const warnings = [];
+
+  try {
+    const days = clampInt(req.query.days, 7, 1, 30);
+    const limit = clampInt(req.query.limit, 80, 20, 200);
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    const now = new Date().toISOString();
+
+    const [conversationResult, runtimeResult, onboardingResult, analyticsResult] = await Promise.all([
+      safeQuery('conversation_history', () => supabase
+        .from('conversation_history')
+        .select('id, user_id, user_message, bot_response, intent, context, feedback, created_at')
+        .gte('created_at', since)
+        .order('created_at', { ascending: false })
+        .limit(limit), warnings),
+      safeQuery('conversation_runtime_states', () => supabase
+        .from('conversation_runtime_states')
+        .select('id, phone, flow, payload, expires_at, created_at, updated_at')
+        .gt('expires_at', now)
+        .order('updated_at', { ascending: false })
+        .limit(200), warnings),
+      safeQuery('onboarding_progress', () => supabase
+        .from('onboarding_progress')
+        .select('id, phone, user_id, stage, phase, progress_percent, completed, completed_at, updated_at, created_at')
+        .eq('completed', false)
+        .order('updated_at', { ascending: true })
+        .limit(200), warnings),
+      safeQuery('analytics_events', () => supabase
+        .from('analytics_events')
+        .select('event_name')
+        .gte('created_at', since)
+        .limit(8000), warnings),
+    ]);
+
+    const conversationsRaw = conversationResult.data;
+    const runtimeRaw = runtimeResult.data;
+    const onboardingRaw = onboardingResult.data;
+    const analyticsRaw = analyticsResult.data;
+
+    const profileIds = [...new Set(conversationsRaw.map((row) => row.user_id).filter(Boolean))];
+    let profilesById = {};
+    if (profileIds.length > 0) {
+      const profileResult = await safeQuery('profiles', () => supabase
+        .from('profiles')
+        .select('id, nome_completo, nome_clinica, telefone, is_active, created_at, updated_at')
+        .in('id', profileIds), warnings);
+      profilesById = Object.fromEntries(profileResult.data.map((profile) => [profile.id, profile]));
+    }
+
+    const conversations = conversationsRaw.map((row) => {
+      const profile = profilesById[row.user_id] || {};
+      return {
+        id: row.id,
+        user_id: row.user_id,
+        clinic_name: profile.nome_clinica || null,
+        contact_name: profile.nome_completo || null,
+        phone_masked: maskPhone(profile.telefone),
+        user_message: safeText(row.user_message),
+        bot_response: safeText(row.bot_response, 1200),
+        intent: row.intent || null,
+        feedback: row.feedback || null,
+        context: row.context || {},
+        created_at: row.created_at,
+        age_minutes: minutesSince(row.created_at),
+      };
+    });
+
+    const runtimeStates = runtimeRaw.map((row) => {
+      const ageMinutes = minutesSince(row.updated_at || row.created_at);
+      return {
+        id: row.id,
+        phone_masked: maskPhone(row.phone),
+        flow: row.flow,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        expires_at: row.expires_at,
+        age_minutes: ageMinutes,
+        stale: ageMinutes != null ? ageMinutes >= 15 : false,
+        payload_summary: summarizePayload(row.payload),
+      };
+    });
+
+    const onboarding = onboardingRaw.map((row) => {
+      const ageMinutes = minutesSince(row.updated_at || row.created_at);
+      return {
+        id: row.id,
+        user_id: row.user_id || null,
+        phone_masked: maskPhone(row.phone),
+        stage: row.stage || null,
+        phase: row.phase ?? null,
+        progress_percent: row.progress_percent ?? null,
+        completed: Boolean(row.completed),
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        age_minutes: ageMinutes,
+        stale: ageMinutes != null ? ageMinutes >= 24 * 60 : false,
+      };
+    });
+
+    const eventCounts = countBy(analyticsRaw, 'event_name');
+    const funnel = ONBOARDING_FUNNEL_EVENTS.map((event) => ({
+      event: event.key,
+      label: event.label,
+      count: eventCounts[event.key] || 0,
+    }));
+
+    const latency = whatsappLatencyService.snapshot();
+    const reliability = messageReliabilityService.snapshot();
+    const recentLatency = latency?.recent || [];
+    const slowEvents = recentLatency.filter((event) => Number(event.total_ms || event.totalMs || 0) >= 10000).length;
+
+    res.json({
+      window: {
+        days,
+        since,
+        generated_at: now,
+      },
+      summary: {
+        conversations: conversations.length,
+        unique_users: profileIds.length,
+        active_runtime_states: runtimeStates.length,
+        stale_runtime_states: runtimeStates.filter((row) => row.stale).length,
+        active_onboarding: onboarding.length,
+        stale_onboarding: onboarding.filter((row) => row.stale).length,
+        failures: reliability?.summary?.totalFailures || reliability?.summary?.total || reliability?.total || 0,
+        slow_events: slowEvents,
+        avg_processing_ms: latency?.summary?.avgProcessingMs || 0,
+        avg_send_ms: latency?.summary?.avgSendMs || 0,
+        avg_total_ms: latency?.summary?.avgTotalMs || 0,
+      },
+      funnel,
+      conversations,
+      runtime_states: runtimeStates,
+      onboarding,
+      latency,
+      reliability,
+      meta: {
+        is_empty: conversations.length === 0 && runtimeStates.length === 0 && onboarding.length === 0,
+        hint: 'Dados administrativos: mensagens completas aparecem apenas para usuários admin autenticados.',
+        warnings,
+      },
+    });
+  } catch (err) {
+    console.error('[ADMIN] whatsapp-monitor:', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // GET /api/admin/stats

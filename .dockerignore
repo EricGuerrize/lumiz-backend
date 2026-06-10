@@ -1,0 +1,15 @@
+.git
+.github
+.claude
+.codex
+node_modules
+npm-debug.log
+coverage
+tests
+docs
+ring
+*.log
+.env
+.env.*
+Dockerfile
+README.md

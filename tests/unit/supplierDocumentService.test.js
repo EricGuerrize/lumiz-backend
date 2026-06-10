@@ -33,6 +33,49 @@ describe('SupplierDocumentService — helpers', () => {
     expect(_helpers.sanitizeCnpj(null)).toBeNull();
   });
 
+  it('normalizeItens aceita produtos/linhas aninhados e normaliza moeda brasileira', () => {
+    const itens = _helpers.normalizeItens({
+      produtos: [
+        {
+          produto: 'Toxina botulínica 100 UI',
+          qtd: '2',
+          un: 'frasco',
+          valor_total: 'R$ 1.500,00',
+          lote: 'L123',
+          validade: '10/06/2026'
+        }
+      ]
+    }, [
+      {
+        itens: [
+          {
+            descricao: 'Ácido hialurônico',
+            quantidade: 3,
+            valor_unitario: '350,50'
+          }
+        ]
+      }
+    ]);
+
+    expect(itens).toEqual([
+      expect.objectContaining({
+        descricao: 'Toxina botulínica 100 UI',
+        quantidade: 2,
+        unidade: 'frasco',
+        valor_unitario: 750,
+        valor_total: 1500,
+        lote: 'L123',
+        validade: '2026-06-10'
+      }),
+      expect.objectContaining({
+        descricao: 'Ácido hialurônico',
+        quantidade: 3,
+        valor_unitario: 350.5,
+        valor_total: 1051.5
+      })
+    ]);
+  });
+
   it('computeFileHash é estável para o mesmo buffer', () => {
     const buf = Buffer.from('hello supplier doc');
     const h1 = supplierDocumentService.computeFileHash(buf);
@@ -133,5 +176,27 @@ describe('SupplierDocumentService.fromDocumentResult', () => {
       { numero: 3, valor: 2500, data: '2026-06-03' },
       { numero: 4, valor: 2500, data: '2026-07-03' }
     ]);
+  });
+
+  it('preserva itens normalizados vindos de chaves alternativas do OCR', () => {
+    const parsed = supplierDocumentService.fromDocumentResult({
+      tipo_documento: 'nota_fiscal',
+      fornecedor: 'Fornecedor Estético',
+      valor_total: 600,
+      produtos: [
+        { nome: 'Luva nitrílica', qtde: '4', valor_total: 'R$ 600,00' }
+      ],
+      transacoes: [
+        { tipo: 'saida', valor: 600, data: '2026-06-01', categoria: 'Insumos' }
+      ]
+    });
+
+    expect(parsed.itens).toHaveLength(1);
+    expect(parsed.itens[0]).toMatchObject({
+      descricao: 'Luva nitrílica',
+      quantidade: 4,
+      valor_unitario: 150,
+      valor_total: 600
+    });
   });
 });

@@ -204,10 +204,10 @@ class PagarComRecebivelService {
     if (options.conta_pagar_id) {
       const { data, error } = await supabase
         .from('contas_pagar')
-        .select('id, valor, data_vencimento, fornecedor_id, status')
+        .select('id, valor, data_vencimento, fornecedor_id, status_pagamento')
         .eq('user_id', userId)
         .eq('id', options.conta_pagar_id)
-        .eq('status', 'pendente')
+        .eq('status_pagamento', 'pendente')
         .maybeSingle();
       if (error) throw error;
       return data ? [data] : [];
@@ -215,10 +215,10 @@ class PagarComRecebivelService {
     if (options.supplier_document_id) {
       const { data, error } = await supabase
         .from('contas_pagar')
-        .select('id, valor, data_vencimento, fornecedor_id, status')
+        .select('id, valor, data_vencimento, fornecedor_id, status_pagamento')
         .eq('user_id', userId)
         .eq('supplier_document_id', options.supplier_document_id)
-        .eq('status', 'pendente')
+        .eq('status_pagamento', 'pendente')
         .order('data_vencimento', { ascending: true });
       if (error) throw error;
       return data || [];

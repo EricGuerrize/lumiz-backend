@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Colaboração entre IAs (tarefa em andamento)
+
+Antes de arquitetura/review: `ai/AI_HANDOFF.md` + `ai/DECISIONS.md`. Protocolo: `ai/COLLABORATION_PROTOCOL.md`.
+
+Foco Claude: tradeoffs, decomposição, review de diff, debug estratégico — não reimplementar o que Codex já fez sem pedido. Handoff para Codex/Cursor via `ai/prompts.md`. Guia: `docs/ai-collaboration.md`.
+
 ## Commands
 
 ```bash

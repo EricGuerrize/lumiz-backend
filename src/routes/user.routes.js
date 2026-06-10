@@ -357,10 +357,14 @@ router.get('/whoami', authenticateToken, async (req, res) => {
   let clinicName = null;
 
   try {
-    const { data, error } = await supabase.rpc('is_user_admin', { p_user_id: req.user.id });
-    if (!error) isAdmin = Boolean(data);
+    const { data: role, error } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', req.user.id)
+      .maybeSingle();
+    if (!error) isAdmin = role?.role === 'admin';
   } catch (err) {
-    console.warn('[WHOAMI] Falha ao resolver is_user_admin:', err?.message || err);
+    console.warn('[WHOAMI] Falha ao resolver role admin:', err?.message || err);
   }
 
   try {

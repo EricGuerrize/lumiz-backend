@@ -61,6 +61,7 @@ class HealthScoreService {
     const now = new Date();
     const year = now.getFullYear();
     const month = now.getMonth() + 1;
+    const { start: monthStart, end: monthEnd } = this._monthBounds(year, month);
     let prevMonth = month - 1;
     let prevYear = year;
     if (prevMonth === 0) {
@@ -68,14 +69,13 @@ class HealthScoreService {
       prevYear -= 1;
     }
 
-    const [{ start: monthStart, end: monthEnd }, balance, currentReport, prevReport, parcelasPagasResult, contasResult, despesasOpAtual] = await Promise.all([
-      Promise.resolve(this._monthBounds(year, month)),
+    const [balance, currentReport, prevReport, parcelasPagasResult, contasResult, despesasOpAtual] = await Promise.all([
       transactionController.getBalance(userId),
       transactionController.getMonthlyReport(userId, year, month),
       transactionController.getMonthlyReport(userId, prevYear, prevMonth),
       supabase
         .from('parcelas')
-        .select('id, data_vencimento, updated_at, atendimentos!inner(user_id)')
+        .select('id, data_vencimento, created_at, recebimento_previsto, atendimentos!inner(user_id)')
         .eq('paga', true)
         .eq('atendimentos.user_id', userId)
         .gte('data_vencimento', monthStart)
@@ -102,8 +102,9 @@ class HealthScoreService {
 
     const parcelasPagas = parcelasPagasResult.data || [];
     const emDiaCount = parcelasPagas.filter((p) => {
-      if (!p.data_vencimento || !p.updated_at) return false;
-      return this._toDateOnly(p.updated_at.slice(0, 10)) <= this._toDateOnly(p.data_vencimento);
+      const paidDate = p.recebimento_previsto || p.created_at;
+      if (!p.data_vencimento || !paidDate) return false;
+      return this._toDateOnly(paidDate.slice(0, 10)) <= this._toDateOnly(p.data_vencimento);
     }).length;
     const pontualidadePct = parcelasPagas.length > 0 ? (emDiaCount / parcelasPagas.length) * 100 : 100;
     const pontualidadePontos = this._clamp((pontualidadePct / 100) * 30, 0, 30);

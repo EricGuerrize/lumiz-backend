@@ -37,6 +37,32 @@ describe('whatsappLatencyService', () => {
     expect(snapshot.summary.avgTotalMs).toBe(160);
   });
 
+  it('normaliza etapas lentas para diagnostico sem PII', () => {
+    service.record({
+      messageId: 'm-steps',
+      phone: '5565999991234',
+      messageType: 'document',
+      processingMs: 2400,
+      sendMs: 120,
+      totalMs: 2600,
+      status: 'ok',
+      steps: {
+        'media process ms': 1800.7,
+        media_download_ms: 420,
+        bad_step: 'abc',
+        phone: '5565999991234'
+      }
+    });
+
+    const event = service.snapshot().recent[0];
+
+    expect(event.steps.media_process_ms).toBe(1801);
+    expect(event.steps.media_download_ms).toBe(420);
+    expect(event.steps.bad_step).toBeUndefined();
+    expect(event.steps.phone).toBeUndefined();
+    expect(event).not.toHaveProperty('phone');
+  });
+
   it('mantém no máximo 100 eventos recentes', () => {
     for (let index = 0; index < 105; index += 1) {
       service.record({

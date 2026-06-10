@@ -7,7 +7,13 @@ const userRateLimit = require('../../middleware/userRateLimit');
 const { normalizePhone } = require('../../utils/phone');
 const { isLowConfidence, lowConfidenceBanner } = require('../../copy/captureConfirmCopy');
 const supplierCopy = require('../../copy/supplierDocWhatsappCopy');
+const documentCopy = require('../../copy/documentWhatsappCopy');
 const vendorClassificationService = require('../../services/vendorClassificationService');
+const messageReliabilityService = require('../../services/messageReliabilityService');
+const {
+  applyTransactionCorrection,
+  applySupplierDocCorrection
+} = require('../../utils/whatsappCorrectionParser');
 
 /**
  * Handler para documentos e imagens
@@ -47,7 +53,27 @@ class DocumentHandler {
     setTimeout(() => this.pendingDocumentTransactions.delete(normalizedPhone), this.PENDING_CONFIRMATION_TTL_MS);
   }
 
-  async persistPendingConfirmation(phone, user, transacoes) {
+  _sourceMessageId(source = {}) {
+    if (!source) return null;
+    if (typeof source.messageId === 'string') return source.messageId;
+    if (typeof source.messageKey === 'string') return source.messageKey;
+    return source.messageKey?.id || null;
+  }
+
+  _sanitizeSourceForPersistence(source = null) {
+    if (!source) return null;
+    return {
+      messageId: this._sourceMessageId(source),
+      mimeType: source.mimeType || null,
+      fileName: source.fileName || null,
+      caption: source.caption || null,
+      rawMessage: source.rawMessage || null,
+      messageType: source.messageType || 'document',
+      origem: source.origem || 'document_ocr'
+    };
+  }
+
+  async persistPendingConfirmation(phone, user, transacoes, source = null, extraPending = {}) {
     try {
       const normalizedPhone = this.normalizePhoneKey(phone);
       const state = await onboardingService.getState(normalizedPhone);
@@ -61,7 +87,9 @@ class DocumentHandler {
             tipo: 'doc_confirmation',
             created_at: new Date().toISOString(),
             user_id: user?.id || null,
-            transacoes: Array.isArray(transacoes) ? transacoes : []
+            transacoes: Array.isArray(transacoes) ? transacoes : [],
+            source: this._sanitizeSourceForPersistence(source),
+            ...extraPending
           }
         }
       };
@@ -99,7 +127,7 @@ class DocumentHandler {
       const state = await onboardingService.getState(normalizedPhone);
       const pending = state?.data?.realtime?.pending_document_confirmation;
 
-      if (!pending || !Array.isArray(pending.transacoes) || pending.transacoes.length === 0) {
+      if (!pending || (!pending.isSupplierDoc && (!Array.isArray(pending.transacoes) || pending.transacoes.length === 0))) {
         return null;
       }
 
@@ -138,6 +166,7 @@ class DocumentHandler {
     if (!isSupplierDoc) return null;
 
     const parsed = supplierDocumentService.fromDocumentResult(result);
+    if (!parsed || typeof parsed !== 'object') return null;
     if (!parsed.valor_total || parsed.valor_total <= 0) return null;
 
     // Enriquece categoria via tabela de fornecedores antes de mostrar confirmação
@@ -175,7 +204,11 @@ class DocumentHandler {
       timestamp: Date.now()
     };
     this._setPendingDoc(normalizedPhone, pending);
-    await this.persistPendingConfirmation(normalizedPhone, user, []);
+    await this.persistPendingConfirmation(normalizedPhone, user, [], null, {
+      isSupplierDoc: true,
+      supplier_document_id: supplierDoc?.id || null,
+      parsed
+    });
 
     const response = supplierCopy.confirmacaoSupplierDoc(parsed, {
       isLowConfidence: isLowConfidence(parsed.confidence_score)
@@ -187,6 +220,136 @@ class DocumentHandler {
    * Verifica rate limit para operações de OCR/documento
    * @returns {string|null} Mensagem de erro ou null se permitido
    */
+  _buildSourceMetadata({ result = null, source = {}, transacao = null, extra = {} } = {}) {
+    return {
+      mime_type: source.mimeType || null,
+      file_name: source.fileName || null,
+      document_type: result?.tipo_documento || result?.tipo_documento_raw || null,
+      confidence_score: transacao?.confidence_score ?? result?.confidence_score ?? null,
+      processor: result?.processor || null,
+      ...extra
+    };
+  }
+
+  _buildTraceability({ normalizedPhone, pending, transacao, extraMetadata = {} }) {
+    const source = pending?.source || {};
+    const metadata = this._buildSourceMetadata({
+      result: pending?.result || null,
+      source,
+      transacao,
+      extra: extraMetadata
+    });
+
+    return {
+      origem: source.origem || 'document_ocr',
+      source_phone: normalizedPhone,
+      source_message_id: this._sourceMessageId(source),
+      raw_message: source.rawMessage || source.fileName || source.caption || null,
+      is_test: false,
+      metadata
+    };
+  }
+
+  _recordFailure(kind, phase, phone, reason, source = {}) {
+    messageReliabilityService.recordFailure({
+      kind,
+      phase,
+      phone,
+      messageId: this._sourceMessageId(source),
+      messageType: source?.messageType || 'document',
+      reason
+    });
+  }
+
+  async _refreshPendingAfterCorrection(normalizedPhone, user, pending) {
+    this._setPendingDoc(normalizedPhone, pending);
+    await this.persistPendingConfirmation(
+      normalizedPhone,
+      user,
+      pending.transacoes || [],
+      pending.source || null,
+      pending.isSupplierDoc
+        ? {
+            isSupplierDoc: true,
+            supplier_document_id: pending.supplier_document_id || null,
+            parsed: pending.parsed
+          }
+        : {}
+    );
+  }
+
+  async _applyGenericDocumentCorrection(normalizedPhone, user, pending, message) {
+    if (!Array.isArray(pending.transacoes) || pending.transacoes.length === 0) {
+      return { changed: false };
+    }
+
+    const [first, ...rest] = pending.transacoes;
+    const correction = applyTransactionCorrection(first, message);
+    if (!correction.changed) return { changed: false };
+
+    pending.transacoes = [correction.dados, ...rest];
+    pending.result = {
+      ...(pending.result || {}),
+      transacoes: pending.transacoes
+    };
+    await this._refreshPendingAfterCorrection(normalizedPhone, user, pending);
+
+    return {
+      changed: true,
+      response: documentService.formatDocumentSummary({
+        ...(pending.result || { tipo_documento: 'documento' }),
+        transacoes: pending.transacoes
+      })
+    };
+  }
+
+  async _applySupplierDocumentCorrection(normalizedPhone, user, pending, message) {
+    const correction = applySupplierDocCorrection(pending.parsed || {}, message);
+    if (!correction.changed) return { changed: false };
+
+    pending.parsed = correction.parsed;
+    await this._refreshPendingAfterCorrection(normalizedPhone, user, pending);
+    await this._updateSupplierDocumentSnapshot(user, pending);
+
+    return {
+      changed: true,
+      response: supplierCopy.confirmacaoSupplierDoc(pending.parsed, {
+        isLowConfidence: isLowConfidence(pending.parsed?.confidence_score)
+      })
+    };
+  }
+
+  async _updateSupplierDocumentSnapshot(user, pending) {
+    if (!pending?.supplier_document_id || !pending?.parsed) return;
+
+    try {
+      const supabase = require('../../db/supabase');
+      await supabase
+        .from('supplier_documents')
+        .update({
+          parsed_json: pending.parsed,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', pending.supplier_document_id)
+        .eq('user_id', user.id);
+    } catch (error) {
+      console.warn('[SUPPLIER_DOC] Falha ao atualizar snapshot corrigido:', error?.message || error);
+    }
+  }
+
+  async _attachSupplierSource(normalizedPhone, user, source, result) {
+    const pending = this.pendingDocumentTransactions.get(normalizedPhone);
+    if (!pending?.isSupplierDoc) return;
+    pending.source = source;
+    pending.result = result;
+    this._setPendingDoc(normalizedPhone, pending);
+    await this.persistPendingConfirmation(normalizedPhone, user, [], source, {
+      isSupplierDoc: true,
+      supplier_document_id: pending.supplier_document_id || null,
+      parsed: pending.parsed
+    });
+  }
+
   async checkDocumentRateLimit(phone) {
     const result = await userRateLimit.checkExpensiveOperationLimit(phone, 'document');
     if (!result.allowed) {
@@ -220,7 +383,16 @@ class DocumentHandler {
       }
 
       // Processa o documento (PDF ou imagem)
+      const source = {
+        messageKey,
+        messageId: this._sourceMessageId({ messageKey }),
+        fileName: fileName || null,
+        rawMessage: fileName || mediaUrl || null,
+        messageType: 'document',
+        origem: 'document_ocr'
+      };
       const result = await documentService.processImage(mediaUrl, messageKey);
+      source.mimeType = result?.mimeType || null;
 
       // Onda 2.B — caminho rápido para NF/boleto: pending de supplier_doc
       const supplierFlow = await this._maybePrepareSupplierDocPending({
@@ -228,10 +400,21 @@ class DocumentHandler {
         normalizedPhone,
         result
       });
-      if (supplierFlow) return supplierFlow.response;
+      if (supplierFlow) {
+        await this._attachSupplierSource(normalizedPhone, user, source, result);
+        return supplierFlow.response;
+      }
 
       const baseResponse = documentService.formatDocumentSummary(result);
       const response = this._prefixLowConfidence(baseResponse, result);
+
+      if (result.tipo_documento === 'erro') {
+        this._recordFailure('document_ocr_failed', 'document', normalizedPhone, result.erro || 'ocr_failed', source);
+      }
+
+      if ((!result.transacoes || result.transacoes.length === 0) && result.tipo_documento !== 'erro') {
+        this._recordFailure('document_no_transactions', 'document', normalizedPhone, result.tipo_documento || 'no_transactions', source);
+      }
 
       if (result.processor === 'tesseract') {
         return response + '\n\nO que deseja fazer com essa informação? Me diga se é uma venda ou um custo e o valor.';
@@ -241,15 +424,18 @@ class DocumentHandler {
         this._setPendingDoc(normalizedPhone, {
           user,
           transacoes: result.transacoes,
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          source,
+          result
         });
-        await this.persistPendingConfirmation(normalizedPhone, user, result.transacoes);
+        await this.persistPendingConfirmation(normalizedPhone, user, result.transacoes, source);
       }
 
       return response;
     } catch (error) {
       console.error('Erro ao processar documento:', error);
-      return 'Erro ao analisar documento 😢\n\nTente enviar uma foto ou registre manualmente.';
+      this._recordFailure('document_ocr_failed', 'document', phone, error?.message || 'document_processing_failed', { messageKey, fileName, messageType: 'document' });
+      return documentCopy.documentOcrFailed();
     }
   }
 
@@ -292,7 +478,7 @@ class DocumentHandler {
             return await onboardingFlowService.processOnboarding(normalizedPhone, mensagemSimulada);
           }
 
-          return 'Não consegui identificar esse documento 🤔\n\nPode me enviar uma foto mais clara ou descrever a transação em texto?';
+          return documentCopy.onboardingDocumentNotIdentified();
         }
 
         return 'Complete seu cadastro primeiro! 😊';
@@ -305,7 +491,16 @@ class DocumentHandler {
       }
 
       // Processa a imagem
+      const source = {
+        messageKey,
+        messageId: this._sourceMessageId({ messageKey }),
+        caption: caption || null,
+        rawMessage: caption || mediaUrl || null,
+        messageType: 'image',
+        origem: 'document_ocr'
+      };
       const result = await documentService.processImage(mediaUrl, messageKey);
+      source.mimeType = result?.mimeType || null;
 
       // Onda 2.B — caminho rápido para NF/boleto
       const supplierFlow = await this._maybePrepareSupplierDocPending({
@@ -313,7 +508,10 @@ class DocumentHandler {
         normalizedPhone,
         result
       });
-      if (supplierFlow) return supplierFlow.response;
+      if (supplierFlow) {
+        await this._attachSupplierSource(normalizedPhone, user, source, result);
+        return supplierFlow.response;
+      }
 
       const baseResponse = documentService.formatDocumentSummary(result);
       const response = this._prefixLowConfidence(baseResponse, result);
@@ -326,22 +524,25 @@ class DocumentHandler {
         this._setPendingDoc(normalizedPhone, {
           user,
           transacoes: result.transacoes,
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          source,
+          result
         });
-        await this.persistPendingConfirmation(normalizedPhone, user, result.transacoes);
+        await this.persistPendingConfirmation(normalizedPhone, user, result.transacoes, source);
       }
 
       return response;
     } catch (error) {
       console.error('Erro ao processar imagem:', error);
-      return 'Erro ao analisar imagem 😢\n\nTente enviar novamente ou registre manualmente.';
+      this._recordFailure('document_ocr_failed', 'document', phone, error?.message || 'image_processing_failed', { messageKey, messageType: 'image' });
+      return documentCopy.documentOcrFailed();
     }
   }
 
   /**
    * Processa imagem com buffer
    */
-  async handleImageMessageWithBuffer(phone, imageBuffer, mimeType, caption) {
+  async handleImageMessageWithBuffer(phone, imageBuffer, mimeType, caption, messageKey = null) {
     try {
       const normalizedPhone = this.normalizePhoneKey(phone);
       // Verifica se está em onboarding
@@ -365,7 +566,7 @@ class DocumentHandler {
               : `${transacao.categoria || transacao.descricao || 'Custo'} ${transacao.valor}`;
             return await onboardingFlowService.processOnboarding(normalizedPhone, mensagemSimulada);
           }
-          return 'Não consegui identificar esse documento 🤔\n\nPode me enviar uma foto mais clara ou descrever a transação em texto?';
+          return documentCopy.onboardingDocumentNotIdentified();
         }
 
         return 'Complete seu cadastro primeiro! 😊';
@@ -379,8 +580,24 @@ class DocumentHandler {
 
       // Processa a imagem diretamente do buffer
       const result = await documentService.processImageFromBuffer(imageBuffer, mimeType);
+      const source = {
+        messageKey,
+        messageId: this._sourceMessageId({ messageKey }),
+        mimeType,
+        caption: caption || null,
+        rawMessage: caption || null,
+        messageType: 'image',
+        origem: 'document_ocr'
+      };
 
       if (result.tipo_documento === 'erro' || result.tipo_documento === 'nao_identificado') {
+        this._recordFailure(
+          result.tipo_documento === 'erro' ? 'document_ocr_failed' : 'document_no_transactions',
+          'document',
+          normalizedPhone,
+          result.erro || result.tipo_documento,
+          source
+        );
         return documentService.formatDocumentSummary(result);
       }
 
@@ -391,9 +608,13 @@ class DocumentHandler {
         result,
         buffer: imageBuffer
       });
-      if (supplierFlow) return supplierFlow.response;
+      if (supplierFlow) {
+        await this._attachSupplierSource(normalizedPhone, user, source, result);
+        return supplierFlow.response;
+      }
 
       if (result.transacoes.length === 0) {
+        this._recordFailure('document_no_transactions', 'document', normalizedPhone, 'empty_transactions', source);
         return documentService.formatDocumentSummary(result);
       }
 
@@ -401,14 +622,92 @@ class DocumentHandler {
       this._setPendingDoc(normalizedPhone, {
         user,
         transacoes: result.transacoes,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        source,
+        result
       });
-      await this.persistPendingConfirmation(normalizedPhone, user, result.transacoes);
+      await this.persistPendingConfirmation(normalizedPhone, user, result.transacoes, source);
 
       return this._prefixLowConfidence(documentService.formatDocumentSummary(result), result);
     } catch (error) {
       console.error('Erro ao processar imagem:', error);
-      return 'Erro ao analisar imagem 😢\n\nTente enviar novamente ou registre manualmente.';
+      this._recordFailure('document_ocr_failed', 'document', phone, error?.message || 'image_processing_failed', { messageKey, mimeType, messageType: 'image' });
+      return documentCopy.documentOcrFailed();
+    }
+  }
+
+  /**
+   * Processa documento com buffer (PDF/imagem baixada pela Meta Cloud API).
+   */
+  async handleDocumentMessageWithBuffer(phone, docBuffer, mimeType, fileName, messageKey = null) {
+    try {
+      const normalizedPhone = this.normalizePhoneKey(phone);
+      const source = {
+        messageKey,
+        messageId: this._sourceMessageId({ messageKey }),
+        mimeType: mimeType || 'application/pdf',
+        fileName: fileName || null,
+        rawMessage: fileName || null,
+        messageType: 'document',
+        origem: mimeType === 'application/pdf' ? 'pdf_ocr' : 'document_ocr'
+      };
+
+      const rateLimitError = await this.checkDocumentRateLimit(normalizedPhone);
+      if (rateLimitError) return rateLimitError;
+
+      if (await onboardingFlowService.ensureOnboardingState(normalizedPhone)) {
+        return 'Complete seu cadastro primeiro! 😊';
+      }
+
+      const user = await userController.findUserByPhone(normalizedPhone);
+      if (!user) {
+        await onboardingFlowService.startNewOnboarding(normalizedPhone);
+        return null;
+      }
+
+      const result = await documentService.processDocumentFromBuffer(docBuffer, source.mimeType, fileName);
+
+      if (result.tipo_documento === 'erro' || result.tipo_documento === 'nao_identificado') {
+        this._recordFailure(
+          result.tipo_documento === 'erro' ? 'document_ocr_failed' : 'document_no_transactions',
+          'document',
+          normalizedPhone,
+          result.erro || result.tipo_documento,
+          source
+        );
+        return documentService.formatDocumentSummary(result);
+      }
+
+      const supplierFlow = await this._maybePrepareSupplierDocPending({
+        user,
+        normalizedPhone,
+        result,
+        buffer: docBuffer
+      });
+      if (supplierFlow) {
+        await this._attachSupplierSource(normalizedPhone, user, source, result);
+        return supplierFlow.response;
+      }
+
+      if (!Array.isArray(result.transacoes) || result.transacoes.length === 0) {
+        this._recordFailure('document_no_transactions', 'document', normalizedPhone, 'empty_transactions', source);
+        return documentService.formatDocumentSummary(result);
+      }
+
+      this._setPendingDoc(normalizedPhone, {
+        user,
+        transacoes: result.transacoes,
+        timestamp: Date.now(),
+        source,
+        result
+      });
+      await this.persistPendingConfirmation(normalizedPhone, user, result.transacoes, source);
+
+      return this._prefixLowConfidence(documentService.formatDocumentSummary(result), result);
+    } catch (error) {
+      console.error('Erro ao processar documento:', error);
+      this._recordFailure('document_ocr_failed', 'document', phone, error?.message || 'document_buffer_failed', { messageKey, mimeType, fileName, messageType: 'document' });
+      return documentCopy.documentOcrFailed();
     }
   }
 
@@ -425,20 +724,36 @@ class DocumentHandler {
         pending = {
           user,
           transacoes: persistedPending.transacoes,
-          timestamp: new Date(persistedPending.created_at).getTime()
+          timestamp: new Date(persistedPending.created_at).getTime(),
+          source: persistedPending.source || null,
+          isSupplierDoc: Boolean(persistedPending.isSupplierDoc),
+          supplier_document_id: persistedPending.supplier_document_id || null,
+          parsed: persistedPending.parsed || null
         };
         this._setPendingDoc(normalizedPhone, pending);
       } else {
-        return 'Não encontrei confirmação pendente dessa nota. Reenvie o PDF.';
+        this._recordFailure('pending_confirmation_expired', 'document', normalizedPhone, 'no_pending_confirmation');
+        return documentCopy.pendingExpired();
       }
     }
 
     const messageLower = message.toLowerCase().trim();
     const isConfirm = messageLower === 'sim' || messageLower === 's' || messageLower === 'confirmar' || messageLower === '1';
     const isCancel = messageLower === 'não' || messageLower === 'nao' || messageLower === 'n' || messageLower === 'cancelar' || messageLower === '2';
+    const isCorrection = messageLower === 'corrigir' ||
+      messageLower === 'corrige' ||
+      messageLower === 'correcao' ||
+      messageLower === 'correção' ||
+      messageLower === 'editar' ||
+      messageLower.startsWith('corrigir ');
 
     // Onda 2.B — fluxo de supplier_doc (NF/boleto)
     if (pending.isSupplierDoc) {
+      if (isCorrection) {
+        const corrected = await this._applySupplierDocumentCorrection(normalizedPhone, user, pending, message);
+        if (corrected.changed) return corrected.response;
+        return documentCopy.documentCorrectionGuidance();
+      }
       if (isConfirm) {
         try {
           const fornecedor = await supplierDocumentService.linkOrCreateFornecedor(user.id, pending.parsed);
@@ -446,22 +761,21 @@ class DocumentHandler {
             user.id,
             pending.parsed,
             fornecedor.id,
-            { supplierDocumentId: pending.supplier_document_id || null }
+            {
+              supplierDocumentId: pending.supplier_document_id || null,
+              sourcePhone: normalizedPhone,
+              sourceMessageId: this._sourceMessageId(pending.source),
+              rawMessage: pending.source?.rawMessage || pending.source?.fileName || null,
+              metadata: this._buildSourceMetadata({ result: pending.result || null, source: pending.source || {}, transacao: null })
+            }
           );
-          const estoque = await supplierDocumentService.applyEstoqueEntradaFromItens(
-            user.id,
-            pending.parsed,
-            { supplierDocumentId: pending.supplier_document_id || null, fornecedorId: fornecedor.id }
-          );
-
           this.pendingDocumentTransactions.delete(normalizedPhone);
           await this.clearPersistedPendingConfirmation(normalizedPhone);
 
           return supplierCopy.supplierDocConfirmado({
             contasCount: contas.length,
             valorTotal: pending.parsed.valor_total,
-            estoqueAplicados: estoque.aplicados.length,
-            estoquePendentes: estoque.pendentes.length,
+            itensDetectados: Array.isArray(pending.parsed?.itens) ? pending.parsed.itens.length : 0,
             fornecedorNome: fornecedor.nome
           });
         } catch (err) {
@@ -484,7 +798,7 @@ class DocumentHandler {
         }
         return supplierCopy.supplierDocCancelado();
       }
-      return 'Não entendi... responde *1* pra confirmar a NF ou *2* pra cancelar 😊';
+      return documentCopy.confirmSupplierDocAgain();
     }
 
     // Confirmação
@@ -498,7 +812,8 @@ class DocumentHandler {
             valor: Math.abs(transacao.valor),
             categoria: transacao.categoria || 'Documento',
             descricao: transacao.descricao || transacao.categoria,
-            data: transacao.data || new Date().toISOString().split('T')[0]
+            data: transacao.data || new Date().toISOString().split('T')[0],
+            ...this._buildTraceability({ normalizedPhone, pending, transacao })
           });
         } else {
           // Verifica se LLM retornou parcelas como array de objetos {valor, vencimento, numero}
@@ -516,7 +831,16 @@ class DocumentHandler {
                 categoria: transacao.categoria || 'Documento',
                 parcelas: null,
                 condicoes_pagamento: null,
-                observacoes: transacao.category_trigger || null
+                observacoes: transacao.category_trigger || null,
+                ...this._buildTraceability({
+                  normalizedPhone,
+                  pending,
+                  transacao,
+                  extraMetadata: {
+                    parcela_numero: parcela.numero || parcelasArray.indexOf(parcela) + 1,
+                    parcela_total: parcelasArray.length
+                  }
+                })
               });
               parcelasRegistradas.push({
                 valor: parcela.valor,
@@ -533,7 +857,8 @@ class DocumentHandler {
               categoria: transacao.categoria || 'Documento',
               parcelas: typeof transacao.parcelas === 'number' ? transacao.parcelas : null,
               condicoes_pagamento: transacao.condicoes_pagamento || null,
-              observacoes: transacao.category_trigger || null
+              observacoes: transacao.category_trigger || null,
+              ...this._buildTraceability({ normalizedPhone, pending, transacao })
             });
           }
         }
@@ -563,10 +888,16 @@ class DocumentHandler {
     if (isCancel) {
       this.pendingDocumentTransactions.delete(normalizedPhone);
       await this.clearPersistedPendingConfirmation(normalizedPhone);
-      return 'Transações canceladas ❌\n\nSe quiser registrar, é só me enviar novamente!';
+      return documentCopy.documentCancelled();
     }
 
-    return 'Não entendi... responde *sim* pra confirmar ou *não* pra cancelar 😊';
+    if (isCorrection) {
+      const corrected = await this._applyGenericDocumentCorrection(normalizedPhone, user, pending, message);
+      if (corrected.changed) return corrected.response;
+      return documentCopy.documentCorrectionGuidance();
+    }
+
+    return documentCopy.confirmGenericDocAgain();
   }
 }
 

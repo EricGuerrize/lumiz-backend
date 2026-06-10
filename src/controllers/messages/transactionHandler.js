@@ -3,6 +3,7 @@ const analyticsService = require('../../services/analyticsService');
 const knowledgeService = require('../../services/knowledgeService');
 const conversationRuntimeStateService = require('../../services/conversationRuntimeStateService');
 const vendorClassificationService = require('../../services/vendorClassificationService');
+const recurringExpenseService = require('../../services/recurringExpenseService');
 const { rebuildClinicProfile } = require('../../services/agentic/profileBuilderService');
 const crypto = require('crypto');
 const { formatarMoeda } = require('../../utils/currency');
@@ -12,6 +13,7 @@ const {
 } = require('../../utils/moneyParser');
 const { sanitizeClientName } = require('../../utils/procedureKeywords');
 const { isLowConfidence, lowConfidenceBanner } = require('../../copy/captureConfirmCopy');
+const { applyTransactionCorrection } = require('../../utils/whatsappCorrectionParser');
 
 /**
  * Handler para transações (vendas e custos)
@@ -70,6 +72,16 @@ class TransactionHandler {
       valor_total: intent.dados?.valor_total || mixedCandidate?.total || null,
       confidence_score: intentConfidence
     };
+
+    if (tipo === 'saida') {
+      const recurrence = recurringExpenseService.parseRecurrenceFromText(originalText);
+      if (recurrence) {
+        normalizedData.tipo_custo = 'fixa';
+        normalizedData.recurrence = recurrence;
+      } else if (recurringExpenseService.isFixedCostText(originalText)) {
+        normalizedData.tipo_custo = 'fixa';
+      }
+    }
 
     if (normalizedData.tipo === 'entrada') {
       normalizedData.categoria = this.sanitizeSaleCategory(
@@ -166,7 +178,7 @@ class TransactionHandler {
         });
       } catch (e) { console.warn('[ANALYTICS] Falha ao registrar confirmação de transação:', e.message); }
 
-      const { tipo, valor, categoria, descricao, data, forma_pagamento, parcelas, bandeira_cartao, nome_cliente, payment_split } = pending.dados;
+      const { tipo, valor, categoria, descricao, data, forma_pagamento, parcelas, bandeira_cartao, nome_cliente, payment_split, recurrence } = pending.dados;
       const traceability = {
         origem: 'whatsapp_text',
         source_phone: phone,
@@ -225,12 +237,15 @@ class TransactionHandler {
             ...traceability
           });
         }
+      } else if (recurrence?.months) {
+        createdResult = await recurringExpenseService.createRecurring(user.id, pending.dados, traceability);
       } else {
         await transactionController.createContaPagar(user.id, {
           valor: Math.abs(valor),
           descricao: descricao || categoria,
           data,
           categoria,
+          tipo: pending.dados.tipo_custo || 'variavel',
           // Parcelas e datas de vencimento extraídas pelo LLM de classificação de intenção.
           // Ex: "30/60/90/120" → parcelas=4, datas_vencimento=[...4 datas...]
           parcelas: pending.dados.parcelas || null,
@@ -301,6 +316,15 @@ class TransactionHandler {
         );
       }
 
+      if (tipo === 'saida' && recurrence?.months) {
+        return (
+          `${emoji} *Despesa recorrente registrada!* ✅\n\n` +
+          `${categoria || descricao} — ${formatarMoeda(valor)}\n` +
+          `${createdResult?.months || recurrence.months} vencimento(s) futuros criados como contas a pagar.\n\n` +
+          `Me diz "contas a pagar" pra ver o calendário.`
+        );
+      }
+
       return `${emoji} *${tipoTexto} registrado!* ✅\n\n${formatarMoeda(valor)} - ${categoria || descricao}\n\nQuer ver seu saldo? Digite "saldo"`;
     }
 
@@ -311,6 +335,14 @@ class TransactionHandler {
       messageLower.includes('alterar') ||
       messageLower.includes('editar')
     ) {
+      const correction = this.applyCorrectionToDados(pending.dados, message);
+      if (correction.changed) {
+        pending.dados = correction.dados;
+        pending.stage = 'confirm';
+        await this.setPendingTransaction(phone, pending);
+        return this.buildConfirmationMessage(pending.dados);
+      }
+
       pending.stage = 'awaiting_correction';
       await this.setPendingTransaction(phone, pending);
       return 'Me manda só o que precisa corrigir.\n\nExemplos:\n"valor era 4500"\n"foi no pix"\n"cliente Romulo"\n"procedimento preenchimento"';
@@ -406,15 +438,23 @@ class TransactionHandler {
     }
 
     text += `📅 ${dataFormatada}\n\n`;
+    if (tipo === 'saida' && dados.recurrence?.months) {
+      text += `🔁 Recorrente: vou criar ${dados.recurrence.months} conta(s) a pagar futura(s)`;
+      if (dados.recurrence.dueDay) {
+        text += ` com vencimento no dia ${dados.recurrence.dueDay}`;
+      }
+      text += '.\n\n';
+    }
     text += `Responde:\n1️⃣ *Confirmar*\n2️⃣ *Cancelar*\n3️⃣ *Corrigir*`;
     return text;
   }
 
   applyCorrectionToDados(dados, message) {
-    const next = { ...(dados || {}) };
+    const parsedCorrection = applyTransactionCorrection(dados, message);
+    const next = { ...(parsedCorrection.dados || dados || {}) };
     const raw = String(message || '').trim();
     const normalized = this.normalizeText(raw);
-    let changed = false;
+    let changed = parsedCorrection.changed;
 
     const looksLikeInstallmentOnly = /^\D*\d{1,2}\s*x\D*$/.test(normalized);
     const value = looksLikeInstallmentOnly ? null : this.recoverTransactionValue(raw, null, next.parcelas);

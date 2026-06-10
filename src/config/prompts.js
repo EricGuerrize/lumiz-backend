@@ -230,7 +230,12 @@ RETORNE APENAS JSON NO SEGUINTE FORMATO (sem texto fora do JSON):
     {
       "descricao": "Produto/serviço",
       "quantidade": 1,
-      "valor_unitario": 0.0
+      "unidade": "unidade/ml/ampola/caixa ou null",
+      "valor_unitario": 0.0,
+      "valor_total": 0.0,
+      "codigo": "SKU/EAN/código interno ou null",
+      "lote": "lote quando visível ou null",
+      "validade": "YYYY-MM-DD quando visível ou null"
     }
   ],
   "confidence_score": 0.0,
@@ -267,7 +272,12 @@ EXEMPLO — Nota fiscal de insumos com boleto parcelado 30/60/90/120:
     {
       "descricao": "Ácido hialurônico",
       "quantidade": 4,
-      "valor_unitario": 3200.00
+      "unidade": "unidade",
+      "valor_unitario": 3200.00,
+      "valor_total": 12800.00,
+      "codigo": null,
+      "lote": null,
+      "validade": null
     }
   ],
   "confidence_score": 0.94,
@@ -711,12 +721,13 @@ REGRAS:
 - Preencha "category_trigger" explicando de forma curta o gatilho da categorização.
 - Se houver emitente/fornecedor, preencha "fornecedor" e "cnpj" no topo.
 - Se for nota/fatura, extraia "numero_documento", "data_emissao" e "itens" quando visíveis.
+- Para cada item, prefira linha a linha: descricao, quantidade, unidade, valor_unitario, valor_total, codigo, lote e validade.
 - BOLETO PARCELADO: "30/60"=2x, "30/60/90"=3x, "30/60/90/120"=4x. Calcule cada vencimento somando os dias à data de emissão. Campo "Fatura" no DANFE: liste cada parcela em condicoes_pagamento.
 - Se não houver parcelamento: parcelas=1, condicoes_pagamento=null.
 - Nota com "CANCELADA": alerte na descricao, NÃO registre como transação válida.
 
 RETORNE APENAS JSON (sem texto fora do JSON):
-{"tipo_documento":"nota_fiscal"|"boleto"|"comprovante_pix"|"extrato"|"fatura"|"recibo"|"nao_identificado","fornecedor":"","cnpj":"","numero_documento":"","data_emissao":"YYYY-MM-DD","itens":[{"descricao":"","quantidade":1,"valor_unitario":0.0}],"confidence_score":0.0,"transacoes":[{"tipo":"entrada"|"saida","valor":0.00,"categoria":"","category_trigger":"","data":"YYYY-MM-DD","descricao":"","parcelas":1,"condicoes_pagamento":null,"confidence_score":0.0}]}`.trim();
+{"tipo_documento":"nota_fiscal"|"boleto"|"comprovante_pix"|"extrato"|"fatura"|"recibo"|"nao_identificado","fornecedor":"","cnpj":"","numero_documento":"","data_emissao":"YYYY-MM-DD","itens":[{"descricao":"","quantidade":1,"unidade":null,"valor_unitario":0.0,"valor_total":0.0,"codigo":null,"lote":null,"validade":null}],"confidence_score":0.0,"transacoes":[{"tipo":"entrada"|"saida","valor":0.00,"categoria":"","category_trigger":"","data":"YYYY-MM-DD","descricao":"","parcelas":1,"condicoes_pagamento":null,"confidence_score":0.0}]}`.trim();
 }
 
 module.exports = {

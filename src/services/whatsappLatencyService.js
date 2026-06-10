@@ -30,6 +30,7 @@ class WhatsappLatencyService {
       sendMs: this._num(event.sendMs),
       totalMs: this._num(event.totalMs),
       responseChars: this._num(event.responseChars),
+      steps: this._normalizeSteps(event.steps),
       status: event.status || 'ok',
       error: event.error ? String(event.error).slice(0, 240) : null,
       createdAt: new Date().toISOString()
@@ -82,7 +83,8 @@ class WhatsappLatencyService {
       `[WA_LATENCY] phone=...${event.phoneSuffix || '----'} type=${event.messageType}` +
       ` status=${event.status} ack_ms=${event.webhookAckMs ?? '-'}` +
       ` processing_ms=${event.processingMs ?? '-'} send_ms=${event.sendMs ?? '-'}` +
-      ` total_ms=${event.totalMs ?? '-'} chars=${event.responseChars ?? 0}`;
+      ` total_ms=${event.totalMs ?? '-'} chars=${event.responseChars ?? 0}` +
+      this._formatSlowSteps(event.steps);
 
     const slow =
       (event.processingMs || 0) > this.thresholds.processingMs ||
@@ -94,6 +96,29 @@ class WhatsappLatencyService {
     } else {
       console.log(line);
     }
+  }
+
+  _normalizeSteps(steps = {}) {
+    if (!steps || typeof steps !== 'object') return {};
+    const sensitiveKeys = new Set(['phone', 'telefone', 'number', 'message', 'text', 'raw_message', 'payload']);
+    return Object.entries(steps).reduce((acc, [key, value]) => {
+      const normalizedKey = String(key || '').replace(/[^\w.-]/g, '_').slice(0, 48);
+      if (!normalizedKey) return acc;
+      if (sensitiveKeys.has(normalizedKey.toLowerCase())) return acc;
+      const normalizedValue = this._num(value);
+      if (normalizedValue !== null) acc[normalizedKey] = normalizedValue;
+      return acc;
+    }, {});
+  }
+
+  _formatSlowSteps(steps = {}) {
+    const normalized = this._normalizeSteps(steps);
+    const slow = Object.entries(normalized)
+      .filter(([, value]) => value >= 500)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([key, value]) => `${key}:${value}`);
+    return slow.length ? ` slow_steps=${slow.join(',')}` : '';
   }
 }
 

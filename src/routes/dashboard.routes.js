@@ -31,7 +31,7 @@ const coberturaFornecedorService = require('../services/alter/coberturaFornecedo
 const pagarComRecebivelService = require('../services/alter/pagarComRecebivelService');
 const { requireFeature } = require('../services/featureFlagService');
 const userController = require('../controllers/userController');
-const { authenticateFlexible } = require('../middleware/authMiddleware');
+const { authenticateToken } = require('../middleware/authMiddleware');
 const { validate } = require('../middleware/validationMiddleware');
 const {
   monthlyReportSchema,
@@ -66,8 +66,8 @@ const excelUpload = multer({
   },
 });
 
-// Aplica autenticação em todas as rotas (aceita JWT ou telefone)
-router.use(authenticateFlexible);
+// Dashboard contém dados financeiros sensíveis: exige JWT Supabase.
+router.use(authenticateToken);
 
 // GET /api/dashboard/summary - Resumo geral (cards principais)
 router.get('/summary', async (req, res) => {
@@ -1658,12 +1658,6 @@ router.post('/supplier-documents/process', heavyDashboardReadLimiter, async (req
       fornecedor.id,
       { supplierDocumentId: supplierDoc.id }
     );
-    const estoqueResult = await supplierDocumentService.applyEstoqueEntradaFromItens(
-      req.user.id,
-      parsed,
-      { supplierDocumentId: supplierDoc.id, fornecedorId: fornecedor.id }
-    );
-
     auditLogService.log({
       userId: req.user.id,
       action: 'supplier_doc_processed',
@@ -1672,7 +1666,8 @@ router.post('/supplier-documents/process', heavyDashboardReadLimiter, async (req
       newValue: {
         fornecedor_id: fornecedor?.id || null,
         contas_criadas: Array.isArray(contas) ? contas.length : 0,
-        estoque_aplicado: estoqueResult?.itens_aplicados ?? estoqueResult?.aplicado ?? null,
+        estoque_aplicado: false,
+        estoque_observacao: 'Atualizacao automatica de estoque desativada; revisar em etapa manual.',
         file_hash: fileHash,
         source_phone: source_phone || null
       },
@@ -1684,7 +1679,10 @@ router.post('/supplier-documents/process', heavyDashboardReadLimiter, async (req
       fornecedor,
       supplier_document: supplierDoc,
       contas_pagar: contas,
-      estoque: estoqueResult
+      estoque: {
+        applied: false,
+        message: 'Atualizacao automatica de estoque desativada; use o fluxo manual quando necessario.'
+      }
     });
   } catch (error) {
     console.error('Error processing supplier document:', error);
@@ -2213,4 +2211,3 @@ router.get('/audit-log', heavyDashboardReadLimiter, async (req, res) => {
 });
 
 module.exports = router;
-

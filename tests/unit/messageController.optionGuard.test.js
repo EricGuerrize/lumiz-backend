@@ -271,7 +271,7 @@ describe('MessageController - guard de opções órfãs', () => {
     expect(agentRouterDecideMock).not.toHaveBeenCalled();
   });
 
-  test('primeiro lançamento real pede confirmação antes de criar transação', async () => {
+  test('primeiro lançamento pós-onboarding vai direto para confirmação da transação', async () => {
     userMock = {
       id: 'user-1',
       nome_clinica: 'Clinica Teste',
@@ -291,17 +291,14 @@ describe('MessageController - guard de opções órfãs', () => {
 
     const response = await controller.handleIncomingMessage('5511999999999', 'Botox 1200 pix');
 
-    expect(response).toContain('Antes de salvar lançamentos reais');
-    expect(runtimeUpsertMock).toHaveBeenCalledWith(
+    expect(response).toBe('ok');
+    expect(runtimeUpsertMock).not.toHaveBeenCalledWith(
       '5511999999999',
       'real_mode_confirm',
-      expect.objectContaining({
-        intent: expect.objectContaining({ intencao: 'registrar_entrada' }),
-        message: 'Botox 1200 pix'
-      }),
+      expect.any(Object),
       expect.any(Number)
     );
-    expect(handleTransactionRequestMock).not.toHaveBeenCalled();
+    expect(handleTransactionRequestMock).toHaveBeenCalledTimes(1);
   });
 
   test('confirmação do modo real reprocessa o lançamento pendente', async () => {

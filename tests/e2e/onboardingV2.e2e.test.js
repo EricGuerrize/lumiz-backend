@@ -469,6 +469,21 @@ describe('Onboarding v2 — correções mid-flow', () => {
     expect(state.data.act3_pending?.valor).toBe(350);
     expect(transactionController.createContaPagar).not.toHaveBeenCalled();
   });
+
+  test('ACT3_CONFIRM: botão Corrigir abre etapa para corrigir custo antes de registrar', async () => {
+    await onboardingFlowService.startIntroFlow(PHONE);
+    await send('sim');
+    await send('Botox 900 pix');
+    await send('sim');
+    await sendMedia('', 'https://example.com/nota.jpg');
+
+    const res = await send('corrigir');
+    const state = onboardingFlowService.onboardingStates.get(PHONE);
+
+    expect(res).toContain('Me manda o custo correto');
+    expect(state.step).toBe('ACT3_COST');
+    expect(transactionController.createContaPagar).not.toHaveBeenCalled();
+  });
 });
 
 // ─── Valores inválidos ───────────────────────────────────────────────────────

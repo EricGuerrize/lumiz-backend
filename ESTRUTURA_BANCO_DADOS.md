@@ -211,6 +211,16 @@ Esta documentação detalha a estrutura completa do banco de dados Supabase util
 
 **Uso:** Relatórios e dashboards mensais
 
+### 3. `view_financial_ledger`
+**Descrição:** Ledger consolidado usado pelo dashboard e relatórios operacionais.
+
+**Regra operacional:** a view filtra lançamentos com `is_test = true`. Assim, dados de onboarding, diagnóstico ou simulação podem ficar auditáveis no banco sem entrar no saldo, relatório mensal ou indicadores reais.
+
+### 4. `view_financial_ledger_all`
+**Descrição:** Ledger consolidado sem filtro de teste, criado para auditoria e debug.
+
+**Uso:** conferência técnica, suporte e investigações. Não deve ser usado como fonte principal do dashboard financeiro.
+
 ---
 
 ## 🔧 Tabelas Auxiliares
@@ -697,7 +707,9 @@ parcelas (1) ──→ (0..1) alter_recebiveis
 
 ## Hardening financeiro — rastreabilidade de lançamentos
 
-**Migration:** `supabase/migrations/20260529195500_financial_traceability_hardening.sql`
+**Migrations:**
+- `supabase/migrations/20260529195500_financial_traceability_hardening.sql`
+- `supabase/migrations/20260601165000_filter_test_financial_views.sql`
 
 ### `atendimentos`
 Novas colunas operacionais:
@@ -720,3 +732,74 @@ Novas colunas operacionais:
 - `contas_pagar(user_id, data_vencimento)` parcial.
 - Índices parciais para `source_message_id` em receitas e despesas.
 - `conversation_runtime_states(flow, expires_at)` para limpeza e consultas operacionais.
+
+### Views financeiras filtradas
+- `view_financial_ledger_all` mantém receitas/despesas reais e de teste para auditoria.
+- `view_financial_ledger` lê de `view_financial_ledger_all` e exclui `is_test = true`.
+- `view_finance_balance` e `view_monthly_report` usam o ledger filtrado, evitando que onboarding/testes alterem saldo e relatórios do usuário.
+
+---
+
+## Inventário real — produtos, lotes e movimentos
+
+**Migration:** `supabase/migrations/20260609160000_real_inventory_tables.sql`
+
+**Objetivo:** separar o estoque físico real da clínica do modelo legado acoplado a `procedimentos`, permitindo controlar produtos, lotes, validade, custo e movimentações auditáveis.
+
+### `estoque_produtos`
+Cadastro dos itens físicos controlados pela clínica.
+
+Colunas principais:
+- `user_id` — dono do inventário.
+- `nome` — nome do produto/insumo.
+- `categoria` — agrupamento operacional (`Toxina botulínica`, `Descartáveis`, `Insumos`, etc.).
+- `unidade` — unidade operacional (`frasco`, `seringa`, `caixa`, `unidade`, etc.).
+- `estoque_minimo`, `estoque_maximo` — limites para alerta e excesso.
+- `custo_medio` — custo médio de referência.
+- `fornecedor_id`, `ativo`, `metadata`.
+
+### `estoque_lotes`
+Saldo físico por lote/validade.
+
+Colunas principais:
+- `produto_id`, `user_id`.
+- `lote`, `validade`.
+- `quantidade_atual`.
+- `custo_unitario`.
+- `supplier_document_id` — vínculo opcional com NF/boleto/documento extraído por OCR.
+
+### `estoque_movimentos_reais`
+Ledger auditável das movimentações de estoque.
+
+Colunas principais:
+- `tipo` — `entrada`, `saida`, `ajuste`, `inventario`.
+- `quantidade`, `custo_unitario`.
+- `origem` — `manual`, `whatsapp_text`, `document_ocr`, `inventario`, etc.
+- `source_phone`, `source_message_id`.
+- `observacoes`, `metadata`, `data`.
+
+### `procedimento_consumos`
+Mapeia consumo padrão de produtos por procedimento para uma fase futura de atualização pós-procedimento.
+
+Exemplos:
+- `Botox` consome `0,25 frasco` de `Botox 100UI`.
+- `Preenchimento labial` consome `1 seringa` de `Ácido hialurônico`.
+
+Colunas principais:
+- `user_id`, `procedimento_id`, `produto_id`.
+- `quantidade_por_procedimento`.
+- `unidade`, `ativo`, `metadata`.
+
+**Status atual:** estrutura criada, mas sem uso automático no fluxo público. Vendas confirmadas não baixam estoque sozinhas. A decisão de produto é fazer uma etapa explícita pós-procedimento, com confirmação do usuário sobre atualizar ou não o estoque e quais insumos foram usados.
+
+### Relacionamentos adicionados
+
+```
+profiles (1) ──→ (N) estoque_produtos
+estoque_produtos (1) ──→ (N) estoque_lotes
+estoque_produtos (1) ──→ (N) estoque_movimentos_reais
+estoque_lotes (1) ──→ (N) estoque_movimentos_reais
+supplier_documents (1) ──→ (N) estoque_lotes
+procedimentos (1) ──→ (N) procedimento_consumos
+estoque_produtos (1) ──→ (N) procedimento_consumos
+```

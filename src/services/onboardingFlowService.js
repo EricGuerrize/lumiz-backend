@@ -10,6 +10,7 @@ const transactionController = require('../controllers/transactionController');
 const documentService = require('./documentService');
 const knowledgeService = require('./knowledgeService');
 const registrationTokenService = require('./registrationTokenService');
+const realModeService = require('./realModeService');
 const { trialAccountService, buildForwardSummary, computeGhostSummary } = require('./trialAccountService');
 const {
     MIN_NAME_LENGTH,
@@ -911,6 +912,13 @@ class OnboardingStateHandlers {
         const confirmed = isYes(messageTrimmed);
         const correction = isNo(messageTrimmed);
         const paymentInfo = extractCostPaymentDetails(messageTrimmed);
+        const normalizedTextValue = normalizeText(messageTrimmed || '');
+        const isBareCorrection = ['corrigir', 'corrige', 'correcao', 'correção', 'editar', 'ajustar'].includes(normalizedTextValue);
+
+        if (isBareCorrection) {
+            onboarding.step = 'AHA_COSTS_UPLOAD';
+            return await respond(onboardingCopy.ahaCostsAdjust(), true);
+        }
 
         if (correction) {
             onboarding.step = 'AHA_COSTS_CATEGORY';
@@ -1921,8 +1929,14 @@ class OnboardingStateHandlers {
      */
     async handleAct3CostConfirm(onboarding, messageTrimmed, normalizedPhone, respond, respondAndClear) {
         const answer = this._classifyActAnswer(messageTrimmed);
+        const normalizedTextValue = normalizeText(messageTrimmed || '');
+        const isBareCorrection = ['corrigir', 'corrige', 'correcao', 'correção', 'editar', 'ajustar'].includes(normalizedTextValue);
 
         if (answer.type === 'correction' || answer.type === 'denial') {
+            if (isBareCorrection) {
+                onboarding.step = 'ACT3_COST';
+                return await respond(onboardingCopy.act3CostAdjust(), true);
+            }
             if (answer.type === 'correction') {
                 const correctedCost = this._extractActCost(messageTrimmed, onboarding.data.act3_pending || {});
                 onboarding.data.act3_pending = correctedCost;
@@ -2470,6 +2484,10 @@ class OnboardingFlowService {
             const clinicId = onboarding?.data?.userId;
             if (clinicId) {
                 try {
+                    await realModeService.confirm({ id: clinicId }, normalizedPhone).catch((error) => {
+                        console.error('[REAL_MODE] Falha ao ativar modo real no fim do onboarding:', error?.message || error);
+                    });
+
                     await trialAccountService.saveReferralSummary({
                         phone: normalizedPhone,
                         clinicId,

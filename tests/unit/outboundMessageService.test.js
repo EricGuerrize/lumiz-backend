@@ -75,6 +75,12 @@ describe('outboundMessageService', () => {
     expect(result.provider).toBe('evolution');
     expect(meta.sendText).toHaveBeenCalledWith('5565999991234', 'oi');
     expect(evolution.sendMessage).toHaveBeenCalledWith('5565999991234', 'oi');
+    expect(reliability.recordFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'outbound_provider_failed',
+        reason: expect.stringContaining('meta_text_failed')
+      })
+    );
   });
 
   it('registra falha e relança quando não há fila de reenvio', async () => {
@@ -124,6 +130,116 @@ describe('outboundMessageService', () => {
       expect.objectContaining({
         kind: 'outbound_send_queued',
         queued: true
+      })
+    );
+  });
+
+  it('envia documento pela Meta quando outbound oficial está configurado', async () => {
+    const evolution = { sendDocument: jest.fn().mockResolvedValue({ success: true }) };
+    const meta = {
+      isOutboundConfigured: jest.fn().mockReturnValue(true),
+      sendDocumentBuffer: jest.fn().mockResolvedValue({ messages: [{ id: 'wamid.doc' }] })
+    };
+    const reliability = { recordFailure: jest.fn() };
+    const service = new OutboundMessageService({
+      evolution,
+      meta,
+      reliability,
+      queueEnabled: false
+    });
+
+    const buffer = Buffer.from('pdf');
+    const result = await service.sendDocument('5565999991234', buffer, 'relatorio.pdf', 'application/pdf', { messageId: 'doc-1' });
+
+    expect(result.status).toBe('sent');
+    expect(result.provider).toBe('meta');
+    expect(meta.sendDocumentBuffer).toHaveBeenCalledWith('5565999991234', buffer, 'relatorio.pdf', 'application/pdf');
+    expect(evolution.sendDocument).not.toHaveBeenCalled();
+  });
+
+  it('cai para Evolution ao enviar documento quando Meta falha', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    const evolution = { sendDocument: jest.fn().mockResolvedValue({ success: true }) };
+    const meta = {
+      isOutboundConfigured: jest.fn().mockReturnValue(true),
+      sendDocumentBuffer: jest.fn().mockRejectedValue(new Error('meta media down'))
+    };
+    const reliability = { recordFailure: jest.fn() };
+    const service = new OutboundMessageService({
+      evolution,
+      meta,
+      reliability,
+      queueEnabled: false
+    });
+
+    const buffer = Buffer.from('pdf');
+    const result = await service.sendDocument('5565999991234', buffer, 'relatorio.pdf', 'application/pdf', { messageId: 'doc-fallback-1' });
+
+    expect(result.status).toBe('sent');
+    expect(result.provider).toBe('evolution');
+    expect(evolution.sendDocument).toHaveBeenCalledWith('5565999991234', buffer.toString('base64'), 'relatorio.pdf', 'application/pdf');
+    expect(reliability.recordFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'outbound_provider_failed',
+        messageId: 'doc-fallback-1',
+        reason: expect.stringContaining('meta_document_failed')
+      })
+    );
+  });
+
+  it('envia botões interativos pela Meta quando disponível', async () => {
+    const evolution = { sendMessage: jest.fn().mockResolvedValue({ success: true }) };
+    const meta = {
+      isOutboundConfigured: jest.fn().mockReturnValue(true),
+      sendInteractiveButtons: jest.fn().mockResolvedValue({ messages: [{ id: 'wamid.buttons' }] })
+    };
+    const reliability = { recordFailure: jest.fn() };
+    const service = new OutboundMessageService({
+      evolution,
+      meta,
+      reliability,
+      queueEnabled: false
+    });
+
+    const buttons = [{ id: 'doc_confirm', title: 'Confirmar' }];
+    const result = await service.sendInteractiveButtons('5565999991234', 'confirma?', buttons, 'responda sim');
+
+    expect(result.status).toBe('sent');
+    expect(result.provider).toBe('meta');
+    expect(meta.sendInteractiveButtons).toHaveBeenCalledWith('5565999991234', 'confirma?', buttons);
+    expect(evolution.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('usa fallback textual quando botões interativos falham', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    const evolution = { sendMessage: jest.fn().mockResolvedValue({ success: true }) };
+    const meta = {
+      isOutboundConfigured: jest.fn().mockReturnValue(true),
+      sendInteractiveButtons: jest.fn().mockRejectedValue(new Error('interactive unsupported'))
+    };
+    const reliability = { recordFailure: jest.fn() };
+    const service = new OutboundMessageService({
+      evolution,
+      meta,
+      reliability,
+      queueEnabled: false
+    });
+
+    const result = await service.sendInteractiveButtons(
+      '5565999991234',
+      'confirma?',
+      [{ id: 'doc_confirm', title: 'Confirmar' }],
+      'responda sim',
+      { messageId: 'interactive-1' }
+    );
+
+    expect(result.status).toBe('sent');
+    expect(result.provider).toBe('evolution');
+    expect(evolution.sendMessage).toHaveBeenCalledWith('5565999991234', 'responda sim');
+    expect(reliability.recordFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'outbound_interactive_failed',
+        messageId: 'interactive-1'
       })
     );
   });

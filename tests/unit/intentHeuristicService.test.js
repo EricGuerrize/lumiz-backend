@@ -67,6 +67,73 @@ describe('IntentHeuristicService', () => {
     expect(knowledgeService.searchSimilarity).not.toHaveBeenCalled();
   });
 
+  test('detectIntent preserva mes quando pedido de relatorio em PDF informa mes', async () => {
+    knowledgeService.searchSimilarity.mockResolvedValue([]);
+    const result = await intentHeuristicService.detectIntent('gerar pdf de maio', null);
+    expect(result).toEqual(
+      expect.objectContaining({
+        intencao: 'exportar_dados',
+        dados: { formato: 'pdf', mes: 5, ano: expect.any(Number) },
+        source: 'heuristic'
+      })
+    );
+    expect(knowledgeService.searchSimilarity).not.toHaveBeenCalled();
+  });
+
+  test('detectIntent entende relatorio com nome do mes', async () => {
+    knowledgeService.searchSimilarity.mockResolvedValue([]);
+    const result = await intentHeuristicService.detectIntent('relatório maio', null);
+    expect(result).toEqual(
+      expect.objectContaining({
+        intencao: 'relatorio_mensal',
+        dados: { mes: 5, ano: expect.any(Number) },
+        source: 'heuristic'
+      })
+    );
+    expect(knowledgeService.searchSimilarity).not.toHaveBeenCalled();
+  });
+
+  test('detectIntent entende relatorio com mes numerico', async () => {
+    knowledgeService.searchSimilarity.mockResolvedValue([]);
+    const result = await intentHeuristicService.detectIntent('relatório mes 6', null);
+    expect(result).toEqual(
+      expect.objectContaining({
+        intencao: 'relatorio_mensal',
+        dados: { mes: 6, ano: expect.any(Number) },
+        source: 'heuristic'
+      })
+    );
+    expect(knowledgeService.searchSimilarity).not.toHaveBeenCalled();
+  });
+
+  test('detectIntent prioriza contas a pagar antes de custo generico', async () => {
+    knowledgeService.searchSimilarity.mockResolvedValue([]);
+
+    const result = await intentHeuristicService.detectIntent('contas a pagar', null);
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        intencao: 'consultar_contas_pagar',
+        dados: {},
+        source: 'heuristic'
+      })
+    );
+    expect(knowledgeService.searchSimilarity).not.toHaveBeenCalled();
+  });
+
+  test('detectIntent entende export PDF com mes numerico', async () => {
+    knowledgeService.searchSimilarity.mockResolvedValue([]);
+    const result = await intentHeuristicService.detectIntent('gerar pdf mes 06', null);
+    expect(result).toEqual(
+      expect.objectContaining({
+        intencao: 'exportar_dados',
+        dados: { formato: 'pdf', mes: 6, ano: expect.any(Number) },
+        source: 'heuristic'
+      })
+    );
+    expect(knowledgeService.searchSimilarity).not.toHaveBeenCalled();
+  });
+
   test('detectIntent nao trata PDF isolado como exportacao', async () => {
     knowledgeService.searchSimilarity.mockResolvedValue([]);
 

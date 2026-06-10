@@ -1,5 +1,6 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
+const crypto = require('crypto');
 const router = express.Router();
 const messageController = require('../controllers/messageController');
 const evolutionService = require('../services/evolutionService');
@@ -12,6 +13,7 @@ const outboundMessageService = require('../services/outboundMessageService');
 const messageReliabilityService = require('../services/messageReliabilityService');
 const metaWhatsappService = require('../services/metaWhatsappService');
 const { extractPhoneFromWebhookBody } = require('../utils/phone');
+const documentCopy = require('../copy/documentWhatsappCopy');
 
 // Deduplicação de mensagens: previne double-send quando a Evolution API dispara o webhook
 // nas duas rotas (/webhook e /webhook/messages-upsert) para a mesma mensagem, ou reenvia
@@ -19,8 +21,9 @@ const { extractPhoneFromWebhookBody } = require('../utils/phone');
 const _processedMsgIds = new Set();
 const _processedMsgTimes = new Map(); // key -> timestamp (para TTL)
 const MSG_DEDUP_TTL = 5 * 60 * 1000; // 5 minutos
-const PRESENCE_ENABLED = process.env.WHATSAPP_PRESENCE_ENABLED !== 'false';
-const WEBHOOK_FALLBACK_MESSAGE = 'Recebi sua mensagem, mas não consegui concluir a leitura agora 😅\n\nMe manda de novo em alguns instantes ou escreve de um jeito mais direto, tipo: "botox 500 no pix".';
+const PRESENCE_ENABLED = process.env.WHATSAPP_PRESENCE_ENABLED === 'true';
+const WEBHOOK_FALLBACK_MESSAGE = documentCopy.fallbackMessage();
+const ASYNC_MEDIA_PROCESSING = process.env.WHATSAPP_ASYNC_MEDIA_PROCESSING === 'true';
 
 const _dedupCleanupInterval = setInterval(() => {
   const now = Date.now();
@@ -114,6 +117,65 @@ function normalizeEvolutionWebhookBody(rawBody) {
   return { ok: false, reason: 'unrecognized_shape', event: null, data: null, body: rawBody };
 }
 
+function timingSafeEqualString(a, b) {
+  const left = Buffer.from(String(a || ''));
+  const right = Buffer.from(String(b || ''));
+  if (left.length !== right.length) return false;
+  return crypto.timingSafeEqual(left, right);
+}
+
+function maskPhone(value) {
+  const digits = String(value || '').replace(/\D+/g, '');
+  if (!digits) return 'unknown';
+  return `...${digits.slice(-4)}`;
+}
+
+function isMetaWebhookPayload(body) {
+  return body?.object === 'whatsapp_business_account';
+}
+
+function validateMetaSignature(req) {
+  const appSecret = process.env.META_APP_SECRET;
+  if (!appSecret || !isMetaWebhookPayload(req.body)) return { ok: true };
+
+  const signatureHeader = req.headers['x-hub-signature-256'];
+  if (!signatureHeader || typeof signatureHeader !== 'string') {
+    return { ok: false, reason: 'missing_meta_signature' };
+  }
+
+  const rawBody = Buffer.isBuffer(req.rawBody)
+    ? req.rawBody
+    : Buffer.from(JSON.stringify(req.body || {}));
+  const expected = `sha256=${crypto
+    .createHmac('sha256', appSecret)
+    .update(rawBody)
+    .digest('hex')}`;
+
+  return timingSafeEqualString(signatureHeader, expected)
+    ? { ok: true }
+    : { ok: false, reason: 'invalid_meta_signature' };
+}
+
+function validateEvolutionWebhookSecret(req) {
+  const secret = process.env.EVOLUTION_WEBHOOK_SECRET;
+  if (!secret || isMetaWebhookPayload(req.body)) return { ok: true };
+
+  const provided = req.headers['x-webhook-secret'] ||
+    req.headers['x-evolution-webhook-secret'] ||
+    String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+
+  if (!provided) return { ok: false, reason: 'missing_evolution_webhook_secret' };
+  return timingSafeEqualString(provided, secret)
+    ? { ok: true }
+    : { ok: false, reason: 'invalid_evolution_webhook_secret' };
+}
+
+function validateInboundWebhook(req) {
+  const meta = validateMetaSignature(req);
+  if (!meta.ok) return meta;
+  return validateEvolutionWebhookSecret(req);
+}
+
 // Normaliza o formato nativo da Meta Cloud API para o formato interno usado pelo webhookHandler.
 // Usado quando a Meta envia o webhook diretamente (sem passar pela Evolution API como intermediário).
 function normalizeMetaWebhookBody(rawBody) {
@@ -161,6 +223,13 @@ function normalizeMetaWebhookBody(rawBody) {
       voice: msg.audio?.voice || false,
       meta_media_id: msg.audio?.id,
     };
+  } else if (type === 'interactive') {
+    const buttonReply = msg.interactive?.button_reply || {};
+    data.message.conversation = documentCopy.mapDocumentButtonReply(buttonReply.id, buttonReply.title);
+    data.message.interactiveMessage = {
+      buttonId: buttonReply.id || null,
+      title: buttonReply.title || null
+    };
   } else {
     return { ok: false, reason: `meta_unsupported_type:${type}`, event: null, data: null, body: rawBody };
   }
@@ -171,6 +240,19 @@ function normalizeMetaWebhookBody(rawBody) {
 const webhookHandler = async (req, res) => {
   const receivedAt = Date.now();
   try {
+    const inboundAuth = validateInboundWebhook(req);
+    if (!inboundAuth.ok) {
+      messageReliabilityService.recordFailure({
+        kind: 'webhook_signature_failed',
+        phase: 'security',
+        phone: extractPhoneFromWebhookBody(req.body),
+        messageId: null,
+        messageType: isMetaWebhookPayload(req.body) ? 'meta_webhook' : 'evolution_webhook',
+        reason: inboundAuth.reason
+      });
+      return res.status(401).json({ status: 'error', reason: 'invalid webhook signature' });
+    }
+
     // Validação de entrada
     if (!req.body || typeof req.body !== 'object') {
       console.error('[WEBHOOK] ❌ Body inválido ou vazio');
@@ -179,7 +261,15 @@ const webhookHandler = async (req, res) => {
 
     const normalized = normalizeEvolutionWebhookBody(req.body);
     if (!normalized.ok) {
-      console.error('[WEBHOOK] ❌ Payload não reconhecido. reason=', normalized.reason, 'keys=', Object.keys(req.body || {}).slice(0, 30));
+      const isMetaNonMessageEvent = normalized.reason === 'meta_no_message' || normalized.reason === 'meta_no_messages_field';
+      const log = isMetaNonMessageEvent ? console.log : console.error;
+      log(
+        `[WEBHOOK] ${isMetaNonMessageEvent ? 'Meta event ignorado' : '❌ Payload não reconhecido'}.`,
+        'reason=',
+        normalized.reason,
+        'keys=',
+        Object.keys(req.body || {}).slice(0, 30)
+      );
       return res.status(200).json({ status: 'ignored', reason: 'unrecognized payload shape' });
     }
 
@@ -193,7 +283,7 @@ const webhookHandler = async (req, res) => {
 
     const incomingKey = data?.key;
     const fromMeFlag = normalizeFromMeFlag(incomingKey?.fromMe);
-    console.error('[WEBHOOK] evento recebido:', event, '| remoteJid:', incomingKey?.remoteJid, '| fromMe:', fromMeFlag, '| rawFromMe:', incomingKey?.fromMe);
+    console.log('[WEBHOOK] evento recebido:', event, '| phone:', maskPhone(incomingKey?.remoteJid), '| fromMe:', fromMeFlag, '| rawFromMe:', incomingKey?.fromMe);
 
     if (event === 'messages.upsert') {
       if (!data || typeof data !== 'object') {
@@ -219,9 +309,9 @@ const webhookHandler = async (req, res) => {
       if (!phone) {
         const isLid = String(key.remoteJid).endsWith('@lid');
         if (isLid) {
-          console.error('[WEBHOOK] ❌ @lid sem phone resolvido. Payload completo:', JSON.stringify(req.body).substring(0, 2000));
+          console.error('[WEBHOOK] ❌ @lid sem phone resolvido. messageId:', key.id || 'N/A');
         }
-        console.error('[WEBHOOK] ❌ Telefone inválido. remoteJid:', key.remoteJid, 'senderPn:', key.senderPn || 'N/A', 'sender:', JSON.stringify(req.body.sender)?.substring(0, 100));
+        console.error('[WEBHOOK] ❌ Telefone inválido. remoteJid:', maskPhone(key.remoteJid), 'senderPn:', maskPhone(key.senderPn));
         return res.status(200).json({ status: 'ignored', reason: 'invalid phone' });
       }
 
@@ -259,6 +349,32 @@ const webhookHandler = async (req, res) => {
           let finalStatus = 'ok';
           let finalError = null;
           let response = '';
+          const steps = {};
+          const addStep = (name, ms) => {
+            if (Number.isFinite(Number(ms))) {
+              steps[name] = (steps[name] || 0) + Number(ms);
+            }
+          };
+          const timeStep = async (name, fn) => {
+            const startedAt = Date.now();
+            try {
+              return await fn();
+            } finally {
+              addStep(name, Date.now() - startedAt);
+            }
+          };
+          const sendMediaProcessingAckIfNeeded = async () => {
+            if (!ASYNC_MEDIA_PROCESSING || !['image', 'document'].includes(messageType)) return;
+            await timeStep('media_ack_send_ms', () => outboundMessageService.sendText(
+              phone,
+              documentCopy.documentProcessingStarted(),
+              {
+                messageId: `${key.id || Date.now()}-media-ack`,
+                messageType,
+                source: 'webhook_media_processing_ack'
+              }
+            ));
+          };
           try {
             if (
               PRESENCE_ENABLED &&
@@ -271,6 +387,7 @@ const webhookHandler = async (req, res) => {
             }
 
             if (imageMessage) {
+              await sendMediaProcessingAckIfNeeded();
               // Mensagem com imagem
               const caption = imageMessage.caption || '';
               const messageKey = key;
@@ -283,34 +400,67 @@ const webhookHandler = async (req, res) => {
                   }
                   const imageBuffer = Buffer.from(base64Data, 'base64');
                   const mimeType = imageMessage.mimetype || 'image/jpeg';
-                  response = await messageController.handleImageMessageWithBuffer(phone, imageBuffer, mimeType, caption, messageKey);
+                  response = await timeStep('media_process_ms', () =>
+                    messageController.handleImageMessageWithBuffer(phone, imageBuffer, mimeType, caption, messageKey)
+                  );
                 } catch (imgError) {
                   console.error(`[WEBHOOK] [IMG] ❌ Erro ao processar base64:`, imgError.message);
-                  response = 'Erro ao processar imagem 😢\n\nTente enviar novamente ou registre manualmente.';
+                  messageReliabilityService.recordFailure({
+                    kind: 'document_ocr_failed',
+                    phase: 'document',
+                    phone,
+                    messageId: key.id,
+                    messageType,
+                    reason: imgError.message
+                  });
+                  response = documentCopy.documentOcrFailed();
                 }
               } else if (imageMessage.meta_media_id) {
                 try {
-                  const media = await metaWhatsappService.downloadMedia(imageMessage.meta_media_id);
+                  const media = await timeStep('media_download_ms', () =>
+                    metaWhatsappService.downloadMedia(imageMessage.meta_media_id)
+                  );
                   const mimeType = imageMessage.mimetype || media.contentType || 'image/jpeg';
-                  response = await messageController.handleImageMessageWithBuffer(phone, media.data, mimeType, caption, messageKey);
+                  response = await timeStep('media_process_ms', () =>
+                    messageController.handleImageMessageWithBuffer(phone, media.data, mimeType, caption, messageKey)
+                  );
                 } catch (metaImgError) {
                   console.error(`[WEBHOOK] [IMG] ❌ Erro ao baixar mídia Meta:`, metaImgError.message);
-                  response = 'Não consegui acessar a imagem 😢\n\nTente enviar novamente ou registre manualmente.';
+                  messageReliabilityService.recordFailure({
+                    kind: 'media_download_failed',
+                    phase: 'download',
+                    phone,
+                    messageId: key.id,
+                    messageType,
+                    reason: metaImgError.message
+                  });
+                  response = documentCopy.mediaDownloadFailed();
                 }
               } else {
                 const mediaUrl = imageMessage.url || imageMessage.directPath;
                 if (!mediaUrl) {
-                  response = 'Não consegui acessar a imagem 😢\n\nA API não forneceu a mídia.';
+                  messageReliabilityService.recordFailure({
+                    kind: 'media_download_failed',
+                    phase: 'download',
+                    phone,
+                    messageId: key.id,
+                    messageType,
+                    reason: 'missing_image_media'
+                  });
+                  response = documentCopy.mediaDownloadFailed();
                 } else {
                   try {
-                    response = await messageController.handleImageMessage(phone, mediaUrl, caption, messageKey);
+                    response = await timeStep('media_process_ms', () =>
+                      messageController.handleImageMessage(phone, mediaUrl, caption, messageKey)
+                    );
                   } catch (imgError) {
                     console.error(`[WEBHOOK] [IMG] ❌ Erro ao processar imagem:`, imgError.message);
-                    response = 'Erro ao processar imagem 😢';
+                    response = documentCopy.documentOcrFailed();
                   }
                 }
               }
             } else if (documentMessage) {
+              await sendMediaProcessingAckIfNeeded();
               // Mensagem com documento
               const fileName = documentMessage.fileName || 'documento';
               const messageKey = key;
@@ -323,27 +473,63 @@ const webhookHandler = async (req, res) => {
                   }
                   const docBuffer = Buffer.from(base64Data, 'base64');
                   const mimeType = documentMessage.mimetype || 'application/pdf';
-                  response = await messageController.handleDocumentMessageWithBuffer(phone, docBuffer, mimeType, fileName, messageKey);
+                  response = await timeStep('media_process_ms', () =>
+                    messageController.handleDocumentMessageWithBuffer(phone, docBuffer, mimeType, fileName, messageKey)
+                  );
                 } catch (docError) {
                   console.error(`[WEBHOOK] [DOC] ❌ Erro ao processar base64:`, docError.message);
-                  response = 'Erro ao processar documento 😢';
+                  messageReliabilityService.recordFailure({
+                    kind: 'document_ocr_failed',
+                    phase: 'document',
+                    phone,
+                    messageId: key.id,
+                    messageType,
+                    reason: docError.message
+                  });
+                  response = documentCopy.documentOcrFailed();
                 }
               } else if (documentMessage.meta_media_id) {
                 try {
-                  const media = await metaWhatsappService.downloadMedia(documentMessage.meta_media_id);
+                  const media = await timeStep('media_download_ms', () =>
+                    metaWhatsappService.downloadMedia(documentMessage.meta_media_id)
+                  );
                   const mimeType = documentMessage.mimetype || media.contentType || 'application/pdf';
-                  response = await messageController.handleDocumentMessageWithBuffer(phone, media.data, mimeType, fileName, messageKey);
+                  response = await timeStep('media_process_ms', () =>
+                    messageController.handleDocumentMessageWithBuffer(phone, media.data, mimeType, fileName, messageKey)
+                  );
                 } catch (metaDocError) {
                   console.error(`[WEBHOOK] [DOC] ❌ Erro ao baixar mídia Meta:`, metaDocError.message);
-                  response = 'Não consegui acessar o documento 😢\n\nTente enviar novamente ou registre manualmente.';
+                  messageReliabilityService.recordFailure({
+                    kind: 'media_download_failed',
+                    phase: 'download',
+                    phone,
+                    messageId: key.id,
+                    messageType,
+                    reason: metaDocError.message
+                  });
+                  response = documentCopy.mediaDownloadFailed();
                 }
               } else {
                 const mediaUrl = documentMessage.url || documentMessage.directPath;
-                try {
-                  response = await messageController.handleDocumentMessage(phone, mediaUrl, fileName, messageKey);
-                } catch (docError) {
-                  console.error(`[WEBHOOK] [DOC] Erro ao processar documento:`, docError.message);
-                  response = 'Erro ao processar documento 😢';
+                if (!mediaUrl) {
+                  messageReliabilityService.recordFailure({
+                    kind: 'media_download_failed',
+                    phase: 'download',
+                    phone,
+                    messageId: key.id,
+                    messageType,
+                    reason: 'missing_document_media'
+                  });
+                  response = documentCopy.mediaDownloadFailed();
+                } else {
+                  try {
+                    response = await timeStep('media_process_ms', () =>
+                      messageController.handleDocumentMessage(phone, mediaUrl, fileName, messageKey)
+                    );
+                  } catch (docError) {
+                    console.error(`[WEBHOOK] [DOC] Erro ao processar documento:`, docError.message);
+                    response = documentCopy.documentOcrFailed();
+                  }
                 }
               }
             } else if (audioMessage) {
@@ -357,7 +543,9 @@ const webhookHandler = async (req, res) => {
                   let mimeType = audioMessage.mimetype || audioMessage.mimeType || 'audio/ogg';
 
                   if (!base64Data && audioMessage.meta_media_id) {
-                    const media = await metaWhatsappService.downloadMedia(audioMessage.meta_media_id);
+                    const media = await timeStep('media_download_ms', () =>
+                      metaWhatsappService.downloadMedia(audioMessage.meta_media_id)
+                    );
                     audioBuffer = media.data;
                     mimeType = audioMessage.mimetype || audioMessage.mimeType || media.contentType || 'audio/ogg';
                   }
@@ -376,13 +564,15 @@ const webhookHandler = async (req, res) => {
                       console.warn('[WEBHOOK] [AUDIO] MIME não suportado, tentando como audio/ogg:', mimeType);
                     }
 
-                    const { text: transcribedText, durationMs } = await audioTranscriptionService.transcribe(audioBuffer, mimeType);
+                    const { text: transcribedText, durationMs } = await timeStep('audio_transcription_ms', () =>
+                      audioTranscriptionService.transcribe(audioBuffer, mimeType)
+                    );
                     console.log(`[WEBHOOK] [AUDIO] Transcrição em ${durationMs}ms (${transcribedText.length} chars)`);
 
                     if (!transcribedText || transcribedText.trim().length === 0) {
                       response = 'Não consegui entender o áudio 🤔\n\nTente falar de novo ou me mande por texto.';
                     } else {
-                      const innerResponse = await messageController.handleIncomingMessage(phone, transcribedText);
+                      const innerResponse = await messageController.handleIncomingMessage(phone, transcribedText, { timings: steps });
                       const transcricaoResumo = transcribedText.length > 240
                         ? `${transcribedText.slice(0, 240).trim()}…`
                         : transcribedText.trim();
@@ -402,7 +592,7 @@ const webhookHandler = async (req, res) => {
             } else if (messageText) {
               // Mensagem de texto normal
               try {
-                response = await messageController.handleIncomingMessage(phone, messageText);
+                response = await messageController.handleIncomingMessage(phone, messageText, { timings: steps });
               } catch (msgError) {
                 console.error(`[WEBHOOK] [MSG] Erro ao processar mensagem:`, msgError.message);
                 messageReliabilityService.recordFailure({
@@ -434,11 +624,22 @@ const webhookHandler = async (req, res) => {
             if (response && typeof response === 'string' && response.trim().length > 0) {
               processingFinishedAt = Date.now();
               sendStartedAt = Date.now();
-              const sendResult = await outboundMessageService.sendText(phone, response, {
+              const metadata = {
                 messageId: key.id,
                 messageType,
                 source: 'webhook_response'
-              });
+              };
+              const shouldSendDocumentButtons = ['image', 'document'].includes(messageType) &&
+                documentCopy.isDocumentConfirmationPrompt(response);
+              const sendResult = shouldSendDocumentButtons
+                ? await outboundMessageService.sendInteractiveButtons(
+                    phone,
+                    response,
+                    documentCopy.documentConfirmationButtons(),
+                    response,
+                    metadata
+                  )
+                : await outboundMessageService.sendText(phone, response, metadata);
               sendFinishedAt = Date.now();
               if (sendResult?.status === 'queued') {
                 finalStatus = 'queued';
@@ -495,7 +696,8 @@ const webhookHandler = async (req, res) => {
               totalMs: finishedAt - receivedAt,
               responseChars: typeof response === 'string' ? response.length : 0,
               status: finalStatus,
-              error: finalError
+              error: finalError,
+              steps
             });
           }
         })();
@@ -599,3 +801,10 @@ router.post('/test', async (req, res) => {
 
 
 module.exports = router;
+module.exports._test = {
+  validateInboundWebhook,
+  validateMetaSignature,
+  validateEvolutionWebhookSecret,
+  normalizeMetaWebhookBody,
+  normalizeEvolutionWebhookBody
+};

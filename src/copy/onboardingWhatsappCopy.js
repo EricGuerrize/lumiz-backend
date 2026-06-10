@@ -323,6 +323,13 @@ module.exports = {
         );
     },
 
+    ahaCostsAdjust() {
+        return (
+            `Ok. Me manda o custo correto em uma frase.\n\n` +
+            `Exemplo: _"toxina R$ 600 variável insumos"_`
+        );
+    },
+
     ahaCostsRegistered() {
         return (
             `Custo registrado (teste) ✅`
@@ -923,14 +930,12 @@ module.exports = {
             `Perfeito. Seu primeiro raio-x financeiro está pronto ✅\n\n` +
             snapshot +
             `Importante: esses valores foram usados só como teste do onboarding. Eles não foram lançados como receita ou despesa real da clínica.\n\n` +
-            `A partir de agora, a Lumiz pode acompanhar a rotina financeira da clínica direto por aqui.\n\n` +
-            `Nos próximos 30 dias, você pode testar a experiência completa:\n` +
-            `• lançar receitas e despesas por texto, áudio, foto ou PDF;\n` +
-            `• enviar notas fiscais, boletos e comprovantes;\n` +
-            `• consultar saldo, entradas, custos e insights;\n` +
-            `• acompanhar margem por procedimento e impacto das taxas de maquininha.\n\n` +
-            `Por enquanto, vamos deixar seus lançamentos bem organizados no WhatsApp. ` +
-            `Daqui pra frente, tudo que você mandar como rotina financeira pode ser tratado como lançamento real. Quando a próxima etapa da plataforma estiver pronta, eu te aviso por aqui.`
+            `Onboarding finalizado.\n\n` +
+            `A partir de agora, use este WhatsApp para enviar os dados reais da clínica:\n` +
+            `• receitas e despesas por texto, áudio, foto ou PDF;\n` +
+            `• notas fiscais, boletos e comprovantes;\n` +
+            `• consultas como saldo, contas a pagar, histórico e relatório.\n\n` +
+            `Antes de registrar qualquer lançamento, eu sempre vou te mostrar um resumo para confirmar, corrigir ou cancelar.`
         );
     },
 

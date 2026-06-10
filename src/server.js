@@ -52,6 +52,7 @@ const estoqueService = require('./services/estoqueService');
 const conversationRuntimeStateService = require('./services/conversationRuntimeStateService');
 const { deliverPreviousMonthSummaries } = require('./services/monthlyReportDeliveryService');
 const margemAlertaService = require('./services/margemAlertaService');
+const whatsappOperationalAlertService = require('./services/whatsappOperationalAlertService');
 
 // Sentry initialization is now handled in instrument.js
 
@@ -103,6 +104,14 @@ cron.schedule('0 8 * * *', async () => {
     await margemAlertaService.checkAndAlertMargemCaindo();
   } catch (error) {
     console.error('[CRON] Erro no alerta de margem:', error);
+    if (process.env.SENTRY_DSN) Sentry.captureException(error);
+  }
+  console.log('[CRON] Verificando alertas operacionais WhatsApp...');
+  try {
+    await whatsappOperationalAlertService.sendValidityAlerts();
+    await whatsappOperationalAlertService.sendDailyBriefings();
+  } catch (error) {
+    console.error('[CRON] Erro nos alertas operacionais:', error);
     if (process.env.SENTRY_DSN) Sentry.captureException(error);
   }
 });
@@ -245,9 +254,15 @@ try {
   console.warn('[SERVER] Continuando sem rate limiting por usuário (usando apenas por IP)');
 }
 
-// Aumenta limite para aceitar imagens grandes no webhook
+// Aumenta limite para aceitar imagens grandes no webhook e preserva raw body
+// para validação HMAC de webhooks Meta.
 const jsonLimit = '10mb';
-app.use(express.json({ limit: jsonLimit }));
+app.use(express.json({
+  limit: jsonLimit,
+  verify: (req, _res, buf) => {
+    req.rawBody = buf;
+  }
+}));
 app.use(express.urlencoded({ extended: true, limit: jsonLimit }));
 console.log(`[SERVER] Body parser configurado com limite de ${jsonLimit}`);
 
@@ -425,6 +440,30 @@ app.get('/api/cron/reminders', async (req, res) => {
   }
 });
 
+app.get('/api/cron/operational-alerts', async (req, res) => {
+  try {
+    const cronSecret = req.headers['x-cron-secret'];
+    if (process.env.CRON_SECRET && cronSecret !== process.env.CRON_SECRET) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const validityAlerts = await whatsappOperationalAlertService.sendValidityAlerts();
+    const dailyBriefings = await whatsappOperationalAlertService.sendDailyBriefings();
+
+    res.json({
+      status: 'success',
+      timestamp: new Date().toISOString(),
+      validity_alerts_sent: validityAlerts.length,
+      daily_briefings_sent: dailyBriefings.length,
+      validityAlerts,
+      dailyBriefings
+    });
+  } catch (error) {
+    console.error('[CRON] operational-alerts:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+});
+
 app.get('/api/cron/runtime-cleanup', async (req, res) => {
   try {
     const cronSecret = req.headers['x-cron-secret'];
@@ -517,7 +556,8 @@ app.get('/', (req, res) => {
         reminders: '/api/cron/reminders',
         monthlyReport: '/api/cron/monthly-report',
         alterInsights: '/api/cron/alter-insights',
-        runtimeCleanup: '/api/cron/runtime-cleanup'
+        runtimeCleanup: '/api/cron/runtime-cleanup',
+        operationalAlerts: '/api/cron/operational-alerts'
       },
       config: {
         features: '/api/config/features'

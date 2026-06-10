@@ -4,6 +4,7 @@ const { withTimeout, retryWithBackoff } = require('../utils/timeout');
 const googleVisionService = require('./googleVisionService');
 const { validateImage, likelyDocument, LIMITS } = require('../utils/imageValidator');
 const { formatarMoeda } = require('../utils/currency');
+const documentCopy = require('../copy/documentWhatsappCopy');
 
 // Timeout para processamento de imagens (60 segundos - imagens podem demorar)
 const IMAGE_PROCESSING_TIMEOUT_MS = 60000;
@@ -215,6 +216,24 @@ class DocumentService {
     return this.processDocumentFromBuffer(imageBuffer, mimeType, null);
   }
 
+  formatTransactionDescription(description) {
+    if (!description) return null;
+    let cleaned = String(description).trim();
+
+    cleaned = cleaned.replace(/\s*\(valor do documento\s*R?\$?\s*[\d.,]+\)\.?/i, '').trim();
+
+    const boletoMatch = cleaned.match(/^pagamento de boleto para\s+(.+?)\.?$/i);
+    if (boletoMatch?.[1]) {
+      return `Beneficiário: ${boletoMatch[1].trim().replace(/\.$/, '')}`;
+    }
+
+    const pixMatch = cleaned.match(/^pagamento(?: pix)? para\s+(.+?)\.?$/i);
+    if (pixMatch?.[1]) {
+      return `Beneficiário: ${pixMatch[1].trim().replace(/\.$/, '')}`;
+    }
+
+    return cleaned;
+  }
 
   /**
    * Formata o resultado do OCR para exibição ao usuário
@@ -240,7 +259,7 @@ class DocumentService {
     }
 
     if (result.tipo_documento === 'nao_identificado') {
-      return `Não consegui identificar o documento 🤔\n\nTente enviar:\n- Foto mais nítida\n- PDF/imagem do boleto\n- Screenshot do extrato\n\nOu registre manualmente.`;
+      return documentCopy.documentOcrFailed();
     }
 
     const tipoNome = {
@@ -256,11 +275,12 @@ class DocumentService {
     let message = `📄 *${tipoNome[result.tipo_documento] || result.tipo_documento.toUpperCase()}*\n\n`;
 
     if (!result.transacoes || result.transacoes.length === 0) {
-      message += `Não encontrei transações neste documento.\n\nRegistre manualmente.`;
+      message += documentCopy.documentNoTransactions();
       return message;
     }
 
-    message += `📋 Encontrei *${result.transacoes.length} transação(ões)*:\n\n`;
+    const count = result.transacoes.length;
+    message += `📋 Encontrei *${count} lançamento${count > 1 ? 's' : ''}*:\n\n`;
 
     result.transacoes.forEach((t, index) => {
       const emoji = t.tipo === 'entrada' ? '💰' : '💸';
@@ -276,16 +296,14 @@ class DocumentService {
         // Mantém original se falhar
       }
 
-      message += `${index + 1}. ${emoji} *${tipoTexto}*\n`;
-      message += `   💵 ${formatarMoeda(t.valor)}\n`;
-      message += `   📂 ${t.categoria}\n`;
-      if (t.category_trigger) {
-        message += `   🧠 ${t.category_trigger}\n`;
+      const descricao = this.formatTransactionDescription(t.descricao);
+
+      message += `${index + 1}. ${emoji} *${tipoTexto}* — ${formatarMoeda(t.valor)}\n`;
+      message += `   📂 Categoria: ${t.categoria || 'Sem categoria'}\n`;
+      if (descricao) {
+        message += `   📝 ${descricao}\n`;
       }
-      if (t.descricao) {
-        message += `   📝 ${t.descricao}\n`;
-      }
-      message += `   📅 ${dataFormatada}\n`;
+      message += `   📅 Data: ${dataFormatada}\n`;
       if (t.parcelas && t.parcelas > 1) {
         message += `   🗓 *${t.parcelas}x boleto*`;
         if (Array.isArray(t.condicoes_pagamento) && t.condicoes_pagamento.length) {
@@ -313,11 +331,7 @@ class DocumentService {
       message += `\n`;
     });
 
-    if (result.transacoes.length === 1) {
-      message += `Responda *SIM* pra registrar ou *NÃO* pra cancelar`;
-    } else {
-      message += `Responda *SIM* pra registrar TODAS ou *NÃO* pra cancelar`;
-    }
+    message += documentCopy.documentConfirmationInstructions(result.transacoes.length);
 
     return message;
   }

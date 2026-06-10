@@ -1,7 +1,7 @@
-const pdfQueueService = require('../../services/pdfQueueService');
 const pdfService = require('../../services/pdfService');
 const excelService = require('../../services/excelService');
-const evolutionService = require('../../services/evolutionService');
+const outboundMessageService = require('../../services/outboundMessageService');
+const exportCopy = require('../../copy/exportWhatsappCopy');
 
 /**
  * Handler para exportação de dados (PDF, Excel)
@@ -25,36 +25,33 @@ class ExportHandler {
    */
   async handleExportDataPDF(user, phone, dados = {}) {
     try {
-      await evolutionService.sendMessage(
-        phone,
-        'Gerando seu relatório em PDF...\n\nIsso pode levar alguns segundos!'
-      );
+      await outboundMessageService.sendText(phone, exportCopy.generatingPdf(), {
+        messageType: 'export_pdf_status',
+        source: 'export_handler'
+      });
 
       const now = new Date();
       const year = dados?.ano || now.getFullYear();
       const month = dados?.mes || now.getMonth() + 1;
 
       const pdfBuffer = await pdfService.generateMonthlyReportPDF(user.id, year, month);
-      const base64Pdf = pdfBuffer.toString('base64');
       const mesNome = new Date(year, month - 1, 1).toLocaleDateString('pt-BR', { month: 'long' });
       const fileName = `Relatorio_${mesNome}_${year}.pdf`;
 
-      await evolutionService.sendMessage(
-        phone,
-        `✅ *Relatório gerado!*\n\nEnviando PDF...`
-      );
+      await outboundMessageService.sendText(phone, exportCopy.pdfReadySending(), {
+        messageType: 'export_pdf_status',
+        source: 'export_handler'
+      });
 
-      // Envia PDF via Evolution API
-      await evolutionService.sendDocument(phone, base64Pdf, fileName, 'application/pdf');
+      await outboundMessageService.sendDocument(phone, pdfBuffer, fileName, 'application/pdf', {
+        messageType: 'export_pdf',
+        source: 'export_handler'
+      });
 
-      return null; // Já enviou via media
+      return exportCopy.pdfSent();
     } catch (error) {
       console.error('[EXPORT] Erro ao exportar PDF:', error);
-      await evolutionService.sendMessage(
-        phone,
-        '❌ Não consegui gerar o PDF agora.\n\nTente novamente em alguns instantes.'
-      );
-      return null;
+      return exportCopy.pdfFailed();
     }
   }
 
@@ -63,10 +60,10 @@ class ExportHandler {
    */
   async handleExportDataExcel(user, phone, dados, formato = 'excel') {
     try {
-      await evolutionService.sendMessage(
-        phone,
-        `Gerando sua planilha ${formato.toUpperCase()}...\n\nIsso pode levar alguns segundos!`
-      );
+      await outboundMessageService.sendText(phone, exportCopy.generatingSpreadsheet(formato), {
+        messageType: 'export_spreadsheet_status',
+        source: 'export_handler'
+      });
 
       const now = new Date();
       const year = dados?.ano || now.getFullYear();
@@ -78,31 +75,27 @@ class ExportHandler {
       } else {
         excelBuffer = await excelService.generateExcelReport(user.id, year, month);
       }
-      const base64Excel = excelBuffer.toString('base64');
       const mesNome = new Date(year, month - 1, 1).toLocaleDateString('pt-BR', { month: 'long' });
       const extension = formato === 'csv' ? 'csv' : 'xlsx';
       const fileName = `Relatorio_${mesNome}_${year}.${extension}`;
       const mimeType = formato === 'csv' ? 'text/csv' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
-      await evolutionService.sendMessage(
-        phone,
-        `✅ *Planilha gerada!*\n\nEnviando arquivo...`
-      );
+      await outboundMessageService.sendText(phone, exportCopy.spreadsheetReadySending(), {
+        messageType: 'export_spreadsheet_status',
+        source: 'export_handler'
+      });
 
-      await evolutionService.sendDocument(phone, base64Excel, fileName, mimeType);
+      await outboundMessageService.sendDocument(phone, excelBuffer, fileName, mimeType, {
+        messageType: 'export_spreadsheet',
+        source: 'export_handler'
+      });
 
-      return null; // Já enviou via media
+      return exportCopy.spreadsheetSent(formato);
     } catch (error) {
       console.error('[EXPORT] Erro ao exportar planilha:', error);
-      await evolutionService.sendMessage(
-        phone,
-        '❌ Não consegui gerar a planilha agora.\n\nTente novamente em alguns instantes.'
-      );
-      return null;
+      return exportCopy.spreadsheetFailed();
     }
   }
 }
 
 module.exports = ExportHandler;
-
-

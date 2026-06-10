@@ -3,6 +3,7 @@ const supabase = require('../db/supabase');
 const documentService = require('./documentService');
 const openaiService = require('./openaiService');
 const estoqueService = require('./estoqueService');
+const estoqueProdutoService = require('./estoqueProdutoService');
 const { buildDocumentExtractionPromptSlim } = require('../config/prompts');
 const { extractInstallmentDays, calcularVencimentosBoleto } = require('../utils/moneyParser');
 
@@ -66,6 +67,25 @@ function normalizeIsoDate(value) {
   return parsed.toISOString().split('T')[0];
 }
 
+function parseNumber(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+
+  const raw = String(value)
+    .replace(/\s+/g, '')
+    .replace(/[^\d,.-]/g, '');
+
+  if (!raw) return null;
+
+  const hasComma = raw.includes(',');
+  const hasDot = raw.includes('.');
+  const normalized = hasComma && hasDot
+    ? raw.replace(/\./g, '').replace(',', '.')
+    : raw.replace(',', '.');
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function normalizeFornecedorShape(docResult) {
   if (docResult?.fornecedor && typeof docResult.fornecedor === 'object') {
     return {
@@ -84,13 +104,97 @@ function normalizeFornecedorShape(docResult) {
   };
 }
 
-function normalizeItens(docResult, transacoes) {
-  if (Array.isArray(docResult?.itens) && docResult.itens.length > 0) {
-    return docResult.itens;
-  }
+function normalizeItemShape(item) {
+  if (!item || typeof item !== 'object') return null;
 
-  const transacaoComItens = (transacoes || []).find((item) => Array.isArray(item?.itens) && item.itens.length > 0);
-  return transacaoComItens?.itens || [];
+  const descricao = item.descricao ||
+    item.nome ||
+    item.produto ||
+    item.item ||
+    item.servico ||
+    item.description ||
+    null;
+
+  const quantidade = parseNumber(
+    item.quantidade ??
+    item.qtd ??
+    item.qtde ??
+    item.quantity ??
+    item.volume ??
+    1
+  ) || 1;
+
+  const valorUnitarioRaw = parseNumber(
+    item.valor_unitario ??
+    item.preco_unitario ??
+    item.vlr_unitario ??
+    item.unit_price
+  );
+  const valorTotalRaw = parseNumber(
+    item.valor_total ??
+    item.total ??
+    item.valor ??
+    item.vlr_total ??
+    item.line_total
+  );
+
+  const valorUnitario = valorUnitarioRaw ?? (
+    valorTotalRaw !== null && quantidade > 0
+      ? Math.round((valorTotalRaw / quantidade) * 100) / 100
+      : null
+  );
+  const valorTotal = valorTotalRaw ?? (
+    valorUnitario !== null
+      ? Math.round((valorUnitario * quantidade) * 100) / 100
+      : null
+  );
+
+  if (!descricao && valorTotal === null) return null;
+
+  return {
+    descricao: descricao ? String(descricao).trim() : 'Item sem descrição',
+    quantidade,
+    unidade: item.unidade || item.un || item.unit || null,
+    valor_unitario: valorUnitario,
+    valor_total: valorTotal,
+    codigo: item.codigo || item.sku || item.ean || null,
+    lote: item.lote || item.batch || null,
+    validade: normalizeIsoDate(item.validade || item.data_validade || item.expiration_date || null),
+    confidence_score: typeof item.confidence_score === 'number' ? item.confidence_score : null
+  };
+}
+
+function normalizeItens(docResult, transacoes) {
+  const candidates = [
+    docResult?.itens,
+    docResult?.items,
+    docResult?.produtos,
+    docResult?.linhas,
+    docResult?.linhas_itens,
+    docResult?.document_items,
+    docResult?.detalhes?.itens,
+    docResult?.nota?.itens,
+    ...(transacoes || []).flatMap((t) => [
+      t?.itens,
+      t?.items,
+      t?.produtos,
+      t?.linhas
+    ])
+  ];
+
+  const rawItems = candidates
+    .filter(Array.isArray)
+    .flat()
+    .map(normalizeItemShape)
+    .filter(Boolean);
+
+  const seen = new Set();
+  return rawItems.filter((item) => {
+    const key = normalizeName(`${item.descricao}|${item.quantidade}|${item.valor_total ?? item.valor_unitario ?? ''}`);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function inferSupplierCategory({ fornecedorNome, itens, rawText, existingCategory }) {
@@ -413,6 +517,7 @@ class SupplierDocumentService {
         category_trigger: parsed.category_trigger || null,
         vencimentos: parsed.vencimentos,
         itens: parsed.itens,
+        itens_count: Array.isArray(parsed.itens) ? parsed.itens.length : 0,
         confidence_score: parsed.confidence_score
       },
       status: 'pending',
@@ -469,6 +574,11 @@ class SupplierDocumentService {
         parsed?.category_trigger || null
       ].filter(Boolean).join(' | ') || null,
       origem,
+      source_phone: options.sourcePhone || null,
+      source_message_id: options.sourceMessageId || null,
+      raw_message: options.rawMessage || null,
+      is_test: false,
+      metadata: options.metadata || null,
       supplier_document_id: options.supplierDocumentId || null,
       fornecedor_id: fornecedorId || null,
       parcela_numero: idx + 1,
@@ -515,6 +625,13 @@ class SupplierDocumentService {
       return { aplicados: [], pendentes: [] };
     }
 
+    let realInventoryAvailable = false;
+    try {
+      realInventoryAvailable = await estoqueProdutoService.hasRealInventory(userId);
+    } catch (_) {
+      realInventoryAvailable = false;
+    }
+
     const { data: procedimentos, error } = await supabase
       .from('procedimentos')
       .select('id, nome')
@@ -532,6 +649,44 @@ class SupplierDocumentService {
         continue;
       }
 
+      if (realInventoryAvailable) {
+        try {
+          const produto = await estoqueProdutoService.findProductByName(userId, descricao);
+          if (produto) {
+            const movimento = await estoqueProdutoService.registrarEntrada(userId, {
+              produtoId: produto.id,
+              quantidade,
+              custoUnitario: item.valor_unitario || (
+                item.valor_total && quantidade > 0
+                  ? Math.round((Number(item.valor_total) / quantidade) * 100) / 100
+                  : null
+              ),
+              fornecedorId: options.fornecedorId || null,
+              supplierDocumentId: options.supplierDocumentId || null,
+              lote: item.lote || null,
+              validade: item.validade || null,
+              origem: 'supplier_document',
+              observacoes: [
+                `OCR doc ${options.supplierDocumentId || ''}`.trim(),
+                item.lote ? `lote ${item.lote}` : null,
+                item.validade ? `validade ${item.validade}` : null
+              ].filter(Boolean).join(' | ')
+            });
+            aplicados.push({
+              descricao,
+              produto_id: produto.id,
+              score: 1,
+              movimento,
+              source: 'real_inventory'
+            });
+            continue;
+          }
+        } catch (e) {
+          pendentes.push({ ...item, motivo: 'falha_ao_aplicar_inventario_real', erro: e?.message || String(e) });
+          continue;
+        }
+      }
+
       let best = null;
       let bestScore = 0;
       for (const proc of procedimentos || []) {
@@ -547,9 +702,17 @@ class SupplierDocumentService {
           const movimento = await estoqueService.registrarEntrada(userId, {
             procedimentoId: best.id,
             quantidade,
-            custoUnitario: item.valor_unitario || null,
+            custoUnitario: item.valor_unitario || (
+              item.valor_total && quantidade > 0
+                ? Math.round((Number(item.valor_total) / quantidade) * 100) / 100
+                : null
+            ),
             fornecedorId: options.fornecedorId || null,
-            observacoes: `OCR doc ${options.supplierDocumentId || ''}`.trim()
+            observacoes: [
+              `OCR doc ${options.supplierDocumentId || ''}`.trim(),
+              item.lote ? `lote ${item.lote}` : null,
+              item.validade ? `validade ${item.validade}` : null
+            ].filter(Boolean).join(' | ')
           });
           aplicados.push({
             descricao,
@@ -593,4 +756,4 @@ class SupplierDocumentService {
 
 module.exports = new SupplierDocumentService();
 module.exports.SupplierDocumentService = SupplierDocumentService;
-module.exports._helpers = { similarity, sanitizeCnpj, normalizeName };
+module.exports._helpers = { similarity, sanitizeCnpj, normalizeName, normalizeItens, parseNumber };
