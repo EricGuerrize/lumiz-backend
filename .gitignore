@@ -27,3 +27,7 @@ claude_desktop_config_example.json
 *_config*.json
 *_example*.json
 *_sample*.json
+
+# Configuração local do Claude Code (permissões por máquina, não versionar)
+.claude/settings.local.json
+.claude/worktrees/
