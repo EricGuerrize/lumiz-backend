@@ -53,6 +53,8 @@ describe('helpCommandContract', () => {
       expect(getHelpShortcutIntent('contas a pagar', 'contas a pagar')).toMatchObject({ intencao: 'consultar_contas_pagar' });
       expect(getHelpShortcutIntent('calendario de vencimentos', 'calendário de vencimentos')).toMatchObject({ intencao: 'consultar_contas_pagar' });
       expect(getHelpShortcutIntent('inadimplencia', 'inadimplência')).toMatchObject({ intencao: 'consultar_inadimplencia' });
+      expect(getHelpShortcutIntent('atrasados', 'atrasados')).toMatchObject({ intencao: 'consultar_inadimplencia' });
+      expect(getHelpShortcutIntent('cobrancas pendentes', 'cobranças pendentes')).toMatchObject({ intencao: 'consultar_inadimplencia' });
       expect(getHelpShortcutIntent('parcelas vencidas', 'parcelas vencidas')).toMatchObject({ intencao: 'consultar_inadimplencia' });
       expect(getHelpShortcutIntent('relatorio', 'Relatório')).toMatchObject({ intencao: 'relatorio_mensal' });
       expect(getHelpShortcutIntent('stats hoje', 'stats hoje')).toMatchObject({ intencao: 'stats_hoje' });
@@ -104,6 +106,7 @@ describe('helpCommandContract', () => {
       expect(getHelpShortcutIntent('/contas', '/contas')).toMatchObject({ intencao: 'consultar_contas_pagar' });
       expect(getHelpShortcutIntent('/receber', '/receber')).toMatchObject({ intencao: 'consultar_parcelas' });
       expect(getHelpShortcutIntent('/inadimplencia', '/inadimplencia')).toMatchObject({ intencao: 'consultar_inadimplencia' });
+      expect(getHelpShortcutIntent('/atrasados', '/atrasados')).toMatchObject({ intencao: 'consultar_inadimplencia' });
       expect(getHelpShortcutIntent('/estoque', '/estoque')).toMatchObject({ intencao: 'consultar_estoque' });
     });
   });

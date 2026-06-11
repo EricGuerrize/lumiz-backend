@@ -71,17 +71,19 @@ class InadimplenciaService {
     const byClient = new Map();
     for (const row of rows) {
       const clientId = row.atendimentos?.clientes?.id || row.atendimentos?.cliente_id;
-      const clientName = row.atendimentos?.clientes?.nome || 'Cliente';
-      if (!clientId) continue;
+      const clientKey = clientId || row.atendimento_id || row.id;
+      const clientName = row.atendimentos?.clientes?.nome || 'Cliente não informado';
+      if (!clientKey) continue;
 
       const overdueDays = row.data_vencimento
         ? this._daysDiff(new Date(`${row.data_vencimento}T12:00:00`), now)
         : 0;
       const amount = parseFloat(row.valor) || 0;
 
-      if (!byClient.has(clientId)) {
-        byClient.set(clientId, {
-          clienteId: clientId,
+      if (!byClient.has(clientKey)) {
+        byClient.set(clientKey, {
+          clienteId: clientId || null,
+          groupId: clientKey,
           nome: clientName,
           totalEmAtraso: 0,
           totalParcelas: 0,
@@ -90,7 +92,7 @@ class InadimplenciaService {
         });
       }
 
-      const item = byClient.get(clientId);
+      const item = byClient.get(clientKey);
       item.totalEmAtraso += amount;
       item.totalParcelas += 1;
       item.diasAtrasoMax = Math.max(item.diasAtrasoMax, overdueDays);

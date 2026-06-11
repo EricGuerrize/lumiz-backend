@@ -124,7 +124,7 @@ describe('IntentHeuristicService', () => {
   test('detectIntent entende inadimplencia como consulta deterministica', async () => {
     knowledgeService.searchSimilarity.mockResolvedValue([]);
 
-    const result = await intentHeuristicService.detectIntent('clientes em atraso', null);
+    const result = await intentHeuristicService.detectIntent('atrasados', null);
 
     expect(result).toEqual(
       expect.objectContaining({

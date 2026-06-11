@@ -45,6 +45,7 @@ function getHelpShortcutIntent(msgSimples, messageTrimmed) {
       receber: 'parcelas a receber',
       inadimplencia: 'inadimplencia',
       inadimplência: 'inadimplencia',
+      atrasados: 'atrasados',
       relatorio: 'relatorio',
       saldo: 'saldo',
       estoque: 'estoque'
@@ -99,10 +100,15 @@ function getHelpShortcutIntent(msgSimples, messageTrimmed) {
   if (
     msgSimples === 'inadimplencia' ||
     msgSimples === 'inadimplência' ||
+    msgSimples === 'atrasados' ||
+    msgSimples === 'clientes atrasados' ||
     msgSimples === 'clientes em atraso' ||
     msgSimples === 'recebiveis vencidos' ||
     msgSimples === 'recebíveis vencidos' ||
-    msgSimples === 'parcelas vencidas'
+    msgSimples === 'parcelas vencidas' ||
+    msgSimples === 'parcelas atrasadas' ||
+    msgSimples === 'cobrancas pendentes' ||
+    msgSimples === 'cobranças pendentes'
   ) {
     return { intencao: 'consultar_inadimplencia', dados: {}, confidence: 0.95, source: 'help_shortcut' };
   }

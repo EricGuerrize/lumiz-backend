@@ -209,6 +209,8 @@ class IntentHeuristicService {
       consultar_inadimplencia: [
         'inadimplencia',
         'inadimplência',
+        'atrasados',
+        'clientes atrasados',
         'clientes em atraso',
         'cliente em atraso',
         'recebiveis vencidos',
@@ -542,7 +544,7 @@ class IntentHeuristicService {
       return out;
     }
 
-    if (/\b(inadimplencia|inadimplência|clientes? em atraso|recebiveis vencidos|recebíveis vencidos|parcelas vencidas|parcelas atrasadas|quem esta devendo|quem está devendo|cobranca pendente|cobrança pendente)\b/i.test(original)) {
+    if (/\b(inadimplencia|inadimplência|atrasados|clientes? atrasados|clientes? em atraso|recebiveis vencidos|recebíveis vencidos|parcelas vencidas|parcelas atrasadas|quem esta devendo|quem está devendo|cobrancas pendentes|cobranças pendentes|cobranca pendente|cobrança pendente)\b/i.test(original)) {
       const out = {
         intencao: 'consultar_inadimplencia',
         dados: {},
