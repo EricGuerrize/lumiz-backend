@@ -31,6 +31,7 @@ const ScheduleHandler = require('./messages/scheduleHandler');
 const InsightsHandler = require('./messages/insightsHandler');
 const MemberHandler = require('./messages/memberHandler');
 const EstoqueHandler = require('./messages/estoqueHandler');
+const PacienteHandler = require('./messages/pacienteHandler');
 const mdrChatFlowService = require('../services/mdrChatFlowService');
 const betaFeedbackService = require('../services/betaFeedbackService');
 const conversationalNpsService = require('../services/conversationalNpsService');
@@ -70,6 +71,7 @@ class MessageController {
     this.insightsHandler = new InsightsHandler();
     this.memberHandler = new MemberHandler();
     this.estoqueHandler = new EstoqueHandler();
+    this.pacienteHandler = new PacienteHandler();
   }
 
   async setAwaitingData(phone, pending, ttlMs = this.AWAITING_DATA_TTL_MS) {
@@ -577,6 +579,12 @@ class MessageController {
         if (result) {
           return result;
         }
+      }
+
+      // Item #36: fluxo de confirmação de atualização de paciente já cadastrado.
+      if (user?.id && await this.pacienteHandler.hasPendingCadastro(normalizedPhone)) {
+        const result = await this.pacienteHandler.handlePendingCadastro(normalizedPhone, message, user);
+        if (result) return result;
       }
 
       // Verifica se há transferência pendente aguardando resposta deste usuário
@@ -1122,6 +1130,15 @@ class MessageController {
 
       case 'conferir_estoque':
         return await this.estoqueHandler.handleConferirEstoque(user, phone, message);
+
+      case 'cadastrar_paciente':
+        return await this.pacienteHandler.handleCadastrarPaciente(user, phone, message, intent);
+
+      case 'consultar_paciente':
+        return await this.pacienteHandler.handleConsultarPaciente(user, intent, message);
+
+      case 'listar_pacientes':
+        return await this.pacienteHandler.handleListarPacientes(user);
 
       case 'adicionar_numero':
         return await this.memberHandler.handleAddMember(user, phone);

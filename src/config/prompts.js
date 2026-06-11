@@ -478,6 +478,9 @@ INTENÇÕES DISPONÍVEIS:
 - consultar_agenda: agenda, agendamentos, compromissos
 - consultar_meta: meta, minha meta, progresso, objetivo
 - insights: insights, dicas, sugestões, recomendações
+- cadastrar_paciente: cadastrar/registrar/novo paciente ou cliente (com nome; opcional telefone, cpf, nascimento, email). NÃO tem valor monetário nem é uma venda.
+- consultar_paciente: dados/ficha/informações de um paciente específico (ex: "dados da Maria", "paciente João Silva"). NÃO é uma venda.
+- listar_pacientes: meus pacientes, listar pacientes, ver pacientes
 - ajuda: ajuda, como usar, exemplos, como funciona
 - saudacao: oi, olá, bom dia, boa tarde, boa noite
 - desfazer: cancelar, desfazer, apagar última, errei
