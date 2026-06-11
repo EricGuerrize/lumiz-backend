@@ -110,6 +110,7 @@ cron.schedule('0 8 * * *', async () => {
   try {
     await whatsappOperationalAlertService.sendValidityAlerts();
     await whatsappOperationalAlertService.sendDailyBriefings();
+    await whatsappOperationalAlertService.sendInadimplenciaAlerts();
   } catch (error) {
     console.error('[CRON] Erro nos alertas operacionais:', error);
     if (process.env.SENTRY_DSN) Sentry.captureException(error);
@@ -449,14 +450,17 @@ app.get('/api/cron/operational-alerts', async (req, res) => {
 
     const validityAlerts = await whatsappOperationalAlertService.sendValidityAlerts();
     const dailyBriefings = await whatsappOperationalAlertService.sendDailyBriefings();
+    const inadimplenciaAlerts = await whatsappOperationalAlertService.sendInadimplenciaAlerts();
 
     res.json({
       status: 'success',
       timestamp: new Date().toISOString(),
       validity_alerts_sent: validityAlerts.length,
       daily_briefings_sent: dailyBriefings.length,
+      inadimplencia_alerts_sent: inadimplenciaAlerts.length,
       validityAlerts,
-      dailyBriefings
+      dailyBriefings,
+      inadimplenciaAlerts
     });
   } catch (error) {
     console.error('[CRON] operational-alerts:', error);

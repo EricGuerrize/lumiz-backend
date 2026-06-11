@@ -24,6 +24,7 @@ class HelpHandler {
       `"histórico" - Últimas movimentações\n` +
       `"contas a pagar" - Calendário de vencimentos\n` +
       `"parcelas a receber" - Recebíveis pendentes\n` +
+      `"inadimplência" - Recebíveis vencidos\n` +
       `"gap de caixa" - Projeção de caixa dos próximos 30 dias\n` +
       `"briefing" - Prioridades financeiras do dia\n` +
       `"relatório" - Relatório mensal\n` +
@@ -33,7 +34,6 @@ class HelpHandler {
       `"estoque" - Resumo do estoque\n` +
       `"saldo botox" - Saldo de um item específico\n` +
       `"entrada estoque botox 3 frascos" - Dar entrada manual\n` +
-      `"baixar estoque botox 10 unidades" - Dar baixa manual\n` +
       `"validades" - Itens próximos do vencimento\n\n` +
       `🔍 Buscar:\n` +
       `"buscar botox" - Busca transações\n` +

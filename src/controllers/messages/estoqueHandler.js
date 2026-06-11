@@ -252,44 +252,7 @@ class EstoqueHandler {
   }
 
   async handleSaidaEstoque(user, intent, phone) {
-    const dados = intent.dados || {};
-    let nomeBusca = dados.categoria || dados.produto || dados.procedimento || dados.nome_procedimento;
-    let quantidade = dados.quantidade != null ? Number(dados.quantidade) : null;
-
-    if (quantidade != null && !Number.isFinite(quantidade)) quantidade = null;
-
-    if (!nomeBusca || !quantidade || quantidade <= 0) {
-      return copy.precisaQuantidadeSaida();
-    }
-
-    try {
-      let resultado = await estoqueProdutoService.registrarSaida(user.id, {
-        nome: nomeBusca,
-        quantidade,
-        observacoes: dados.observacao || dados.observacoes || `WhatsApp (${phone})`,
-        sourcePhone: phone,
-        origem: 'whatsapp_text',
-      }).catch(() => null);
-
-      if (!resultado) {
-        const proc = await estoqueService.findProcedimentoByNome(user.id, nomeBusca);
-        if (!proc) return copy.erroProcedimentoNaoEncontrado(nomeBusca);
-        resultado = await estoqueService.registrarSaida(user.id, {
-          procedimentoId: proc.id,
-          quantidade,
-          observacoes: dados.observacao || dados.observacoes || `WhatsApp (${phone})`,
-        });
-      }
-
-      return copy.saidaRegistrada(
-        resultado.nome,
-        resultado.quantidade,
-        resultado.estoqueAtual,
-        resultado.unidade
-      );
-    } catch (error) {
-      return `Não consegui dar baixa: ${error.message}`;
-    }
+    return copy.baixaManualSuspensa();
   }
 
   async handleEntradaEstoque(user, intent, phone) {

@@ -121,6 +121,21 @@ describe('IntentHeuristicService', () => {
     expect(knowledgeService.searchSimilarity).not.toHaveBeenCalled();
   });
 
+  test('detectIntent entende inadimplencia como consulta deterministica', async () => {
+    knowledgeService.searchSimilarity.mockResolvedValue([]);
+
+    const result = await intentHeuristicService.detectIntent('clientes em atraso', null);
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        intencao: 'consultar_inadimplencia',
+        dados: {},
+        source: 'heuristic'
+      })
+    );
+    expect(knowledgeService.searchSimilarity).not.toHaveBeenCalled();
+  });
+
   test('detectIntent entende export PDF com mes numerico', async () => {
     knowledgeService.searchSimilarity.mockResolvedValue([]);
     const result = await intentHeuristicService.detectIntent('gerar pdf mes 06', null);

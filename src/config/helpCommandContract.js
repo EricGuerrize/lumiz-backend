@@ -17,11 +17,11 @@ const HELP_DETERMINISTIC_INTENTS = Object.freeze([
   'consultar_historico',
   'consultar_contas_pagar',
   'consultar_parcelas',
+  'consultar_inadimplencia',
   'consultar_gap_caixa',
   'briefing_diario',
   'consultar_estoque',
   'estoque_entrada',
-  'estoque_saida',
   'consultar_validade',
   'relatorio_mensal',
   'stats_hoje',
@@ -43,6 +43,8 @@ function getHelpShortcutIntent(msgSimples, messageTrimmed) {
     const aliases = {
       contas: 'contas a pagar',
       receber: 'parcelas a receber',
+      inadimplencia: 'inadimplencia',
+      inadimplência: 'inadimplencia',
       relatorio: 'relatorio',
       saldo: 'saldo',
       estoque: 'estoque'
@@ -93,6 +95,16 @@ function getHelpShortcutIntent(msgSimples, messageTrimmed) {
     msgSimples === 'recebíveis'
   ) {
     return { intencao: 'consultar_parcelas', dados: {}, confidence: 0.95, source: 'help_shortcut' };
+  }
+  if (
+    msgSimples === 'inadimplencia' ||
+    msgSimples === 'inadimplência' ||
+    msgSimples === 'clientes em atraso' ||
+    msgSimples === 'recebiveis vencidos' ||
+    msgSimples === 'recebíveis vencidos' ||
+    msgSimples === 'parcelas vencidas'
+  ) {
+    return { intencao: 'consultar_inadimplencia', dados: {}, confidence: 0.95, source: 'help_shortcut' };
   }
   if (msgSimples === 'estoque' || msgSimples === 'meu estoque' || msgSimples === 'resumo estoque') {
     return { intencao: 'consultar_estoque', dados: {}, confidence: 0.95, source: 'help_shortcut' };

@@ -1074,6 +1074,9 @@ class MessageController {
       case 'consultar_parcelas':
         return await this.installmentHandler.handlePendingInstallments(user);
 
+      case 'consultar_inadimplencia':
+        return await this.queryHandler.handleInadimplencia(user);
+
       case 'stats_hoje':
         return await this.queryHandler.handleTodayStats(user);
 

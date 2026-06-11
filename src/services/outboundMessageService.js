@@ -1,7 +1,9 @@
 /**
  * Fase 17 — Envio resiliente de mensagens WhatsApp.
- * Encapsula Evolution API e, quando Redis/BullMQ está disponível, agenda
- * reenvio de mensagens que falharam por instabilidade temporária.
+ * Encapsula o envio oficial pela Meta Cloud API e, quando Redis/BullMQ está
+ * disponível, agenda reenvio de mensagens que falharam por instabilidade
+ * temporária. A Evolution permanece apenas como fallback legado explicitamente
+ * habilitado por EVOLUTION_FALLBACK_ENABLED=true.
  */
 
 const { Queue, Worker } = require('bullmq');
@@ -19,11 +21,13 @@ class OutboundMessageService {
     reliability = messageReliabilityService,
     redisUrl = process.env.REDIS_URL,
     queueEnabled = readFlag('WHATSAPP_OUTBOUND_QUEUE_ENABLED', !!process.env.REDIS_URL),
-    workerEnabled = readFlag('WHATSAPP_OUTBOUND_WORKER_ENABLED', true)
+    workerEnabled = readFlag('WHATSAPP_OUTBOUND_WORKER_ENABLED', true),
+    evolutionFallbackEnabled = readFlag('EVOLUTION_FALLBACK_ENABLED', false)
   } = {}) {
     this.evolution = evolution;
     this.meta = meta;
     this.reliability = reliability;
+    this.evolutionFallbackEnabled = Boolean(evolutionFallbackEnabled);
     this.redisUrl = redisUrl;
     this.queueEnabled = false;
     this.queue = null;
@@ -107,7 +111,7 @@ class OutboundMessageService {
   }
 
   /**
-   * Envia texto para WhatsApp e agenda reenvio se a Evolution falhar.
+   * Envia texto para WhatsApp e agenda reenvio se o provedor falhar.
    * @param {string} phone
    * @param {string} message
    * @param {Object} metadata
@@ -252,11 +256,13 @@ class OutboundMessageService {
   }
 
   /**
-   * Evolution (legado) só participa do fallback quando configurada via env.
-   * Mocks de teste sem isConfigured continuam elegíveis.
+   * Evolution (legado) só participa do fallback quando explicitamente
+   * habilitada. Isso evita que envs antigas façam o backend enviar para uma
+   * instância desligada quando a Meta falhar.
    * @returns {boolean}
    */
   _evolutionAvailable() {
+    if (!this.evolutionFallbackEnabled) return false;
     if (!this.evolution) return false;
     if (typeof this.evolution.isConfigured === 'function') {
       return this.evolution.isConfigured();

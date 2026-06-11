@@ -2,6 +2,8 @@ const transactionController = require('../transactionController');
 const cashflowService = require('../../services/cashflowService');
 const estoqueService = require('../../services/estoqueService');
 const nfValidadeService = require('../../services/nfValidadeService');
+const inadimplenciaService = require('../../services/inadimplenciaService');
+const inadimplenciaCopy = require('../../copy/inadimplenciaWhatsappCopy');
 const { formatarMoeda } = require('../../utils/currency');
 
 /**
@@ -478,6 +480,16 @@ class QueryHandler {
     } catch (error) {
       console.error('Erro ao montar briefing:', error);
       return 'Não consegui montar o briefing agora. Tente novamente em alguns instantes.';
+    }
+  }
+
+  async handleInadimplencia(user) {
+    try {
+      const overview = await inadimplenciaService.getOverview(user.id);
+      return inadimplenciaCopy.overview(overview);
+    } catch (error) {
+      console.error('Erro ao consultar inadimplência:', error);
+      return inadimplenciaCopy.temporaryError();
     }
   }
 
