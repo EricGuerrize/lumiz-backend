@@ -1,5 +1,6 @@
 process.env.NODE_ENV = 'test';
 process.env.WHATSAPP_OUTBOUND_QUEUE_ENABLED = 'false';
+process.env.EVOLUTION_FALLBACK_ENABLED = 'false';
 
 describe('outboundMessageService', () => {
   let OutboundMessageService;
@@ -22,7 +23,8 @@ describe('outboundMessageService', () => {
       evolution,
       meta,
       reliability,
-      queueEnabled: false
+      queueEnabled: false,
+      evolutionFallbackEnabled: true
     });
 
     const result = await service.sendText('5565999991234', 'oi', { messageId: 'msg-1' });
@@ -54,6 +56,38 @@ describe('outboundMessageService', () => {
     expect(evolution.sendMessage).not.toHaveBeenCalled();
   });
 
+  it('não usa Evolution por padrão quando a Meta falha', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    const evolution = {
+      isConfigured: jest.fn().mockReturnValue(true),
+      sendMessage: jest.fn().mockResolvedValue({ success: true })
+    };
+    const meta = {
+      isOutboundConfigured: jest.fn().mockReturnValue(true),
+      sendText: jest.fn().mockRejectedValue(new Error('meta timeout'))
+    };
+    const reliability = { recordFailure: jest.fn() };
+    const service = new OutboundMessageService({
+      evolution,
+      meta,
+      reliability,
+      queueEnabled: false
+    });
+
+    await expect(
+      service.sendText('5565999991234', 'oi', { messageId: 'msg-no-evolution' })
+    ).rejects.toThrow('meta timeout');
+
+    expect(evolution.sendMessage).not.toHaveBeenCalled();
+    expect(reliability.recordFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'outbound_send_failed',
+        messageId: 'msg-no-evolution',
+        queued: false
+      })
+    );
+  });
+
   it('cai para Evolution quando a Meta falha temporariamente', async () => {
     jest.spyOn(console, 'error').mockImplementation(() => {});
     const evolution = { sendMessage: jest.fn().mockResolvedValue({ success: true }) };
@@ -66,7 +100,8 @@ describe('outboundMessageService', () => {
       evolution,
       meta,
       reliability,
-      queueEnabled: false
+      queueEnabled: false,
+      evolutionFallbackEnabled: true
     });
 
     const result = await service.sendText('5565999991234', 'oi', { messageId: 'msg-meta-2' });
@@ -92,7 +127,8 @@ describe('outboundMessageService', () => {
       evolution,
       meta,
       reliability,
-      queueEnabled: false
+      queueEnabled: false,
+      evolutionFallbackEnabled: true
     });
 
     await expect(
@@ -118,7 +154,8 @@ describe('outboundMessageService', () => {
       evolution,
       meta,
       reliability,
-      queueEnabled: false
+      queueEnabled: false,
+      evolutionFallbackEnabled: true
     });
     service.enqueueText = jest.fn().mockResolvedValue(true);
 
@@ -145,7 +182,8 @@ describe('outboundMessageService', () => {
       evolution,
       meta,
       reliability,
-      queueEnabled: false
+      queueEnabled: false,
+      evolutionFallbackEnabled: true
     });
 
     const buffer = Buffer.from('pdf');
@@ -169,7 +207,8 @@ describe('outboundMessageService', () => {
       evolution,
       meta,
       reliability,
-      queueEnabled: false
+      queueEnabled: false,
+      evolutionFallbackEnabled: true
     });
 
     const buffer = Buffer.from('pdf');
@@ -198,7 +237,8 @@ describe('outboundMessageService', () => {
       evolution,
       meta,
       reliability,
-      queueEnabled: false
+      queueEnabled: false,
+      evolutionFallbackEnabled: true
     });
 
     const buttons = [{ id: 'doc_confirm', title: 'Confirmar' }];
@@ -222,7 +262,8 @@ describe('outboundMessageService', () => {
       evolution,
       meta,
       reliability,
-      queueEnabled: false
+      queueEnabled: false,
+      evolutionFallbackEnabled: true
     });
 
     const result = await service.sendInteractiveButtons(

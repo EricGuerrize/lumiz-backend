@@ -51,6 +51,7 @@ class EnvValidator {
     this.validateOptional('WA_GRAPH_API_VERSION', 'Versão do Graph API para Cloud API (ex: v23.0)');
     this.validateOptional('META_APP_SECRET', 'App Secret da Meta para validar X-Hub-Signature-256 em webhooks (FORTEMENTE recomendado em produção — sem ele o webhook aceita POSTs não assinados)');
     // Evolution API: legado, mantida apenas como fallback opcional durante a transição
+    this.validateOptional('EVOLUTION_FALLBACK_ENABLED', 'Habilita fallback legado para Evolution quando a Meta falhar');
     this.validateOptional('EVOLUTION_API_URL', 'URL da Evolution API (legado, opcional)');
     this.validateOptional('EVOLUTION_WEBHOOK_SECRET', 'Segredo compartilhado para validar POSTs da Evolution no webhook (legado)');
     this.validateOptional(
