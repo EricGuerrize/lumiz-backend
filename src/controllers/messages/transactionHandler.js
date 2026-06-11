@@ -14,6 +14,8 @@ const {
 const { sanitizeClientName } = require('../../utils/procedureKeywords');
 const { isLowConfidence, lowConfidenceBanner } = require('../../copy/captureConfirmCopy');
 const { applyTransactionCorrection } = require('../../utils/whatsappCorrectionParser');
+const estoqueCopy = require('../../copy/estoqueWhatsappCopy');
+const EstoqueHandler = require('./estoqueHandler');
 
 /**
  * Handler para transações (vendas e custos)
@@ -127,6 +129,33 @@ class TransactionHandler {
     });
 
     return this.buildConfirmationMessage(normalizedData);
+  }
+
+  /**
+   * Abre o pending de baixa de estoque pós-venda e devolve o sufixo de pergunta
+   * para anexar à mensagem de sucesso. Falha de forma silenciosa (não-crítico).
+   * @param {string} phone
+   * @param {{atendimentoId?: string, procedimentoNome?: string}} context
+   * @returns {Promise<string>}
+   * @private
+   */
+  async _openStockAfterSalePrompt(phone, context = {}) {
+    try {
+      await conversationRuntimeStateService.upsert(
+        phone,
+        EstoqueHandler.STOCK_AFTER_SALE_FLOW,
+        {
+          stage: 'ask',
+          atendimentoId: context.atendimentoId || null,
+          procedimentoNome: context.procedimentoNome || null,
+        },
+        EstoqueHandler.STOCK_AFTER_SALE_TTL_MS
+      );
+      return estoqueCopy.perguntarBaixaPosProcedimento();
+    } catch (error) {
+      console.error('[ESTOQUE] Falha ao abrir baixa pós-venda:', error.message);
+      return '';
+    }
   }
 
   /**
@@ -295,13 +324,23 @@ class TransactionHandler {
 
       const emoji = tipo === 'entrada' ? '💰' : '💸';
       const tipoTexto = tipo === 'entrada' ? 'Venda' : 'Custo';
+
+      // Item 23 (replanejado): após uma venda, oferece atualizar o estoque usado.
+      // Sem baixa automática — abre um pending de confirmação e anexa a pergunta.
+      const stockQuestionSuffix = tipo === 'entrada'
+        ? await this._openStockAfterSalePrompt(phone, {
+            atendimentoId: createdResult?.id || null,
+            procedimentoNome: categoria || descricao || null,
+          })
+        : '';
+
       if (tipo === 'entrada' && Array.isArray(payment_split) && payment_split.length > 1) {
         const splitLines = payment_split.map((part, idx) => {
           const method = this.getPaymentMethodText(part.metodo);
           const parcelaTxt = part.metodo === 'parcelado' && part.parcelas ? ` ${part.parcelas}x` : '';
           return `${idx + 1}/${payment_split.length} ${method}${parcelaTxt}: ${formatarMoeda(part.valor)}`;
         }).join('\n');
-        return `${emoji} *Vendas vinculadas registradas!*\n\nValor total: ${formatarMoeda(valor)}\n${splitLines}\n\nTudo foi salvo como partes da mesma venda ✅`;
+        return `${emoji} *Vendas vinculadas registradas!*\n\nValor total: ${formatarMoeda(valor)}\n${splitLines}\n\nTudo foi salvo como partes da mesma venda ✅${stockQuestionSuffix}`;
       }
       if (tipo === 'entrada') {
         const paymentText = this.buildRegisteredPaymentText(forma_pagamento, parcelas);
@@ -312,7 +351,8 @@ class TransactionHandler {
           `${categoria || descricao || 'Procedimento'} — ${formatarMoeda(valor)}${paymentText}${clientText}\n\n` +
           `${pricingText}` +
           `Isso já entrou no financeiro deste mês.\n` +
-          `Quer ver o impacto no saldo? Digite "saldo".`
+          `Quer ver o impacto no saldo? Digite "saldo".` +
+          `${stockQuestionSuffix}`
         );
       }
 

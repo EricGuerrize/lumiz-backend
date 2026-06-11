@@ -62,6 +62,60 @@ function parseConsumptionItem(rawItem) {
   };
 }
 
+const USED_ITEM_UNIT_TOKENS = 'frascos?|seringas?|caixas?|unidades?|unid|und|un|ampolas?|pacotes?|par(?:es)?|ml';
+
+/**
+ * Interpreta a lista de insumos usados digitada pela secretária no fluxo
+ * pós-procedimento. Aceita quantidade antes ou depois do nome e separadores
+ * por vírgula, ponto-e-vírgula, quebra de linha ou " e ".
+ *
+ * Exemplos: "1 seringa, 2 agulhas, 20 unidades de toxina", "toxina 3".
+ * @param {string} text
+ * @returns {Array<{nome: string, quantidade: number, unidade: string}>}
+ */
+function parseUsedItems(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return [];
+
+  const chunks = raw
+    .split(/,|;|\n|\s+e\s+/i)
+    .map((c) => c.trim().replace(/^[-•*]\s*/, ''))
+    .filter(Boolean);
+
+  const items = [];
+  for (const chunk of chunks) {
+    // Quantidade antes do nome: "1 seringa", "20 unidades de toxina", "2 agulhas"
+    let m = chunk.match(
+      new RegExp(`^(\\d+(?:[.,]\\d+)?)\\s*(${USED_ITEM_UNIT_TOKENS})?\\s*(?:de\\s+|do\\s+|da\\s+)?(.+)$`, 'i')
+    );
+    let nome = null;
+    let quantidade = null;
+    let unidade = null;
+
+    if (m && m[3] && m[3].trim()) {
+      quantidade = parseNumber(m[1]);
+      nome = m[3].trim();
+      unidade = m[2] ? normalizeUnit(m[2]) : 'unidade';
+    } else {
+      // Nome antes da quantidade: "toxina 3", "luvas 2 caixas"
+      m = chunk.match(
+        new RegExp(`^(.+?)\\s+(\\d+(?:[.,]\\d+)?)\\s*(${USED_ITEM_UNIT_TOKENS})?$`, 'i')
+      );
+      if (m && m[1] && m[1].trim()) {
+        nome = m[1].trim();
+        quantidade = parseNumber(m[2]);
+        unidade = m[3] ? normalizeUnit(m[3]) : 'unidade';
+      }
+    }
+
+    if (!nome || !quantidade || quantidade <= 0) continue;
+    nome = nome.replace(/\s{2,}/g, ' ').trim();
+    items.push({ nome, quantidade, unidade: unidade || 'unidade' });
+  }
+
+  return items;
+}
+
 class ProcedimentoConsumoService {
   /**
    * Interpreta comando textual de configuração de consumo.
@@ -268,8 +322,10 @@ class ProcedimentoConsumoService {
 }
 
 module.exports = new ProcedimentoConsumoService();
+module.exports.parseUsedItems = parseUsedItems;
 module.exports._helpers = {
   parseNumber,
   normalizeUnit,
   parseConsumptionItem,
+  parseUsedItems,
 };

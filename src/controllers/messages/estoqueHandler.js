@@ -1,5 +1,6 @@
 const estoqueService = require('../../services/estoqueService');
 const estoqueProdutoService = require('../../services/estoqueProdutoService');
+const procedimentoConsumoService = require('../../services/procedimentoConsumoService');
 const conversationRuntimeStateService = require('../../services/conversationRuntimeStateService');
 const copy = require('../../copy/estoqueWhatsappCopy');
 
@@ -7,6 +8,147 @@ class EstoqueHandler {
   constructor() {
     this.INVENTORY_SETUP_FLOW = 'inventory_setup';
     this.INVENTORY_SETUP_TTL_MS = 30 * 60 * 1000;
+    this.STOCK_AFTER_SALE_FLOW = EstoqueHandler.STOCK_AFTER_SALE_FLOW;
+    this.STOCK_AFTER_SALE_TTL_MS = EstoqueHandler.STOCK_AFTER_SALE_TTL_MS;
+  }
+
+  // ==========================================================================
+  // Item 23 (replanejado) — baixa de estoque pós-procedimento, sob confirmação.
+  // Nunca baixa automaticamente: pergunta → secretária digita → confirma.
+  // ==========================================================================
+
+  /**
+   * Abre o fluxo opcional de baixa após uma venda confirmada.
+   * @param {string} phone
+   * @param {{atendimentoId?: string, procedimentoNome?: string}} context
+   * @returns {Promise<void>}
+   */
+  async startStockAfterSale(phone, context = {}) {
+    await conversationRuntimeStateService.upsert(
+      phone,
+      this.STOCK_AFTER_SALE_FLOW,
+      {
+        stage: 'ask',
+        atendimentoId: context.atendimentoId || null,
+        procedimentoNome: context.procedimentoNome || null,
+      },
+      this.STOCK_AFTER_SALE_TTL_MS
+    );
+  }
+
+  async hasPendingStockAfterSale(phone) {
+    const pending = await conversationRuntimeStateService.get(phone, this.STOCK_AFTER_SALE_FLOW);
+    return Boolean(pending?.payload?.stage);
+  }
+
+  /**
+   * Máquina de estados do fluxo pós-procedimento.
+   * @param {string} phone
+   * @param {string} message
+   * @param {object} user
+   * @returns {Promise<string|null>}
+   */
+  async handlePendingStockAfterSale(phone, message, user) {
+    const pending = await conversationRuntimeStateService.get(phone, this.STOCK_AFTER_SALE_FLOW);
+    const payload = pending?.payload;
+    if (!payload?.stage) return null;
+
+    const normalized = String(message || '').trim().toLowerCase();
+    const isYes = ['1', 'sim', 's', 'confirmar', 'confirma'].includes(normalized);
+    const isNo = ['2', 'não', 'nao', 'n', 'cancelar'].includes(normalized);
+    const isCorrect = ['3', 'corrigir', 'corrige', 'editar'].includes(normalized);
+
+    // Etapa 1: pergunta Sim/Não
+    if (payload.stage === 'ask') {
+      if (isNo) {
+        await conversationRuntimeStateService.clear(phone, this.STOCK_AFTER_SALE_FLOW);
+        return copy.baixaPosProcedimentoIgnorada();
+      }
+      if (isYes) {
+        await conversationRuntimeStateService.upsert(
+          phone,
+          this.STOCK_AFTER_SALE_FLOW,
+          { ...payload, stage: 'awaiting_items' },
+          this.STOCK_AFTER_SALE_TTL_MS
+        );
+        return copy.perguntarInsumosUsados();
+      }
+      // Resposta fora do esperado: repete a pergunta.
+      return copy.perguntarInsumosUsados();
+    }
+
+    // Etapa de revisão: digitou os insumos
+    if (payload.stage === 'awaiting_items') {
+      const itens = procedimentoConsumoService.parseUsedItems(message);
+      if (!itens.length) return copy.baixaInsumosNaoEntendi();
+
+      await conversationRuntimeStateService.upsert(
+        phone,
+        this.STOCK_AFTER_SALE_FLOW,
+        { ...payload, stage: 'confirm', itens },
+        this.STOCK_AFTER_SALE_TTL_MS
+      );
+      return copy.resumoBaixaPosProcedimento(itens);
+    }
+
+    // Etapa de confirmação do resumo
+    if (payload.stage === 'confirm') {
+      if (isNo) {
+        await conversationRuntimeStateService.clear(phone, this.STOCK_AFTER_SALE_FLOW);
+        return copy.baixaPosProcedimentoIgnorada();
+      }
+      if (isCorrect) {
+        await conversationRuntimeStateService.upsert(
+          phone,
+          this.STOCK_AFTER_SALE_FLOW,
+          { ...payload, stage: 'awaiting_items', itens: undefined },
+          this.STOCK_AFTER_SALE_TTL_MS
+        );
+        return copy.baixaPosProcedimentoCorrigir();
+      }
+      if (isYes) {
+        const result = await this._applyStockAfterSale(user.id, payload, phone);
+        await conversationRuntimeStateService.clear(phone, this.STOCK_AFTER_SALE_FLOW);
+        return copy.baixaPosProcedimentoConfirmada(result);
+      }
+      // Resposta inesperada: repete o resumo.
+      return copy.resumoBaixaPosProcedimento(payload.itens || []);
+    }
+
+    return null;
+  }
+
+  /**
+   * Aplica a baixa item a item, separando sucessos de falhas.
+   * @private
+   */
+  async _applyStockAfterSale(userId, payload, phone) {
+    const applied = [];
+    const failed = [];
+    for (const item of payload.itens || []) {
+      try {
+        const res = await estoqueProdutoService.registrarSaida(userId, {
+          nome: item.nome,
+          quantidade: item.quantidade,
+          origem: 'pos_procedimento',
+          sourcePhone: phone,
+          observacoes: 'Baixa pós-procedimento (confirmada via WhatsApp)',
+          metadata: {
+            atendimento_id: payload.atendimentoId || null,
+            procedimento_nome: payload.procedimentoNome || null,
+          },
+        });
+        applied.push({
+          nome: res?.nome || item.nome,
+          quantidade: item.quantidade,
+          unidade: res?.unidade || item.unidade,
+          estoqueAtual: res?.estoqueAtual,
+        });
+      } catch (error) {
+        failed.push({ nome: item.nome, erro: error.message });
+      }
+    }
+    return { applied, failed };
   }
 
   async hasPendingInventorySetup(phone) {
@@ -189,5 +331,10 @@ class EstoqueHandler {
     );
   }
 }
+
+// Nome do flow compartilhado com o transactionHandler (que abre o pending após
+// uma venda confirmada). Mantido como estático para haver fonte única da verdade.
+EstoqueHandler.STOCK_AFTER_SALE_FLOW = 'stock_after_sale';
+EstoqueHandler.STOCK_AFTER_SALE_TTL_MS = 15 * 60 * 1000;
 
 module.exports = EstoqueHandler;

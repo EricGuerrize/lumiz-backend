@@ -520,6 +520,13 @@ class MessageController {
         if (result) return result;
       }
 
+      // Item 23 (replanejado): baixa de estoque pós-procedimento sob confirmação.
+      // Vem depois dos pendings de transação/documento para não sequestrar "1/2/3".
+      if (await this.estoqueHandler.hasPendingStockAfterSale(normalizedPhone)) {
+        const result = await this.estoqueHandler.handlePendingStockAfterSale(normalizedPhone, message, user);
+        if (result) return result;
+      }
+
       const normalizedMessage = (message || '').trim().toLowerCase();
       const looksLikeYesNoDocumentReply = [
         'sim', 's', 'confirmar', '1',

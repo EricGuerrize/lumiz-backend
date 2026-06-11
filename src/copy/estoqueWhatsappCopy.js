@@ -236,6 +236,96 @@ function alertaEstoqueExcesso(produtos) {
   );
 }
 
+// ============================================================================
+// Item 23 (replanejado) — atualização de estoque pós-procedimento.
+// Sem baixa automática: o bot pergunta, a secretária digita os insumos usados
+// e a baixa só ocorre após confirmação explícita.
+// ============================================================================
+
+/** Pergunta opcional logo após uma venda/procedimento confirmado. */
+function perguntarBaixaPosProcedimento() {
+  return (
+    '\n\n📦 Deseja atualizar o estoque usado nesse procedimento?\n' +
+    '*1* Sim\n' +
+    '*2* Não'
+  );
+}
+
+/** Pede a lista de insumos usados. */
+function perguntarInsumosUsados() {
+  return (
+    'Quais insumos foram usados? Me manda quantidade e item.\n\n' +
+    'Exemplo: _1 seringa, 2 agulhas, 20 unidades de toxina_'
+  );
+}
+
+/** Não conseguiu interpretar os itens digitados. */
+function baixaInsumosNaoEntendi() {
+  return (
+    'Não consegui entender os itens 😕\n\n' +
+    'Me manda assim: _quantidade + item_, separados por vírgula.\n' +
+    'Exemplo: _1 seringa, 2 agulhas, 20 unidades de toxina_\n\n' +
+    'Ou responda *2* para não atualizar o estoque agora.'
+  );
+}
+
+/** Resumo do que será baixado, antes de confirmar. */
+function resumoBaixaPosProcedimento(itens) {
+  if (!itens?.length) return perguntarInsumosUsados();
+  const linhas = itens.slice(0, 12).map((item) => {
+    const u = item.unidade || 'unidade';
+    return `• ${item.nome}: ${item.quantidade} ${u}`;
+  });
+  const extra = itens.length > 12 ? `\n...e mais ${itens.length - 12} item(ns).` : '';
+  return (
+    'Vou baixar do estoque:\n\n' +
+    `${linhas.join('\n')}${extra}\n\n` +
+    'Confirmar atualização?\n' +
+    '*1* Confirmar\n' +
+    '*2* Cancelar\n' +
+    '*3* Corrigir'
+  );
+}
+
+/** Resultado da baixa. */
+function baixaPosProcedimentoConfirmada({ applied = [], failed = [] }) {
+  const linhas = [];
+  if (applied.length) {
+    linhas.push('✅ Estoque atualizado:');
+    applied.slice(0, 12).forEach((item) => {
+      const u = item.unidade || 'unidade';
+      const saldo = item.estoqueAtual != null ? ` (saldo ${item.estoqueAtual} ${u})` : '';
+      linhas.push(`• ${item.nome}: -${item.quantidade} ${u}${saldo}`);
+    });
+  } else {
+    linhas.push('Não consegui baixar nenhum item do estoque.');
+  }
+
+  if (failed.length) {
+    linhas.push('');
+    linhas.push(`⚠️ ${failed.length} item(ns) não foram baixados:`);
+    failed.slice(0, 12).forEach((item) => {
+      linhas.push(`• ${item.nome}: ${item.erro}`);
+    });
+    linhas.push('');
+    linhas.push('Cadastre o item com *configurar estoque* se necessário.');
+  }
+  return linhas.join('\n');
+}
+
+/** Usuário optou por não atualizar o estoque. */
+function baixaPosProcedimentoIgnorada() {
+  return 'Tudo certo, não vou alterar o estoque. 👍';
+}
+
+/** Reabre a digitação após pedir correção. */
+function baixaPosProcedimentoCorrigir() {
+  return (
+    'Sem problema. Me manda de novo os insumos usados.\n\n' +
+    'Exemplo: _1 seringa, 2 agulhas, 20 unidades de toxina_'
+  );
+}
+
 module.exports = {
   alertaEstoqueBaixo,
   alertaEstoqueCritico,
@@ -256,4 +346,11 @@ module.exports = {
   erroProcedimentoNaoEncontrado,
   precisaQuantidadeENome,
   precisaQuantidadeSaida,
+  perguntarBaixaPosProcedimento,
+  perguntarInsumosUsados,
+  baixaInsumosNaoEntendi,
+  resumoBaixaPosProcedimento,
+  baixaPosProcedimentoConfirmada,
+  baixaPosProcedimentoIgnorada,
+  baixaPosProcedimentoCorrigir,
 };
