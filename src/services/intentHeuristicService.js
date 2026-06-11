@@ -465,6 +465,53 @@ class IntentHeuristicService {
       return out;
     }
 
+    // ── Item #36: cadastro básico de paciente ──────────────────────────────
+    // Estes blocos precisam vencer "registrar_entrada"/"registrar_saida", que
+    // têm "paciente"/"cliente" como keyword genérica. Por isso ficam aqui no topo.
+
+    // Listar pacientes: "meus pacientes", "listar pacientes", "ver pacientes".
+    if (/\b(?:meus|minha lista de|listar|lista de|ver|mostrar|quais)\s+(?:os\s+)?pacientes?\b/i.test(original)
+        || /^pacientes\??$/i.test(normalized)) {
+      const out = {
+        intencao: 'listar_pacientes',
+        dados: {},
+        confidence: 0.95,
+        source: 'heuristic'
+      };
+      await cacheService.set(cacheKey, out, CACHE_TTL_SECONDS);
+      return out;
+    }
+
+    // Cadastrar paciente: "cadastrar paciente Maria", "novo paciente João".
+    // Exige ausência de valor monetário para não confundir com uma venda.
+    const cadastrarPacienteMatch = /\b(?:cadastr|registr|nov[oa]|adicion|criar?)\w*\s+(?:um[a]?\s+)?(?:paciente|cliente)\b/i.test(original);
+    if (cadastrarPacienteMatch && !this.extractValue(original)) {
+      const out = {
+        intencao: 'cadastrar_paciente',
+        dados: {},
+        confidence: 0.94,
+        source: 'heuristic'
+      };
+      await cacheService.set(cacheKey, out, CACHE_TTL_SECONDS);
+      return out;
+    }
+
+    // Consultar paciente: "dados da Maria", "paciente Maria Silva", "ficha do João".
+    const consultarPacienteMatch =
+      /\b(?:dados|ficha|informa[çc][õo]es|info|consultar?|ver)\s+(?:d[oa]s?\s+)?(?:paciente|cliente)\b/i.test(original)
+      || /^(?:paciente|cliente)\s+[A-Za-zÀ-ÿ]/i.test(original)
+      || /\b(?:dados|ficha)\s+(?:d[oa]\s+)[A-Za-zÀ-ÿ]{3,}/i.test(original);
+    if (consultarPacienteMatch && !this.extractValue(original)) {
+      const out = {
+        intencao: 'consultar_paciente',
+        dados: {},
+        confidence: 0.9,
+        source: 'heuristic'
+      };
+      await cacheService.set(cacheKey, out, CACHE_TTL_SECONDS);
+      return out;
+    }
+
     // Comandos consultivos específicos precisam vencer palavras genéricas como "conta" e "pagar".
     const accountsPayableShortcuts = [
       'contas a pagar',

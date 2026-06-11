@@ -81,9 +81,12 @@ Esta documentação detalha a estrutura completa do banco de dados Supabase util
 - `email`
 - `cpf`
 - `data_nascimento`
+- `observacoes` (item #36 — observações livres, opcional)
 - `created_at`, `updated_at`
 
 **Uso:** Histórico de atendimento por paciente, CRM básico
+
+**Migration relacionada:** `20260611120000_add_paciente_basic_fields.sql` (item #36) — garante (aditivo, `ADD COLUMN IF NOT EXISTS`) os campos `telefone`, `cpf`, `data_nascimento`, `email`, `observacoes` e reforça RLS por `user_id` na tabela `clientes`.
 
 ---
 
