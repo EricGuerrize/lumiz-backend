@@ -1,9 +1,9 @@
 // Mock do supabase para não depender de .env nem de rede.
-const supabaseMock = {
-  from: jest.fn(),
-};
-jest.mock('../../src/db/supabase', () => supabaseMock);
+// A factory do jest.mock é hoisted, então não pode referenciar variável externa:
+// definimos o mock inline e pegamos a referência via require depois.
+jest.mock('../../src/db/supabase', () => ({ from: jest.fn() }));
 
+const supabaseMock = require('../../src/db/supabase');
 const pacienteService = require('../../src/services/pacienteService');
 const { parsePacienteFields } = pacienteService;
 
