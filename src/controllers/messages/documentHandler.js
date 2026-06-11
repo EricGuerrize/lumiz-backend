@@ -749,7 +749,8 @@ class DocumentHandler {
     const messageLower = message.toLowerCase().trim();
     const isConfirm = messageLower === 'sim' || messageLower === 's' || messageLower === 'confirmar' || messageLower === '1';
     const isCancel = messageLower === 'não' || messageLower === 'nao' || messageLower === 'n' || messageLower === 'cancelar' || messageLower === '2';
-    const isCorrection = messageLower === 'corrigir' ||
+    const isCorrection = messageLower === '3' ||
+      messageLower === 'corrigir' ||
       messageLower === 'corrige' ||
       messageLower === 'correcao' ||
       messageLower === 'correção' ||

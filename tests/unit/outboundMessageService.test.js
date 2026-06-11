@@ -226,6 +226,30 @@ describe('outboundMessageService', () => {
     );
   });
 
+  it('detecta menu numérico em sendText e envia botões automaticamente', async () => {
+    const evolution = { sendMessage: jest.fn().mockResolvedValue({ success: true }) };
+    const meta = {
+      isOutboundConfigured: jest.fn().mockReturnValue(true),
+      sendInteractiveButtons: jest.fn().mockResolvedValue({ messages: [{ id: 'wamid.auto' }] }),
+      sendText: jest.fn()
+    };
+    const reliability = { recordFailure: jest.fn() };
+    const service = new OutboundMessageService({
+      evolution,
+      meta,
+      reliability,
+      queueEnabled: false
+    });
+
+    const body = 'Para calcular o valor liquido das vendas no cartao, preciso das taxas da sua maquininha.\n\nComo prefere enviar as taxas? Toque em uma opção ou responda *digitar* ou *enviar print*.';
+    const result = await service.sendText('5565999991234', body, { messageId: 'auto-buttons' });
+
+    expect(result.status).toBe('sent');
+    expect(result.provider).toBe('meta');
+    expect(meta.sendInteractiveButtons).toHaveBeenCalled();
+    expect(meta.sendText).not.toHaveBeenCalled();
+  });
+
   it('envia botões interativos pela Meta quando disponível', async () => {
     const evolution = { sendMessage: jest.fn().mockResolvedValue({ success: true }) };
     const meta = {

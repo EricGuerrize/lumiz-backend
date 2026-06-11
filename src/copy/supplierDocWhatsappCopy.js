@@ -4,6 +4,7 @@
  */
 
 const { formatarMoeda } = require('../utils/currency');
+const { SUPPLIER_DOC_CONFIRM_FOOTER } = require('./whatsappMenuMarkers');
 
 const TIPO_NOME = {
   nf: 'NOTA FISCAL',
@@ -85,7 +86,7 @@ function confirmacaoSupplierDoc(parsed, options = {}) {
 
   linhas.push('');
   linhas.push('Posso lançar como conta a pagar?');
-  linhas.push('Responda: 1 Confirmar · 2 Cancelar · 3 Corrigir');
+  linhas.push(SUPPLIER_DOC_CONFIRM_FOOTER);
 
   return linhas.join('\n');
 }

@@ -142,6 +142,67 @@ class MetaWhatsappService {
   }
 
   /**
+   * Envia mensagem interativa tipo lista (até 10 opções) pela Cloud API.
+   * @param {string} phone
+   * @param {string} body
+   * @param {string} buttonLabel
+   * @param {Array<{title: string, rows: Array<{id: string, title: string, description?: string}>}>} sections
+   * @returns {Promise<Object>}
+   */
+  async sendInteractiveList(phone, body, buttonLabel = 'Ver opções', sections = []) {
+    if (!phone) {
+      throw new Error('Telefone ausente para envio de lista via Meta');
+    }
+
+    if (!body || !String(body).trim()) {
+      throw new Error('Corpo vazio para envio de lista via Meta');
+    }
+
+    if (!this.isOutboundConfigured()) {
+      throw new Error('WA_ACCESS_TOKEN ou WA_PHONE_NUMBER_ID não configurados para envio de lista via Meta');
+    }
+
+    const safeSections = (Array.isArray(sections) ? sections : []).slice(0, 1).map((section) => ({
+      title: String(section.title || 'Opções').slice(0, 24),
+      rows: (Array.isArray(section.rows) ? section.rows : []).slice(0, 10).map((row) => ({
+        id: String(row.id || '').slice(0, 200),
+        title: String(row.title || '').slice(0, 24),
+        ...(row.description ? { description: String(row.description).slice(0, 72) } : {})
+      }))
+    }));
+
+    if (!safeSections[0]?.rows?.length) {
+      throw new Error('Linhas ausentes para envio de lista via Meta');
+    }
+
+    const payload = {
+      messaging_product: 'whatsapp',
+      to: phone,
+      type: 'interactive',
+      interactive: {
+        type: 'list',
+        body: { text: String(body) },
+        action: {
+          button: String(buttonLabel || 'Ver opções').slice(0, 20),
+          sections: safeSections
+        }
+      }
+    };
+
+    const response = await retryWithBackoff(
+      () => withTimeout(
+        this.client.post(`/${this.phoneNumberId}/messages`, payload),
+        META_TIMEOUT_MS,
+        'Timeout ao enviar lista via Meta'
+      ),
+      2,
+      1000
+    );
+
+    return response.data;
+  }
+
+  /**
    * Envia vídeo por link público pela Cloud API oficial da Meta.
    * @param {string} phone
    * @param {string} videoUrl

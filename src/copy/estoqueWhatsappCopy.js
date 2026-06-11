@@ -3,6 +3,8 @@
  * alertaEstoqueBaixo aceita array de produtos (mesmo shape de getAlertasBaixoEstoque).
  */
 
+const { INVENTORY_CONFIRM_FOOTER } = require('./whatsappMenuMarkers');
+
 function _fmtDias(d) {
   if (d == null || Number.isNaN(d)) return '—';
   return String(Math.round(d * 10) / 10);
@@ -80,10 +82,7 @@ function confirmarInventarioInicial(itens) {
   return (
     '📦 *Inventário inicial*\n\n' +
     `${linhas.join('\n')}${extra}\n\n` +
-    'Responda:\n' +
-    '1 Confirmar\n' +
-    '2 Cancelar\n' +
-    '3 Corrigir'
+    INVENTORY_CONFIRM_FOOTER
   );
 }
 

@@ -16,6 +16,7 @@ const { isLowConfidence, lowConfidenceBanner } = require('../../copy/captureConf
 const { applyTransactionCorrection } = require('../../utils/whatsappCorrectionParser');
 const estoqueCopy = require('../../copy/estoqueWhatsappCopy');
 const EstoqueHandler = require('./estoqueHandler');
+const { TX_CONFIRM_FOOTER, PAYMENT_CARD_TYPE_FOOTER, PAYMENT_METHOD_FOOTER } = require('../../copy/whatsappMenuMarkers');
 
 /**
  * Handler para transações (vendas e custos)
@@ -418,7 +419,7 @@ class TransactionHandler {
       return this.buildConfirmationMessage(pending.dados);
     }
 
-    return 'Não entendi... responde *1* pra confirmar, *2* pra cancelar ou *3* pra corrigir 😊';
+    return 'Não entendi... responde *confirmar*, *cancelar* ou *corrigir* 😊';
   }
 
   buildConfirmationMessage(dados) {
@@ -485,7 +486,7 @@ class TransactionHandler {
       }
       text += '.\n\n';
     }
-    text += `Responde:\n1️⃣ *Confirmar*\n2️⃣ *Cancelar*\n3️⃣ *Corrigir*`;
+    text += TX_CONFIRM_FOOTER;
     return text;
   }
 
@@ -714,7 +715,7 @@ class TransactionHandler {
         needsInput: true,
         stage: 'awaiting_card_type',
         prompt:
-          'No cartão foi como?\n\n1️⃣ Crédito à vista\n2️⃣ Parcelado\n\nResponde com 1 ou 2.',
+          PAYMENT_CARD_TYPE_FOOTER,
         dados: { ...nextDados, forma_pagamento: null, parcelas: null }
       };
     }
@@ -724,7 +725,7 @@ class TransactionHandler {
         needsInput: true,
         stage: 'awaiting_payment_method',
         prompt:
-          'Qual foi a forma de pagamento dessa venda?\n\n1️⃣ PIX\n2️⃣ Débito\n3️⃣ Crédito à vista\n4️⃣ Cartão parcelado',
+          PAYMENT_METHOD_FOOTER,
         dados: { ...nextDados, forma_pagamento: null, parcelas: null }
       };
     }
@@ -734,7 +735,7 @@ class TransactionHandler {
         needsInput: true,
         stage: 'awaiting_payment_method',
         prompt:
-          'Qual foi a forma de pagamento dessa venda?\n\n1️⃣ PIX\n2️⃣ Débito\n3️⃣ Crédito à vista\n4️⃣ Cartão parcelado',
+          PAYMENT_METHOD_FOOTER,
         dados: { ...nextDados, forma_pagamento: null, parcelas: null }
       };
     }

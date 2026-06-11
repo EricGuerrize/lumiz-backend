@@ -141,7 +141,7 @@ class MemberHandler {
     const role = roleMap[messageLower];
     
     if (!role) {
-      return '❓ Opção inválida. Escolha:\n\n1️⃣ Dona/Gestora\n2️⃣ Adm/Financeiro\n3️⃣ Secretária\n4️⃣ Profissional\n\nOu digite "cancelar" para sair.';
+      return '❓ Opção inválida. Escolha o cargo:\n\n• *Dona/Gestora*\n• *Adm/Financeiro*\n• *Secretária*\n• *Profissional*\n\nOu digite *cancelar* para sair.';
     }
     
     state.role = role;

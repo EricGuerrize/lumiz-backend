@@ -39,6 +39,11 @@ function insightSemanal({ livre, comprometido, antecipado, recomendacao, simulac
   return linhas.join('\n');
 }
 
+const {
+  ALTER_RECEIVABLE_YES_NO_FOOTER,
+  ALTER_RECEIVABLE_ACTION_FOOTER
+} = require('./whatsappMenuMarkers');
+
 function pagarFornecedorSugestao({ fornecedorNome, total, cobertura }) {
   const linhas = [];
   linhas.push('💡 *Pagar fornecedor com recebível*');
@@ -48,7 +53,7 @@ function pagarFornecedorSugestao({ fornecedorNome, total, cobertura }) {
   linhas.push('');
   if (cobertura.cobre_sem_antecipacao) {
     linhas.push(`✅ Recebíveis livres já cobrem (${_fmt(cobertura.recebiveis_livres_valor)}).`);
-    linhas.push('Quer comprometer esses recebíveis? Responda *1* para sim, *2* para não.');
+    linhas.push(ALTER_RECEIVABLE_YES_NO_FOOTER);
   } else {
     linhas.push(`⚠️ Cobre só parcial: ${_fmt(cobertura.recebiveis_livres_valor)}`);
     linhas.push(`Gap: ${_fmt(cobertura.gap)}`);
@@ -58,7 +63,7 @@ function pagarFornecedorSugestao({ fornecedorNome, total, cobertura }) {
       linhas.push(`Custo: ${_fmt(cobertura.antecipacao_sugerida.custo_antecipacao)}`);
     }
     linhas.push('');
-    linhas.push('Responda:\n*1* Comprometer livres + antecipar gap\n*2* Comprometer só os livres\n*3* Cancelar');
+    linhas.push(ALTER_RECEIVABLE_ACTION_FOOTER);
   }
   return linhas.join('\n');
 }

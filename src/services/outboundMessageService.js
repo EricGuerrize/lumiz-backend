@@ -10,6 +10,7 @@ const { Queue, Worker } = require('bullmq');
 const IORedis = require('ioredis');
 const evolutionService = require('./evolutionService');
 const metaWhatsappService = require('./metaWhatsappService');
+const interactiveCopy = require('../copy/whatsappInteractiveCopy');
 const messageReliabilityService = require('./messageReliabilityService');
 
 const OUTBOUND_QUEUE_NAME = 'whatsapp-outbound';
@@ -118,6 +119,19 @@ class OutboundMessageService {
    * @returns {Promise<{status: 'sent'|'queued'|'failed', queued?: boolean, error?: string}>}
    */
   async sendText(phone, message, metadata = {}) {
+    if (!metadata.skipInteractive) {
+      const menu = interactiveCopy.resolveOutboundMenu(message);
+      if (menu?.type === 'list') {
+        return this.sendInteractiveList(phone, message, menu, metadata);
+      }
+      if (menu?.buttons?.length) {
+        return this.sendInteractiveButtons(phone, message, menu.buttons, message, {
+          ...metadata,
+          skipInteractive: true
+        });
+      }
+    }
+
     try {
       const result = await this._sendTextViaPreferredProvider(phone, message, metadata);
       return { status: 'sent', result, provider: result?.provider || null };
@@ -202,7 +216,51 @@ class OutboundMessageService {
 
     return this.sendText(phone, fallbackText || body, {
       ...metadata,
+      skipInteractive: true,
       messageType: metadata.messageType || 'interactive_fallback'
+    });
+  }
+
+  /**
+   * Envia lista interativa quando possível, com fallback para texto simples.
+   * @param {string} phone
+   * @param {string} body
+   * @param {{ button: string, sections: Array }} listConfig
+   * @param {Object} metadata
+   * @returns {Promise<{status: 'sent'|'queued'|'failed', provider?: string, error?: string}>}
+   */
+  async sendInteractiveList(phone, body, listConfig = {}, metadata = {}) {
+    const metaAvailable = typeof this.meta?.isOutboundConfigured === 'function'
+      ? this.meta.isOutboundConfigured()
+      : false;
+
+    if (metaAvailable && typeof this.meta?.sendInteractiveList === 'function') {
+      try {
+        const result = await this.meta.sendInteractiveList(
+          phone,
+          body,
+          listConfig.button,
+          listConfig.sections
+        );
+        return { status: 'sent', result, provider: 'meta' };
+      } catch (metaError) {
+        console.error(`[WA_OUTBOUND] Meta lista falhou, usando fallback texto: ${metaError.message}`);
+        this.reliability.recordFailure({
+          kind: 'outbound_interactive_failed',
+          phase: 'send',
+          phone,
+          messageId: metadata.messageId,
+          messageType: metadata.messageType || 'interactive_list',
+          reason: metaError?.message || 'interactive_list_send_failed',
+          queued: false
+        });
+      }
+    }
+
+    return this.sendText(phone, body, {
+      ...metadata,
+      skipInteractive: true,
+      messageType: metadata.messageType || 'interactive_list_fallback'
     });
   }
 

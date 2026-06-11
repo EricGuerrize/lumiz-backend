@@ -1,10 +1,14 @@
+const {
+  MDR_METHOD_FOOTER,
+  MDR_CONFIRM_FOOTER,
+  MDR_SETTLEMENT_FOOTER
+} = require('./whatsappMenuMarkers');
+
 const mdrWhatsappCopy = {
   intro() {
     return (
       `Para calcular o valor liquido das vendas no cartao, preciso das taxas da sua maquininha.\n\n` +
-      `Como voce prefere enviar?\n\n` +
-      `1️⃣ Vou digitar as taxas\n` +
-      `2️⃣ Enviar print/foto da tela de taxas`
+      MDR_METHOD_FOOTER
     );
   },
 
@@ -23,19 +27,12 @@ const mdrWhatsappCopy = {
     return (
       `Resumo das taxas (${provider || 'maquininha'}):\n\n` +
       `${resumo || rawText}\n\n` +
-      `Confirma?\n\n` +
-      `1️⃣ Confirmar\n` +
-      `2️⃣ Corrigir`
+      MDR_CONFIRM_FOOTER
     );
   },
 
   settlementQuestion() {
-    return (
-      `Quando o dinheiro cai na sua conta?\n\n` +
-      `1️⃣ Automatica / D+1 (recebe no proximo dia util)\n` +
-      `2️⃣ Automatica / D+30 (recebe em ate 30 dias)\n` +
-      `3️⃣ No fluxo (recebe parcelado mes a mes)`
-    );
+    return MDR_SETTLEMENT_FOOTER;
   },
 
   ocrRequest() {
@@ -56,9 +53,7 @@ const mdrWhatsappCopy = {
     return (
       `Resumo das taxas (${provider || 'maquininha'}):\n\n` +
       `${resumo}\n\n` +
-      `Confirma?\n\n` +
-      `1️⃣ Confirmar\n` +
-      `2️⃣ Corrigir`
+      MDR_CONFIRM_FOOTER
     );
   },
 
@@ -74,7 +69,7 @@ const mdrWhatsappCopy = {
   },
 
   invalidChoice() {
-    return 'Nao entendi. Pode responder com 1 ou 2?';
+    return 'Não entendi. Toque em uma das opções ou responda com as palavras que aparecem nos botões.';
   },
 
   needImage() {

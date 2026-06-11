@@ -2,6 +2,8 @@
  * Copy de WhatsApp para documentos, PDFs e falhas de leitura.
  */
 
+const { SUPPLIER_DOC_RETRY_FOOTER } = require('./whatsappMenuMarkers');
+
 const fallbackMessage = () =>
   'Recebi sua mensagem, mas não consegui concluir a leitura agora.\n\n' +
   'Tenta de novo em alguns instantes ou escreve de um jeito mais direto, tipo: "botox 500 no pix".';
@@ -40,8 +42,7 @@ const documentProcessingStarted = () =>
 const pendingExpired = () =>
   'Não encontrei confirmação pendente desse documento. Pode reenviar o PDF/foto para eu analisar de novo.';
 
-const confirmSupplierDocAgain = () =>
-  'Não entendi... responde *1* para confirmar a NF/boleto ou *2* para cancelar.';
+const confirmSupplierDocAgain = () => SUPPLIER_DOC_RETRY_FOOTER;
 
 const confirmGenericDocAgain = () =>
   'Não entendi... responde *sim* para registrar ou *não* para cancelar.';

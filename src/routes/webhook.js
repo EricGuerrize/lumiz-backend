@@ -225,11 +225,14 @@ function normalizeMetaWebhookBody(rawBody) {
       meta_media_id: msg.audio?.id,
     };
   } else if (type === 'interactive') {
+    const listReply = msg.interactive?.list_reply || {};
     const buttonReply = msg.interactive?.button_reply || {};
-    data.message.conversation = documentCopy.mapDocumentButtonReply(buttonReply.id, buttonReply.title);
+    const reply = listReply.id ? listReply : buttonReply;
+    const interactiveCopy = require('../copy/whatsappInteractiveCopy');
+    data.message.conversation = interactiveCopy.mapInteractiveButtonReply(reply.id, reply.title);
     data.message.interactiveMessage = {
-      buttonId: buttonReply.id || null,
-      title: buttonReply.title || null
+      buttonId: reply.id || null,
+      title: reply.title || null
     };
   } else {
     return { ok: false, reason: `meta_unsupported_type:${type}`, event: null, data: null, body: rawBody };
@@ -625,17 +628,7 @@ const webhookHandler = async (req, res) => {
                 messageType,
                 source: 'webhook_response'
               };
-              const shouldSendDocumentButtons = ['image', 'document'].includes(messageType) &&
-                documentCopy.isDocumentConfirmationPrompt(response);
-              const sendResult = shouldSendDocumentButtons
-                ? await outboundMessageService.sendInteractiveButtons(
-                    phone,
-                    response,
-                    documentCopy.documentConfirmationButtons(),
-                    response,
-                    metadata
-                  )
-                : await outboundMessageService.sendText(phone, response, metadata);
+              const sendResult = await outboundMessageService.sendText(phone, response, metadata);
               sendFinishedAt = Date.now();
               if (sendResult?.status === 'queued') {
                 finalStatus = 'queued';
