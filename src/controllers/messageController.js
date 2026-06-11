@@ -107,6 +107,7 @@ class MessageController {
       this.pendingEdits.has(phone) ||
       this.awaitingData.has(phone) ||
       await this.estoqueHandler.hasPendingInventorySetup(phone) ||
+      await this.estoqueHandler.hasPendingInventoryImport(phone) ||
       this.memberHandler.isAddingMember(phone) ||
       this.memberHandler.isRemovingMember(phone) ||
       this.memberHandler.hasPendingTransfer(phone) ||
@@ -515,6 +516,11 @@ class MessageController {
 
       if (this.pendingDocumentTransactions.has(normalizedPhone)) {
         return await this.documentHandler.handleDocumentConfirmation(normalizedPhone, message, user);
+      }
+
+      if (await this.estoqueHandler.hasPendingInventoryImport(normalizedPhone)) {
+        const result = await this.estoqueHandler.handlePendingInventoryImport(normalizedPhone, message, user);
+        if (result) return result;
       }
 
       if (await this.estoqueHandler.hasPendingInventorySetup(normalizedPhone)) {

@@ -284,6 +284,7 @@ class EstoqueProdutoService {
     if (loteError) throw loteError;
 
     const tipo = payload.tipo === 'inventario' || payload.origem === 'inventario' ? 'inventario' : 'entrada';
+    const importBatchId = payload.importBatchId || payload.import_batch_id || null;
     const { error: movError } = await supabase.from('estoque_movimentos_reais').insert({
       user_id: userId,
       produto_id: produto.id,
@@ -297,6 +298,7 @@ class EstoqueProdutoService {
       source_message_id: payload.sourceMessageId || payload.source_message_id || null,
       observacoes: payload.observacoes || payload.observacao || null,
       metadata: payload.metadata || {},
+      import_batch_id: importBatchId,
       data: payload.data ? new Date(payload.data).toISOString() : new Date().toISOString(),
     });
     if (movError) throw movError;
@@ -406,6 +408,7 @@ class EstoqueProdutoService {
           sourcePhone: options.sourcePhone || null,
           sourceMessageId: options.sourceMessageId || null,
           observacoes: options.observacoes || 'Inventário inicial via WhatsApp',
+          importBatchId: options.importBatchId || null,
         });
         applied.push(result);
       } catch (error) {

@@ -7,6 +7,9 @@ jest.mock('../../src/services/estoqueProdutoService', () => ({
   registrarEntrada: jest.fn(),
   registrarSaida: jest.fn(),
 }));
+jest.mock('../../src/services/estoqueImportService', () => ({
+  confirmImport: jest.fn(),
+}));
 jest.mock('../../src/services/conversationRuntimeStateService', () => ({
   get: jest.fn(),
   upsert: jest.fn(),
@@ -15,6 +18,7 @@ jest.mock('../../src/services/conversationRuntimeStateService', () => ({
 
 const EstoqueHandler = require('../../src/controllers/messages/estoqueHandler');
 const estoqueProdutoService = require('../../src/services/estoqueProdutoService');
+const estoqueImportService = require('../../src/services/estoqueImportService');
 const runtime = require('../../src/services/conversationRuntimeStateService');
 
 describe('EstoqueHandler inventário inicial', () => {
@@ -30,7 +34,7 @@ describe('EstoqueHandler inventário inicial', () => {
 
     expect(runtime.upsert).toHaveBeenCalledWith('5565', 'inventory_setup', { stage: 'confirm', itens: [item] }, expect.any(Number));
     expect(reply).toContain('Inventário inicial');
-    expect(reply).toContain('Confirmar');
+    expect(reply).toContain('confirmar');
   });
 
   it('confirma e salva inventário pendente', async () => {
@@ -44,6 +48,48 @@ describe('EstoqueHandler inventário inicial', () => {
     expect(estoqueProdutoService.configureInitialInventory).toHaveBeenCalledWith('u1', [item], { sourcePhone: '5565' });
     expect(runtime.clear).toHaveBeenCalledWith('5565', 'inventory_setup');
     expect(reply).toContain('Inventário salvo: 1');
+  });
+
+  it('confirma importação de planilha pendente', async () => {
+    runtime.get.mockResolvedValue({
+      payload: {
+        stage: 'confirm',
+        importToken: 'batch-1',
+        preview: [{ nome: 'Botox', quantidade: 2 }],
+        summary: { valid_rows: 1 },
+      },
+    });
+    estoqueImportService.confirmImport.mockResolvedValue({
+      applied: [{ nome: 'Botox' }],
+      failed: [],
+      summary: { applied_count: 1 },
+    });
+
+    const handler = new EstoqueHandler();
+    const reply = await handler.handlePendingInventoryImport('5565', '1', { id: 'u1' });
+
+    expect(estoqueImportService.confirmImport).toHaveBeenCalledWith('u1', 'batch-1', { sourcePhone: '5565' });
+    expect(runtime.clear).toHaveBeenCalledWith('5565', 'inventory_import');
+    expect(reply).toContain('Estoque importado');
+  });
+
+  it('abre pending ao iniciar import de planilha', async () => {
+    runtime.upsert.mockResolvedValue(true);
+    const handler = new EstoqueHandler();
+
+    await handler.startInventoryImportFromSpreadsheet('5565', {
+      importToken: 'batch-2',
+      preview: [{ nome: 'Luva', quantidade: 5 }],
+      summary: { valid_rows: 1 },
+      filename: 'estoque.xlsx',
+    });
+
+    expect(runtime.upsert).toHaveBeenCalledWith(
+      '5565',
+      'inventory_import',
+      expect.objectContaining({ stage: 'confirm', importToken: 'batch-2' }),
+      expect.any(Number)
+    );
   });
 
   it('não executa baixa direta de estoque por comando solto', async () => {

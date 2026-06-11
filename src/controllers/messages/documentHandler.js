@@ -9,6 +9,8 @@ const { isLowConfidence, lowConfidenceBanner } = require('../../copy/captureConf
 const supplierCopy = require('../../copy/supplierDocWhatsappCopy');
 const documentCopy = require('../../copy/documentWhatsappCopy');
 const estoqueCopy = require('../../copy/estoqueWhatsappCopy');
+const estoqueImportCopy = require('../../copy/estoqueImportWhatsappCopy');
+const estoqueImportService = require('../../services/estoqueImportService');
 const conversationRuntimeStateService = require('../../services/conversationRuntimeStateService');
 const EstoqueHandler = require('./estoqueHandler');
 const vendorClassificationService = require('../../services/vendorClassificationService');
@@ -686,6 +688,20 @@ class DocumentHandler {
       if (!user) {
         await onboardingFlowService.startNewOnboarding(normalizedPhone);
         return null;
+      }
+
+      if (estoqueImportService.isSpreadsheetFile(source.mimeType, fileName)) {
+        const preview = await estoqueImportService.previewFromBuffer(user.id, docBuffer, {
+          filename: fileName || null,
+        });
+        await this._stockHandler().startInventoryImportFromSpreadsheet(normalizedPhone, {
+          importToken: preview.import_token,
+          preview: preview.preview,
+          summary: preview.summary,
+          inconsistencias: preview.inconsistencias,
+          filename: fileName || null,
+        });
+        return estoqueImportCopy.previewImport(preview);
       }
 
       const result = await documentService.processDocumentFromBuffer(docBuffer, source.mimeType, fileName);

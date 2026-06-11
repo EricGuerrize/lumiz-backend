@@ -3,11 +3,15 @@ const estoqueProdutoService = require('../../services/estoqueProdutoService');
 const procedimentoConsumoService = require('../../services/procedimentoConsumoService');
 const conversationRuntimeStateService = require('../../services/conversationRuntimeStateService');
 const copy = require('../../copy/estoqueWhatsappCopy');
+const importCopy = require('../../copy/estoqueImportWhatsappCopy');
+const estoqueImportService = require('../../services/estoqueImportService');
 
 class EstoqueHandler {
   constructor() {
     this.INVENTORY_SETUP_FLOW = 'inventory_setup';
     this.INVENTORY_SETUP_TTL_MS = 30 * 60 * 1000;
+    this.INVENTORY_IMPORT_FLOW = 'inventory_import';
+    this.INVENTORY_IMPORT_TTL_MS = 30 * 60 * 1000;
     this.STOCK_AFTER_SALE_FLOW = EstoqueHandler.STOCK_AFTER_SALE_FLOW;
     this.STOCK_AFTER_SALE_TTL_MS = EstoqueHandler.STOCK_AFTER_SALE_TTL_MS;
     this.STOCK_FROM_DOC_FLOW = EstoqueHandler.STOCK_FROM_DOC_FLOW;
@@ -374,6 +378,68 @@ class EstoqueHandler {
   async hasPendingInventorySetup(phone) {
     const pending = await conversationRuntimeStateService.get(phone, this.INVENTORY_SETUP_FLOW);
     return Boolean(pending?.payload?.stage);
+  }
+
+  /**
+   * Abre fluxo de confirmação após preview de planilha de estoque.
+   * @param {string} phone
+   * @param {{ importToken: string, preview?: object[], summary?: object, inconsistencias?: object[], filename?: string }} context
+   * @returns {Promise<void>}
+   */
+  async startInventoryImportFromSpreadsheet(phone, context = {}) {
+    if (!context.importToken) return;
+    await conversationRuntimeStateService.upsert(
+      phone,
+      this.INVENTORY_IMPORT_FLOW,
+      {
+        stage: 'confirm',
+        importToken: context.importToken,
+        preview: context.preview || [],
+        summary: context.summary || {},
+        inconsistencias: context.inconsistencias || [],
+        filename: context.filename || null,
+      },
+      this.INVENTORY_IMPORT_TTL_MS
+    );
+  }
+
+  async hasPendingInventoryImport(phone) {
+    const pending = await conversationRuntimeStateService.get(phone, this.INVENTORY_IMPORT_FLOW);
+    return Boolean(pending?.payload?.stage);
+  }
+
+  async handlePendingInventoryImport(phone, message, user) {
+    const pending = await conversationRuntimeStateService.get(phone, this.INVENTORY_IMPORT_FLOW);
+    if (!pending?.payload?.stage) return null;
+
+    const normalized = String(message || '').trim().toLowerCase();
+    const isConfirm = ['1', 'sim', 's', 'confirmar'].includes(normalized);
+    const isCancel = ['2', 'não', 'nao', 'n', 'cancelar'].includes(normalized);
+
+    if (isCancel) {
+      await conversationRuntimeStateService.clear(phone, this.INVENTORY_IMPORT_FLOW);
+      return importCopy.importCancelled();
+    }
+
+    if (!isConfirm) {
+      return importCopy.previewImport({
+        preview: pending.payload.preview,
+        summary: pending.payload.summary,
+        inconsistencias: pending.payload.inconsistencias,
+        filename: pending.payload.filename,
+      });
+    }
+
+    try {
+      const result = await estoqueImportService.confirmImport(user.id, pending.payload.importToken, {
+        sourcePhone: phone,
+      });
+      await conversationRuntimeStateService.clear(phone, this.INVENTORY_IMPORT_FLOW);
+      return importCopy.importConfirmed(result);
+    } catch (error) {
+      await conversationRuntimeStateService.clear(phone, this.INVENTORY_IMPORT_FLOW);
+      return importCopy.importFailed(error.message);
+    }
   }
 
   async handlePendingInventorySetup(phone, message, user) {

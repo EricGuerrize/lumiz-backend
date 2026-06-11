@@ -19,6 +19,7 @@ const {
   inferCostTypeAndCategoryFromText
 } = require('../../services/onboardingUtils');
 const estoqueCopy = require('../../copy/estoqueWhatsappCopy');
+const estoqueProdutoService = require('../../services/estoqueProdutoService');
 const EstoqueHandler = require('./estoqueHandler');
 const { TX_CONFIRM_FOOTER, PAYMENT_CARD_TYPE_FOOTER, PAYMENT_METHOD_FOOTER } = require('../../copy/whatsappMenuMarkers');
 
@@ -318,7 +319,8 @@ class TransactionHandler {
 
       // Item 23 (replanejado): após uma venda, oferece atualizar o estoque usado.
       // Sem baixa automática — abre um pending de confirmação e anexa a pergunta.
-      const stockQuestionSuffix = tipo === 'entrada'
+      // Só pergunta se o usuário já tem inventário real configurado.
+      const stockQuestionSuffix = tipo === 'entrada' && await estoqueProdutoService.hasRealInventory(user.id)
         ? await this._openStockAfterSalePrompt(phone, {
             atendimentoId: createdResult?.id || null,
             procedimentoNome: categoria || descricao || null,

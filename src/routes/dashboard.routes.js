@@ -20,8 +20,10 @@ const clientePerfilService = require('../services/clientePerfilService');
 const margemAlertaService = require('../services/margemAlertaService');
 const emailReportService = require('../services/emailReportService');
 const excelService = require('../services/excelService');
+const estoqueImportService = require('../services/estoqueImportService');
 const outboundMessageService = require('../services/outboundMessageService');
 const excelImportWhatsappCopy = require('../copy/excelImportWhatsappCopy');
+const estoqueImportWhatsappCopy = require('../copy/estoqueImportWhatsappCopy');
 const supplierDocumentService = require('../services/supplierDocumentService');
 const contasReceberService = require('../services/contasReceberService');
 const alterRecebiveisService = require('../services/alter/alterRecebiveisService');
@@ -63,6 +65,18 @@ const excelUpload = multer({
     const allowedExt = /\.(xlsx|xls)$/i.test(file.originalname || '');
     if (allowedExt || allowedMimeTypes.has(file.mimetype)) return cb(null, true);
     return cb(new Error('INVALID_EXCEL_FILE'));
+  },
+});
+
+const estoqueSpreadsheetUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: Number.parseInt(process.env.EXCEL_IMPORT_MAX_FILE_BYTES || String(5 * 1024 * 1024), 10),
+    files: 1,
+  },
+  fileFilter: (_req, file, cb) => {
+    if (estoqueImportService.isSpreadsheetFile(file.mimetype, file.originalname)) return cb(null, true);
+    return cb(new Error('INVALID_SPREADSHEET_FILE'));
   },
 });
 
@@ -1158,6 +1172,92 @@ router.delete('/import/excel/:batchId', dashboardExportLimiter, async (req, res)
       return res.status(404).json({ error: error.message });
     }
     return res.status(500).json({ error: 'Failed to undo Excel import' });
+  }
+});
+
+// POST /api/dashboard/import/estoque/preview
+router.post('/import/estoque/preview', dashboardExportLimiter, estoqueSpreadsheetUpload.single('file'), async (req, res) => {
+  try {
+    if (!req.file?.buffer) {
+      return res.status(400).json({ error: 'Arquivo CSV/XLSX é obrigatório no campo file' });
+    }
+
+    const result = await estoqueImportService.previewFromBuffer(req.user.id, req.file.buffer, {
+      filename: req.file.originalname,
+    });
+    return res.json(result);
+  } catch (error) {
+    console.error('Error previewing estoque import:', error);
+    if (error.message === 'INVALID_SPREADSHEET_FILE' || error.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({
+        error: 'Arquivo inválido. Envie .xlsx, .xls ou .csv com até 5MB.',
+      });
+    }
+    return res.status(500).json({ error: 'Failed to preview estoque import' });
+  }
+});
+
+// POST /api/dashboard/import/estoque/confirm
+router.post('/import/estoque/confirm', dashboardExportLimiter, async (req, res) => {
+  try {
+    const importToken = req.body?.import_token;
+    if (!importToken) {
+      return res.status(400).json({ error: 'import_token é obrigatório' });
+    }
+
+    const result = await estoqueImportService.confirmImport(req.user.id, importToken);
+
+    analyticsService.track('estoque_imported', {
+      userId: req.user.id,
+      source: 'dashboard',
+      properties: {
+        valid_rows: result?.summary?.valid_rows ?? null,
+        applied_count: result?.summary?.applied_count ?? null,
+        failed_count: result?.summary?.failed_count ?? null,
+        batch_id: result?.batch_id || null,
+      },
+    }).catch(() => {});
+
+    if (req.user.telefone) {
+      outboundMessageService
+        .sendText(req.user.telefone, estoqueImportWhatsappCopy.importConfirmed(result))
+        .catch((notifyError) => console.warn('[ESTOQUE_IMPORT] Falha ao notificar WhatsApp:', notifyError.message));
+    }
+    return res.json(result);
+  } catch (error) {
+    console.error('Error confirming estoque import:', error);
+    if (error.code === 'IMPORT_NOT_FOUND') {
+      return res.status(404).json({ error: error.message });
+    }
+    if (error.code === 'IMPORT_NOT_PREVIEW') {
+      return res.status(409).json({ error: error.message });
+    }
+    return res.status(500).json({ error: 'Failed to confirm estoque import' });
+  }
+});
+
+// GET /api/dashboard/import/estoque/history
+router.get('/import/estoque/history', heavyDashboardReadLimiter, async (req, res) => {
+  try {
+    const history = await estoqueImportService.getImportHistory(req.user.id, req.query.limit);
+    return res.json({ data: history });
+  } catch (error) {
+    console.error('Error listing estoque imports:', error);
+    return res.status(500).json({ error: 'Failed to list estoque imports' });
+  }
+});
+
+// DELETE /api/dashboard/import/estoque/:batchId
+router.delete('/import/estoque/:batchId', dashboardExportLimiter, async (req, res) => {
+  try {
+    const result = await estoqueImportService.undoImport(req.user.id, req.params.batchId);
+    return res.json(result);
+  } catch (error) {
+    console.error('Error undoing estoque import:', error);
+    if (error.code === 'IMPORT_NOT_FOUND') {
+      return res.status(404).json({ error: error.message });
+    }
+    return res.status(500).json({ error: 'Failed to undo estoque import' });
   }
 });
 
