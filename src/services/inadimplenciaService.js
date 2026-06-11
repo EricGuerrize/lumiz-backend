@@ -99,15 +99,26 @@ class InadimplenciaService {
       if (row.atendimento_id) item.atendimentos.add(row.atendimento_id);
     }
 
-    const clientes = Array.from(byClient.values()).map((c) => ({
-      clienteId: c.clienteId,
-      nome: c.nome,
-      totalEmAtraso: parseFloat(c.totalEmAtraso.toFixed(2)),
-      totalParcelas: c.totalParcelas,
-      diasAtrasoMax: c.diasAtrasoMax,
-      atendimentosEmAtraso: c.atendimentos.size,
-      risco: this._riskFrom(c.diasAtrasoMax, c.totalParcelas),
-    }));
+    const clientes = Array.from(byClient.values()).map((c) => {
+      const totalEmAtraso = parseFloat(c.totalEmAtraso.toFixed(2));
+      const totalParcelas = c.totalParcelas;
+      const diasAtrasoMax = c.diasAtrasoMax;
+      const clienteId = c.clienteId != null ? String(c.clienteId) : String(c.groupId);
+
+      return {
+        clienteId,
+        nome: c.nome,
+        totalEmAtraso,
+        totalParcelas,
+        diasAtrasoMax,
+        atendimentosEmAtraso: c.atendimentos.size,
+        risco: this._riskFrom(diasAtrasoMax, totalParcelas),
+        // Aliases para o dashboard web (lumiz-financeiro)
+        totalDevido: totalEmAtraso,
+        parcelasAtrasadas: totalParcelas,
+        diasMaximoAtraso: diasAtrasoMax,
+      };
+    });
 
     clientes.sort((a, b) => b.totalEmAtraso - a.totalEmAtraso);
 

@@ -59,9 +59,12 @@ describe('inadimplenciaService', () => {
     expect(overview.totalParcelas).toBe(1);
     expect(overview.clientes).toHaveLength(1);
     expect(overview.clientes[0]).toEqual(expect.objectContaining({
-      clienteId: null,
+      clienteId: 'atendimento-1',
       nome: 'Cliente não informado',
-      totalEmAtraso: 1200
+      totalEmAtraso: 1200,
+      totalDevido: 1200,
+      parcelasAtrasadas: 1,
+      diasMaximoAtraso: expect.any(Number),
     }));
   });
 });

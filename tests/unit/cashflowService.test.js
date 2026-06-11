@@ -115,6 +115,35 @@ describe('getCashflowProjection', () => {
     }
   });
 
+  it('inclui contas_pagar legadas com data quando data_vencimento é null', async () => {
+    const t = dateOffset(4);
+    transactionController.getBalance = jest.fn().mockResolvedValue({ saldo: 5000, entradas: 0, saidas: 0 });
+    supabase.from = jest.fn((table) => {
+      if (table === 'parcelas') {
+        return buildQueryMock({ data: [], error: null });
+      }
+      if (table === 'contas_pagar') {
+        return buildQueryMock({
+          data: [{
+            id: 'c-legacy',
+            descricao: 'Fornecedor legado',
+            valor: '800',
+            data: t,
+            data_vencimento: null,
+            categoria: 'insumo',
+          }],
+          error: null,
+        });
+      }
+      return buildQueryMock({ data: [], error: null });
+    });
+
+    const result = await cashflowService.getCashflowProjection('user-1', 30);
+    const day = result.days.find((d) => d.data === t);
+    expect(day).toBeDefined();
+    expect(day.saidas).toBe(800);
+  });
+
   it('marca caixaNegativo e resumo quando saldo acumulado projetado cai abaixo de zero', async () => {
     const t = dateOffset(2);
     transactionController.getBalance = jest.fn().mockResolvedValue({ saldo: 1000, entradas: 0, saidas: 0 });
@@ -194,5 +223,39 @@ describe('getFinancialCalendar', () => {
   it('summary inclui notaCashflow a remeter para cashflow/projection', async () => {
     const result = await cashflowService.getFinancialCalendar('user-1', start, end);
     expect(result.summary.notaCashflow).toContain('cashflow/projection');
+  });
+
+  it('inclui contas_pagar legadas com data no calendário', async () => {
+    const legacyDate = dateOffset(7);
+    supabase.from = jest.fn((table) => {
+      if (table === 'parcelas') {
+        return buildQueryMock({ data: [], error: null });
+      }
+      if (table === 'contas_pagar') {
+        return buildQueryMock({
+          data: [{
+            id: 'c-legacy',
+            descricao: 'Conta legada',
+            valor: '250',
+            data: legacyDate,
+            data_vencimento: null,
+            categoria: 'fixo',
+            status_pagamento: 'pendente',
+          }],
+          error: null,
+        });
+      }
+      return buildQueryMock({ data: [], error: null });
+    });
+
+    const result = await cashflowService.getFinancialCalendar('user-1', start, end);
+    expect(result.events[legacyDate]).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        tipo: 'saida',
+        id: 'c-legacy',
+        valor: 250,
+        predicted: false,
+      }),
+    ]));
   });
 });

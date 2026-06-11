@@ -9,6 +9,7 @@ const pricingIntelligenceService = require('../services/pricingIntelligenceServi
 const emergencyModeService = require('../services/emergencyModeService');
 const exportService = require('../services/exportService');
 const estoqueService = require('../services/estoqueService');
+const dashboardEstoqueService = require('../services/dashboardEstoqueService');
 const outlookService = require('../services/outlookService');
 const healthScoreService = require('../services/healthScoreService');
 const inadimplenciaService = require('../services/inadimplenciaService');
@@ -947,7 +948,7 @@ router.get('/emergency/status', async (req, res) => {
 // GET /api/dashboard/estoque — status de estoque por procedimento
 router.get('/estoque', async (req, res) => {
   try {
-    const result = await estoqueService.getEstoqueStatus(req.user.id);
+    const result = await dashboardEstoqueService.getEstoqueStatus(req.user.id);
     res.json(result);
   } catch (error) {
     console.error('Error getting estoque:', error);
@@ -958,7 +959,7 @@ router.get('/estoque', async (req, res) => {
 // GET /api/dashboard/estoque/alertas — apenas baixo | crítico
 router.get('/estoque/alertas', async (req, res) => {
   try {
-    const result = await estoqueService.getAlertasBaixoEstoque(req.user.id);
+    const result = await dashboardEstoqueService.getAlertasBaixoEstoque(req.user.id);
     res.json(result);
   } catch (error) {
     console.error('Error getting estoque alertas:', error);
@@ -977,7 +978,7 @@ router.get('/estoque/sugestoes', async (req, res) => {
         return res.status(400).json({ error: 'saldo_disponivel inválido' });
       }
     }
-    const result = await estoqueService.sugerirReposicao(req.user.id, saldo);
+    const result = await dashboardEstoqueService.sugerirReposicao(req.user.id, saldo);
     res.json(result);
   } catch (error) {
     console.error('Error getting estoque sugestoes:', error);
@@ -1666,7 +1667,7 @@ router.delete('/nf-validade/:id', async (req, res) => {
 // GET /api/dashboard/estoque/alertas-excesso — acima de estoque_maximo
 router.get('/estoque/alertas-excesso', async (req, res) => {
   try {
-    const result = await estoqueService.getAlertasEstoqueExcesso(req.user.id);
+    const result = await dashboardEstoqueService.getAlertasEstoqueExcesso(req.user.id);
     res.json(result);
   } catch (error) {
     console.error('Error getting estoque alertas excesso:', error);

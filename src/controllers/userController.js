@@ -609,6 +609,52 @@ class UserController {
       // Não lança erro para não quebrar o fluxo
     }
   }
+  /**
+   * Lista categorias do usuário para o dashboard (procedimentos + despesas).
+   * @param {string} userId
+   * @returns {Promise<Array<{ id: string, name: string, type: 'procedimento'|'despesa' }>>}
+   */
+  async getUserCategories(userId) {
+    const [procedimentosResult, contasResult] = await Promise.all([
+      supabase
+        .from('procedimentos')
+        .select('id, nome')
+        .eq('user_id', userId)
+        .order('nome'),
+      supabase
+        .from('contas_pagar')
+        .select('categoria')
+        .eq('user_id', userId)
+        .not('categoria', 'is', null),
+    ]);
+
+    if (procedimentosResult.error) throw procedimentosResult.error;
+    if (contasResult.error) throw contasResult.error;
+
+    const procedimentoCategories = (procedimentosResult.data || [])
+      .filter((p) => p.nome)
+      .map((p) => ({
+        id: p.id,
+        name: p.nome,
+        type: 'procedimento',
+      }));
+
+    const seenDespesas = new Set();
+    const despesaCategories = [];
+    for (const row of contasResult.data || []) {
+      const name = (row.categoria || '').trim();
+      if (!name || seenDespesas.has(name.toLowerCase())) continue;
+      seenDespesas.add(name.toLowerCase());
+      despesaCategories.push({
+        id: `despesa:${name}`,
+        name,
+        type: 'despesa',
+      });
+    }
+
+    return [...procedimentoCategories, ...despesaCategories];
+  }
+
   async migrateUserData(oldUserId, newUserId) {
     console.log(`[MIGRATION] Iniciando migração de dados de ${oldUserId} para ${newUserId}`);
 

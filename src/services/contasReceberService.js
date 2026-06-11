@@ -80,6 +80,7 @@ class ContasReceberService {
       `)
       .eq('paga', false)
       .eq('atendimentos.user_id', userId)
+      .or('is_test.is.null,is_test.eq.false', { foreignTable: 'atendimentos' })
       .lte('data_vencimento', toStr)
       .order('data_vencimento', { ascending: true });
 

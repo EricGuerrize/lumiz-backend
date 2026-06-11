@@ -19,6 +19,19 @@ class CashflowService {
     return 'futuro';
   }
 
+  /** Data efetiva de vencimento — legado pode ter só `data`. */
+  _effectiveDueDate(row) {
+    return row.data_vencimento ?? row.data ?? null;
+  }
+
+  _contasPagarDueDateOrFilter(startStr, endStr) {
+    return `and(data_vencimento.gte.${startStr},data_vencimento.lte.${endStr}),and(data_vencimento.is.null,data.gte.${startStr},data.lte.${endStr})`;
+  }
+
+  _contasPagarDueDateBeforeFilter(beforeStr) {
+    return `data_vencimento.lt.${beforeStr},and(data_vencimento.is.null,data.lt.${beforeStr})`;
+  }
+
   async getContasPagarPriority(userId, { status = 'pendente', daysAhead = 60, limit = 50, offset = 0 } = {}) {
     const today = new Date();
     const endDate = this._dateStr(this._addDays(today, daysAhead));
@@ -75,11 +88,10 @@ class CashflowService {
         .lte('data_vencimento', endStr),
       supabase
         .from('contas_pagar')
-        .select('id, descricao, valor, data_vencimento, categoria, is_pro_labore')
+        .select('id, descricao, valor, data, data_vencimento, categoria, is_pro_labore')
         .eq('user_id', userId)
         .eq('status_pagamento', 'pendente')
-        .gte('data_vencimento', todayStr)
-        .lte('data_vencimento', endStr),
+        .or(this._contasPagarDueDateOrFilter(todayStr, endStr)),
     ]);
 
     if (parcelasResult.error) throw parcelasResult.error;
@@ -101,8 +113,8 @@ class CashflowService {
     }
 
     for (const c of contasResult.data || []) {
-      const d = c.data_vencimento;
-      if (!d) continue;
+      const d = this._effectiveDueDate(c);
+      if (!d || d < todayStr || d > endStr) continue;
       if (!buckets[d]) buckets[d] = { entradas: 0, saidas: 0, eventos: [] };
       const valor = parseFloat(c.valor);
       buckets[d].saidas += valor;
@@ -174,17 +186,16 @@ class CashflowService {
         .lte('data_vencimento', endStr),
       supabase
         .from('contas_pagar')
-        .select('id, descricao, valor, data_vencimento, categoria, status_pagamento, is_pro_labore')
+        .select('id, descricao, valor, data, data_vencimento, categoria, status_pagamento, is_pro_labore')
         .eq('user_id', userId)
         .eq('status_pagamento', 'pendente')
-        .gte('data_vencimento', startStr)
-        .lte('data_vencimento', endStr),
+        .or(this._contasPagarDueDateOrFilter(startStr, endStr)),
       supabase
         .from('contas_pagar')
-        .select('valor, categoria, data_vencimento')
+        .select('valor, categoria, data, data_vencimento')
         .eq('user_id', userId)
         .eq('tipo', 'fixa')
-        .lt('data_vencimento', startStr),
+        .or(this._contasPagarDueDateBeforeFilter(startStr)),
     ]);
 
     const events = {};
@@ -204,8 +215,9 @@ class CashflowService {
     }
 
     for (const c of contasResult.data || []) {
-      if (!c.data_vencimento) continue;
-      addEvent(c.data_vencimento, {
+      const dueDate = this._effectiveDueDate(c);
+      if (!dueDate || dueDate < startStr || dueDate > endStr) continue;
+      addEvent(dueDate, {
         tipo: 'saida', id: c.id,
         descricao: c.descricao || c.categoria || 'Conta a pagar',
         valor: parseFloat(c.valor),
@@ -217,10 +229,11 @@ class CashflowService {
     // Predictive recurring fixed costs
     const fixasByCat = {};
     for (const f of fixasResult.data || []) {
-      if (!f.categoria || !f.data_vencimento) continue;
+      const effectiveDate = this._effectiveDueDate(f);
+      if (!f.categoria || !effectiveDate) continue;
       if (!fixasByCat[f.categoria]) fixasByCat[f.categoria] = { valores: [], dias: [] };
       fixasByCat[f.categoria].valores.push(parseFloat(f.valor));
-      fixasByCat[f.categoria].dias.push(new Date(f.data_vencimento + 'T12:00:00').getDate());
+      fixasByCat[f.categoria].dias.push(new Date(effectiveDate + 'T12:00:00').getDate());
     }
 
     const start = new Date(startStr + 'T12:00:00');

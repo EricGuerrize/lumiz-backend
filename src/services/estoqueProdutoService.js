@@ -479,6 +479,67 @@ class EstoqueProdutoService {
   }
 
   /**
+   * Lista lotes com validade vencida ou próxima.
+   * @param {string} userId
+   * @param {number} [days=30]
+   * @returns {Promise<Array<{id: string, produtoId: string, nome: string, lote: string|null, validade: string, venceEmDias: number, quantidade: number, unidade: string, valorRisco: number|null}>>}
+   */
+  async listarLotesProximosVencimento(userId, days = 30) {
+    const horizon = Math.min(Math.max(Number(days) || 30, 1), 365);
+    const today = new Date().toISOString().split('T')[0];
+    const end = new Date();
+    end.setDate(end.getDate() + horizon);
+    const endStr = end.toISOString().split('T')[0];
+
+    const { data, error } = await supabase
+      .from('estoque_lotes')
+      .select('id, produto_id, lote, validade, quantidade_atual, custo_unitario, estoque_produtos!inner(nome, unidade, ativo)')
+      .eq('user_id', userId)
+      .gt('quantidade_atual', 0)
+      .not('validade', 'is', null)
+      .lte('validade', endStr)
+      .eq('estoque_produtos.ativo', true)
+      .order('validade', { ascending: true })
+      .limit(50);
+    if (error) throw error;
+
+    return (data || []).map((row) => {
+      const quantidade = Number(row.quantidade_atual) || 0;
+      const custo = row.custo_unitario != null ? Number(row.custo_unitario) : null;
+      return {
+        id: row.id,
+        produtoId: row.produto_id,
+        nome: row.estoque_produtos?.nome || 'Produto',
+        lote: row.lote || null,
+        validade: row.validade,
+        venceEmDias: Math.ceil(
+          (new Date(`${row.validade}T12:00:00`) - new Date(`${today}T12:00:00`)) / 86400000
+        ),
+        quantidade,
+        unidade: row.estoque_produtos?.unidade || DEFAULT_UNIT,
+        valorRisco: custo != null ? quantidade * custo : null,
+        source: 'real_inventory',
+      };
+    });
+  }
+
+  /**
+   * Lista produtos abaixo do mínimo configurado.
+   * @param {string} userId
+   * @returns {Promise<Array<object>>}
+   */
+  async listarAlertasCriticos(userId) {
+    const status = await this.getEstoqueStatus(userId);
+    return (status.produtos || [])
+      .filter((item) => Number(item.estoqueMinimo) > 0)
+      .filter((item) => ['baixo', 'critico'].includes(item.status))
+      .sort((a, b) => {
+        const rank = { critico: 0, baixo: 1 };
+        return (rank[a.status] ?? 9) - (rank[b.status] ?? 9) || String(a.nome).localeCompare(String(b.nome));
+      });
+  }
+
+  /**
    * Item 28 — conferência/inventário assistido. Calcula o delta entre o saldo
    * informado (contagem física) e o saldo do sistema. Com `apply=false` apenas
    * prevê (sem tocar no banco); com `apply=true` aplica o ajuste como movimento
