@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lumiz Import Dashboard</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; background: #fafafa; color: #1f2937; }
+    h1 { margin-top: 0; }
+    .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .tabs { margin: 16px 0; display: flex; gap: 8px; }
+    .tab { padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 8px; background: white; cursor: pointer; }
+    .tab.active { background: #1d4ed8; color: white; border-color: #1d4ed8; }
+    .panel { background: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+    .hidden { display: none; }
+    button { cursor: pointer; padding: 8px 12px; border-radius: 8px; border: 1px solid #d1d5db; background: #f8fafc; }
+    button.primary { background: #1d4ed8; color: white; border-color: #1d4ed8; }
+    pre { background: #f3f4f6; border-radius: 8px; padding: 12px; overflow: auto; }
+    ul { padding-left: 20px; }
+    .muted { color: #6b7280; }
+  </style>
+</head>
+<body>
+  <h1>Import Dashboard (Backend)</h1>
+  <div class="panel">
+    <div class="row">
+      <label for="tokenInput">Bearer token:</label>
+      <input id="tokenInput" type="password" style="min-width: 360px;" />
+      <button id="saveTokenBtn">Salvar token</button>
+      <button id="usePromptBtn">Trocar token</button>
+    </div>
+    <p class="muted">Usa `localStorage.lumiz_token` se existir. API base: <code>/api/dashboard</code></p>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-kind="estoque">Estoque</button>
+    <button class="tab" data-kind="financeiro">Financeiro</button>
+  </div>
+
+  <div id="estoquePanel" class="panel">
+    <h3>Template</h3>
+    <p>
+      <a href="/api/dashboard/import/templates/estoque.csv" target="_blank" rel="noopener">Baixar CSV</a> |
+      <a href="/api/dashboard/import/templates/estoque.xlsx" target="_blank" rel="noopener">Baixar XLSX</a>
+    </p>
+    <h3>Upload + Preview</h3>
+    <input id="estoqueFile" type="file" accept=".csv,.xls,.xlsx" />
+    <button class="primary" onclick="previewImport('estoque')">Gerar prévia</button>
+    <button onclick="confirmImport('estoque')">Confirmar importação</button>
+    <pre id="estoquePreview">Sem prévia ainda.</pre>
+    <h3>Histórico + Undo</h3>
+    <button onclick="loadHistory('estoque')">Atualizar histórico</button>
+    <ul id="estoqueHistory"></ul>
+  </div>
+
+  <div id="financeiroPanel" class="panel hidden">
+    <h3>Template</h3>
+    <p>
+      <a href="/api/dashboard/import/templates/financeiro.csv" target="_blank" rel="noopener">Baixar CSV</a> |
+      <a href="/api/dashboard/import/templates/financeiro.xlsx" target="_blank" rel="noopener">Baixar XLSX</a>
+    </p>
+    <h3>Upload + Preview</h3>
+    <input id="financeiroFile" type="file" accept=".csv,.xls,.xlsx" />
+    <button class="primary" onclick="previewImport('excel')">Gerar prévia</button>
+    <button onclick="confirmImport('excel')">Confirmar importação</button>
+    <pre id="financeiroPreview">Sem prévia ainda.</pre>
+    <h3>Histórico + Undo</h3>
+    <button onclick="loadHistory('excel')">Atualizar histórico</button>
+    <ul id="financeiroHistory"></ul>
+  </div>
+
+  <script>
+    const state = { active: 'estoque', tokens: { estoque: null, excel: null } };
+
+    function getToken() {
+      const input = document.getElementById('tokenInput').value.trim();
+      return input || localStorage.getItem('lumiz_token') || '';
+    }
+
+    function saveToken() {
+      const token = document.getElementById('tokenInput').value.trim();
+      if (!token) return alert('Informe o token primeiro.');
+      localStorage.setItem('lumiz_token', token);
+      alert('Token salvo.');
+    }
+
+    function promptToken() {
+      const token = window.prompt('Cole o Bearer token');
+      if (!token) return;
+      document.getElementById('tokenInput').value = token;
+      localStorage.setItem('lumiz_token', token);
+    }
+
+    async function api(path, options = {}) {
+      const token = getToken();
+      if (!token) throw new Error('Token ausente. Defina o bearer token primeiro.');
+      const headers = { ...(options.headers || {}), Authorization: `Bearer ${token}` };
+      const response = await fetch(path, { ...options, headers });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || `Erro ${response.status}`);
+      return data;
+    }
+
+    async function previewImport(kind) {
+      const isEstoque = kind === 'estoque';
+      const fileInput = document.getElementById(isEstoque ? 'estoqueFile' : 'financeiroFile');
+      const previewEl = document.getElementById(isEstoque ? 'estoquePreview' : 'financeiroPreview');
+      if (!fileInput.files.length) return alert('Selecione um arquivo primeiro.');
+
+      const formData = new FormData();
+      formData.append('file', fileInput.files[0]);
+      const result = await api(`/api/dashboard/import/${kind}/preview`, { method: 'POST', body: formData });
+      state.tokens[kind] = result.import_token;
+      previewEl.textContent = JSON.stringify(result, null, 2);
+    }
+
+    async function confirmImport(kind) {
+      const isEstoque = kind === 'estoque';
+      const previewEl = document.getElementById(isEstoque ? 'estoquePreview' : 'financeiroPreview');
+      const token = state.tokens[kind];
+      if (!token) return alert('Faça a prévia antes de confirmar.');
+      const result = await api(`/api/dashboard/import/${kind}/confirm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ import_token: token }),
+      });
+      previewEl.textContent = JSON.stringify(result, null, 2);
+      await loadHistory(kind);
+    }
+
+    async function loadHistory(kind) {
+      const isEstoque = kind === 'estoque';
+      const listEl = document.getElementById(isEstoque ? 'estoqueHistory' : 'financeiroHistory');
+      const result = await api(`/api/dashboard/import/${kind}/history`);
+      const items = result.data || [];
+      if (!items.length) {
+        listEl.innerHTML = '<li class="muted">Sem histórico.</li>';
+        return;
+      }
+      listEl.innerHTML = '';
+      items.forEach((row) => {
+        const li = document.createElement('li');
+        li.textContent = `${row.status} | ${row.filename || row.id}`;
+        const btn = document.createElement('button');
+        btn.textContent = 'Undo';
+        btn.style.marginLeft = '8px';
+        btn.onclick = async () => {
+          await api(`/api/dashboard/import/${kind}/${row.id}`, { method: 'DELETE' });
+          await loadHistory(kind);
+        };
+        li.appendChild(btn);
+        listEl.appendChild(li);
+      });
+    }
+
+    document.querySelectorAll('.tab').forEach((tab) => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
+        tab.classList.add('active');
+        const kind = tab.dataset.kind;
+        document.getElementById('estoquePanel').classList.toggle('hidden', kind !== 'estoque');
+        document.getElementById('financeiroPanel').classList.toggle('hidden', kind !== 'financeiro');
+      });
+    });
+
+    document.getElementById('tokenInput').value = localStorage.getItem('lumiz_token') || '';
+    document.getElementById('saveTokenBtn').addEventListener('click', saveToken);
+    document.getElementById('usePromptBtn').addEventListener('click', promptToken);
+    loadHistory('estoque').catch(() => {});
+    loadHistory('excel').catch(() => {});
+  </script>
+</body>
+</html>

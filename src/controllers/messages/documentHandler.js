@@ -11,6 +11,9 @@ const documentCopy = require('../../copy/documentWhatsappCopy');
 const estoqueCopy = require('../../copy/estoqueWhatsappCopy');
 const estoqueImportCopy = require('../../copy/estoqueImportWhatsappCopy');
 const estoqueImportService = require('../../services/estoqueImportService');
+const excelService = require('../../services/excelService');
+const financialImportCopy = require('../../copy/financialImportWhatsappCopy');
+const spreadsheetImportRouterService = require('../../services/spreadsheetImportRouterService');
 const conversationRuntimeStateService = require('../../services/conversationRuntimeStateService');
 const EstoqueHandler = require('./estoqueHandler');
 const vendorClassificationService = require('../../services/vendorClassificationService');
@@ -24,8 +27,9 @@ const {
  * Handler para documentos e imagens
  */
 class DocumentHandler {
-  constructor(pendingDocumentTransactions) {
+  constructor(pendingDocumentTransactions, spreadsheetImportHandler = null) {
     this.pendingDocumentTransactions = pendingDocumentTransactions;
+    this.spreadsheetImportHandler = spreadsheetImportHandler;
     this.PENDING_CONFIRMATION_TTL_MS = 15 * 60 * 1000;
   }
 
@@ -690,18 +694,62 @@ class DocumentHandler {
         return null;
       }
 
-      if (estoqueImportService.isSpreadsheetFile(source.mimeType, fileName)) {
-        const preview = await estoqueImportService.previewFromBuffer(user.id, docBuffer, {
-          filename: fileName || null,
-        });
-        await this._stockHandler().startInventoryImportFromSpreadsheet(normalizedPhone, {
-          importToken: preview.import_token,
-          preview: preview.preview,
-          summary: preview.summary,
-          inconsistencias: preview.inconsistencias,
-          filename: fileName || null,
-        });
-        return estoqueImportCopy.previewImport(preview);
+      if (spreadsheetImportRouterService.isSpreadsheetFile(fileName, source.mimeType)) {
+        const kind = spreadsheetImportRouterService.detectSpreadsheetKind(docBuffer, fileName || '');
+        if (kind === 'estoque') {
+          const preview = await estoqueImportService.previewFromBuffer(user.id, docBuffer, {
+            filename: fileName || null,
+          });
+          await this._stockHandler().startInventoryImportFromSpreadsheet(normalizedPhone, {
+            importToken: preview.import_token,
+            preview: preview.preview,
+            summary: preview.summary,
+            inconsistencias: preview.inconsistencias,
+            filename: fileName || null,
+          });
+          return estoqueImportCopy.previewImport(preview);
+        }
+
+        if (kind === 'financeiro' && this.spreadsheetImportHandler) {
+          const preview = await excelService.importFromExcel(user.id, docBuffer, {
+            filename: fileName || null,
+          });
+          await this.spreadsheetImportHandler.startFinancialImportFromSpreadsheet(normalizedPhone, {
+            importToken: preview.import_token,
+            preview: preview.preview,
+            summary: preview.summary,
+            inconsistencias: preview.inconsistencias,
+            filename: fileName || null,
+          });
+          return financialImportCopy.previewImport(preview);
+        }
+
+        if (this.spreadsheetImportHandler) {
+          const [estoquePreview, financeiroPreview] = await Promise.all([
+            estoqueImportService.previewFromBuffer(user.id, docBuffer, { filename: fileName || null }),
+            excelService.importFromExcel(user.id, docBuffer, { filename: fileName || null }),
+          ]);
+          await this.spreadsheetImportHandler.startSpreadsheetKindChoice(normalizedPhone, {
+            filename: fileName || null,
+            estoque: {
+              importToken: estoquePreview.import_token,
+              preview: estoquePreview.preview,
+              summary: estoquePreview.summary,
+              inconsistencias: estoquePreview.inconsistencias,
+            },
+            financeiro: {
+              importToken: financeiroPreview.import_token,
+              preview: financeiroPreview.preview,
+              summary: financeiroPreview.summary,
+              inconsistencias: financeiroPreview.inconsistencias,
+            },
+          });
+          return financialImportCopy.askKindChoice({
+            filename: fileName || null,
+            estoqueSummary: estoquePreview.summary,
+            financeiroSummary: financeiroPreview.summary,
+          });
+        }
       }
 
       const result = await documentService.processDocumentFromBuffer(docBuffer, source.mimeType, fileName);

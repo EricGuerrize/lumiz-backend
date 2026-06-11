@@ -1,3 +1,8 @@
+const {
+  INVENTORY_IMPORT_CONFIRM_FOOTER,
+  INVENTORY_IMPORT_UNDO_FOOTER,
+} = require('./whatsappMenuMarkers');
+
 function formatItemLine(item) {
   const qty = item.quantidade != null ? item.quantidade : '?';
   const unit = item.unidade || 'unidade';
@@ -37,15 +42,12 @@ function previewImport(result = {}) {
     lines.push('');
   }
 
-  lines.push('1️⃣ Confirmar importação');
-  lines.push('2️⃣ Cancelar');
-  lines.push('');
-  lines.push('_Responda 1 para importar ou 2 para cancelar._');
+  lines.push(INVENTORY_IMPORT_CONFIRM_FOOTER);
 
   return lines.filter((line) => line !== undefined).join('\n');
 }
 
-function importConfirmed(result = {}) {
+function importConfirmed(result = {}, options = {}) {
   const applied = result.applied?.length ?? result.summary?.applied_count ?? 0;
   const failed = result.failed?.length ?? result.summary?.failed_count ?? 0;
 
@@ -60,7 +62,12 @@ function importConfirmed(result = {}) {
   }
 
   lines.push('');
-  lines.push('Você pode conferir o saldo com _consultar estoque_ ou desfazer pelo dashboard.');
+  lines.push('Você pode conferir o saldo com _consultar estoque_.');
+  if (options.offerUndo) {
+    lines.push(INVENTORY_IMPORT_UNDO_FOOTER);
+  } else {
+    lines.push('Se precisar, também dá para desfazer pelo dashboard.');
+  }
 
   return lines.join('\n');
 }
@@ -78,9 +85,28 @@ function importCancelled() {
   return 'Importação de estoque cancelada. Pode enviar outra planilha quando quiser.';
 }
 
+function importUndoConfirmed() {
+  return '↩️ Importação desfeita com sucesso. Se quiser, envie a planilha novamente.';
+}
+
+function importUndoCancelled() {
+  return 'Perfeito, mantive a importação no estoque.';
+}
+
+function importUndoPrompt() {
+  return [
+    'Quer desfazer essa importação?',
+    '',
+    INVENTORY_IMPORT_UNDO_FOOTER,
+  ].join('\n');
+}
+
 module.exports = {
   previewImport,
   importConfirmed,
   importFailed,
   importCancelled,
+  importUndoConfirmed,
+  importUndoCancelled,
+  importUndoPrompt,
 };

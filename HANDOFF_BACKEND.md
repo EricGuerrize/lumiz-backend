@@ -41,6 +41,22 @@ As fases 9 e 10 são majoritariamente frontend. No backend, o foco é garantir c
 
 ## Novas entregas deste bloco
 
+### Importações de planilha (estoque + financeiro)
+
+- Rotas novas de template:
+  - `GET /api/dashboard/import/templates/estoque.csv`
+  - `GET /api/dashboard/import/templates/estoque.xlsx`
+  - `GET /api/dashboard/import/templates/financeiro.csv`
+  - `GET /api/dashboard/import/templates/financeiro.xlsx`
+- Upload financeiro (`/api/dashboard/import/excel/preview`) agora aceita `.csv`, `.xls` e `.xlsx`.
+- WhatsApp:
+  - planilhas enviadas no chat passam por `spreadsheetImportRouterService` e são roteadas para estoque, financeiro ou escolha ambígua;
+  - novo pending `financial_import` para preview/confirm/cancel;
+  - novo pending `spreadsheet_kind_choice` para decidir entre estoque e financeiro;
+  - importação de estoque passou a usar botões de confirmar/cancelar e oferece `desfazer importação` por 15 min (`inventory_import_undo`).
+- Ferramenta backend:
+  - página estática `GET /dashboard-tools/import-dashboard.html` com abas Estoque/Financeiro, links de template, preview/confirm e histórico/undo (token via `localStorage.lumiz_token`).
+
 - `GET /api/dashboard/clientes/perfil-pagamento`
   - serviço: `src/services/clientePerfilService.js`
   - retorna perfil por cliente (`formas_usadas`, `forma_preferida`, `ticket_medio`, `indice_risco_pagamento`).

@@ -12,6 +12,8 @@ class EstoqueHandler {
     this.INVENTORY_SETUP_TTL_MS = 30 * 60 * 1000;
     this.INVENTORY_IMPORT_FLOW = 'inventory_import';
     this.INVENTORY_IMPORT_TTL_MS = 30 * 60 * 1000;
+    this.INVENTORY_IMPORT_UNDO_FLOW = 'inventory_import_undo';
+    this.INVENTORY_IMPORT_UNDO_TTL_MS = 15 * 60 * 1000;
     this.STOCK_AFTER_SALE_FLOW = EstoqueHandler.STOCK_AFTER_SALE_FLOW;
     this.STOCK_AFTER_SALE_TTL_MS = EstoqueHandler.STOCK_AFTER_SALE_TTL_MS;
     this.STOCK_FROM_DOC_FLOW = EstoqueHandler.STOCK_FROM_DOC_FLOW;
@@ -408,6 +410,38 @@ class EstoqueHandler {
     return Boolean(pending?.payload?.stage);
   }
 
+  async hasPendingInventoryImportUndo(phone) {
+    const pending = await conversationRuntimeStateService.get(phone, this.INVENTORY_IMPORT_UNDO_FLOW);
+    return Boolean(pending?.payload?.stage);
+  }
+
+  async handlePendingInventoryImportUndo(phone, message, user) {
+    const pending = await conversationRuntimeStateService.get(phone, this.INVENTORY_IMPORT_UNDO_FLOW);
+    if (!pending?.payload?.stage) return null;
+
+    const normalized = String(message || '').trim().toLowerCase();
+    const isUndo = ['desfazer', 'desfazer importação', 'desfazer importacao', 'confirmar', 'sim', '1'].includes(normalized);
+    const isKeep = ['manter', 'manter importação', 'manter importacao', 'cancelar', 'não', 'nao', '2'].includes(normalized);
+
+    if (isKeep) {
+      await conversationRuntimeStateService.clear(phone, this.INVENTORY_IMPORT_UNDO_FLOW);
+      return importCopy.importUndoCancelled();
+    }
+
+    if (!isUndo) {
+      return importCopy.importUndoPrompt();
+    }
+
+    try {
+      await estoqueImportService.undoImport(user.id, pending.payload.batchId);
+      await conversationRuntimeStateService.clear(phone, this.INVENTORY_IMPORT_UNDO_FLOW);
+      return importCopy.importUndoConfirmed();
+    } catch (error) {
+      await conversationRuntimeStateService.clear(phone, this.INVENTORY_IMPORT_UNDO_FLOW);
+      return importCopy.importFailed(error.message);
+    }
+  }
+
   async handlePendingInventoryImport(phone, message, user) {
     const pending = await conversationRuntimeStateService.get(phone, this.INVENTORY_IMPORT_FLOW);
     if (!pending?.payload?.stage) return null;
@@ -435,7 +469,13 @@ class EstoqueHandler {
         sourcePhone: phone,
       });
       await conversationRuntimeStateService.clear(phone, this.INVENTORY_IMPORT_FLOW);
-      return importCopy.importConfirmed(result);
+      await conversationRuntimeStateService.upsert(
+        phone,
+        this.INVENTORY_IMPORT_UNDO_FLOW,
+        { stage: 'undo_confirm', batchId: result.batch_id },
+        this.INVENTORY_IMPORT_UNDO_TTL_MS
+      );
+      return importCopy.importConfirmed(result, { offerUndo: true });
     } catch (error) {
       await conversationRuntimeStateService.clear(phone, this.INVENTORY_IMPORT_FLOW);
       return importCopy.importFailed(error.message);

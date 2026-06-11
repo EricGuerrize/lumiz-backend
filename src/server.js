@@ -2,6 +2,7 @@
 require("./instrument");
 
 const express = require('express');
+const path = require('path');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const cron = require('node-cron');
@@ -301,6 +302,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/config', configRoutes);
 app.use('/webhooks', asaasWebhookRoutes);
 app.use('/webhooks', alterWebhookRoutes);
+app.use('/dashboard-tools', express.static(path.join(__dirname, '../public')));
 
 app.get('/health', async (req, res) => {
   const startTime = Date.now();

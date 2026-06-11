@@ -157,6 +157,7 @@ class ExcelService {
       inconsistencias: parsed.inconsistencias,
       mapping: parsed.mapping,
       summary,
+      filename: options.filename || null,
     };
   }
 

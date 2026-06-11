@@ -17,6 +17,10 @@ const BUTTON_SETS = {
     { id: 'menu_confirm', title: 'Confirmar' },
     { id: 'menu_cancel', title: 'Cancelar' }
   ],
+  inventoryUndo: [
+    { id: 'menu_undo_import', title: 'Desfazer importação' },
+    { id: 'menu_keep_import', title: 'Manter importação' }
+  ],
   confirmCancelCorrect: [
     { id: 'menu_confirm', title: 'Confirmar' },
     { id: 'menu_cancel', title: 'Cancelar' },
@@ -47,7 +51,39 @@ const BUTTON_SETS = {
     { id: 'menu_all', title: 'Livres + antecipar' },
     { id: 'menu_free', title: 'Só os livres' },
     { id: 'menu_cancel', title: 'Cancelar' }
+  ],
+  spreadsheetKindChoice: [
+    { id: 'menu_kind_estoque', title: 'Estoque' },
+    { id: 'menu_kind_financeiro', title: 'Financeiro' }
   ]
+};
+
+const CORRECTION_FIELD_ENTRADA_LIST = {
+  type: 'list',
+  button: 'O que corrigir',
+  sections: [{
+    title: 'Campos da venda',
+    rows: [
+      { id: 'tx_fix_valor', title: 'Valor', description: 'Valor total' },
+      { id: 'tx_fix_procedimento', title: 'Procedimento', description: 'Nome do procedimento' },
+      { id: 'tx_fix_nome', title: 'Nome', description: 'Cliente ou paciente' },
+      { id: 'tx_fix_data', title: 'Data', description: 'Data do atendimento' }
+    ]
+  }]
+};
+
+const CORRECTION_FIELD_SAIDA_LIST = {
+  type: 'list',
+  button: 'O que corrigir',
+  sections: [{
+    title: 'Campos do custo',
+    rows: [
+      { id: 'tx_fix_valor', title: 'Valor', description: 'Valor da despesa' },
+      { id: 'tx_fix_categoria', title: 'Categoria', description: 'Tipo de custo' },
+      { id: 'tx_fix_descricao', title: 'Descrição', description: 'Fornecedor ou detalhe' },
+      { id: 'tx_fix_data', title: 'Data', description: 'Data do lançamento' }
+    ]
+  }]
 };
 
 const PAYMENT_METHOD_LIST = {
@@ -75,12 +111,36 @@ const MENU_RULES = [
     menu: () => ({ type: 'buttons', buttons: BUTTON_SETS.confirmCancelCorrect })
   },
   {
+    detect: (text) => text.includes(markers.TX_CORRECTION_FIELD_ENTRADA_FOOTER),
+    menu: () => CORRECTION_FIELD_ENTRADA_LIST
+  },
+  {
+    detect: (text) => text.includes(markers.TX_CORRECTION_FIELD_SAIDA_FOOTER),
+    menu: () => CORRECTION_FIELD_SAIDA_LIST
+  },
+  {
     detect: (text) => text.includes(markers.SUPPLIER_DOC_CONFIRM_FOOTER),
     menu: () => ({ type: 'buttons', buttons: BUTTON_SETS.confirmCancelCorrect })
   },
   {
     detect: (text) => text.includes(markers.INVENTORY_CONFIRM_FOOTER),
     menu: () => ({ type: 'buttons', buttons: BUTTON_SETS.confirmCancelCorrect })
+  },
+  {
+    detect: (text) => text.includes(markers.INVENTORY_IMPORT_CONFIRM_FOOTER),
+    menu: () => ({ type: 'buttons', buttons: BUTTON_SETS.confirmCancel })
+  },
+  {
+    detect: (text) => text.includes(markers.INVENTORY_IMPORT_UNDO_FOOTER),
+    menu: () => ({ type: 'buttons', buttons: BUTTON_SETS.inventoryUndo })
+  },
+  {
+    detect: (text) => text.includes(markers.FINANCIAL_IMPORT_CONFIRM_FOOTER),
+    menu: () => ({ type: 'buttons', buttons: BUTTON_SETS.confirmCancel })
+  },
+  {
+    detect: (text) => text.includes(markers.SPREADSHEET_KIND_CHOICE_FOOTER),
+    menu: () => ({ type: 'buttons', buttons: BUTTON_SETS.spreadsheetKindChoice })
   },
   {
     detect: (text) => text.includes(markers.SUPPLIER_DOC_RETRY_FOOTER),
@@ -183,10 +243,20 @@ function mapInteractiveButtonReply(buttonId = '', buttonTitle = '') {
     menu_install: 'parcelado',
     menu_all: 'comprometer tudo',
     menu_free: 'só livres',
+    menu_undo_import: 'desfazer importação',
+    menu_keep_import: 'manter importação',
+    menu_kind_estoque: 'estoque',
+    menu_kind_financeiro: 'financeiro',
     pay_pix: 'pix',
     pay_debit: 'débito',
     pay_credit: 'crédito à vista',
-    pay_install: 'parcelado'
+    pay_install: 'parcelado',
+    tx_fix_valor: 'campo valor',
+    tx_fix_procedimento: 'campo procedimento',
+    tx_fix_nome: 'campo nome',
+    tx_fix_data: 'campo data',
+    tx_fix_categoria: 'campo categoria',
+    tx_fix_descricao: 'campo descricao'
   };
 
   if (byId[normalizedId]) {
@@ -211,6 +281,12 @@ function mapInteractiveButtonReply(buttonId = '', buttonTitle = '') {
   if (normalizedTitle.includes('fluxo')) return 'no fluxo';
   if (normalizedTitle.includes('antecipar')) return 'comprometer tudo';
   if (normalizedTitle.includes('só os livres') || normalizedTitle.includes('so os livres')) return 'só livres';
+  if (normalizedTitle === 'valor') return 'campo valor';
+  if (normalizedTitle === 'procedimento') return 'campo procedimento';
+  if (normalizedTitle === 'nome') return 'campo nome';
+  if (normalizedTitle === 'data') return 'campo data';
+  if (normalizedTitle === 'categoria') return 'campo categoria';
+  if (normalizedTitle === 'descrição' || normalizedTitle === 'descricao') return 'campo descricao';
 
   return buttonTitle || buttonId || '';
 }

@@ -22,6 +22,7 @@ const margemAlertaService = require('../services/margemAlertaService');
 const emailReportService = require('../services/emailReportService');
 const excelService = require('../services/excelService');
 const estoqueImportService = require('../services/estoqueImportService');
+const importTemplateService = require('../services/importTemplateService');
 const outboundMessageService = require('../services/outboundMessageService');
 const excelImportWhatsappCopy = require('../copy/excelImportWhatsappCopy');
 const estoqueImportWhatsappCopy = require('../copy/estoqueImportWhatsappCopy');
@@ -61,9 +62,11 @@ const excelUpload = multer({
     const allowedMimeTypes = new Set([
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'application/vnd.ms-excel',
+      'text/csv',
+      'application/csv',
       'application/octet-stream',
     ]);
-    const allowedExt = /\.(xlsx|xls)$/i.test(file.originalname || '');
+    const allowedExt = /\.(xlsx|xls|csv)$/i.test(file.originalname || '');
     if (allowedExt || allowedMimeTypes.has(file.mimetype)) return cb(null, true);
     return cb(new Error('INVALID_EXCEL_FILE'));
   },
@@ -1103,7 +1106,7 @@ router.post('/import/excel/preview', dashboardExportLimiter, excelUpload.single(
     console.error('Error previewing Excel import:', error);
     if (error.message === 'INVALID_EXCEL_FILE' || error.code === 'LIMIT_FILE_SIZE') {
       return res.status(400).json({
-        error: 'Arquivo inválido. Envie .xlsx ou .xls com até 5MB.',
+        error: 'Arquivo inválido. Envie .xlsx, .xls ou .csv com até 5MB.',
       });
     }
     return res.status(500).json({ error: 'Failed to preview Excel import' });
@@ -1260,6 +1263,42 @@ router.delete('/import/estoque/:batchId', dashboardExportLimiter, async (req, re
     }
     return res.status(500).json({ error: 'Failed to undo estoque import' });
   }
+});
+
+function sendTemplate(res, buffer, contentType, filename) {
+  res.setHeader('Content-Type', contentType);
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  return res.send(buffer);
+}
+
+router.get('/import/templates/estoque.csv', (req, res) => {
+  const buffer = importTemplateService.getEstoqueTemplateCsv();
+  return sendTemplate(res, buffer, 'text/csv; charset=utf-8', 'template-estoque.csv');
+});
+
+router.get('/import/templates/estoque.xlsx', (req, res) => {
+  const buffer = importTemplateService.getEstoqueTemplateXlsx();
+  return sendTemplate(
+    res,
+    buffer,
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'template-estoque.xlsx'
+  );
+});
+
+router.get('/import/templates/financeiro.csv', (req, res) => {
+  const buffer = importTemplateService.getFinanceiroTemplateCsv();
+  return sendTemplate(res, buffer, 'text/csv; charset=utf-8', 'template-financeiro.csv');
+});
+
+router.get('/import/templates/financeiro.xlsx', (req, res) => {
+  const buffer = importTemplateService.getFinanceiroTemplateXlsx();
+  return sendTemplate(
+    res,
+    buffer,
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'template-financeiro.xlsx'
+  );
 });
 
 // GET /api/dashboard/goals/monthly?year=2026&month=5

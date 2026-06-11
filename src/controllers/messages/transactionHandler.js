@@ -13,7 +13,8 @@ const {
 } = require('../../utils/moneyParser');
 const { sanitizeClientName } = require('../../utils/procedureKeywords');
 const { isLowConfidence, lowConfidenceBanner } = require('../../copy/captureConfirmCopy');
-const { applyTransactionCorrection } = require('../../utils/whatsappCorrectionParser');
+const { applyTransactionCorrection, parseBrDate } = require('../../utils/whatsappCorrectionParser');
+const txConfirmCopy = require('../../copy/transactionConfirmWhatsappCopy');
 const {
   extractCostPaymentDetails,
   inferCostTypeAndCategoryFromText
@@ -179,7 +180,7 @@ class TransactionHandler {
         await this.clearPendingTransaction(phone);
         return 'Registro cancelado ❌\n\nSe quiser registrar, é só me enviar novamente com os dados corretos!';
       }
-      return await this.handlePendingPaymentStep(phone, pending, messageLower);
+      return await this.handlePendingPaymentStep(phone, pending, messageLower, user);
     }
 
     // Confirmação
@@ -379,26 +380,22 @@ class TransactionHandler {
       return `${emoji} *${tipoTexto} registrado!* ✅\n\n${formatarMoeda(valor)} - ${categoria || descricao}\n\nQuer ver seu saldo? Digite "saldo"`;
     }
 
-    if (
-      messageLower === '3' ||
-      messageLower === 'corrigir' ||
-      messageLower.includes('corrigir') ||
-      messageLower.includes('alterar') ||
-      messageLower.includes('editar')
-    ) {
+    if (this._isCorrectionIntent(messageLower)) {
       const previousCategory = pending.dados?.categoria;
       const correction = this.applyCorrectionToDados(pending.dados, message);
-      if (correction.changed) {
+      if (correction.changed && !this._isBareCorrectionIntent(messageLower)) {
         pending.dados = correction.dados;
         await this._maybeLearnVendorFromCostCorrection(user, previousCategory, pending.dados, pending.originalText);
         pending.stage = 'confirm';
+        pending.correctionField = null;
         await this.setPendingTransaction(phone, pending);
         return this.buildConfirmationMessage(pending.dados);
       }
 
-      pending.stage = 'awaiting_correction';
+      pending.stage = 'awaiting_correction_field';
+      pending.correctionField = null;
       await this.setPendingTransaction(phone, pending);
-      return 'Me manda só o que precisa corrigir.\n\nExemplos:\n"valor era 4500"\n"foi no pix"\n"cliente Romulo"\n"procedimento preenchimento"';
+      return txConfirmCopy.buildCorrectionFieldPickerMessage(pending.dados);
     }
 
     // Cancelamento
@@ -794,18 +791,54 @@ class TransactionHandler {
     };
   }
 
-  async handlePendingPaymentStep(phone, pending, messageLower) {
+  async handlePendingPaymentStep(phone, pending, messageLower, user) {
     const current = pending.dados || {};
 
-    if (pending.stage === 'awaiting_correction') {
-      const previousCategory = current.categoria;
-      const correction = this.applyCorrectionToDados(current, messageLower);
-      if (!correction.changed) {
-        return 'Não consegui aplicar essa correção. Tenta assim: "valor era 4500", "foi no pix" ou "cliente Romulo".';
+    if (pending.stage === 'awaiting_correction_field') {
+      if (this._isBareCorrectionIntent(messageLower)) {
+        return txConfirmCopy.buildCorrectionFieldPickerMessage(current);
       }
-      pending.dados = correction.dados;
-      await this._maybeLearnVendorFromCostCorrection(user, previousCategory, pending.dados, pending.originalText);
+
+      const field = this._parseCorrectionFieldChoice(messageLower, current.tipo);
+      if (!field) {
+        return (
+          'Não entendi qual campo corrigir.\n\n' +
+          txConfirmCopy.buildCorrectionFieldPickerMessage(current)
+        );
+      }
+
+      pending.correctionField = field;
+      pending.stage = 'awaiting_correction_value';
+      await this.setPendingTransaction(phone, pending);
+      return txConfirmCopy.buildCorrectionValuePrompt(field, current);
+    }
+
+    if (pending.stage === 'awaiting_correction_value') {
+      if (this._isBareCorrectionIntent(messageLower)) {
+        pending.stage = 'awaiting_correction_field';
+        pending.correctionField = null;
+        await this.setPendingTransaction(phone, pending);
+        return txConfirmCopy.buildCorrectionFieldPickerMessage(current);
+      }
+
+      const previousCategory = current.categoria;
+      const applied = this._applySingleFieldCorrection(current, pending.correctionField, messageLower);
+      if (!applied.changed) {
+        return (
+          `Não consegui entender esse valor.\n\n` +
+          txConfirmCopy.buildCorrectionValuePrompt(pending.correctionField, current)
+        );
+      }
+
+      pending.dados = applied.dados;
+      await this._maybeLearnVendorFromCostCorrection(
+        user,
+        previousCategory,
+        pending.dados,
+        pending.originalText
+      );
       pending.stage = 'confirm';
+      pending.correctionField = null;
       await this.setPendingTransaction(phone, pending);
       return this.buildConfirmationMessage(pending.dados);
     }
@@ -1013,6 +1046,95 @@ class TransactionHandler {
       return 'credito_avista';
     }
     return normalized;
+  }
+
+  _isCorrectionIntent(messageLower) {
+    return messageLower === '3' ||
+      messageLower === 'corrigir' ||
+      messageLower.includes('corrigir') ||
+      messageLower.includes('alterar') ||
+      messageLower.includes('editar') ||
+      messageLower.startsWith('campo ');
+  }
+
+  _isBareCorrectionIntent(messageLower) {
+    return ['3', 'corrigir', 'corrige', 'correcao', 'correção', 'alterar', 'editar'].includes(messageLower);
+  }
+
+  _parseCorrectionFieldChoice(messageLower, tipo) {
+    const normalized = this.normalizeText(messageLower);
+    const map = {
+      'campo valor': 'valor',
+      valor: 'valor',
+      'campo procedimento': 'procedimento',
+      procedimento: 'procedimento',
+      'campo nome': 'nome',
+      nome: 'nome',
+      'campo data': 'data',
+      data: 'data',
+      'campo categoria': 'categoria',
+      categoria: 'categoria',
+      'campo descricao': 'descricao',
+      'campo descrição': 'descricao',
+      descricao: 'descricao',
+      descrição: 'descricao'
+    };
+
+    if (map[normalized]) {
+      const field = map[normalized];
+      if (tipo === 'entrada' && ['categoria', 'descricao'].includes(field)) return null;
+      if (tipo === 'saida' && ['procedimento', 'nome'].includes(field)) return null;
+      return field;
+    }
+
+    return null;
+  }
+
+  _applySingleFieldCorrection(dados, field, message) {
+    const next = { ...(dados || {}) };
+    const raw = String(message || '').trim();
+    if (!field || !raw) return { changed: false, dados: next };
+
+    let changed = false;
+
+    if (field === 'valor') {
+      const value = this.recoverTransactionValue(raw, null, next.parcelas);
+      if (value && value > 0) {
+        next.valor = value;
+        changed = true;
+      }
+    } else if (field === 'procedimento' || field === 'categoria') {
+      const cleaned = raw
+        .replace(/^(procedimento|categoria|servi[cç]o)\s*/i, '')
+        .trim();
+      if (cleaned) {
+        next.categoria = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+        if (next.tipo === 'entrada') {
+          next.categoria = this.sanitizeSaleCategory(raw, next.categoria, next.nome_cliente);
+        }
+        changed = true;
+      }
+    } else if (field === 'nome') {
+      const cleaned = raw.replace(/^(cliente|paciente|nome)\s*/i, '').trim();
+      if (cleaned) {
+        next.nome_cliente = this.sanitizeClientName(cleaned, next.categoria);
+        changed = true;
+      }
+    } else if (field === 'descricao') {
+      const cleaned = raw.replace(/^(descri[cç][aã]o|descricao|fornecedor)\s*/i, '').trim();
+      if (cleaned) {
+        next.descricao = cleaned;
+        changed = true;
+      }
+    } else if (field === 'data') {
+      const date = parseBrDate(raw);
+      if (date) {
+        next.data = date;
+        changed = true;
+      }
+    }
+
+    return { changed, dados: next };
   }
 
   _enrichSaidaFromText(normalizedData, originalText) {

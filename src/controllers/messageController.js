@@ -31,6 +31,7 @@ const ScheduleHandler = require('./messages/scheduleHandler');
 const InsightsHandler = require('./messages/insightsHandler');
 const MemberHandler = require('./messages/memberHandler');
 const EstoqueHandler = require('./messages/estoqueHandler');
+const SpreadsheetImportHandler = require('./messages/spreadsheetImportHandler');
 const PacienteHandler = require('./messages/pacienteHandler');
 const mdrChatFlowService = require('../services/mdrChatFlowService');
 const betaFeedbackService = require('../services/betaFeedbackService');
@@ -60,7 +61,8 @@ class MessageController {
     // Inicializa handlers com referências aos Maps
     this.transactionHandler = new TransactionHandler(this.pendingTransactions);
     this.queryHandler = new QueryHandler();
-    this.documentHandler = new DocumentHandler(this.pendingDocumentTransactions);
+    this.spreadsheetImportHandler = new SpreadsheetImportHandler();
+    this.documentHandler = new DocumentHandler(this.pendingDocumentTransactions, this.spreadsheetImportHandler);
     this.editHandler = new EditHandler(this.pendingEdits);
     this.searchHandler = new SearchHandler();
     this.goalHandler = new GoalHandler();
@@ -108,6 +110,9 @@ class MessageController {
       this.awaitingData.has(phone) ||
       await this.estoqueHandler.hasPendingInventorySetup(phone) ||
       await this.estoqueHandler.hasPendingInventoryImport(phone) ||
+      await this.estoqueHandler.hasPendingInventoryImportUndo(phone) ||
+      await this.spreadsheetImportHandler.hasPendingFinancialImport(phone) ||
+      await this.spreadsheetImportHandler.hasPendingSpreadsheetKindChoice(phone) ||
       this.memberHandler.isAddingMember(phone) ||
       this.memberHandler.isRemovingMember(phone) ||
       this.memberHandler.hasPendingTransfer(phone) ||
@@ -509,18 +514,33 @@ class MessageController {
         }
       }
 
-      // Verifica estados pendentes
-      if (this.pendingTransactions.has(normalizedPhone)) {
-        return await this.transactionHandler.handleConfirmation(normalizedPhone, message, user);
+      // Verifica estados pendentes (importações e documentos antes de confirmação de transação)
+      if (await this.estoqueHandler.hasPendingInventoryImport(normalizedPhone)) {
+        const result = await this.estoqueHandler.handlePendingInventoryImport(normalizedPhone, message, user);
+        if (result) return result;
+      }
+
+      if (await this.estoqueHandler.hasPendingInventoryImportUndo(normalizedPhone)) {
+        const result = await this.estoqueHandler.handlePendingInventoryImportUndo(normalizedPhone, message, user);
+        if (result) return result;
+      }
+
+      if (await this.spreadsheetImportHandler.hasPendingFinancialImport(normalizedPhone)) {
+        const result = await this.spreadsheetImportHandler.handlePendingFinancialImport(normalizedPhone, message, user);
+        if (result) return result;
+      }
+
+      if (await this.spreadsheetImportHandler.hasPendingSpreadsheetKindChoice(normalizedPhone)) {
+        const result = await this.spreadsheetImportHandler.handlePendingSpreadsheetKindChoice(normalizedPhone, message);
+        if (result) return result;
       }
 
       if (this.pendingDocumentTransactions.has(normalizedPhone)) {
         return await this.documentHandler.handleDocumentConfirmation(normalizedPhone, message, user);
       }
 
-      if (await this.estoqueHandler.hasPendingInventoryImport(normalizedPhone)) {
-        const result = await this.estoqueHandler.handlePendingInventoryImport(normalizedPhone, message, user);
-        if (result) return result;
+      if (this.pendingTransactions.has(normalizedPhone)) {
+        return await this.transactionHandler.handleConfirmation(normalizedPhone, message, user);
       }
 
       if (await this.estoqueHandler.hasPendingInventorySetup(normalizedPhone)) {

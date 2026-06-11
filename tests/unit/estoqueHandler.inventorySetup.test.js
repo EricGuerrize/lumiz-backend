@@ -9,6 +9,7 @@ jest.mock('../../src/services/estoqueProdutoService', () => ({
 }));
 jest.mock('../../src/services/estoqueImportService', () => ({
   confirmImport: jest.fn(),
+  undoImport: jest.fn(),
 }));
 jest.mock('../../src/services/conversationRuntimeStateService', () => ({
   get: jest.fn(),
@@ -90,6 +91,20 @@ describe('EstoqueHandler inventário inicial', () => {
       expect.objectContaining({ stage: 'confirm', importToken: 'batch-2' }),
       expect.any(Number)
     );
+  });
+
+  it('desfaz importação quando usuário confirma undo', async () => {
+    runtime.get.mockResolvedValue({
+      payload: { stage: 'undo_confirm', batchId: 'batch-9' },
+    });
+    estoqueImportService.undoImport.mockResolvedValue({ ok: true, batch_id: 'batch-9' });
+
+    const handler = new EstoqueHandler();
+    const reply = await handler.handlePendingInventoryImportUndo('5565', 'desfazer importação', { id: 'u1' });
+
+    expect(estoqueImportService.undoImport).toHaveBeenCalledWith('u1', 'batch-9');
+    expect(runtime.clear).toHaveBeenCalledWith('5565', 'inventory_import_undo');
+    expect(reply).toContain('Importação desfeita');
   });
 
   it('não executa baixa direta de estoque por comando solto', async () => {
