@@ -212,6 +212,47 @@ describe('IntentHeuristicService', () => {
     expect(info.forma_pagamento).toBe('pix');
   });
 
+  test('detectIntent aceita venda com procedimento desconhecido e valor', async () => {
+    knowledgeService.searchSimilarity.mockResolvedValue([]);
+    const moneyParser = require('../../src/utils/moneyParser');
+    moneyParser.extractPrimaryMonetaryValue.mockReturnValue(8000);
+    moneyParser.extractInstallments.mockReturnValue(7);
+
+    const result = await intentHeuristicService.detectIntent('Alexandre ultraskin premium 8000 em 7x', null);
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        intencao: 'registrar_entrada',
+        source: 'heuristic'
+      })
+    );
+    expect(result.dados).toEqual(
+      expect.objectContaining({
+        valor: 8000,
+        categoria: 'Procedimento',
+        parcelas: 7,
+        forma_pagamento: 'parcelado',
+        descricao: 'Alexandre ultraskin premium 8000 em 7x'
+      })
+    );
+  });
+
+  test('detectIntent mantém saída para custo conhecido com valor', async () => {
+    knowledgeService.searchSimilarity.mockResolvedValue([]);
+    const moneyParser = require('../../src/utils/moneyParser');
+    moneyParser.extractPrimaryMonetaryValue.mockReturnValue(1800);
+    moneyParser.extractInstallments.mockReturnValue(3);
+
+    const result = await intentHeuristicService.detectIntent('comprei insumos 1800 em 3x', null);
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        intencao: 'registrar_saida',
+        source: 'heuristic'
+      })
+    );
+  });
+
   test('detectIntent entende export PDF com mes numerico', async () => {
     knowledgeService.searchSimilarity.mockResolvedValue([]);
     const result = await intentHeuristicService.detectIntent('gerar pdf mes 06', null);

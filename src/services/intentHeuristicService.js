@@ -332,6 +332,21 @@ class IntentHeuristicService {
     return extractPrimaryMonetaryValue(text);
   }
 
+  _looksLikeUnknownSale(text, normalized) {
+    const value = this.extractValue(text);
+    if (!value) return false;
+
+    const costSignals = this.keywords.registrar_saida || [];
+    const hasCostSignal = costSignals.some((kw) => normalized.includes(kw));
+    if (hasCostSignal) return false;
+
+    const hasInstallments = Number(extractInstallments(text)) > 1 || /\b\d{1,2}\s*x\b/i.test(text);
+    const hasPaymentHint = /\b(pix|debito|débito|credito|crédito|cartao|cartão|parcelado)\b/i.test(text);
+    const alphabeticWords = (String(text).match(/[A-Za-zÀ-ÿ]+/g) || []).length;
+
+    return hasInstallments || hasPaymentHint || alphabeticWords >= 3;
+  }
+
   /**
    * Extrai informações de venda do texto
    */
@@ -682,6 +697,14 @@ class IntentHeuristicService {
       }
     }
 
+    // Fallback resiliente: aceita venda com procedimento novo (texto livre + valor),
+    // sem bloquear o fluxo quando a clínica usa nomes fora do catálogo atual.
+    if (!detectedIntent && this._looksLikeUnknownSale(original, normalized)) {
+      detectedIntent = 'registrar_entrada';
+      confidence = 0.72;
+      console.log('[HEURISTIC] Fallback de venda com procedimento desconhecido acionado');
+    }
+
     // Se não detectou com confiança suficiente, tenta busca semântica (Aprendizado Autônomo)
     // Feito APÓS keyword matching para não penalizar msgs que já têm match rápido
     if (!detectedIntent || confidence < MIN_CONFIDENCE) {
@@ -720,10 +743,12 @@ class IntentHeuristicService {
         return null;
       }
       const saleInfo = this.extractSaleInfo(original);
+      const hasKnownCategory = Boolean(saleInfo.categoria);
       dados = {
         tipo: 'entrada',
         valor: saleInfo.valor_total || valor,
         categoria: saleInfo.categoria || 'Procedimento',
+        descricao: hasKnownCategory ? null : original,
         forma_pagamento: saleInfo.forma_pagamento || null,
         parcelas: saleInfo.parcelas || null,
         bandeira_cartao: saleInfo.bandeira_cartao || null,
