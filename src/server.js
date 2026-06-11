@@ -108,8 +108,12 @@ cron.schedule('0 8 * * *', async () => {
   }
   console.log('[CRON] Verificando alertas operacionais WhatsApp...');
   try {
+    await whatsappOperationalAlertService.sendBillDueAlerts();
     await whatsappOperationalAlertService.sendValidityAlerts();
+    await whatsappOperationalAlertService.sendCriticalStockAlerts();
     await whatsappOperationalAlertService.sendDailyBriefings();
+    await whatsappOperationalAlertService.sendPatientReturnAlerts();
+    await whatsappOperationalAlertService.sendPatientReactivationAlerts();
     await whatsappOperationalAlertService.sendInadimplenciaAlerts();
   } catch (error) {
     console.error('[CRON] Erro nos alertas operacionais:', error);
@@ -448,18 +452,40 @@ app.get('/api/cron/operational-alerts', async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const validityAlerts = await whatsappOperationalAlertService.sendValidityAlerts();
-    const dailyBriefings = await whatsappOperationalAlertService.sendDailyBriefings();
-    const inadimplenciaAlerts = await whatsappOperationalAlertService.sendInadimplenciaAlerts();
+    const [
+      billDueAlerts,
+      validityAlerts,
+      criticalStockAlerts,
+      dailyBriefings,
+      patientReturnAlerts,
+      patientReactivationAlerts,
+      inadimplenciaAlerts
+    ] = await Promise.all([
+      whatsappOperationalAlertService.sendBillDueAlerts(),
+      whatsappOperationalAlertService.sendValidityAlerts(),
+      whatsappOperationalAlertService.sendCriticalStockAlerts(),
+      whatsappOperationalAlertService.sendDailyBriefings(),
+      whatsappOperationalAlertService.sendPatientReturnAlerts(),
+      whatsappOperationalAlertService.sendPatientReactivationAlerts(),
+      whatsappOperationalAlertService.sendInadimplenciaAlerts()
+    ]);
 
     res.json({
       status: 'success',
       timestamp: new Date().toISOString(),
+      bill_due_alerts_sent: billDueAlerts.length,
       validity_alerts_sent: validityAlerts.length,
+      critical_stock_alerts_sent: criticalStockAlerts.length,
       daily_briefings_sent: dailyBriefings.length,
+      patient_return_alerts_sent: patientReturnAlerts.length,
+      patient_reactivation_alerts_sent: patientReactivationAlerts.length,
       inadimplencia_alerts_sent: inadimplenciaAlerts.length,
+      billDueAlerts,
       validityAlerts,
+      criticalStockAlerts,
       dailyBriefings,
+      patientReturnAlerts,
+      patientReactivationAlerts,
       inadimplenciaAlerts
     });
   } catch (error) {

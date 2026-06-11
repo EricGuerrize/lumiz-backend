@@ -31,3 +31,4 @@ claude_desktop_config_example.json
 # Configuração local do Claude Code (permissões por máquina, não versionar)
 .claude/settings.local.json
 .claude/worktrees/
+hive.yml
