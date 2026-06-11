@@ -87,6 +87,17 @@ class IntentHeuristicService {
         'cadastrar inventario',
         'cadastrar inventário',
       ],
+      conferir_estoque: [
+        'conferir estoque',
+        'conferência de estoque',
+        'conferencia de estoque',
+        'estoque real',
+        'ajustar estoque',
+        'ajuste de estoque',
+        'contagem de estoque',
+        'conferir inventario',
+        'conferir inventário',
+      ],
       estoque_entrada: [
         'entrada no estoque',
         'entrada de estoque',

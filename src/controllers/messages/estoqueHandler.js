@@ -12,6 +12,8 @@ class EstoqueHandler {
     this.STOCK_AFTER_SALE_TTL_MS = EstoqueHandler.STOCK_AFTER_SALE_TTL_MS;
     this.STOCK_FROM_DOC_FLOW = EstoqueHandler.STOCK_FROM_DOC_FLOW;
     this.STOCK_FROM_DOC_TTL_MS = EstoqueHandler.STOCK_FROM_DOC_TTL_MS;
+    this.INVENTORY_RECOUNT_FLOW = EstoqueHandler.INVENTORY_RECOUNT_FLOW;
+    this.INVENTORY_RECOUNT_TTL_MS = EstoqueHandler.INVENTORY_RECOUNT_TTL_MS;
   }
 
   // ==========================================================================
@@ -271,6 +273,104 @@ class EstoqueHandler {
     return { applied, failed };
   }
 
+  // ==========================================================================
+  // Item 28 — inventário/conferência assistida. Compara contagem física com o
+  // saldo do sistema e só ajusta após confirmação.
+  // ==========================================================================
+
+  /**
+   * Remove o prefixo de comando ("estoque real:", "conferir estoque", etc.)
+   * antes de interpretar os pares item+quantidade.
+   * @private
+   */
+  _stripConferenciaPrefix(message) {
+    return String(message || '')
+      .replace(/^\s*(estoque\s+real|conferir\s+estoque|conferir|invent[aá]rio|ajustar\s+estoque|contagem)\s*[:\-]?\s*/i, '')
+      .trim();
+  }
+
+  /**
+   * Entrada do fluxo de conferência. Interpreta a contagem, calcula os deltas
+   * (sem aplicar) e abre o pending de confirmação.
+   * @param {object} user
+   * @param {string} phone
+   * @param {string} message
+   * @returns {Promise<string>}
+   */
+  async handleConferirEstoque(user, phone, message) {
+    const texto = this._stripConferenciaPrefix(message);
+    const itens = procedimentoConsumoService.parseUsedItems(texto);
+    if (!itens.length) {
+      return copy.conferenciaEstoqueInstrucoes();
+    }
+
+    const diffs = [];
+    for (const item of itens) {
+      try {
+        const preview = await estoqueProdutoService.conferirSaldo(
+          user.id,
+          { nome: item.nome, saldoReal: item.quantidade, sourcePhone: phone },
+          { apply: false }
+        );
+        diffs.push(preview);
+      } catch (error) {
+        diffs.push({ nome: item.nome, encontrado: false, anterior: null, novo: item.quantidade, delta: item.quantidade, changed: false, erro: error.message });
+      }
+    }
+
+    const temMudanca = diffs.some((d) => !d.encontrado || d.delta !== 0);
+    if (!temMudanca) {
+      return copy.resumoConferenciaEstoque(diffs);
+    }
+
+    await conversationRuntimeStateService.upsert(
+      phone,
+      this.INVENTORY_RECOUNT_FLOW,
+      { stage: 'confirm', itens },
+      this.INVENTORY_RECOUNT_TTL_MS
+    );
+    return copy.resumoConferenciaEstoque(diffs);
+  }
+
+  async hasPendingInventoryRecount(phone) {
+    const pending = await conversationRuntimeStateService.get(phone, this.INVENTORY_RECOUNT_FLOW);
+    return Boolean(pending?.payload?.stage);
+  }
+
+  async handlePendingInventoryRecount(phone, message, user) {
+    const pending = await conversationRuntimeStateService.get(phone, this.INVENTORY_RECOUNT_FLOW);
+    const payload = pending?.payload;
+    if (!payload?.stage) return null;
+
+    const normalized = String(message || '').trim().toLowerCase();
+    const isYes = ['1', 'sim', 's', 'confirmar', 'confirma'].includes(normalized);
+    const isNo = ['2', 'não', 'nao', 'n', 'cancelar'].includes(normalized);
+
+    if (isNo) {
+      await conversationRuntimeStateService.clear(phone, this.INVENTORY_RECOUNT_FLOW);
+      return copy.conferenciaEstoqueCancelada();
+    }
+    if (isYes) {
+      const results = [];
+      for (const item of payload.itens || []) {
+        try {
+          const r = await estoqueProdutoService.conferirSaldo(
+            user.id,
+            { nome: item.nome, saldoReal: item.quantidade, sourcePhone: phone },
+            { apply: true }
+          );
+          results.push(r);
+        } catch (error) {
+          results.push({ nome: item.nome, changed: false, erro: error.message });
+        }
+      }
+      await conversationRuntimeStateService.clear(phone, this.INVENTORY_RECOUNT_FLOW);
+      return copy.conferenciaEstoqueConfirmada(results);
+    }
+    // Resposta inesperada: repete a pergunta de confirmação simples.
+    return copy.conferenciaEstoqueCancelada();
+  }
+
   async hasPendingInventorySetup(phone) {
     const pending = await conversationRuntimeStateService.get(phone, this.INVENTORY_SETUP_FLOW);
     return Boolean(pending?.payload?.stage);
@@ -421,5 +521,7 @@ EstoqueHandler.STOCK_AFTER_SALE_FLOW = 'stock_after_sale';
 EstoqueHandler.STOCK_AFTER_SALE_TTL_MS = 15 * 60 * 1000;
 EstoqueHandler.STOCK_FROM_DOC_FLOW = 'stock_from_doc';
 EstoqueHandler.STOCK_FROM_DOC_TTL_MS = 30 * 60 * 1000;
+EstoqueHandler.INVENTORY_RECOUNT_FLOW = 'inventory_recount';
+EstoqueHandler.INVENTORY_RECOUNT_TTL_MS = 15 * 60 * 1000;
 
 module.exports = EstoqueHandler;

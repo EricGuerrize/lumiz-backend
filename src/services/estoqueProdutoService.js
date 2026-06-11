@@ -474,6 +474,69 @@ class EstoqueProdutoService {
     const status = await this.getEstoqueStatus(userId);
     return status.produtos.find((p) => p.id === produto.id) || null;
   }
+
+  /**
+   * Item 28 — conferência/inventário assistido. Calcula o delta entre o saldo
+   * informado (contagem física) e o saldo do sistema. Com `apply=false` apenas
+   * prevê (sem tocar no banco); com `apply=true` aplica o ajuste como movimento
+   * de inventário (entrada se faltou, saída se sobrou).
+   *
+   * @param {string} userId
+   * @param {{nome: string, saldoReal: number, sourcePhone?: string}} input
+   * @param {{apply?: boolean}} [options]
+   * @returns {Promise<{nome: string, encontrado: boolean, anterior: number|null, novo: number, delta: number, changed: boolean}>}
+   */
+  async conferirSaldo(userId, input = {}, options = {}) {
+    const { nome, sourcePhone } = input;
+    const saldoReal = Number(input.saldoReal);
+    if (!nome || !Number.isFinite(saldoReal) || saldoReal < 0) {
+      throw new Error('Nome e saldo real válidos são obrigatórios');
+    }
+    const apply = options.apply === true;
+
+    const status = await this.getProdutoStatus(userId, nome);
+    if (!status) {
+      // Produto ainda não existe no inventário: a contagem física vira entrada inicial.
+      if (apply && saldoReal > 0) {
+        await this.registrarEntrada(userId, {
+          nome,
+          quantidade: saldoReal,
+          allowCreate: true,
+          origem: 'inventario',
+          tipo: 'inventario',
+          sourcePhone,
+          observacoes: 'Inventário assistido — cadastro por contagem física',
+        });
+      }
+      return { nome, encontrado: false, anterior: null, novo: saldoReal, delta: saldoReal, changed: apply && saldoReal > 0 };
+    }
+
+    const anterior = Number(status.estoqueAtual) || 0;
+    const delta = Math.round((saldoReal - anterior) * 100) / 100;
+
+    if (delta !== 0 && apply) {
+      if (delta > 0) {
+        await this.registrarEntrada(userId, {
+          produtoId: status.id,
+          quantidade: delta,
+          origem: 'inventario',
+          tipo: 'inventario',
+          sourcePhone,
+          observacoes: 'Inventário assistido — ajuste de contagem',
+        });
+      } else {
+        await this.registrarSaida(userId, {
+          produtoId: status.id,
+          quantidade: Math.abs(delta),
+          origem: 'inventario',
+          sourcePhone,
+          observacoes: 'Inventário assistido — ajuste de contagem',
+        });
+      }
+    }
+
+    return { nome: status.nome, encontrado: true, anterior, novo: saldoReal, delta, changed: delta !== 0 && apply };
+  }
 }
 
 module.exports = new EstoqueProdutoService();

@@ -533,6 +533,12 @@ class MessageController {
         if (result) return result;
       }
 
+      // Item 28: conferência/inventário assistido aguardando confirmação de ajuste.
+      if (await this.estoqueHandler.hasPendingInventoryRecount(normalizedPhone)) {
+        const result = await this.estoqueHandler.handlePendingInventoryRecount(normalizedPhone, message, user);
+        if (result) return result;
+      }
+
       const normalizedMessage = (message || '').trim().toLowerCase();
       const looksLikeYesNoDocumentReply = [
         'sim', 's', 'confirmar', '1',
@@ -1113,6 +1119,9 @@ class MessageController {
 
       case 'consultar_estoque':
         return await this.estoqueHandler.handleConsultarEstoque(user, intent);
+
+      case 'conferir_estoque':
+        return await this.estoqueHandler.handleConferirEstoque(user, phone, message);
 
       case 'adicionar_numero':
         return await this.memberHandler.handleAddMember(user, phone);

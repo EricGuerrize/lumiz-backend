@@ -399,6 +399,61 @@ function entradaEstoqueDocIgnorada() {
   return 'Beleza, registrei só o financeiro. O estoque ficou como estava. 👍';
 }
 
+// ============================================================================
+// Item 28 — inventário/conferência assistida. A contagem física informada é
+// comparada com o saldo do sistema; o ajuste só ocorre após confirmação.
+// ============================================================================
+
+/** Instruções quando não consegue interpretar a contagem. */
+function conferenciaEstoqueInstrucoes() {
+  return (
+    'Para conferir o estoque, me manda a contagem real assim:\n\n' +
+    '_estoque real: toxina 8, luvas 20, seringa 50_\n\n' +
+    'Eu comparo com o sistema e te mostro as diferenças antes de ajustar.'
+  );
+}
+
+function _linhaDiff(d) {
+  if (!d.encontrado) {
+    return `• ${d.nome}: novo no estoque → ${d.novo}`;
+  }
+  if (d.delta === 0) {
+    return `• ${d.nome}: ${d.anterior} (bate ✅)`;
+  }
+  const sinal = d.delta > 0 ? `+${d.delta}` : `${d.delta}`;
+  return `• ${d.nome}: ${d.anterior} → ${d.novo} (${sinal})`;
+}
+
+/** Resumo das diferenças antes de aplicar. */
+function resumoConferenciaEstoque(diffs) {
+  if (!diffs?.length) return conferenciaEstoqueInstrucoes();
+  const comMudanca = diffs.filter((d) => !d.encontrado || d.delta !== 0);
+  const linhas = diffs.slice(0, 15).map(_linhaDiff);
+  const extra = diffs.length > 15 ? `\n...e mais ${diffs.length - 15} item(ns).` : '';
+  const rodape = comMudanca.length === 0
+    ? '\n\nTudo bate com o sistema. Nada a ajustar. ✅'
+    : '\n\nAplicar esse ajuste no estoque?\n*1* Confirmar\n*2* Cancelar';
+  return `📋 *Conferência de estoque*\n\n${linhas.join('\n')}${extra}${rodape}`;
+}
+
+/** Resultado da conferência aplicada. */
+function conferenciaEstoqueConfirmada(results) {
+  const ajustados = (results || []).filter((r) => r.changed);
+  if (!ajustados.length) {
+    return '✅ Conferência concluída. Nenhum ajuste foi necessário.';
+  }
+  const linhas = ajustados.slice(0, 15).map((r) => {
+    const sinal = r.delta > 0 ? `+${r.delta}` : `${r.delta}`;
+    return `• ${r.nome}: ${r.novo} (${sinal})`;
+  });
+  return `✅ *Estoque ajustado pela contagem:*\n\n${linhas.join('\n')}`;
+}
+
+/** Conferência cancelada. */
+function conferenciaEstoqueCancelada() {
+  return 'Conferência cancelada. O estoque ficou como estava. 👍';
+}
+
 module.exports = {
   alertaEstoqueBaixo,
   alertaEstoqueCritico,
@@ -431,4 +486,8 @@ module.exports = {
   resumoEntradaEstoqueDoc,
   entradaEstoqueDocConfirmada,
   entradaEstoqueDocIgnorada,
+  conferenciaEstoqueInstrucoes,
+  resumoConferenciaEstoque,
+  conferenciaEstoqueConfirmada,
+  conferenciaEstoqueCancelada,
 };
