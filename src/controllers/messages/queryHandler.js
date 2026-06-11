@@ -1,6 +1,7 @@
 const transactionController = require('../transactionController');
 const cashflowService = require('../../services/cashflowService');
 const estoqueService = require('../../services/estoqueService');
+const estoqueProdutoService = require('../../services/estoqueProdutoService');
 const nfValidadeService = require('../../services/nfValidadeService');
 const inadimplenciaService = require('../../services/inadimplenciaService');
 const inadimplenciaCopy = require('../../copy/inadimplenciaWhatsappCopy');
@@ -439,16 +440,33 @@ class QueryHandler {
 
   async handleDailyBriefing(user) {
     try {
-      const [balance, contas, estoque, validades] = await Promise.all([
+      const [balance, contas, estoque, estoqueReal, validades, validadesReais] = await Promise.all([
         transactionController.getBalance(user.id),
         cashflowService.getContasPagarPriority(user.id, { daysAhead: 7, limit: 5 }),
         estoqueService.getAlertasBaixoEstoque(user.id).catch(() => ({ alertas: [] })),
+        estoqueProdutoService.listarAlertasCriticos(user.id).catch(() => []),
         nfValidadeService.listarProximos(user.id, 30).catch(() => ({ itens: [] })),
+        estoqueProdutoService.listarLotesProximosVencimento(user.id, 30).catch(() => []),
       ]);
 
       const contasItems = contas.items || [];
-      const estoqueAlertas = estoque.alertas || [];
-      const validadeItens = (validades.itens || []).slice(0, 3);
+      const estoqueAlertas = [
+        ...(estoqueReal || []).map((item) => ({
+          nome: item.nome,
+          estoqueAtual: item.estoqueAtual,
+          unidade: item.unidade,
+          origem: 'real'
+        })),
+        ...(estoque.alertas || [])
+      ].slice(0, 3);
+      const validadeItens = [
+        ...(validadesReais || []).map((item) => ({
+          descricao: item.nome,
+          data_validade: item.validade,
+          lote: item.lote
+        })),
+        ...(validades.itens || [])
+      ].slice(0, 3);
 
       let response = `☀️ *Briefing financeiro de hoje*\n\n`;
       response += `Caixa disponível: ${formatarMoeda(balance.saldo || 0)}\n`;
@@ -471,7 +489,8 @@ class QueryHandler {
       if (validadeItens.length) {
         response += `\n*Validades próximas:*\n`;
         validadeItens.forEach((item) => {
-          response += `• ${item.descricao} · ${this.formatDateShort(item.data_validade)}\n`;
+          const lote = item.lote ? ` · lote ${item.lote}` : '';
+          response += `• ${item.descricao}${lote} · ${this.formatDateShort(item.data_validade)}\n`;
         });
       }
 
@@ -496,8 +515,22 @@ class QueryHandler {
   async handleValidades(user, dados = {}) {
     try {
       const days = Number(dados?.dias || dados?.days || 90);
-      const { itens } = await nfValidadeService.listarProximos(user.id, days);
-      const proximos = itens || [];
+      const [legacy, lotes] = await Promise.all([
+        nfValidadeService.listarProximos(user.id, days).catch(() => ({ itens: [] })),
+        estoqueProdutoService.listarLotesProximosVencimento(user.id, days).catch(() => []),
+      ]);
+      const proximos = [
+        ...(lotes || []).map((item) => ({
+          descricao: item.nome,
+          data_validade: item.validade,
+          vence_em_dias: item.venceEmDias,
+          vencido: item.venceEmDias < 0,
+          lote: item.lote,
+          quantidade: item.quantidade,
+          unidade: item.unidade
+        })),
+        ...(legacy.itens || [])
+      ].sort((a, b) => a.vence_em_dias - b.vence_em_dias);
 
       if (!proximos.length) {
         return `Não encontrei itens com validade nos próximos ${Math.min(Math.max(days || 90, 1), 365)} dias.`;
@@ -510,7 +543,11 @@ class QueryHandler {
           : item.vence_em_dias === 0
             ? 'vence hoje'
             : `vence em ${item.vence_em_dias}d`;
-        response += `• ${item.descricao} — ${this.formatDateShort(item.data_validade)} · ${status}\n`;
+        const lote = item.lote ? ` · lote ${item.lote}` : '';
+        const quantidade = item.quantidade != null
+          ? ` · ${Number(item.quantidade).toLocaleString('pt-BR')} ${item.unidade || 'un.'}`
+          : '';
+        response += `• ${item.descricao} — ${this.formatDateShort(item.data_validade)}${lote}${quantidade} · ${status}\n`;
       });
 
       if (proximos.length > 10) {

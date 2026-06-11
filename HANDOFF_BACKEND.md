@@ -65,11 +65,11 @@ As fases 9 e 10 são majoritariamente frontend. No backend, o foco é garantir c
 
 - Cron diário 8h (`src/server.js`) agora também executa:
   - `margemAlertaService.checkAndAlertMargemCaindo()`
-  - `whatsappOperationalAlertService.sendValidityAlerts()`, `sendDailyBriefings()` e `sendInadimplenciaAlerts()`; todos só disparam se as envs específicas estiverem habilitadas e se o usuário tiver `profiles.alertas_whatsapp_ativos = true`.
+  - `whatsappOperationalAlertService.sendBillDueAlerts()`, `sendValidityAlerts()`, `sendCriticalStockAlerts()`, `sendDailyBriefings()`, `sendPatientReturnAlerts()`, `sendPatientReactivationAlerts()` e `sendInadimplenciaAlerts()`; todos só disparam se as envs específicas estiverem habilitadas e se o usuário tiver `profiles.alertas_whatsapp_ativos = true`.
   - `emergencyModeService`, `estoqueService`, `goalReminderService`, `insightService` e `alterInsightCronService` agora só enviam WhatsApp se `profiles.alertas_whatsapp_ativos = true`.
 - Cron mensal mantém WhatsApp e, no mesmo fluxo, chama e-mail:
   - `monthlyReportDeliveryService` -> `emailReportService.sendMonthlyReportEmail()`
-- Endpoint manual/protegido: `GET /api/cron/operational-alerts` roda briefing diário, alertas de validade e alertas de inadimplência sob demanda com header `x-cron-secret`.
+- Endpoint manual/protegido: `GET /api/cron/operational-alerts` roda briefing diário, contas a pagar, validade/lote, estoque crítico, retorno/reativação de pacientes e inadimplência sob demanda com header `x-cron-secret`.
 
 ## Variáveis de ambiente
 
@@ -83,7 +83,11 @@ As fases 9 e 10 são majoritariamente frontend. No backend, o foco é garantir c
   - `WHATSAPP_OUTBOUND_QUEUE_ENABLED=true` habilita reenvio de respostas WhatsApp quando a Evolution falha temporariamente.
   - `WHATSAPP_OUTBOUND_WORKER_ENABLED=true` consome a fila `whatsapp-outbound` no próprio serviço HTTP.
   - `WHATSAPP_DAILY_BRIEFING_ENABLED=false` controla o briefing financeiro diário proativo via WhatsApp. Mantém opt-in obrigatório em `profiles.alertas_whatsapp_ativos`.
-  - `WHATSAPP_VALIDITY_ALERTS_ENABLED=false` controla alertas proativos de validade de estoque/NF. Mantém opt-in obrigatório em `profiles.alertas_whatsapp_ativos`.
+  - `WHATSAPP_BILL_DUE_ALERTS_ENABLED=false` controla alertas proativos de contas a pagar vencendo em 7/3/1 dias. Mantém opt-in obrigatório em `profiles.alertas_whatsapp_ativos`.
+  - `WHATSAPP_VALIDITY_ALERTS_ENABLED=false` controla alertas proativos de validade de estoque/NF/lotes. Mantém opt-in obrigatório em `profiles.alertas_whatsapp_ativos`.
+  - `WHATSAPP_CRITICAL_STOCK_ALERTS_ENABLED=false` controla alertas proativos de estoque abaixo do mínimo configurado. Mantém opt-in obrigatório em `profiles.alertas_whatsapp_ativos`.
+  - `WHATSAPP_PATIENT_RETURN_ALERTS_ENABLED=false` controla alertas internos de sugestão de retorno por ciclo de procedimento. Não envia mensagem automática para pacientes.
+  - `WHATSAPP_PATIENT_REACTIVATION_ALERTS_ENABLED=false` controla alertas internos semanais de pacientes sem atendimento recente. Não envia mensagem automática para pacientes.
   - `WHATSAPP_INADIMPLENCIA_ALERTS_ENABLED=false` controla alertas proativos de parcelas vencidas/inadimplência. Mantém opt-in obrigatório em `profiles.alertas_whatsapp_ativos`.
   - `WHATSAPP_ASYNC_MEDIA_PROCESSING=false` envia um aviso imediato ao receber PDF/foto antes do OCR terminar; o resumo final continua sendo enviado depois, com confirmação obrigatória.
   - `WHATSAPP_PROCESSING_WARN_MS`, `WHATSAPP_SEND_WARN_MS`, `WHATSAPP_TOTAL_WARN_MS` ajustam os limiares dos logs `[WA_LATENCY]`.
