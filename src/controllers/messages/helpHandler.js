@@ -34,7 +34,6 @@ class HelpHandler {
       `"estoque" - Resumo do estoque\n` +
       `"saldo botox" - Saldo de um item específico\n` +
       `"entrada estoque botox 3 frascos" - Dar entrada manual\n` +
-      `"baixar estoque botox 10 unidades" - Dar baixa manual\n` +
       `"validades" - Itens próximos do vencimento\n\n` +
       `🔍 Buscar:\n` +
       `"buscar botox" - Busca transações\n` +

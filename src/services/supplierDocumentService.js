@@ -2,8 +2,6 @@ const crypto = require('crypto');
 const supabase = require('../db/supabase');
 const documentService = require('./documentService');
 const openaiService = require('./openaiService');
-const estoqueService = require('./estoqueService');
-const estoqueProdutoService = require('./estoqueProdutoService');
 const { buildDocumentExtractionPromptSlim } = require('../config/prompts');
 const { extractInstallmentDays, calcularVencimentosBoleto } = require('../utils/moneyParser');
 
@@ -18,15 +16,13 @@ const { extractInstallmentDays, calcularVencimentosBoleto } = require('../utils/
  *  - createContasPagarFromDocument(userId, parsed, fornecedorId, options): cria N linhas
  *    em `contas_pagar` (uma por vencimento) com `parcela_numero`/`parcela_total` e
  *    `supplier_document_id`.
- *  - applyEstoqueEntradaFromItens(userId, parsed, options): faz match fuzzy dos itens
- *    da NF com `procedimentos` e dispara `estoqueService.registrarEntrada` quando
- *    score >= STOCK_MATCH_THRESHOLD; itens não casados ficam pendentes em
- *    `parsed_json.itens_pendentes`.
+ *  - applyEstoqueEntradaFromItens(userId, parsed, options): mantém itens detectados
+ *    como pendentes para confirmação manual. Documentos de fornecedor não alteram
+ *    estoque automaticamente.
  *  - persist(userId, parsed, fileHash, sourcePhone): salva snapshot em
  *    `supplier_documents` para auditoria + gancho do frontend.
  */
 
-const STOCK_MATCH_THRESHOLD = 0.8;
 const FUZZY_NAME_THRESHOLD = 0.75;
 
 const TIPO_PARA_ORIGEM = {
@@ -312,7 +308,6 @@ function similarity(a, b) {
 
 class SupplierDocumentService {
   constructor() {
-    this.STOCK_MATCH_THRESHOLD = STOCK_MATCH_THRESHOLD;
     this.FUZZY_NAME_THRESHOLD = FUZZY_NAME_THRESHOLD;
   }
 
@@ -608,125 +603,33 @@ class SupplierDocumentService {
   }
 
   /**
-   * Para cada item da NF, tenta casar com `procedimentos` (fuzzy nome).
-   * - score >= STOCK_MATCH_THRESHOLD → registra entrada no estoque.
-   * - score < threshold → adiciona em itens_pendentes para confirmação manual.
+   * Mantém itens extraídos de documentos como pendentes para etapa manual futura.
+   *
+   * Documentos de fornecedor podem trazer itens, lotes e validade, mas não devem
+   * alterar estoque sem uma confirmação explícita do usuário.
    *
    * @param {string} userId
    * @param {Object} parsed
    * @param {Object} options
    * @param {string} [options.supplierDocumentId]
    * @param {string} [options.fornecedorId]
-   * @returns {Promise<{aplicados: Array, pendentes: Array}>}
+   * @returns {Promise<{aplicados: Array, pendentes: Array, skipped: boolean, reason: string}>}
    */
   async applyEstoqueEntradaFromItens(userId, parsed, options = {}) {
     const itens = Array.isArray(parsed?.itens) ? parsed.itens : [];
     if (itens.length === 0) {
-      return { aplicados: [], pendentes: [] };
+      return {
+        aplicados: [],
+        pendentes: [],
+        skipped: true,
+        reason: 'no_items_detected'
+      };
     }
 
-    let realInventoryAvailable = false;
-    try {
-      realInventoryAvailable = await estoqueProdutoService.hasRealInventory(userId);
-    } catch (_) {
-      realInventoryAvailable = false;
-    }
-
-    const { data: procedimentos, error } = await supabase
-      .from('procedimentos')
-      .select('id, nome')
-      .eq('user_id', userId);
-    if (error) throw error;
-
-    const aplicados = [];
-    const pendentes = [];
-
-    for (const item of itens) {
-      const descricao = item.descricao || item.nome || '';
-      const quantidade = Number(item.quantidade) || 0;
-      if (!descricao || quantidade <= 0) {
-        pendentes.push({ ...item, motivo: 'descricao_ou_quantidade_invalida' });
-        continue;
-      }
-
-      if (realInventoryAvailable) {
-        try {
-          const produto = await estoqueProdutoService.findProductByName(userId, descricao);
-          if (produto) {
-            const movimento = await estoqueProdutoService.registrarEntrada(userId, {
-              produtoId: produto.id,
-              quantidade,
-              custoUnitario: item.valor_unitario || (
-                item.valor_total && quantidade > 0
-                  ? Math.round((Number(item.valor_total) / quantidade) * 100) / 100
-                  : null
-              ),
-              fornecedorId: options.fornecedorId || null,
-              supplierDocumentId: options.supplierDocumentId || null,
-              lote: item.lote || null,
-              validade: item.validade || null,
-              origem: 'supplier_document',
-              observacoes: [
-                `OCR doc ${options.supplierDocumentId || ''}`.trim(),
-                item.lote ? `lote ${item.lote}` : null,
-                item.validade ? `validade ${item.validade}` : null
-              ].filter(Boolean).join(' | ')
-            });
-            aplicados.push({
-              descricao,
-              produto_id: produto.id,
-              score: 1,
-              movimento,
-              source: 'real_inventory'
-            });
-            continue;
-          }
-        } catch (e) {
-          pendentes.push({ ...item, motivo: 'falha_ao_aplicar_inventario_real', erro: e?.message || String(e) });
-          continue;
-        }
-      }
-
-      let best = null;
-      let bestScore = 0;
-      for (const proc of procedimentos || []) {
-        const score = similarity(descricao, proc.nome || '');
-        if (score > bestScore) {
-          best = proc;
-          bestScore = score;
-        }
-      }
-
-      if (best && bestScore >= STOCK_MATCH_THRESHOLD) {
-        try {
-          const movimento = await estoqueService.registrarEntrada(userId, {
-            procedimentoId: best.id,
-            quantidade,
-            custoUnitario: item.valor_unitario || (
-              item.valor_total && quantidade > 0
-                ? Math.round((Number(item.valor_total) / quantidade) * 100) / 100
-                : null
-            ),
-            fornecedorId: options.fornecedorId || null,
-            observacoes: [
-              `OCR doc ${options.supplierDocumentId || ''}`.trim(),
-              item.lote ? `lote ${item.lote}` : null,
-              item.validade ? `validade ${item.validade}` : null
-            ].filter(Boolean).join(' | ')
-          });
-          aplicados.push({
-            descricao,
-            procedimento_id: best.id,
-            score: bestScore,
-            movimento
-          });
-        } catch (e) {
-          pendentes.push({ ...item, motivo: 'falha_ao_aplicar_estoque', erro: e?.message || String(e) });
-        }
-      } else {
-        pendentes.push({ ...item, motivo: best ? 'baixa_similaridade' : 'sem_procedimentos_cadastrados', score: bestScore });
-      }
-    }
+    const pendentes = itens.map((item) => ({
+      ...item,
+      motivo: 'requires_manual_stock_update'
+    }));
 
     if (options.supplierDocumentId && pendentes.length > 0) {
       const { data: existing } = await supabase
@@ -735,7 +638,11 @@ class SupplierDocumentService {
         .eq('id', options.supplierDocumentId)
         .eq('user_id', userId)
         .single();
-      const parsedJson = { ...(existing?.parsed_json || {}), itens_pendentes: pendentes };
+      const parsedJson = {
+        ...(existing?.parsed_json || {}),
+        itens_pendentes: pendentes,
+        estoque_update_policy: 'manual_confirmation_required'
+      };
       await supabase
         .from('supplier_documents')
         .update({ parsed_json: parsedJson, updated_at: new Date().toISOString() })
@@ -743,7 +650,12 @@ class SupplierDocumentService {
         .eq('user_id', userId);
     }
 
-    return { aplicados, pendentes };
+    return {
+      aplicados: [],
+      pendentes,
+      skipped: true,
+      reason: 'stock_update_requires_manual_confirmation'
+    };
   }
 
   /**

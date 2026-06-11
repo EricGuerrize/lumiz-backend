@@ -45,4 +45,18 @@ describe('EstoqueHandler inventário inicial', () => {
     expect(runtime.clear).toHaveBeenCalledWith('5565', 'inventory_setup');
     expect(reply).toContain('Inventário salvo: 1');
   });
+
+  it('não executa baixa direta de estoque por comando solto', async () => {
+    const handler = new EstoqueHandler();
+
+    const reply = await handler.handleSaidaEstoque(
+      { id: 'u1' },
+      { dados: { produto: 'Botox', quantidade: 1 } },
+      '5565'
+    );
+
+    expect(estoqueProdutoService.registrarSaida).not.toHaveBeenCalled();
+    expect(reply).toContain('não vou baixar estoque por comando solto');
+    expect(reply).toContain('pós-procedimento');
+  });
 });

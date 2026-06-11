@@ -98,14 +98,11 @@ async function requireAdmin(req, res, next) {
 router.use(authenticateToken);
 router.use(requireAdmin);
 
-// GET /api/admin/diagnostics/evolution
-// Diagnóstico rápido de conectividade/config do WhatsApp (não expõe secrets).
-// Provider principal: Meta Cloud API. Evolution aparece apenas se configurada (legado).
-router.get('/diagnostics/evolution', async (req, res) => {
+function buildWhatsappDiagnostics() {
   const metaWhatsappService = require('../services/metaWhatsappService');
   const metaConfigured = metaWhatsappService.isOutboundConfigured();
 
-  const diagnostics = {
+  return {
     provider: 'meta',
     configured: metaConfigured,
     hasAccessToken: !!process.env.WA_ACCESS_TOKEN,
@@ -117,8 +114,18 @@ router.get('/diagnostics/evolution', async (req, res) => {
     reliability: messageReliabilityService.snapshot(),
     error: null
   };
+}
 
-  res.json(diagnostics);
+// GET /api/admin/diagnostics/whatsapp
+// Diagnóstico rápido de conectividade/config do WhatsApp (não expõe secrets).
+router.get('/diagnostics/whatsapp', async (req, res) => {
+  res.json(buildWhatsappDiagnostics());
+});
+
+// GET /api/admin/diagnostics/evolution
+// Alias legado mantido para compatibilidade. Provider principal atual é Meta.
+router.get('/diagnostics/evolution', async (req, res) => {
+  res.json(buildWhatsappDiagnostics());
 });
 
 // GET /api/admin/whatsapp-monitor?days=7&limit=80

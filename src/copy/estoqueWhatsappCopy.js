@@ -118,7 +118,7 @@ function configurarConsumoInstrucoes() {
     'Por enquanto, use:\n' +
     '*configurar estoque* para montar o inventário inicial\n' +
     '*entrada estoque botox 3 frascos* para dar entrada manual\n' +
-    '*baixar estoque botox 1 frasco* para dar baixa manual'
+    '*estoque* ou *saldo botox* para consultar saldos'
   );
 }
 
@@ -213,9 +213,14 @@ function precisaQuantidadeENome() {
 }
 
 function precisaQuantidadeSaida() {
+  return baixaManualSuspensa();
+}
+
+function baixaManualSuspensa() {
   return (
-    'Para dar baixa no estoque, me diga o *item* e a *quantidade*.\n\n' +
-    'Exemplo: _baixar estoque botox 10 unidades_'
+    'Ainda não vou baixar estoque por comando solto.\n\n' +
+    'A atualização de estoque será feita em uma etapa pós-procedimento: eu mostro os insumos, você confirma ou corrige, e só então o saldo muda.\n\n' +
+    'Por enquanto, use *configurar estoque*, *entrada estoque...*, *estoque* ou *saldo botox*.'
   );
 }
 
@@ -256,4 +261,5 @@ module.exports = {
   erroProcedimentoNaoEncontrado,
   precisaQuantidadeENome,
   precisaQuantidadeSaida,
+  baixaManualSuspensa,
 };

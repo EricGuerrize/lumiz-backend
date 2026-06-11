@@ -22,7 +22,6 @@ const HELP_DETERMINISTIC_INTENTS = Object.freeze([
   'briefing_diario',
   'consultar_estoque',
   'estoque_entrada',
-  'estoque_saida',
   'consultar_validade',
   'relatorio_mensal',
   'stats_hoje',

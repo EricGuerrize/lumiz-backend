@@ -200,3 +200,29 @@ describe('SupplierDocumentService.fromDocumentResult', () => {
     });
   });
 });
+
+describe('SupplierDocumentService.applyEstoqueEntradaFromItens', () => {
+  it('mantém itens de documento como pendentes e não aplica estoque automaticamente', async () => {
+    const result = await supplierDocumentService.applyEstoqueEntradaFromItens('u1', {
+      itens: [
+        {
+          descricao: 'Toxina botulínica 100UI',
+          quantidade: 2,
+          valor_unitario: 700
+        }
+      ]
+    });
+
+    expect(result).toMatchObject({
+      aplicados: [],
+      skipped: true,
+      reason: 'stock_update_requires_manual_confirmation'
+    });
+    expect(result.pendentes).toEqual([
+      expect.objectContaining({
+        descricao: 'Toxina botulínica 100UI',
+        motivo: 'requires_manual_stock_update'
+      })
+    ]);
+  });
+});
