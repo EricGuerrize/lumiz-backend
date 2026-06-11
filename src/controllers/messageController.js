@@ -527,6 +527,12 @@ class MessageController {
         if (result) return result;
       }
 
+      // Item 21: entrada de estoque a partir de NF, após confirmar o financeiro.
+      if (await this.estoqueHandler.hasPendingStockFromDoc(normalizedPhone)) {
+        const result = await this.estoqueHandler.handlePendingStockFromDoc(normalizedPhone, message, user);
+        if (result) return result;
+      }
+
       const normalizedMessage = (message || '').trim().toLowerCase();
       const looksLikeYesNoDocumentReply = [
         'sim', 's', 'confirmar', '1',

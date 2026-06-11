@@ -10,6 +10,8 @@ class EstoqueHandler {
     this.INVENTORY_SETUP_TTL_MS = 30 * 60 * 1000;
     this.STOCK_AFTER_SALE_FLOW = EstoqueHandler.STOCK_AFTER_SALE_FLOW;
     this.STOCK_AFTER_SALE_TTL_MS = EstoqueHandler.STOCK_AFTER_SALE_TTL_MS;
+    this.STOCK_FROM_DOC_FLOW = EstoqueHandler.STOCK_FROM_DOC_FLOW;
+    this.STOCK_FROM_DOC_TTL_MS = EstoqueHandler.STOCK_FROM_DOC_TTL_MS;
   }
 
   // ==========================================================================
@@ -146,6 +148,124 @@ class EstoqueHandler {
         });
       } catch (error) {
         failed.push({ nome: item.nome, erro: error.message });
+      }
+    }
+    return { applied, failed };
+  }
+
+  // ==========================================================================
+  // Item 21 — entrada de estoque a partir de NF/documento, sob confirmação.
+  // Os itens já vêm extraídos do OCR; o usuário confirma antes de aplicar.
+  // ==========================================================================
+
+  /**
+   * Abre o fluxo de entrada de estoque a partir dos itens de uma NF.
+   * @param {string} phone
+   * @param {{itens: Array, supplierDocumentId?: string, fornecedorId?: string}} context
+   * @returns {Promise<void>}
+   */
+  async startStockFromDoc(phone, context = {}) {
+    const itens = Array.isArray(context.itens) ? context.itens : [];
+    if (!itens.length) return;
+    await conversationRuntimeStateService.upsert(
+      phone,
+      this.STOCK_FROM_DOC_FLOW,
+      {
+        stage: 'ask',
+        itens,
+        supplierDocumentId: context.supplierDocumentId || null,
+        fornecedorId: context.fornecedorId || null,
+      },
+      this.STOCK_FROM_DOC_TTL_MS
+    );
+  }
+
+  async hasPendingStockFromDoc(phone) {
+    const pending = await conversationRuntimeStateService.get(phone, this.STOCK_FROM_DOC_FLOW);
+    return Boolean(pending?.payload?.stage);
+  }
+
+  /**
+   * Máquina de estados do fluxo NF → estoque.
+   * @param {string} phone
+   * @param {string} message
+   * @param {object} user
+   * @returns {Promise<string|null>}
+   */
+  async handlePendingStockFromDoc(phone, message, user) {
+    const pending = await conversationRuntimeStateService.get(phone, this.STOCK_FROM_DOC_FLOW);
+    const payload = pending?.payload;
+    if (!payload?.stage) return null;
+
+    const normalized = String(message || '').trim().toLowerCase();
+    const isYes = ['1', 'sim', 's', 'confirmar', 'confirma'].includes(normalized);
+    const isNo = ['2', 'não', 'nao', 'n', 'cancelar'].includes(normalized);
+
+    if (payload.stage === 'ask') {
+      if (isNo) {
+        await conversationRuntimeStateService.clear(phone, this.STOCK_FROM_DOC_FLOW);
+        return copy.entradaEstoqueDocIgnorada();
+      }
+      if (isYes) {
+        await conversationRuntimeStateService.upsert(
+          phone,
+          this.STOCK_FROM_DOC_FLOW,
+          { ...payload, stage: 'confirm' },
+          this.STOCK_FROM_DOC_TTL_MS
+        );
+        return copy.resumoEntradaEstoqueDoc(payload.itens || []);
+      }
+      return copy.resumoEntradaEstoqueDoc(payload.itens || []);
+    }
+
+    if (payload.stage === 'confirm') {
+      if (isNo) {
+        await conversationRuntimeStateService.clear(phone, this.STOCK_FROM_DOC_FLOW);
+        return copy.entradaEstoqueDocIgnorada();
+      }
+      if (isYes) {
+        const result = await this._applyStockFromDoc(user.id, payload, phone);
+        await conversationRuntimeStateService.clear(phone, this.STOCK_FROM_DOC_FLOW);
+        return copy.entradaEstoqueDocConfirmada(result);
+      }
+      return copy.resumoEntradaEstoqueDoc(payload.itens || []);
+    }
+
+    return null;
+  }
+
+  /**
+   * Dá entrada item a item (cria produto se necessário), separando sucessos de falhas.
+   * @private
+   */
+  async _applyStockFromDoc(userId, payload, phone) {
+    const applied = [];
+    const failed = [];
+    for (const item of payload.itens || []) {
+      const nome = item.descricao || item.nome;
+      try {
+        const res = await estoqueProdutoService.registrarEntrada(userId, {
+          nome,
+          quantidade: item.quantidade,
+          unidade: item.unidade || undefined,
+          custo_unitario: item.valor_unitario != null ? item.valor_unitario : undefined,
+          lote: item.lote || undefined,
+          validade: item.validade || undefined,
+          allowCreate: true,
+          origem: 'nf_documento',
+          sourcePhone: phone,
+          supplierDocumentId: payload.supplierDocumentId || undefined,
+          fornecedorId: payload.fornecedorId || undefined,
+          observacoes: 'Entrada via NF (confirmada via WhatsApp)',
+        });
+        applied.push({
+          nome: res?.nome || nome,
+          quantidade: item.quantidade,
+          unidade: res?.unidade || item.unidade,
+          estoqueAtual: res?.estoqueAtual,
+        });
+      } catch (error) {
+        failed.push({ nome, erro: error.message });
       }
     }
     return { applied, failed };
@@ -299,5 +419,7 @@ class EstoqueHandler {
 // uma venda confirmada). Mantido como estático para haver fonte única da verdade.
 EstoqueHandler.STOCK_AFTER_SALE_FLOW = 'stock_after_sale';
 EstoqueHandler.STOCK_AFTER_SALE_TTL_MS = 15 * 60 * 1000;
+EstoqueHandler.STOCK_FROM_DOC_FLOW = 'stock_from_doc';
+EstoqueHandler.STOCK_FROM_DOC_TTL_MS = 30 * 60 * 1000;
 
 module.exports = EstoqueHandler;

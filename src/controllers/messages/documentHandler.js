@@ -8,6 +8,9 @@ const { normalizePhone } = require('../../utils/phone');
 const { isLowConfidence, lowConfidenceBanner } = require('../../copy/captureConfirmCopy');
 const supplierCopy = require('../../copy/supplierDocWhatsappCopy');
 const documentCopy = require('../../copy/documentWhatsappCopy');
+const estoqueCopy = require('../../copy/estoqueWhatsappCopy');
+const conversationRuntimeStateService = require('../../services/conversationRuntimeStateService');
+const EstoqueHandler = require('./estoqueHandler');
 const vendorClassificationService = require('../../services/vendorClassificationService');
 const messageReliabilityService = require('../../services/messageReliabilityService');
 const {
@@ -26,6 +29,12 @@ class DocumentHandler {
 
   normalizePhoneKey(phone) {
     return normalizePhone(phone) || phone;
+  }
+
+  /** Instância lazy do EstoqueHandler (fluxo NF → estoque). @private */
+  _stockHandler() {
+    if (!this._estoqueHandler) this._estoqueHandler = new EstoqueHandler();
+    return this._estoqueHandler;
   }
 
   /**
@@ -772,12 +781,30 @@ class DocumentHandler {
           this.pendingDocumentTransactions.delete(normalizedPhone);
           await this.clearPersistedPendingConfirmation(normalizedPhone);
 
-          return supplierCopy.supplierDocConfirmado({
+          const baseResponse = supplierCopy.supplierDocConfirmado({
             contasCount: contas.length,
             valorTotal: pending.parsed.valor_total,
             itensDetectados: Array.isArray(pending.parsed?.itens) ? pending.parsed.itens.length : 0,
             fornecedorNome: fornecedor.nome
           });
+
+          // Item 21: financeiro registrado. Se a NF trouxe itens, oferece dar
+          // entrada no estoque sob confirmação (sem alterar saldo automaticamente).
+          const itensNf = Array.isArray(pending.parsed?.itens) ? pending.parsed.itens : [];
+          if (itensNf.length > 0) {
+            try {
+              await this._stockHandler().startStockFromDoc(normalizedPhone, {
+                itens: itensNf,
+                supplierDocumentId: pending.supplier_document_id || null,
+                fornecedorId: fornecedor.id || null,
+              });
+              return `${baseResponse}${estoqueCopy.perguntarEntradaEstoqueDoc(itensNf)}`;
+            } catch (stockErr) {
+              console.error('[SUPPLIER_DOC] Falha ao abrir entrada de estoque da NF:', stockErr.message);
+            }
+          }
+
+          return baseResponse;
         } catch (err) {
           console.error('[SUPPLIER_DOC] Falha ao confirmar supplier_doc:', err.message);
           return 'Não consegui registrar essa nota agora 😢\n\nTenta novamente em alguns minutos ou me manda os dados em texto.';

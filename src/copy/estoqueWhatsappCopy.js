@@ -331,6 +331,74 @@ function baixaPosProcedimentoCorrigir() {
   );
 }
 
+// ============================================================================
+// Item 21 — entrada de estoque a partir de NF/documento, sob confirmação.
+// A NF registra o financeiro; o estoque só é atualizado após o usuário confirmar.
+// ============================================================================
+
+function _linhaItemDoc(item) {
+  const u = item.unidade || 'unidade';
+  const custo = item.valor_unitario != null
+    ? ` · custo R$ ${Number(item.valor_unitario).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+    : '';
+  const validade = item.validade ? ` · val. ${item.validade}` : '';
+  return `• ${item.descricao}: ${item.quantidade} ${u}${custo}${validade}`;
+}
+
+/** Pergunta anexada após confirmar o financeiro da NF. */
+function perguntarEntradaEstoqueDoc(itens) {
+  const n = Array.isArray(itens) ? itens.length : 0;
+  if (!n) return '';
+  return (
+    `\n\n📦 Encontrei ${n} item(ns) na nota para o estoque.\n` +
+    'Deseja dar entrada no estoque com esses itens?\n' +
+    '*1* Sim\n' +
+    '*2* Não'
+  );
+}
+
+/** Resumo dos itens antes de aplicar a entrada. */
+function resumoEntradaEstoqueDoc(itens) {
+  if (!itens?.length) return 'Não há itens da nota para dar entrada.';
+  const linhas = itens.slice(0, 12).map(_linhaItemDoc);
+  const extra = itens.length > 12 ? `\n...e mais ${itens.length - 12} item(ns).` : '';
+  return (
+    'Vou dar entrada no estoque:\n\n' +
+    `${linhas.join('\n')}${extra}\n\n` +
+    'Confirmar entrada?\n' +
+    '*1* Confirmar\n' +
+    '*2* Cancelar'
+  );
+}
+
+/** Resultado da entrada via NF. */
+function entradaEstoqueDocConfirmada({ applied = [], failed = [] }) {
+  const linhas = [];
+  if (applied.length) {
+    linhas.push('✅ Estoque atualizado:');
+    applied.slice(0, 12).forEach((item) => {
+      const u = item.unidade || 'unidade';
+      const saldo = item.estoqueAtual != null ? ` (saldo ${item.estoqueAtual} ${u})` : '';
+      linhas.push(`• ${item.nome}: +${item.quantidade} ${u}${saldo}`);
+    });
+  } else {
+    linhas.push('Não consegui dar entrada em nenhum item.');
+  }
+  if (failed.length) {
+    linhas.push('');
+    linhas.push(`⚠️ ${failed.length} item(ns) não entraram:`);
+    failed.slice(0, 12).forEach((item) => {
+      linhas.push(`• ${item.nome}: ${item.erro}`);
+    });
+  }
+  return linhas.join('\n');
+}
+
+/** Usuário optou por não dar entrada via NF. */
+function entradaEstoqueDocIgnorada() {
+  return 'Beleza, registrei só o financeiro. O estoque ficou como estava. 👍';
+}
+
 module.exports = {
   alertaEstoqueBaixo,
   alertaEstoqueCritico,
@@ -359,4 +427,8 @@ module.exports = {
   baixaPosProcedimentoIgnorada,
   baixaPosProcedimentoCorrigir,
   baixaManualSuspensa,
+  perguntarEntradaEstoqueDoc,
+  resumoEntradaEstoqueDoc,
+  entradaEstoqueDocConfirmada,
+  entradaEstoqueDocIgnorada,
 };
