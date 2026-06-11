@@ -21,7 +21,7 @@ describe('IntentHeuristicService', () => {
     }));
 
     jest.doMock('../../src/utils/procedureKeywords', () => ({
-      PROCEDURE_KEYWORDS: ['botox'],
+      PROCEDURE_KEYWORDS: ['botox', 'full face', 'fullface', 'face frame', 'limpeza de pele'],
       sanitizeClientName: jest.fn(name => name)
     }));
 
@@ -134,6 +134,82 @@ describe('IntentHeuristicService', () => {
       })
     );
     expect(knowledgeService.searchSimilarity).not.toHaveBeenCalled();
+  });
+
+  test('detectIntent reconhece venda com procedimento full face', async () => {
+    knowledgeService.searchSimilarity.mockResolvedValue([]);
+    const moneyParser = require('../../src/utils/moneyParser');
+    moneyParser.extractPrimaryMonetaryValue.mockReturnValue(8000);
+    moneyParser.extractInstallments.mockReturnValue(7);
+
+    const result = await intentHeuristicService.detectIntent('Alexandre full face 8000 em 7x', null);
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        intencao: 'registrar_entrada',
+        source: 'heuristic'
+      })
+    );
+    expect(result.dados).toEqual(
+      expect.objectContaining({
+        valor: 8000,
+        categoria: 'Full face',
+        parcelas: 7,
+        forma_pagamento: 'parcelado'
+      })
+    );
+  });
+
+  test('detectIntent reconhece venda quando mensagem começa por full face', async () => {
+    knowledgeService.searchSimilarity.mockResolvedValue([]);
+    const moneyParser = require('../../src/utils/moneyParser');
+    moneyParser.extractPrimaryMonetaryValue.mockReturnValue(8000);
+    moneyParser.extractInstallments.mockReturnValue(8);
+
+    const result = await intentHeuristicService.detectIntent('Full face alexandre 8000 em 8x', null);
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        intencao: 'registrar_entrada',
+        source: 'heuristic'
+      })
+    );
+    expect(result.dados).toEqual(
+      expect.objectContaining({
+        valor: 8000,
+        categoria: 'Full face',
+        parcelas: 8,
+        forma_pagamento: 'parcelado'
+      })
+    );
+  });
+
+  test('detectIntent reconhece venda com limpeza de pele sem palavra extra de venda', async () => {
+    knowledgeService.searchSimilarity.mockResolvedValue([]);
+    const moneyParser = require('../../src/utils/moneyParser');
+    moneyParser.extractPrimaryMonetaryValue.mockReturnValue(650);
+    moneyParser.extractInstallments.mockReturnValue(1);
+
+    const result = await intentHeuristicService.detectIntent('limpeza de pele 650', null);
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        intencao: 'registrar_entrada',
+        source: 'heuristic'
+      })
+    );
+    expect(result.dados).toEqual(
+      expect.objectContaining({
+        valor: 650,
+        categoria: 'Limpeza de pele'
+      })
+    );
+  });
+
+  test('extractSaleInfo detecta face frame como categoria', () => {
+    const info = intentHeuristicService.extractSaleInfo('Face frame alexandre 12000 no pix');
+    expect(info.categoria).toBe('Face frame');
+    expect(info.forma_pagamento).toBe('pix');
   });
 
   test('detectIntent entende export PDF com mes numerico', async () => {

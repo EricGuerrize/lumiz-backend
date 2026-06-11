@@ -178,7 +178,7 @@ class IntentHeuristicService {
         'mostrar transacao', 'procurar transação', 'procurar transacao'
       ],
       registrar_entrada: [
-        'botox', 'preenchimento', 'harmonização', 'harmonizacao', 'bioestimulador',
+        'botox', 'full face', 'fullface', 'preenchimento', 'harmonização', 'harmonizacao', 'bioestimulador',
         'fios', 'peeling', 'laser', 'paciente', 'cliente', 'procedimento',
         'fiz um', 'realizei', 'atendi', 'vendi', 'fechei', 'fiz', 'atendimento',
         'tox', 'preench', 'toxina', 'acido', 'ácido', 'hialurônico', 'hialuronico',
@@ -294,6 +294,16 @@ class IntentHeuristicService {
         'tirar acesso', 'remover acesso', 'revogar acesso'
       ]
     };
+
+    // Evita drift: todo procedimento conhecido também vira gatilho de registrar_entrada.
+    // Mantém o classificador resiliente quando novos procedimentos são adicionados.
+    const procedureTriggers = PROCEDURE_KEYWORDS
+      .map((term) => this.normalizeText(term))
+      .filter(Boolean);
+    this.keywords.registrar_entrada = Array.from(new Set([
+      ...this.keywords.registrar_entrada,
+      ...procedureTriggers
+    ]));
   }
 
   /**
@@ -328,6 +338,7 @@ class IntentHeuristicService {
   extractSaleInfo(text) {
     const raw = String(text).trim();
     const lower = raw.toLowerCase();
+    const normalizedRaw = this.normalizeText(raw);
 
     // Extrai nome do cliente/paciente
     let nomeCliente = null;
@@ -348,7 +359,7 @@ class IntentHeuristicService {
     // Extrai procedimento
     let categoria = null;
     for (const keyword of PROCEDURE_KEYWORDS) {
-      if (lower.includes(keyword)) {
+      if (normalizedRaw.includes(this.normalizeText(keyword))) {
         categoria = keyword.charAt(0).toUpperCase() + keyword.slice(1);
         break;
       }
