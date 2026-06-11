@@ -61,6 +61,86 @@ describe('realAlterAdapter', () => {
     if (origId !== undefined) process.env.ALTER_CLIENT_ID = origId;
     if (origSecret !== undefined) process.env.ALTER_CLIENT_SECRET = origSecret;
   });
+
+  describe('registerBusinessPartner', () => {
+    const origFetch = global.fetch;
+    const origId = process.env.ALTER_CLIENT_ID;
+    const origSecret = process.env.ALTER_CLIENT_SECRET;
+
+    afterEach(() => {
+      global.fetch = origFetch;
+      jest.resetModules();
+      jest.dontMock('../../src/db/supabase');
+      if (origId !== undefined) process.env.ALTER_CLIENT_ID = origId;
+      else delete process.env.ALTER_CLIENT_ID;
+      if (origSecret !== undefined) process.env.ALTER_CLIENT_SECRET = origSecret;
+      else delete process.env.ALTER_CLIENT_SECRET;
+    });
+
+    function mockAlterFetch(bpJson) {
+      global.fetch = jest.fn(async (url) => {
+        if (String(url).includes('/oauth/token')) {
+          return {
+            ok: true,
+            json: async () => ({ access_token: 'tok-test', expires_in: 3600 })
+          };
+        }
+        return {
+          ok: true,
+          json: async () => bpJson
+        };
+      });
+    }
+
+    function mockSupabaseUpdate() {
+      const updatePayloads = [];
+      jest.doMock('../../src/db/supabase', () => ({
+        from: () => ({
+          update: (payload) => {
+            updatePayloads.push(payload);
+            return { eq: () => Promise.resolve({ error: null }) };
+          }
+        })
+      }));
+      return updatePayloads;
+    }
+
+    it('persiste alter_bp_id quando API retorna { data: { id } }', async () => {
+      jest.resetModules();
+      process.env.ALTER_CLIENT_ID = 'client-test';
+      process.env.ALTER_CLIENT_SECRET = 'secret-test';
+      mockAlterFetch({ data: { id: 'bp-wrapped-1', name: 'Clínica Teste' } });
+      const updatePayloads = mockSupabaseUpdate();
+
+      const { RealAlterAdapter } = require('../../src/services/alter/realAlterAdapter');
+      const adapter = new RealAlterAdapter();
+      const result = await adapter.registerBusinessPartner('user-1', {
+        cnpj: '00.000.000/0001-91',
+        name: 'Clínica Teste'
+      });
+
+      expect(updatePayloads).toEqual([{ alter_bp_id: 'bp-wrapped-1' }]);
+      expect(result).toEqual({ id: 'bp-wrapped-1', name: 'Clínica Teste' });
+    });
+
+    it('persiste alter_bp_id quando API retorna objeto plano { id }', async () => {
+      jest.resetModules();
+      process.env.ALTER_CLIENT_ID = 'client-test';
+      process.env.ALTER_CLIENT_SECRET = 'secret-test';
+      mockAlterFetch({ id: 'bp-flat-1', name: 'Clínica Plana' });
+      const updatePayloads = mockSupabaseUpdate();
+
+      const { RealAlterAdapter } = require('../../src/services/alter/realAlterAdapter');
+      const adapter = new RealAlterAdapter();
+      const result = await adapter.registerBusinessPartner('user-2', {
+        cnpj: '00000000000191',
+        name: 'Clínica Plana'
+      });
+
+      expect(updatePayloads).toEqual([{ alter_bp_id: 'bp-flat-1' }]);
+      expect(result.id).toBe('bp-flat-1');
+    });
+  });
 });
 
 describe('alterAdapter factory', () => {

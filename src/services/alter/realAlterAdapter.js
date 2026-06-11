@@ -161,6 +161,22 @@ async function _getAlterBpId(userId) {
   return data?.alter_bp_id || null;
 }
 
+/**
+ * A API Alter envolve recursos únicos em `{ data: { id, ... } }`.
+ * Aceita também o objeto plano para compatibilidade com respostas legadas.
+ * @param {Object|null|undefined} json
+ * @returns {Object}
+ */
+function _unwrapResource(json) {
+  const resource = json?.data && typeof json.data === 'object' && !Array.isArray(json.data)
+    ? json.data
+    : json;
+  if (!resource?.id) {
+    throw new Error('Resposta da Alter sem id do recurso.');
+  }
+  return resource;
+}
+
 // ─── Adapter ──────────────────────────────────────────────────────────────────
 
 class RealAlterAdapter extends AlterAdapterContract {
@@ -355,15 +371,16 @@ class RealAlterAdapter extends AlterAdapterContract {
     };
 
     const created = await _request('POST', '/business-partners', { body: payload });
+    const partner = _unwrapResource(created);
 
     // Persiste o Alter BP id no perfil para lookups futuros
     const { error } = await supabase
       .from('profiles')
-      .update({ alter_bp_id: created.id })
+      .update({ alter_bp_id: partner.id })
       .eq('id', userId);
     if (error) throw error;
 
-    return created;
+    return partner;
   }
 
   /**
@@ -389,7 +406,8 @@ class RealAlterAdapter extends AlterAdapterContract {
     if (!userId) throw new Error('userId obrigatório.');
     const bpId = await _getAlterBpId(userId);
     if (!bpId) return null;
-    return _request('GET', `/business-partners/${bpId}`);
+    const remote = await _request('GET', `/business-partners/${bpId}`);
+    return remote ? _unwrapResource(remote) : null;
   }
 
   /**
