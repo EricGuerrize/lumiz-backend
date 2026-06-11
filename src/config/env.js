@@ -55,6 +55,30 @@ class EnvValidator {
     this.validateOptional('EVOLUTION_API_URL', 'URL da Evolution API (legado, opcional)');
     this.validateOptional('EVOLUTION_WEBHOOK_SECRET', 'Segredo compartilhado para validar POSTs da Evolution no webhook (legado)');
     this.validateOptional(
+      'WHATSAPP_DAILY_BRIEFING_ENABLED',
+      'Habilita briefing financeiro diário opt-in por WhatsApp'
+    );
+    this.validateOptional(
+      'WHATSAPP_BILL_DUE_ALERTS_ENABLED',
+      'Habilita alerta diário opt-in de contas a pagar vencendo em 7/3/1 dias'
+    );
+    this.validateOptional(
+      'WHATSAPP_VALIDITY_ALERTS_ENABLED',
+      'Habilita alerta diário opt-in de validade/lote de estoque por WhatsApp'
+    );
+    this.validateOptional(
+      'WHATSAPP_CRITICAL_STOCK_ALERTS_ENABLED',
+      'Habilita alerta diário opt-in de estoque abaixo do mínimo'
+    );
+    this.validateOptional(
+      'WHATSAPP_PATIENT_RETURN_ALERTS_ENABLED',
+      'Habilita alerta diário opt-in de sugestão de retorno por ciclo de procedimento'
+    );
+    this.validateOptional(
+      'WHATSAPP_PATIENT_REACTIVATION_ALERTS_ENABLED',
+      'Habilita alerta semanal opt-in de pacientes sem atendimento recente'
+    );
+    this.validateOptional(
       'WHATSAPP_INADIMPLENCIA_ALERTS_ENABLED',
       'Habilita alerta diário opt-in de inadimplência por WhatsApp'
     );
