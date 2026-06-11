@@ -10,6 +10,70 @@
 
 const supabase = require('../db/supabase');
 
+const CATEGORY_STORAGE_TO_DISPLAY = {
+  insumos: 'Insumos',
+  aluguel: 'Aluguel',
+  pessoal: 'Salários',
+  marketing: 'Marketing',
+  cartao: 'Cartão / taxas',
+  imposto: 'Impostos',
+  estrutura: 'Estrutura',
+  outro: 'Outros'
+};
+
+const DISPLAY_TO_STORAGE_RULES = [
+  { storage: 'insumos', patterns: ['insumo', 'material', 'fornecedor', 'injetavel', 'botox', 'toxina', 'preenchimento', 'equipamento'] },
+  { storage: 'aluguel', patterns: ['aluguel', 'locacao', 'locação', 'imovel', 'imóvel'] },
+  { storage: 'pessoal', patterns: ['salario', 'salário', 'pessoal', 'folha', 'equipe', 'prolabore'] },
+  { storage: 'marketing', patterns: ['marketing', 'publicidade', 'trafego', 'tráfego', 'ads'] },
+  { storage: 'cartao', patterns: ['cartao', 'cartão', 'taxa', 'taxas', 'maquininha', 'stone', 'cielo'] },
+  { storage: 'imposto', patterns: ['imposto', 'impostos', 'das', 'contador', 'tributo'] },
+  { storage: 'estrutura', patterns: ['internet', 'utilitario', 'utilitário', 'energia', 'luz', 'agua', 'água', 'estrutura', 'servico', 'serviço'] }
+];
+
+function normalizeText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+/**
+ * Converte categoria de exibição (WhatsApp/contas_pagar) para chave da tabela.
+ * @param {string} displayCategory
+ * @returns {string|null}
+ */
+function normalizeCategoryForStorage(displayCategory) {
+  if (!displayCategory) return null;
+  const normalized = normalizeText(displayCategory);
+  if (!normalized) return null;
+
+  const direct = Object.entries(CATEGORY_STORAGE_TO_DISPLAY)
+    .find(([, label]) => normalizeText(label) === normalized);
+  if (direct) return direct[0];
+
+  for (const rule of DISPLAY_TO_STORAGE_RULES) {
+    if (rule.patterns.some((pattern) => normalized.includes(normalizeText(pattern)))) {
+      return rule.storage;
+    }
+  }
+
+  if (normalized === 'outros' || normalized === 'outro') return 'outro';
+  return null;
+}
+
+/**
+ * Converte chave da tabela para categoria de exibição.
+ * @param {string} storageCategory
+ * @returns {string|null}
+ */
+function normalizeCategoryForDisplay(storageCategory) {
+  if (!storageCategory) return null;
+  const normalized = normalizeText(storageCategory);
+  return CATEGORY_STORAGE_TO_DISPLAY[normalized] || storageCategory;
+}
+
 /**
  * Tenta classificar um fornecedor pelo nome consultando a tabela
  * `vendor_classifications`. Prefere classificação do usuário sobre global.
@@ -51,8 +115,9 @@ async function classifyVendor(vendorName, userId) {
 async function learnVendorClassification(vendorName, category, userId) {
   if (!vendorName || !category || !userId) return;
 
+  const storageCategory = normalizeCategoryForStorage(category) || normalizeText(category);
   const validCategories = ['insumos', 'aluguel', 'pessoal', 'marketing', 'cartao', 'imposto', 'estrutura', 'outro'];
-  if (!validCategories.includes(category)) {
+  if (!validCategories.includes(storageCategory)) {
     console.warn(`[VENDOR_CLASSIFICATION] Categoria inválida ignorada: ${category}`);
     return;
   }
@@ -62,7 +127,7 @@ async function learnVendorClassification(vendorName, category, userId) {
     .upsert(
       {
         vendor_name: vendorName,
-        category,
+        category: storageCategory,
         user_id: userId,
         is_global: false
       },
@@ -74,4 +139,9 @@ async function learnVendorClassification(vendorName, category, userId) {
   }
 }
 
-module.exports = { classifyVendor, learnVendorClassification };
+module.exports = {
+  classifyVendor,
+  learnVendorClassification,
+  normalizeCategoryForStorage,
+  normalizeCategoryForDisplay
+};

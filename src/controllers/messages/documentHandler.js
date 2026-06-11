@@ -179,11 +179,13 @@ class DocumentHandler {
     if (!parsed.valor_total || parsed.valor_total <= 0) return null;
 
     // Enriquece categoria via tabela de fornecedores antes de mostrar confirmação
-    if (parsed.fornecedor && !parsed.categoria) {
-      const categoriaVendor = await vendorClassificationService.classifyVendor(parsed.fornecedor, user.id);
+    const fornecedorNome = parsed.fornecedor?.nome
+      || (typeof parsed.fornecedor === 'string' ? parsed.fornecedor : null);
+    if (fornecedorNome && !parsed.category) {
+      const categoriaVendor = await vendorClassificationService.classifyVendor(fornecedorNome, user.id);
       if (categoriaVendor) {
-        parsed.categoria = categoriaVendor;
-        parsed._vendor_category_trigger = `${parsed.fornecedor} está na minha lista de distribuidores`;
+        parsed.category = vendorClassificationService.normalizeCategoryForDisplay(categoriaVendor);
+        parsed.category_trigger = `${fornecedorNome} está na minha lista de distribuidores`;
       }
     }
 
@@ -313,8 +315,20 @@ class DocumentHandler {
   }
 
   async _applySupplierDocumentCorrection(normalizedPhone, user, pending, message) {
+    const previousCategory = pending.parsed?.category;
     const correction = applySupplierDocCorrection(pending.parsed || {}, message);
     if (!correction.changed) return { changed: false };
+
+    if (correction.changes?.category && correction.parsed?.category !== previousCategory) {
+      const fornecedorNome = correction.parsed?.fornecedor?.nome;
+      if (fornecedorNome && user?.id) {
+        await vendorClassificationService.learnVendorClassification(
+          fornecedorNome,
+          correction.parsed.category,
+          user.id
+        );
+      }
+    }
 
     pending.parsed = correction.parsed;
     await this._refreshPendingAfterCorrection(normalizedPhone, user, pending);

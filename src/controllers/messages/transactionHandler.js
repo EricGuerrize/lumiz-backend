@@ -14,6 +14,10 @@ const {
 const { sanitizeClientName } = require('../../utils/procedureKeywords');
 const { isLowConfidence, lowConfidenceBanner } = require('../../copy/captureConfirmCopy');
 const { applyTransactionCorrection } = require('../../utils/whatsappCorrectionParser');
+const {
+  extractCostPaymentDetails,
+  inferCostTypeAndCategoryFromText
+} = require('../../services/onboardingUtils');
 const estoqueCopy = require('../../copy/estoqueWhatsappCopy');
 const EstoqueHandler = require('./estoqueHandler');
 const { TX_CONFIRM_FOOTER, PAYMENT_CARD_TYPE_FOOTER, PAYMENT_METHOD_FOOTER } = require('../../copy/whatsappMenuMarkers');
@@ -77,13 +81,8 @@ class TransactionHandler {
     };
 
     if (tipo === 'saida') {
-      const recurrence = recurringExpenseService.parseRecurrenceFromText(originalText);
-      if (recurrence) {
-        normalizedData.tipo_custo = 'fixa';
-        normalizedData.recurrence = recurrence;
-      } else if (recurringExpenseService.isFixedCostText(originalText)) {
-        normalizedData.tipo_custo = 'fixa';
-      }
+      this._enrichSaidaFromText(normalizedData, originalText);
+      await this._applyVendorClassificationForCost(user, normalizedData, originalText);
     }
 
     if (normalizedData.tipo === 'entrada') {
@@ -95,15 +94,6 @@ class TransactionHandler {
     }
 
     normalizedData.nome_cliente = this.sanitizeClientName(normalizedData.nome_cliente, normalizedData.categoria);
-
-    // Verifica classificação de fornecedor para custos antes de usar a do LLM
-    if (tipo === 'saida' && descricao && !normalizedData.categoria) {
-      const categoriaVendor = await vendorClassificationService.classifyVendor(descricao, user.id);
-      if (categoriaVendor) {
-        normalizedData.categoria = categoriaVendor;
-        normalizedData._vendor_category_trigger = `Identifiquei como ${categoriaVendor} (${descricao} está na minha lista de fornecedores).`;
-      }
-    }
 
     if (tipo === 'entrada') {
       const paymentCheck = this.resolvePaymentRequirements(normalizedData, originalText);
@@ -366,6 +356,24 @@ class TransactionHandler {
         );
       }
 
+      if (tipo === 'saida' && pending.dados.parcelas > 1) {
+        const parcelasCount = pending.dados.parcelas;
+        const valorParcela = Math.abs(valor) / parcelasCount;
+        return (
+          `${emoji} *Despesa parcelada registrada!* ✅\n\n` +
+          `${categoria || descricao} — ${formatarMoeda(valor)} em ${parcelasCount}x de ${formatarMoeda(valorParcela)}\n\n` +
+          `Me diz "contas a pagar" pra ver o calendário.`
+        );
+      }
+
+      if (tipo === 'saida') {
+        return (
+          `${emoji} *Custo registrado!* ✅\n\n` +
+          `${formatarMoeda(valor)} — ${categoria || descricao}\n\n` +
+          `Quer ver seu saldo? Digite "saldo".`
+        );
+      }
+
       return `${emoji} *${tipoTexto} registrado!* ✅\n\n${formatarMoeda(valor)} - ${categoria || descricao}\n\nQuer ver seu saldo? Digite "saldo"`;
     }
 
@@ -376,9 +384,11 @@ class TransactionHandler {
       messageLower.includes('alterar') ||
       messageLower.includes('editar')
     ) {
+      const previousCategory = pending.dados?.categoria;
       const correction = this.applyCorrectionToDados(pending.dados, message);
       if (correction.changed) {
         pending.dados = correction.dados;
+        await this._maybeLearnVendorFromCostCorrection(user, previousCategory, pending.dados, pending.originalText);
         pending.stage = 'confirm';
         await this.setPendingTransaction(phone, pending);
         return this.buildConfirmationMessage(pending.dados);
@@ -411,9 +421,11 @@ class TransactionHandler {
     }
 
     // Resposta inválida
+    const previousCategory = pending.dados?.categoria;
     const correction = this.applyCorrectionToDados(pending.dados, message);
     if (correction.changed) {
       pending.dados = correction.dados;
+      await this._maybeLearnVendorFromCostCorrection(user, previousCategory, pending.dados, pending.originalText);
       pending.stage = 'confirm';
       await this.setPendingTransaction(phone, pending);
       return this.buildConfirmationMessage(pending.dados);
@@ -449,6 +461,10 @@ class TransactionHandler {
     text += `${emoji} *${tipoTexto}*\n\n`;
     text += `💵 *${formatarMoeda(valor)}*\n`;
     text += `📂 ${categoria || 'Sem categoria'}\n`;
+    const categoryTrigger = dados.category_trigger || dados._vendor_category_trigger;
+    if (categoryTrigger) {
+      text += `ℹ️ ${categoryTrigger}\n`;
+    }
 
     if (nome_cliente) {
       text += `👤 ${nome_cliente}\n`;
@@ -473,9 +489,22 @@ class TransactionHandler {
       if (bandeira_cartao) {
         text += `🏷️ ${bandeira_cartao.toUpperCase()}\n`;
       }
+    } else if (tipo === 'saida' && parcelas && parcelas > 1) {
+      const valorParcela = valor / parcelas;
+      text += `📆 *${parcelas}x de ${formatarMoeda(valorParcela)}*`;
+      if (Array.isArray(dados.datas_vencimento) && dados.datas_vencimento.length) {
+        const previewDates = dados.datas_vencimento
+          .slice(0, 3)
+          .map((dateStr) => new Date(`${dateStr}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }))
+          .join(', ');
+        text += ` (venc. ${previewDates}${dados.datas_vencimento.length > 3 ? '…' : ''})`;
+      }
+      text += '\n';
     } else {
       const formaTexto = this.getPaymentMethodText(forma_pagamento);
-      text += `💳 ${formaTexto}\n`;
+      if (formaTexto && formaTexto !== 'Não informado') {
+        text += `💳 ${formaTexto}\n`;
+      }
     }
 
     text += `📅 ${dataFormatada}\n\n`;
@@ -767,11 +796,13 @@ class TransactionHandler {
     const current = pending.dados || {};
 
     if (pending.stage === 'awaiting_correction') {
+      const previousCategory = current.categoria;
       const correction = this.applyCorrectionToDados(current, messageLower);
       if (!correction.changed) {
         return 'Não consegui aplicar essa correção. Tenta assim: "valor era 4500", "foi no pix" ou "cliente Romulo".';
       }
       pending.dados = correction.dados;
+      await this._maybeLearnVendorFromCostCorrection(user, previousCategory, pending.dados, pending.originalText);
       pending.stage = 'confirm';
       await this.setPendingTransaction(phone, pending);
       return this.buildConfirmationMessage(pending.dados);
@@ -980,6 +1011,97 @@ class TransactionHandler {
       return 'credito_avista';
     }
     return normalized;
+  }
+
+  _enrichSaidaFromText(normalizedData, originalText) {
+    const recurrence = recurringExpenseService.parseRecurrenceFromText(originalText);
+    if (recurrence) {
+      normalizedData.tipo_custo = 'fixa';
+      normalizedData.recurrence = recurrence;
+      return;
+    }
+
+    const payment = extractCostPaymentDetails(originalText);
+    if (payment.parcelas && payment.parcelas > 1) {
+      normalizedData.parcelas = payment.parcelas;
+      normalizedData.datas_vencimento = payment.datas_vencimento || normalizedData.datas_vencimento || null;
+      normalizedData.forma_pagamento = payment.forma_pagamento || normalizedData.forma_pagamento;
+    } else if (Array.isArray(payment.datas_vencimento) && payment.datas_vencimento.length > 1) {
+      normalizedData.parcelas = payment.datas_vencimento.length;
+      normalizedData.datas_vencimento = payment.datas_vencimento;
+      normalizedData.forma_pagamento = payment.forma_pagamento || normalizedData.forma_pagamento;
+    } else if (payment.forma_pagamento) {
+      normalizedData.forma_pagamento = payment.forma_pagamento;
+    }
+
+    if (recurringExpenseService.isFixedCostText(originalText)) {
+      normalizedData.tipo_custo = 'fixa';
+    }
+
+    const forcedType = normalizedData.tipo_custo === 'fixa' ? 'fixo' : null;
+    const inferred = inferCostTypeAndCategoryFromText(originalText, forcedType);
+    if (inferred.categoria && this._isGenericCostCategory(normalizedData.categoria)) {
+      normalizedData.categoria = inferred.categoria;
+      normalizedData.category_trigger = inferred.category_trigger;
+    }
+    if (inferred.tipo && !normalizedData.tipo_custo) {
+      normalizedData.tipo_custo = inferred.tipo === 'fixo' ? 'fixa' : 'variavel';
+    }
+  }
+
+  async _applyVendorClassificationForCost(user, normalizedData, originalText) {
+    const vendorName = this._extractVendorNameForLearning(normalizedData, originalText);
+    if (!vendorName || !user?.id) return;
+
+    if (!this._isGenericCostCategory(normalizedData.categoria)) return;
+
+    const categoriaVendor = await vendorClassificationService.classifyVendor(vendorName, user.id);
+    if (!categoriaVendor) return;
+
+    normalizedData.categoria = vendorClassificationService.normalizeCategoryForDisplay(categoriaVendor);
+    normalizedData.category_trigger = `Identifiquei como ${normalizedData.categoria} (${vendorName} está na minha lista de fornecedores).`;
+  }
+
+  async _maybeLearnVendorFromCostCorrection(user, previousCategory, dados, originalText) {
+    if (!user?.id || !dados || dados.tipo !== 'saida') return;
+    if (!dados.categoria || dados.categoria === previousCategory) return;
+
+    const vendorName = this._extractVendorNameForLearning(dados, originalText);
+    if (!vendorName) return;
+
+    await vendorClassificationService.learnVendorClassification(vendorName, dados.categoria, user.id);
+  }
+
+  _extractVendorNameForLearning(dados, originalText) {
+    if (dados?.descricao && dados.descricao !== dados.categoria) {
+      return String(dados.descricao).trim();
+    }
+
+    const raw = String(originalText || '').trim();
+    if (!raw) return null;
+
+    const beforeValue = raw
+      .split(/\b(?:r\$)?\s*\d/i)[0]
+      .replace(/\b(insumo|insumos|aluguel|despesa|custo|mensal|recorrente|boleto|pix)\b/gi, ' ')
+      .trim();
+
+    if (beforeValue && beforeValue.length > 2) {
+      return beforeValue.charAt(0).toUpperCase() + beforeValue.slice(1);
+    }
+
+    return dados?.descricao ? String(dados.descricao).trim() : null;
+  }
+
+  _isGenericCostCategory(categoria) {
+    const normalized = this.normalizeText(categoria);
+    return !normalized ||
+      normalized === 'sem categoria' ||
+      normalized === 'outros' ||
+      normalized === 'outro' ||
+      normalized === 'custo' ||
+      normalized === 'despesa' ||
+      normalized === 'documento' ||
+      normalized === 'fornecedores';
   }
 
   normalizeText(value) {

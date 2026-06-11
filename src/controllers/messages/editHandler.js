@@ -1,6 +1,7 @@
 const transactionController = require('../transactionController');
 const supabase = require('../../db/supabase');
 const conversationRuntimeStateService = require('../../services/conversationRuntimeStateService');
+const vendorClassificationService = require('../../services/vendorClassificationService');
 const { formatarMoeda } = require('../../utils/currency');
 
 /**
@@ -64,6 +65,7 @@ class EditHandler {
         `Me manda o ajuste, por exemplo:\n` +
         `"valor R$ 3000"\n` +
         `"data 15/12"\n` +
+        `"categoria Insumos"\n` +
         `"descrição Botox cliente Maria"`
       );
     }
@@ -110,6 +112,7 @@ class EditHandler {
     response += `\nO que você quer editar?\n`;
     response += `• Valor\n`;
     response += `• Data\n`;
+    response += `• Categoria\n`;
     response += `• Descrição`;
 
     return response;
@@ -158,13 +161,17 @@ class EditHandler {
         const now = new Date();
         novoValor = `${now.getFullYear()}-${dataMatch[2].padStart(2, '0')}-${dataMatch[1].padStart(2, '0')}`;
       }
+    } else if (messageLower.includes('categoria') || messageLower.includes('classific')) {
+      campo = 'categoria';
+      const catMatch = message.match(/\b(?:categoria|classifica(?:r|cao|ção)?)\s*(?:e|é|eh|era|foi|para|como|:)?\s*([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s/.-]{1,50})/i);
+      novoValor = catMatch?.[1]?.trim() || message.replace(/categoria|classificacao|classificação/gi, '').trim();
     } else if (messageLower.includes('descrição') || messageLower.includes('descricao')) {
       campo = 'descricao';
       novoValor = message.replace(/descrição|descricao/gi, '').trim();
     }
 
     if (!campo || !novoValor) {
-      return 'Não entendi o que você quer editar. Pode ser mais específico?\n\nExemplo: "valor R$ 3000" ou "data 15/12"';
+      return 'Não entendi o que você quer editar. Pode ser mais específico?\n\nExemplo: "valor R$ 3000", "data 15/12" ou "categoria Insumos"';
     }
 
     return await this.applyEdit(user, phone, transacao, campo, novoValor, tipo);
@@ -187,6 +194,8 @@ class EditHandler {
         updateData.data = novoValor;
       } else if (campo === 'descricao') {
         updateData.descricao = novoValor;
+      } else if (campo === 'categoria') {
+        updateData.categoria = novoValor;
       }
 
       const table = tipo === 'atendimento' ? 'atendimentos' : 'contas_pagar';
@@ -198,6 +207,13 @@ class EditHandler {
 
       if (error) {
         throw error;
+      }
+
+      if (campo === 'categoria' && tipo === 'conta' && user?.id) {
+        const vendorName = transacao.descricao || transacao.fornecedor_nome || null;
+        if (vendorName) {
+          await vendorClassificationService.learnVendorClassification(vendorName, novoValor, user.id);
+        }
       }
 
       await this.clearPendingEdit(phone);
