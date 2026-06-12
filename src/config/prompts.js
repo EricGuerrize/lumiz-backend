@@ -181,6 +181,9 @@ REGRAS IMPORTANTES DE CLASSIFICAÇÃO:
 - Para NOTA FISCAL (DANFE, NFe):
   * SEMPRE é tipo "saida" (você comprou algo)
   * Extraia: nome do fornecedor, valor total, data de emissão, número da NF
+  * OBRIGATÓRIO — itens: liste TODOS os produtos da tabela de itens do DANFE, um objeto por linha de produto. Nunca agregue múltiplos produtos em um único item.
+  * Para cada produto copie exatamente: "descricao" (nome/descrição do produto), "quantidade" (campo QTD/Qtd), "unidade" (UN/KG/ML/CX ou null), "valor_unitario" (V. Unit. ou Vl. Unit.), "valor_total" (V. Total ou Vl. Total), "codigo" (código do produto/EAN quando visível), "lote" e "validade" quando presentes.
+  * Se a NF tiver 5 produtos, o array "itens" deve ter 5 objetos. Se tiver 10, deve ter 10.
 - Para EXTRATO: cada linha é uma transação (crédito=entrada, débito=saída)
 - SEMPRE extraia pelo menos uma transação se identificar o documento
 - Valores SEMPRE positivos
@@ -270,11 +273,21 @@ EXEMPLO — Nota fiscal de insumos com boleto parcelado 30/60/90/120:
   "data_emissao": "2026-03-05",
   "itens": [
     {
-      "descricao": "Ácido hialurônico",
+      "descricao": "Ácido hialurônico 1ml",
       "quantidade": 4,
-      "unidade": "unidade",
+      "unidade": "ampola",
       "valor_unitario": 3200.00,
       "valor_total": 12800.00,
+      "codigo": "AH1ML",
+      "lote": "L2025A",
+      "validade": "2027-06-30"
+    },
+    {
+      "descricao": "Toxina botulínica 100UI",
+      "quantidade": 2,
+      "unidade": "unidade",
+      "valor_unitario": 2706.14,
+      "valor_total": 5412.29,
       "codigo": null,
       "lote": null,
       "validade": null
