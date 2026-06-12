@@ -74,7 +74,7 @@ function confirmacaoSupplierDoc(parsed, options = {}) {
     linhas.push(`📅 Vencimento ${formatDate(parsed.vencimentos[0].data)}`);
   }
 
-  if (Array.isArray(parsed?.itens) && parsed.itens.length > 0) {
+  if (options.showItems !== false && Array.isArray(parsed?.itens) && parsed.itens.length > 0) {
     linhas.push('');
     linhas.push(`📦 Itens detectados (${parsed.itens.length}):`);
     linhas.push(parsed.itens.slice(0, 3).map(formatItemPreview).join('\n'));

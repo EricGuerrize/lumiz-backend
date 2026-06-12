@@ -3,7 +3,7 @@
  * alertaEstoqueBaixo aceita array de produtos (mesmo shape de getAlertasBaixoEstoque).
  */
 
-const { INVENTORY_CONFIRM_FOOTER } = require('./whatsappMenuMarkers');
+const { INVENTORY_CONFIRM_FOOTER, ESTOQUE_YES_NO_FOOTER, ESTOQUE_ENTRY_CONFIRM_FOOTER } = require('./whatsappMenuMarkers');
 
 function _fmtDias(d) {
   if (d == null || Number.isNaN(d)) return '—';
@@ -250,8 +250,7 @@ function alertaEstoqueExcesso(produtos) {
 function perguntarBaixaPosProcedimento() {
   return (
     '\n\n📦 Deseja atualizar o estoque usado nesse procedimento?\n' +
-    '*1* Sim\n' +
-    '*2* Não'
+    ESTOQUE_YES_NO_FOOTER
   );
 }
 
@@ -269,7 +268,7 @@ function baixaInsumosNaoEntendi() {
     'Não consegui entender os itens 😕\n\n' +
     'Me manda assim: _quantidade + item_, separados por vírgula.\n' +
     'Exemplo: _1 seringa, 2 agulhas, 20 unidades de toxina_\n\n' +
-    'Ou responda *2* para não atualizar o estoque agora.'
+    'Ou responda *não* para cancelar.'
   );
 }
 
@@ -285,9 +284,7 @@ function resumoBaixaPosProcedimento(itens) {
     'Vou baixar do estoque:\n\n' +
     `${linhas.join('\n')}${extra}\n\n` +
     'Confirmar atualização?\n' +
-    '*1* Confirmar\n' +
-    '*2* Cancelar\n' +
-    '*3* Corrigir'
+    INVENTORY_CONFIRM_FOOTER
   );
 }
 
@@ -351,8 +348,7 @@ function perguntarEntradaEstoqueDoc(itens) {
   return (
     `\n\n📦 Encontrei ${n} item(ns) na nota para o estoque.\n` +
     'Deseja dar entrada no estoque com esses itens?\n' +
-    '*1* Sim\n' +
-    '*2* Não'
+    ESTOQUE_YES_NO_FOOTER
   );
 }
 
@@ -365,8 +361,7 @@ function resumoEntradaEstoqueDoc(itens) {
     'Vou dar entrada no estoque:\n\n' +
     `${linhas.join('\n')}${extra}\n\n` +
     'Confirmar entrada?\n' +
-    '*1* Confirmar\n' +
-    '*2* Cancelar'
+    ESTOQUE_ENTRY_CONFIRM_FOOTER
   );
 }
 
@@ -431,7 +426,7 @@ function resumoConferenciaEstoque(diffs) {
   const extra = diffs.length > 15 ? `\n...e mais ${diffs.length - 15} item(ns).` : '';
   const rodape = comMudanca.length === 0
     ? '\n\nTudo bate com o sistema. Nada a ajustar. ✅'
-    : '\n\nAplicar esse ajuste no estoque?\n*1* Confirmar\n*2* Cancelar';
+    : `\n\nAplicar esse ajuste no estoque?\n${ESTOQUE_ENTRY_CONFIRM_FOOTER}`;
   return `📋 *Conferência de estoque*\n\n${linhas.join('\n')}${extra}${rodape}`;
 }
 

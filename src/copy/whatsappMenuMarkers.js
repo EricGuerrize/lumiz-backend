@@ -58,6 +58,12 @@ const TX_CORRECTION_FIELD_ENTRADA_FOOTER =
 const TX_CORRECTION_FIELD_SAIDA_FOOTER =
   'Toque em *O que corrigir* e escolha valor, categoria, descrição ou data.';
 
+const ESTOQUE_YES_NO_FOOTER =
+  'Toque nos botões ou responda *sim* ou *não*.';
+
+const ESTOQUE_ENTRY_CONFIRM_FOOTER =
+  'Toque nos botões ou responda *confirmar* ou *cancelar*.';
+
 module.exports = {
   TX_CONFIRM_FOOTER,
   SUPPLIER_DOC_CONFIRM_FOOTER,
@@ -75,5 +81,7 @@ module.exports = {
   ALTER_RECEIVABLE_YES_NO_FOOTER,
   ALTER_RECEIVABLE_ACTION_FOOTER,
   TX_CORRECTION_FIELD_ENTRADA_FOOTER,
-  TX_CORRECTION_FIELD_SAIDA_FOOTER
+  TX_CORRECTION_FIELD_SAIDA_FOOTER,
+  ESTOQUE_YES_NO_FOOTER,
+  ESTOQUE_ENTRY_CONFIRM_FOOTER
 };

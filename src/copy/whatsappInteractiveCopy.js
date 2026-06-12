@@ -193,6 +193,14 @@ const MENU_RULES = [
   {
     detect: (text) => text.includes(markers.ALTER_RECEIVABLE_ACTION_FOOTER),
     menu: () => ({ type: 'buttons', buttons: BUTTON_SETS.alterReceivableAction })
+  },
+  {
+    detect: (text) => text.includes(markers.ESTOQUE_YES_NO_FOOTER),
+    menu: () => ({ type: 'buttons', buttons: BUTTON_SETS.yesNo })
+  },
+  {
+    detect: (text) => text.includes(markers.ESTOQUE_ENTRY_CONFIRM_FOOTER),
+    menu: () => ({ type: 'buttons', buttons: BUTTON_SETS.confirmCancel })
   }
 ];
 

@@ -24,6 +24,17 @@ const {
 } = require('../../utils/whatsappCorrectionParser');
 
 /**
+ * Returns true when a document category should trigger the stock flow.
+ * Service/utility invoices (e.g. internet, streaming subscriptions) are NOT
+ * stockable; only 'insumos' (physical supplies) are.
+ * @param {string|undefined} category
+ * @returns {boolean}
+ */
+function isStockableCategory(category) {
+  return !category || vendorClassificationService.normalizeCategoryForStorage(category) === 'insumos';
+}
+
+/**
  * Handler para documentos e imagens
  */
 class DocumentHandler {
@@ -228,7 +239,8 @@ class DocumentHandler {
     });
 
     const response = supplierCopy.confirmacaoSupplierDoc(parsed, {
-      isLowConfidence: isLowConfidence(parsed.confidence_score)
+      isLowConfidence: isLowConfidence(parsed.confidence_score),
+      showItems: isStockableCategory(parsed.category)
     });
     return { response, parsed };
   }
@@ -343,7 +355,8 @@ class DocumentHandler {
     return {
       changed: true,
       response: supplierCopy.confirmacaoSupplierDoc(pending.parsed, {
-        isLowConfidence: isLowConfidence(pending.parsed?.confidence_score)
+        isLowConfidence: isLowConfidence(pending.parsed?.confidence_score),
+        showItems: isStockableCategory(pending.parsed?.category)
       })
     };
   }
@@ -860,16 +873,19 @@ class DocumentHandler {
           this.pendingDocumentTransactions.delete(normalizedPhone);
           await this.clearPersistedPendingConfirmation(normalizedPhone);
 
+          // Item 21: financeiro registrado. Se a NF trouxe itens de insumos,
+          // oferece dar entrada no estoque sob confirmação (sem alterar saldo
+          // automaticamente). Documentos de serviço/utilidade são ignorados.
+          const stockable = isStockableCategory(pending.parsed?.category);
+          const itensNf = stockable && Array.isArray(pending.parsed?.itens) ? pending.parsed.itens : [];
+
           const baseResponse = supplierCopy.supplierDocConfirmado({
             contasCount: contas.length,
             valorTotal: pending.parsed.valor_total,
-            itensDetectados: Array.isArray(pending.parsed?.itens) ? pending.parsed.itens.length : 0,
+            itensDetectados: itensNf.length,
             fornecedorNome: fornecedor.nome
           });
 
-          // Item 21: financeiro registrado. Se a NF trouxe itens, oferece dar
-          // entrada no estoque sob confirmação (sem alterar saldo automaticamente).
-          const itensNf = Array.isArray(pending.parsed?.itens) ? pending.parsed.itens : [];
           if (itensNf.length > 0) {
             try {
               await this._stockHandler().startStockFromDoc(normalizedPhone, {
