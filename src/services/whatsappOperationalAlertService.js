@@ -9,6 +9,7 @@ const supabase = require('../db/supabase');
 const outboundMessageService = require('./outboundMessageService');
 const nfValidadeService = require('./nfValidadeService');
 const inadimplenciaService = require('./inadimplenciaService');
+const cashflowService = require('./cashflowService');
 const estoqueProdutoService = require('./estoqueProdutoService');
 const QueryHandler = require('../controllers/messages/queryHandler');
 const inadimplenciaCopy = require('../copy/inadimplenciaWhatsappCopy');
@@ -310,6 +311,115 @@ class WhatsappOperationalAlertService {
         });
       } catch (error) {
         console.error(`[OP_ALERTS] Falha inadimplência ${profile.id}:`, error.message);
+      }
+    }
+
+    return sent;
+  }
+
+  /**
+   * Alerta diário quando a projeção de 30 dias detecta caixa negativo.
+   * @returns {Promise<Array<{user_id: string, phone: string, type: string}>>}
+   */
+  async sendCashFlowGapAlerts() {
+    if (!readFlag('WHATSAPP_CASH_GAP_ALERTS_ENABLED', false)) return [];
+
+    const profiles = await this._getOptInProfiles();
+    const sent = [];
+    const type = this._datedReminderType('cash_gap_alert');
+
+    for (const profile of profiles) {
+      try {
+        if (await alreadySent(profile.id, type)) continue;
+
+        const projection = await cashflowService.getCashflowProjection(profile.id, 30);
+        if (!projection || !projection.summary || !projection.summary.temProjecaoCaixaNegativo) continue;
+
+        const negativeDays = (projection.days || []).filter((d) => d.caixaNegativo);
+        const message = operationalCopy.gapDeCaixa(projection.saldoAtual, negativeDays);
+        if (!message) continue;
+
+        await outboundMessageService.sendText(profile.telefone, message, {
+          messageType: 'cash_gap_alert',
+          source: 'cron',
+        });
+
+        await markSent(profile.id, profile.id, type);
+        sent.push({ user_id: profile.id, phone: profile.telefone, type: 'cash_gap_alert' });
+      } catch (error) {
+        console.error(`[OP_ALERTS] Falha gap de caixa ${profile.id}:`, error.message);
+      }
+    }
+
+    return sent;
+  }
+
+  /**
+   * Régua de cobrança em 4 níveis por dias de atraso (1–6, 7–14, 15–29, 30+).
+   * @returns {Promise<Array<{user_id: string, phone: string, tier: string}>>}
+   */
+  async sendCobrancaAlerts() {
+    if (!readFlag('WHATSAPP_COBRANCA_ALERTS_ENABLED', false)) return [];
+
+    const profiles = await this._getOptInProfiles();
+    const sent = [];
+
+    const tiers = [
+      {
+        key: 'tier1',
+        type: () => this._datedReminderType('cobranca_t1'),
+        filter: (dias) => dias >= 1 && dias < 7,
+        copyFn: operationalCopy.cobrancaTier1,
+        messageType: 'cobranca_alert_t1',
+      },
+      {
+        key: 'tier2',
+        type: () => this._datedReminderType('cobranca_t2'),
+        filter: (dias) => dias >= 7 && dias < 15,
+        copyFn: operationalCopy.cobrancaTier2,
+        messageType: 'cobranca_alert_t2',
+      },
+      {
+        key: 'tier3',
+        type: () => this._datedReminderType('cobranca_t3'),
+        filter: (dias) => dias >= 15 && dias < 30,
+        copyFn: operationalCopy.cobrancaTier3,
+        messageType: 'cobranca_alert_t3',
+      },
+      {
+        key: 'escalado',
+        type: () => this._datedReminderType('cobranca_escalado'),
+        filter: (dias) => dias >= 30,
+        copyFn: operationalCopy.cobrancaEscalado,
+        messageType: 'cobranca_alert_escalado',
+      },
+    ];
+
+    for (const profile of profiles) {
+      try {
+        const overview = await inadimplenciaService.getOverview(profile.id);
+        const clientes = overview && overview.clientes ? overview.clientes : [];
+
+        for (const tier of tiers) {
+          const tierClientes = clientes.filter((c) => tier.filter(c.diasAtrasoMax || 0));
+          if (!tierClientes.length) continue;
+
+          const tierType = tier.type();
+          if (await alreadySent(profile.id, tierType)) continue;
+
+          const message = tier.copyFn(tierClientes);
+          if (!message) continue;
+
+          await outboundMessageService.sendText(profile.telefone, message, {
+            messageType: tier.messageType,
+            source: 'cron',
+          });
+
+          await markSent(profile.id, profile.id, tierType);
+          sent.push({ user_id: profile.id, phone: profile.telefone, tier: tier.key });
+        }
+      } catch (error) {
+        console.error(`[OP_ALERTS] Falha cobrança ${profile.id}:`, error.message);
       }
     }
 

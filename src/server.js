@@ -115,6 +115,8 @@ cron.schedule('0 8 * * *', async () => {
     await whatsappOperationalAlertService.sendPatientReturnAlerts();
     await whatsappOperationalAlertService.sendPatientReactivationAlerts();
     await whatsappOperationalAlertService.sendInadimplenciaAlerts();
+    await whatsappOperationalAlertService.sendCashFlowGapAlerts();
+    await whatsappOperationalAlertService.sendCobrancaAlerts();
   } catch (error) {
     console.error('[CRON] Erro nos alertas operacionais:', error);
     if (process.env.SENTRY_DSN) Sentry.captureException(error);
@@ -134,7 +136,9 @@ cron.schedule('0 10 1 * *', async () => {
 cron.schedule('0 18 * * 5', async () => {
   console.log('[CRON] Enviando acompanhamento semanal de metas...');
   try {
-    await goalReminderService.checkAndSendGoalReminders();
+    if (readFlag('WHATSAPP_WEEKLY_GOAL_ENABLED', false)) {
+      await goalReminderService.checkAndSendGoalReminders();
+    }
   } catch (error) {
     console.error('[CRON] Erro no acompanhamento de metas:', error);
     if (process.env.SENTRY_DSN) Sentry.captureException(error);
