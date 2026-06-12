@@ -16,16 +16,15 @@ function formatDate(value) {
 
 function contasVencendo(items = [], janelaDias) {
   if (!items.length) return null;
-  const titulo = janelaDias === 1
-    ? 'vence amanhã'
-    : `vence em ${janelaDias} dias`;
+  const emoji = janelaDias === 1 ? '🚨' : janelaDias <= 3 ? '⚠️' : 'ℹ️';
+  const titulo = janelaDias === 1 ? 'vence *amanhã*' : `vence em *${janelaDias} dias*`;
   const linhas = items.slice(0, 6).map((item) => {
     const nome = item.descricao || item.categoria || 'Conta a pagar';
     return `• ${nome}: ${formatCurrency(item.valor)} — ${formatDate(item.data_vencimento)}`;
   });
   const extra = items.length > 6 ? `\n...e mais ${items.length - 6} conta(s).` : '';
   return (
-    `📌 *Contas a pagar: ${titulo}*\n\n` +
+    `${emoji} *Contas a pagar: ${titulo}*\n\n` +
     `${linhas.join('\n')}${extra}\n\n` +
     'Digite *contas a pagar* para ver o calendário completo.'
   );
