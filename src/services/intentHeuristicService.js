@@ -334,7 +334,7 @@ class IntentHeuristicService {
 
   _looksLikeUnknownSale(text, normalized) {
     const value = this.extractValue(text);
-    if (!value) return false;
+    if (!value || value < 5) return false;
 
     const costSignals = this.keywords.registrar_saida || [];
     const hasCostSignal = costSignals.some((kw) => normalized.includes(kw));

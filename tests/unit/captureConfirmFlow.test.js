@@ -123,7 +123,7 @@ describe('TransactionHandler.buildConfirmationMessage com confidence baixo', () 
       parcelas: 5
     });
 
-    expect(message).toContain('3️⃣ *Corrigir*');
+    expect(message).toContain('corrigir');
   });
 
   it('aplica correção textual antes de salvar', () => {

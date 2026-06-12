@@ -57,15 +57,16 @@ const HEURISTIC_CASES = [
   // Apenas valor numérico isolado
   { msg: '1500',                                 intent: 'apenas_valor' },
   { msg: '2800,50',                              intent: 'apenas_valor' },
+
+  // Valor + forma de pagamento → heurística detecta como entrada
+  { msg: 'Recebi 1500 no pix',                  intent: 'registrar_entrada' },
 ];
 
 // ─── Casos que devem cair no Gemini (retorna null) ──────────────────────────
 // Consultas abertas têm confiança < 0.7 porque correspondem a apenas 1 keyword
 // de uma lista longa. Isso é correto: o Gemini é mais preciso para esses casos.
-// "Recebi 1500 no pix" também cai aqui — a keyword é "recebi de", não "recebi".
 
 const FALLBACK_CASES = [
-  { msg: 'Recebi 1500 no pix' },            // "recebi" ≠ "recebi de" → sem match
   { msg: 'Quanto entrou esse mês?' },       // "mês" → relatorio_mensal, confiança 0.53
   { msg: 'Qual meu saldo?' },               // "saldo" → consultar_saldo, confiança 0.53
   { msg: 'Mostra minhas últimas vendas' },  // "últimas" → consultar_historico, 0.57
